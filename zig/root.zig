@@ -1,4 +1,4 @@
-//! Imports main.zig and handles exporting functions to WASM.
+//! Root file. Imports main.zig and handles exporting functions to WASM.
 const std = @import("std");
 const main = @import("main.zig");
 const memory = @import("memory.zig");

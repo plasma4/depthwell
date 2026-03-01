@@ -298,7 +298,7 @@ export class GameEngine {
         box: "device-pixel-content-box",
       });
     } catch (e) {
-      // Fallback for older Safari or incompatible environments
+      // Fallback for Safari or older browsers ):
       if (CONFIG.verbose)
         console.log(
           "device-pixel-content-box not supported, falling back to content-box.",

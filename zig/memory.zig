@@ -3,14 +3,19 @@ const std = @import("std");
 const builtin = @import("builtin");
 const ColorRGBA = @import("color_rgba.zig").ColorRGBA;
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
-const allocator = if (is_wasm)
+
+// Only create an actual GPA instance if building for native.
+var gpa = if (!is_wasm and !builtin.is_test)
+    std.heap.GeneralPurposeAllocator(.{}){}
+else
+    struct {}{};
+
+pub const allocator = if (is_wasm)
     std.heap.wasm_allocator
 else if (builtin.is_test)
     std.testing.allocator
-else {
-    // Native
-    std.heap.GeneralPurposeAllocator(.{}).allocator();
-};
+else
+    gpa.allocator();
 
 /// 64 bytes is a good alignment size.
 pub const MAIN_ALIGN: usize = 64;

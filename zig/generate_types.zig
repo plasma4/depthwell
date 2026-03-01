@@ -27,7 +27,7 @@ pub fn main() !void {
 
     // Write static TypeScript headers and configurations
     try writer.print(
-        \\// This is a dynamically generated file from generate_types.zig for use in engine.ts.
+        \\// This is a dynamically generated file from generate_types.zig for use in engine.ts. See the folders in /zig for more detailed documentation.
         \\
         \\/**
         \\ * A pointer in the WASM memory.
@@ -41,7 +41,7 @@ pub fn main() !void {
         \\  highPerformance?: boolean;
         \\}}
         \\
-        \\// See the folders in /zig for more detailed documentation.
+        \\// Generated from exported functions (should all be in root.zig):
         \\export interface EngineExports extends WebAssembly.Exports {{
         \\  readonly memory: WebAssembly.Memory;
         \\
@@ -67,8 +67,7 @@ pub fn main() !void {
         }
     }
 
-    try writer.print("\n  readonly isDebug: () => 0 | 1;\n", .{});
-    try writer.print("}}\n", .{});
+    try writer.print("\n}}\n\n// Enum data from types.zig:", .{});
 
     const type_info = @typeInfo(types);
     inline for (type_info.@"struct".decls) |decl| {

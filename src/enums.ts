@@ -1,4 +1,4 @@
-// This is a dynamically generated file from generate_types.zig for use in engine.ts.
+// This is a dynamically generated file from generate_types.zig for use in engine.ts. See the folders in /zig for more detailed documentation.
 
 /**
  * A pointer in the WASM memory.
@@ -12,7 +12,7 @@ export interface EngineOptions {
   highPerformance?: boolean;
 }
 
-// See the folders in /zig for more detailed documentation.
+// Generated from exported functions (should all be in root.zig):
 export interface EngineExports extends WebAssembly.Exports {
   readonly memory: WebAssembly.Memory;
 
@@ -25,9 +25,11 @@ export interface EngineExports extends WebAssembly.Exports {
   readonly get_memory_layout_ptr: () => Pointer;
   readonly wasm_alloc: (arg0: number) => Pointer;
   readonly wasm_free: (arg0: Pointer, arg1: number) => void;
-  readonly isDebug: () => 0 | 1;
+  readonly scratch_alloc: (arg0: number) => Pointer;
+  readonly isDebug: () => boolean;
 }
 
+// Enum data from types.zig:
 export enum Command {
   Reset = 0,
   Begin = 1,
