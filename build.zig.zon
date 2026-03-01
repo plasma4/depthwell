@@ -1,0 +1,21 @@
+.{
+    .name = .Depthwell,
+    // Semantic version: https://semver.org/
+    .version = "0.0.0",
+    .fingerprint = 0x1d5dd33c1ffd989d, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        // No longer using Mach Engine.
+        // .mach = .{
+        //     .url = "https://pkg.machengine.org/mach/cfd9fc8ff0452f855bf5a8a7e53b611cae630254.tar.gz",
+        //     .hash = "mach-0.4.0-AAAAADqTMQDmlOBeVvOJVp57ba6Fy2vqb0Xq6g7m6wAL",
+        // },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // "LICENSE",
+        // "README.md",
+    },
+}
