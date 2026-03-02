@@ -81,6 +81,14 @@ pub fn main() !void {
                     try writer.print("    {s} = {d},\n", .{ field.name, field.value });
                 }
                 try writer.print("}}\n", .{});
+            } else if (inner_info == .@"struct") {
+                try writer.print("\nexport const {s} = {{\n", .{decl.name});
+                inline for (inner_info.@"struct".decls) |s_decl| {
+                    // This grabs the 'pub const' values inside your KeyBits struct
+                    const val = @field(T, s_decl.name);
+                    try writer.print("    {s}: {d},\n", .{ s_decl.name, val });
+                }
+                try writer.print("}} as const;\n", .{});
             }
         }
     }

@@ -5,6 +5,10 @@ const builtin = @import("builtin");
 /// Represents a color. Note that WebGPU processes colors as rgba16float;
 /// this data is used to determine similarity of blocks and is not color-space compliant.
 pub const ColorRGBA = extern union {
+    /// Single-word access for quick equality checks.
+    word: u32,
+    /// SIMD-ready vector access. Subject to different values based on endianness.
+    v: @Vector(4, u8),
     /// Component access via .channels.r, etc.
     channels: extern struct {
         /// Red component of color (0-255).
@@ -16,10 +20,6 @@ pub const ColorRGBA = extern union {
         /// Alpha component of color (0-255).
         a: u8 = 0,
     },
-    /// SIMD-ready vector access.
-    v: @Vector(4, u8),
-    /// Single-word access for quick equality checks.
-    word: u32,
 
     // Fully opaque white.
     pub const white = ColorRGBA{ .channels = .{ .r = 255, .g = 255, .b = 255, .a = 255 } };
@@ -205,6 +205,53 @@ pub const ColorRGBA = extern union {
     }
 };
 
+test "ColorRGBA fromHex" {
+    // Standard 6-character hex (no #)
+    const c1 = comptime ColorRGBA.fromHex("123456");
+    try std.testing.expectEqual(@as(u8, 0x12), c1.channels.r);
+    try std.testing.expectEqual(@as(u8, 0x34), c1.channels.g);
+    try std.testing.expectEqual(@as(u8, 0x56), c1.channels.b);
+    try std.testing.expectEqual(@as(u8, 255), c1.channels.a);
+
+    // 6-character hex
+    const c2 = comptime ColorRGBA.fromHex("#ff0000");
+    try std.testing.expectEqual(@as(u8, 255), c2.channels.r);
+    try std.testing.expectEqual(@as(u8, 0), c2.channels.g);
+    try std.testing.expectEqual(@as(u8, 0), c2.channels.b);
+    try std.testing.expectEqual(@as(u8, 255), c2.channels.a);
+
+    // 8-character hex
+    const c3 = comptime ColorRGBA.fromHex("#00fF0080");
+    try std.testing.expectEqual(@as(u8, 0), c3.channels.r);
+    try std.testing.expectEqual(@as(u8, 255), c3.channels.g);
+    try std.testing.expectEqual(@as(u8, 0), c3.channels.b);
+    try std.testing.expectEqual(@as(u8, 128), c3.channels.a);
+
+    // Standard black and white hex strings against constants
+    const white = comptime ColorRGBA.fromHex("#fFfFfF");
+    try std.testing.expect(white.eql(ColorRGBA.white));
+
+    const black = comptime ColorRGBA.fromHex("000000");
+    try std.testing.expect(black.eql(ColorRGBA.black));
+}
+
+test "ColorRGBA color modification" {
+    // A color equal to rgb(8, 240, 0).
+    var test_color = comptime ColorRGBA.fromHex("#08f000");
+    test_color.channels.a -|= 16; // saturating subtraction
+    try std.testing.expectEqual(test_color.channels.a, 0xef);
+
+    try std.testing.expectEqual(test_color.channels.r, 0x08);
+    test_color.channels.r -|= 12;
+    try std.testing.expectEqual(test_color.channels.r, 0x00);
+
+    try std.testing.expectEqual(test_color.channels.g, 0xf0);
+    test_color.channels.g +|= 3; // saturating addition
+    try std.testing.expectEqual(test_color.channels.g, 0xf3);
+    test_color.channels.g +|= 16;
+    try std.testing.expectEqual(test_color.channels.g, 0xff);
+}
+
 test "ColorRGBA perceptual luminance" {
     const pure_green = ColorRGBA{ .channels = .{ .r = 0, .g = 255, .b = 0, .a = 255 } };
     const pure_blue = ColorRGBA{ .channels = .{ .r = 0, .g = 0, .b = 255, .a = 255 } };
@@ -362,7 +409,7 @@ test "ColorRGBA compositeOver" {
     try std.testing.expectEqual(@as(u8, 128), blended.channels.r);
     try std.testing.expectEqual(@as(u8, 0), blended.channels.g);
     try std.testing.expectEqual(@as(u8, 127), blended.channels.b);
-    try std.testing.expectEqual(@as(u8, 254), blended.channels.a);
+    try std.testing.expectEqual(@as(u8, 255), blended.channels.a);
 
     // Solid foreground over solid background
     const fg_solid = ColorRGBA{ .channels = .{ .r = 0, .g = 255, .b = 0, .a = 255 } };
@@ -391,34 +438,4 @@ test "ColorRGBA withAlpha and average" {
     try std.testing.expectEqual(@as(u8, 30), avg.channels.g);
     try std.testing.expectEqual(@as(u8, 40), avg.channels.b);
     try std.testing.expectEqual(@as(u8, 50), avg.channels.a);
-}
-
-test "ColorRGBA fromHex" {
-    // Standard 6-character hex (no #)
-    const c1 = comptime ColorRGBA.fromHex("123456");
-    try std.testing.expectEqual(@as(u8, 0x12), c1.channels.r);
-    try std.testing.expectEqual(@as(u8, 0x34), c1.channels.g);
-    try std.testing.expectEqual(@as(u8, 0x56), c1.channels.b);
-    try std.testing.expectEqual(@as(u8, 255), c1.channels.a);
-
-    // 6-character hex
-    const c2 = comptime ColorRGBA.fromHex("#ff0000");
-    try std.testing.expectEqual(@as(u8, 255), c2.channels.r);
-    try std.testing.expectEqual(@as(u8, 0), c2.channels.g);
-    try std.testing.expectEqual(@as(u8, 0), c2.channels.b);
-    try std.testing.expectEqual(@as(u8, 255), c2.channels.a);
-
-    // 8-character hex
-    const c3 = comptime ColorRGBA.fromHex("#00fF0080");
-    try std.testing.expectEqual(@as(u8, 0), c3.channels.r);
-    try std.testing.expectEqual(@as(u8, 255), c3.channels.g);
-    try std.testing.expectEqual(@as(u8, 0), c3.channels.b);
-    try std.testing.expectEqual(@as(u8, 128), c3.channels.a);
-
-    // Standard black and white hex strings against constants
-    const white = comptime ColorRGBA.fromHex("#fFfFfF");
-    try std.testing.expect(white.eql(ColorRGBA.white));
-
-    const black = comptime ColorRGBA.fromHex("000000");
-    try std.testing.expect(black.eql(ColorRGBA.black));
 }

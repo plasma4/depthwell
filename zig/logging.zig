@@ -32,23 +32,23 @@ inline fn message(ptr: [*]const u8, len: usize, message_type: LogCategory) void 
 }
 
 /// Logs a message in JS.
-pub inline fn log(comptime src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) void {
+pub inline fn log(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
     writeLog(src, fmt, args, .log);
 }
 /// Logs an info message in JS.
-pub inline fn info(comptime src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) void {
+pub inline fn info(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
     writeLog(src, fmt, args, .info);
 }
 /// Logs a warning message in JS.
-pub inline fn warn(comptime src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) void {
+pub inline fn warn(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
     writeLog(src, fmt, args, .warn);
 }
 /// Logs an error message in JS.
-pub inline fn err(comptime src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) void {
+pub inline fn err(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
     writeLog(src, fmt, args, .err);
 }
 
-inline fn writeLog(src: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype, log_category: LogCategory) void {
+inline fn writeLog(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype, log_category: LogCategory) void {
     // Add source as comptime
     const prefix = std.fmt.comptimePrint("[{s}:{d}:{d}] ", .{ src.file, src.line, src.column });
     const final_fmt = prefix ++ fmt;
@@ -71,7 +71,7 @@ pub inline fn runLoggingTest(skipError: bool) void {
     const logger = @import("logging.zig");
     logger.log(@src(), "This is a normal log.", .{});
     logger.info(@src(), "This is an info log.", .{});
-    logger.warn(@src(), "This is a warning.", .{});
+    logger.warn(@src(), "This is a warning. You should see this when running tests in Zig.", .{});
     if (skipError) {
         logger.err(@src(), "This is an error. Should create an alert() popup if CONFIG.noAlertOnError is false and building for WASM.", .{});
     } else {

@@ -5,6 +5,7 @@ const memory = @import("memory.zig");
 const types = @import("types.zig");
 const seeding = @import("seeding.zig");
 const commands = @import("commands.zig");
+const colors = @import("color_rgba.zig");
 const builtin = @import("builtin");
 
 pub export fn init() void {
@@ -55,4 +56,9 @@ comptime {
             @import("logging.zig").runLoggingTest(true);
         }
     };
+}
+
+test {
+    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(@import("color_rgba.zig"));
 }

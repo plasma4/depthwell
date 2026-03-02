@@ -37,19 +37,26 @@ export enum Command {
     SendSeed = 3,
 }
 
-export enum KeyBits {
-    K0 = 1,
-    K1 = 2,
-    K2 = 4,
-    K3 = 8,
-    K4 = 16,
-    K5 = 32,
-    K6 = 64,
-    K7 = 128,
-    K8 = 256,
-    K9 = 512,
-    UP = 1024,
-    LEFT = 2048,
-    DOWN = 4096,
-    RIGHT = 8192,
-}
+export const KeyBits = {
+    up: 2048,
+    left: 4096,
+    down: 8192,
+    right: 16384,
+    k0: 1,
+    k1: 2,
+    k2: 4,
+    k3: 8,
+    k4: 16,
+    k5: 32,
+    k6: 64,
+    k7: 128,
+    k8: 256,
+    k9: 512,
+} as const;
+
+export const game_state_offsets = {
+    player_pos: 0,
+    camera_pos: 16,
+    camera_scale: 32,
+    seed: 48,
+} as const;

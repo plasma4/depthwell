@@ -73,18 +73,18 @@ pub var scratch_buffer: [256 * MemorySizes.KiB]u8 align(MAIN_ALIGN) = undefined;
 const fba: std.heap.FixedBufferAllocator = std.heap.FixedBufferAllocator.init(&scratch_buffer);
 const arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(fba.allocator());
 
-/// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory and should be passed to WebGPU.
-/// Important data is meant to be placed at the start with less important data later.
+/// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
+/// Important data is meant to be placed at the start with less important data later. See game_state_offsets in types.zig for export to JS.
 pub const GameState = extern struct {
     /// Represents the player's position.
-    player_pos: @Vector(2, f64) align(64) = .{ 0.0, 0.0 },
-    camera_pos: @Vector(2, f64) align(16) = .{ 0.0, 0.0 },
-    camera_scale: f64 align(16) = 1.0,
+    player_pos: @Vector(2, f64) align(MAIN_ALIGN) = .{ 0.0, 0.0 },
+    camera_pos: @Vector(2, f64) = .{ 0.0, 0.0 },
+    camera_scale: f64 = 1.0,
     seed: [8]u64 align(16) = std.mem.zeroes([8]u64),
 };
 
 /// The state of the current game.
-pub var game: GameState align(MAIN_ALIGN) = .{};
+pub var game: GameState = .{};
 
 /// The layout structure shared with TypeScript. The MemoryLayout instance will not change locations, but its properties may.
 pub const MemoryLayout = extern struct {
@@ -95,7 +95,7 @@ pub const MemoryLayout = extern struct {
     /// The total capacity of the fixed scratch buffer (4MB).
     scratch_capacity: u64,
     /// Additional properties for configuring the scratch buffer's meaning (with types.zig and commands.zig) if necessary.
-    scratch_properties: [5]u64,
+    scratch_properties: [4]u64,
     /// Pointer to the GameState. (Can safely be pointer instead of u64 as it is the LAST property.)
     mem_ptr: *GameState,
 };
@@ -105,9 +105,8 @@ pub var mem: MemoryLayout align(MAIN_ALIGN) = .{
     .scratch_ptr = 0, // pointer is set in main.zig's init
     .scratch_len = 0,
     .scratch_capacity = 0,
-    .scratch_properties = std.mem.zeroes([5]u64), // start with empty
-    // The game is also cleanly on a WASM page!
     .mem_ptr = &game,
+    .scratch_properties = std.mem.zeroes([4]u64), // start with empty
 };
 
 /// Returns the pointer to the memory layout for TypeScript to consume.

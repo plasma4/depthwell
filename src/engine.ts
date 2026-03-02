@@ -1,6 +1,7 @@
 "use strict";
 /// <reference types="@webgpu/types" />
 import * as Wasm from "./enums";
+import * as Seeding from "./seeding";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
@@ -17,14 +18,16 @@ export const CONFIG = {
 
 const { random } = Math;
 
+/** The URL for the WebAssembly code (compiled from zig build). */
 import WASM_URL from "./main.wasm?url";
+/** The URL for the WebGPU shader code. */
 import SHADER_SOURCE from "./shader.wgsl?raw";
+/** The URL for the sprite sheet. */
+import SPRITE_SHEET_URL from "./assets/main.png?url";
 
 /** The texture format for WebGPU. */
 const TEXTURE_FORMAT: GPUTextureFormat = "rgba16float";
 
-/** The URL for the sprite sheet. */
-const spriteAtlasUrl: string = "src/assets/main.png";
 /** The width for the sprite sheet tilemap. */
 const initialMapWidth = 32;
 /** The height for the sprite sheet tilemap. */
@@ -82,8 +85,6 @@ export class GameEngine {
     public readonly exports: Wasm.EngineExports;
     /** The memory from the engineModule. */
     public readonly memory: WebAssembly.Memory;
-    /** A string representing the game seed (up to 100 characters). */
-    public readonly seed: string;
     /** The canvas where rendering is presented. */
     public readonly canvas: HTMLCanvasElement;
     /** The WebGPU adapter for the system. */
@@ -112,6 +113,10 @@ export class GameEngine {
     public startTime: number = performance.now();
     /** Gives the pointer that describes the memory layout. */
     public LAYOUT_PTR: Wasm.Pointer;
+    /** Gives the pointer to the game state. */
+    private readonly GAME_STATE_PTR: Wasm.Pointer;
+    /** A string representing the game seed (up to 100 characters). */
+    public seed!: string;
     /** X-position of the camera. */
     public cameraX: number;
     /** Y-position of the camera. */
@@ -147,7 +152,8 @@ export class GameEngine {
         this.memory = engineModule.instance.exports
             .memory as WebAssembly.Memory;
         this.LAYOUT_PTR = this.exports.get_memory_layout_ptr();
-        this.seed = GameEngine.makeSeed(12);
+        this.GAME_STATE_PTR = Number(this.getScratchView()[4]);
+        this.setSeed(Seeding.makeSeed(12));
         this.cameraX = 0;
         this.cameraY = 0;
     }
@@ -323,7 +329,7 @@ export class GameEngine {
         // Start working on WebGPU stuff
         const atlasTexture = await GameEngine.loadTexture(
             device,
-            spriteAtlasUrl,
+            SPRITE_SHEET_URL,
         );
 
         // Create sampler (nearest neighbor for pixel art)
@@ -394,53 +400,15 @@ export class GameEngine {
         return engine;
     }
 
-    /** Creates a seed; won't work properly past length 100. */
-    private static makeSeed(seedLength: number | bigint = 100) {
-        const alphabet = "abcdefghijklmnopqrstuvwxyz";
-        const base = 26n;
-
-        // 26 * (26^100 - 1) / 25
-        const totalPossibilities =
-            (base * (base ** BigInt(seedLength) - 1n)) / 25n;
-
-        const byteLength = 68;
-        const bytes = new Uint8Array(byteLength);
-        const maxRange = 2n ** BigInt(byteLength * 8);
-        const limit = maxRange - (maxRange % totalPossibilities);
-
-        let randomBigInt = 0n;
-
-        while (true) {
-            crypto.getRandomValues(bytes);
-            randomBigInt = 0n;
-            for (let i = 0; i < byteLength; i++) {
-                randomBigInt = (randomBigInt << 8n) | BigInt(bytes[i]);
-            }
-
-            if (randomBigInt < limit) {
-                randomBigInt = randomBigInt % totalPossibilities;
-                break;
-            }
-        }
-
-        let result = "";
-        let temp = randomBigInt;
-
-        while (temp >= 0n) {
-            // bigint to number
-            result += alphabet[Number(temp % base)];
-            temp = temp / base - 1n;
-            if (temp < 0n) break;
-        }
-
-        return result;
-    }
-
     public destroy(reason = "unknown reason", error: any = null) {
         this.resizeObserver.disconnect();
         this.destroyed = reason;
         this.destroyedError = error;
     }
+
+    // -----
+    // GPU Textures
+    // -----
 
     private static async loadTexture(
         device: GPUDevice,
@@ -600,136 +568,6 @@ export class GameEngine {
         };
     }
 
-    /**
-     * Obtains a TypedArray view into WASM memory.
-     */
-    public getView(
-        typeCode: -8 | 8 | 16 | 32 | -32 | 64 | -64,
-        size: number,
-        offset: number = this.getScratchPtr(),
-    ): ArrayBufferView {
-        const buffer = this.memory.buffer;
-        switch (typeCode) {
-            case -8:
-                return new Uint8ClampedArray(buffer, offset, size);
-            case 8:
-                return new Uint8Array(buffer, offset, size);
-            case 16:
-                return new Uint16Array(buffer, offset, size);
-            case 32:
-                return new Uint32Array(buffer, offset, size);
-            case -32:
-                return new Float32Array(buffer, offset, size);
-            case 64:
-                return new BigUint64Array(buffer, offset, size);
-            case -64:
-                return new Float64Array(buffer, offset, size);
-            default:
-                throw new RangeError(
-                    `Unsupported memory type code: ${typeCode}`,
-                );
-        }
-    }
-
-    /** Internal property for a temporary access of the scratch view. Value 0 is the pointer, value 1 is the length, value 2 is the max capacity, and values 3-7 are custom properties when necessary. */
-    private _tempScratchView: BigUint64Array | null = null;
-    /** Returns 8 values in the scratch buffer; (zero-indexed) value 0 is the pointer, value 1 is the length, value 2 is the max capacity, and values 3-7 are custom properties when necessary. */
-    public getScratchView() {
-        // Check if we need to (re)create the view
-        if (
-            this._tempScratchView === null ||
-            this._tempScratchView.buffer !== this.memory.buffer // old view due to memory growth
-        ) {
-            this._tempScratchView = new BigUint64Array(
-                this.memory.buffer,
-                this.LAYOUT_PTR,
-                8,
-            );
-        }
-        return this._tempScratchView;
-    }
-
-    /**
-     * Returns the scratch buffer's location in memory (used for passing strings, commands, and data between JS and WASM).
-     */
-    public getScratchPtr() {
-        return Number(this.getScratchView()[0]);
-    }
-
-    /**
-     * Returns the scratch buffer's current length of data (not capacity).
-     */
-    public getScratchLen() {
-        return Number(this.getScratchView()[1]);
-    }
-
-    /**
-     * Sets the scratch buffer's current length of data (not capacity).
-     */
-    public setScratchLen(length: number) {
-        this.getScratchView()[1] = BigInt(length);
-    }
-
-    /**
-     * Returns the scratch buffer's max capacity.
-     */
-    public getScratchCapacity() {
-        return Number(this.getScratchView()[2]);
-    }
-
-    /**
-     * Determines the properties of the scratch buffer (6 u64 constants from Zig converted to Number). Returns a number if ID of property is provided (0-4) and number[] of all 5 properties if not.
-     */
-    public getScratchProperties(
-        index?: 0 | 1 | 2 | 3 | 4,
-    ): number | [number, number, number, number, number] {
-        let view = this.getScratchView();
-        return index
-            ? Number(view[index - 3])
-            : [
-                  Number(view[3]),
-                  Number(view[4]),
-                  Number(view[5]),
-                  Number(view[6]),
-                  Number(view[7]),
-              ];
-    }
-
-    /**
-     * Reads a UTF-8 string from WASM memory.
-     */
-    public readStr(
-        offset: number = this.getScratchPtr(),
-        len: number = this.getScratchLen(),
-    ): string {
-        const bytes = new Uint8Array(this.memory.buffer, offset, len);
-        return this.decoder.decode(bytes);
-    }
-
-    /**
-     * Writes a JavaScript string into WASM memory.
-     * Returns the number of bytes actually written.
-     */
-    public writeStr(
-        str: string,
-        offset: number = this.getScratchPtr(),
-    ): number {
-        let view = this.getScratchView();
-        if (str.length == 0) {
-            view[1] = 0n;
-            return 0;
-        }
-        const capacity = view[2];
-        if (str.length > capacity)
-            throw new RangeError("Scratch data too big to be sent to WASM.");
-        const bytes = new Uint8Array(this.memory.buffer, offset);
-        const result = this.encoder.encodeInto(str, bytes);
-        if (result.read > capacity)
-            throw new RangeError("Scratch data too big to be sent to WASM.");
-        view[1] = BigInt(result.read);
-        return result.written || 0;
-    }
-
     /** Batch update of tile data. */
     public updateTileRegion(
         startX: number,
@@ -798,6 +636,155 @@ export class GameEngine {
 
         this.tileBufferDirty = true;
     }
+
+    // -----
+    // Memory Management
+    // -----
+
+    /**
+     * Obtains a TypedArray view into WASM memory.
+     */
+    public getView(
+        typeCode: -8 | 8 | 16 | 32 | -32 | 64 | -64,
+        size: number,
+        offset: number = this.getScratchPtr(),
+    ): ArrayBufferView {
+        const buffer = this.memory.buffer;
+        switch (typeCode) {
+            case -8:
+                return new Uint8ClampedArray(buffer, offset, size);
+            case 8:
+                return new Uint8Array(buffer, offset, size);
+            case 16:
+                return new Uint16Array(buffer, offset, size);
+            case 32:
+                return new Uint32Array(buffer, offset, size);
+            case -32:
+                return new Float32Array(buffer, offset, size);
+            case 64:
+                return new BigUint64Array(buffer, offset, size);
+            case -64:
+                return new Float64Array(buffer, offset, size);
+            default:
+                throw new RangeError(
+                    `Unsupported memory type code: ${typeCode}`,
+                );
+        }
+    }
+
+    /** Internal property for a temporary access of the scratch view. Value 0 is the pointer, value 1 is the length, value 2 is the max capacity, value 3 is pointer to the GameState, and values 4-7 are custom properties (as WASM can only return 1 value, this provides 4 extra temporary "slots" to return things). */
+    private _tempScratchView: BigUint64Array | null = null;
+    /** Returns 8 values in the scratch buffer; (zero-indexed) value 0 is the pointer, value 1 is the length, value 2 is the max capacity, and values 3-7 are custom properties when necessary. */
+    public getScratchView() {
+        // Check if we need to (re)create the view
+        if (
+            this._tempScratchView === null ||
+            this._tempScratchView.buffer !== this.memory.buffer // old view due to memory growth
+        ) {
+            this._tempScratchView = new BigUint64Array(
+                this.memory.buffer,
+                this.LAYOUT_PTR,
+                8,
+            );
+        }
+        return this._tempScratchView;
+    }
+
+    /**
+     * Returns the scratch buffer's location in memory (used for passing strings, commands, and data between JS and WASM).
+     */
+    public getScratchPtr() {
+        return Number(this.getScratchView()[0]);
+    }
+
+    /**
+     * Returns the scratch buffer's current length of data (not capacity).
+     */
+    public getScratchLen() {
+        return Number(this.getScratchView()[1]);
+    }
+
+    /**
+     * Sets the scratch buffer's current length of data (not capacity).
+     */
+    public setScratchLen(length: number) {
+        this.getScratchView()[1] = BigInt(length);
+    }
+
+    /**
+     * Returns the scratch buffer's max capacity.
+     */
+    public getScratchCapacity() {
+        return Number(this.getScratchView()[2]);
+    }
+
+    /**
+     * Determines the properties of the scratch buffer (6 u64 constants from Zig converted to Number). Returns a number if ID of property is provided (0-4) and number[] of all 5 properties if not.
+     */
+    public getScratchProperties(
+        index?: 0 | 1 | 2 | 3,
+    ): number | [number, number, number, number] {
+        let view = this.getScratchView();
+        return index
+            ? Number(view[index - 4])
+            : [
+                  Number(view[4]),
+                  Number(view[5]),
+                  Number(view[6]),
+                  Number(view[7]),
+              ];
+    }
+
+    /**
+     * Reads a UTF-8 string from WASM memory.
+     */
+    public readStr(
+        offset: number = this.getScratchPtr(),
+        len: number = this.getScratchLen(),
+    ): string {
+        const bytes = new Uint8Array(this.memory.buffer, offset, len);
+        return this.decoder.decode(bytes);
+    }
+
+    /**
+     * Writes a JavaScript string into WASM memory.
+     * Returns the number of bytes actually written.
+     */
+    public writeStr(
+        str: string,
+        offset: number = this.getScratchPtr(),
+    ): number {
+        let view = this.getScratchView();
+        if (str.length == 0) {
+            view[1] = 0n;
+            return 0;
+        }
+        const capacity = view[2];
+        if (str.length > capacity)
+            throw new RangeError("Scratch data too big to be sent to WASM.");
+        const bytes = new Uint8Array(this.memory.buffer, offset);
+        const result = this.encoder.encodeInto(str, bytes);
+        if (result.read > capacity)
+            throw new RangeError("Scratch data too big to be sent to WASM.");
+        view[1] = BigInt(result.read);
+        return result.written || 0;
+    }
+
+    public setSeed(seed: string) {
+        this.seed = seed;
+        Seeding.seedToMemory(
+            seed,
+            this.getView(
+                64,
+                8,
+                this.GAME_STATE_PTR + Wasm.game_state_offsets.seed,
+            ) as BigUint64Array,
+        );
+    }
+
+    // -----
+    // Resize/Rendering
+    // -----
 
     /** Updates the canvas CSS style. */
     private updateCanvasStyle() {
