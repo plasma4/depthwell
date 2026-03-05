@@ -18,14 +18,14 @@ pub fn isVector(comptime T: type) bool {
     };
 }
 
-/// Returns 0 if value (as scalar or vector) is less than threshold, and value otherwise.
+/// Returns 0 if @abs(value) (as scalar or vector) is less than threshold, and value otherwise.
 pub inline fn zero_if_less_than(value: anytype, threshold: anytype) @TypeOf(value) {
     const T = @TypeOf(value);
     if (comptime isVector(T)) {
         const Child = @typeInfo(T).vector.child;
         const threshold_vec: T = @splat(@as(Child, threshold));
         const zero_vec: T = @splat(@as(Child, 0));
-        const mask = value < threshold_vec;
+        const mask = @abs(value) < threshold_vec;
         return @select(Child, mask, zero_vec, value);
     } else {
         return if (value < threshold) 0 else value;
@@ -67,8 +67,8 @@ test "zero_if_less_than with scalars" {
 }
 
 test "zero_if_less_than with vectors" {
-    const Vec4 = @Vector(4, f32);
-    const input: Vec4 = .{ 1.0, 10.0, 2.0, 8.0 };
+    const Vec6 = @Vector(6, f32);
+    const input: Vec6 = .{ 1.0, 10.0, 2.0, 8.0, -4.0, -6.0 };
     const threshold: f32 = 5.0;
 
     const result = zero_if_less_than(input, threshold);
@@ -78,6 +78,8 @@ test "zero_if_less_than with vectors" {
     try std.testing.expectEqual(result[1], 10.0);
     try std.testing.expectEqual(result[2], 0.0);
     try std.testing.expectEqual(result[3], 8.0);
+    try std.testing.expectEqual(result[4], 0.0);
+    try std.testing.expectEqual(result[5], -6.0);
 }
 
 test "flush_denormal behavior" {

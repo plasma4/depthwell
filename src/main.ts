@@ -142,7 +142,7 @@ if (engine.isDebug) {
     );
 } else if (CONFIG.verbose) {
     console.log(
-        'Note: engine is in verbose mode, but Zig code is not in -Doptimize=Debug; either run just "zig build" or add that flag to enable additional testing features and safety checks.',
+        'Note: engine is in verbose mode, but Zig code is not in -Doptimize=Debug; run just "zig build" to enable additional testing features and safety checks if possible.',
     );
 }
 

@@ -69,7 +69,10 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) nor
 }
 
 test {
+    // I have to remember to add more as necessary...
+    _ = @import("internal/png/png_to_binary.zig");
+    _ = @import("color_rgba.zig");
+    _ = @import("seeding.zig");
+    _ = @import("math.zig");
     std.testing.refAllDecls(@This());
-    std.testing.refAllDecls(@import("color_rgba.zig"));
-    std.testing.refAllDecls(@import("seeding.zig"));
 }

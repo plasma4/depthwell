@@ -1,6 +1,8 @@
 const std = @import("std");
 const memory = @import("memory.zig");
 const Particle = memory.Particle;
+
+/// Custom circular buffer system for particles that doesn't require CPU-side culling.
 pub const ParticleSystem = struct {
     list: std.MultiArrayList(Particle) = .{},
     max_particles: usize,
@@ -27,12 +29,10 @@ pub const ParticleSystem = struct {
 
         var i: usize = 0;
         while (i < self.list.len) {
-            // Convert dt to whatever time unit your 'time' field uses (e.g., milliseconds)
             times[i] -= @intFromFloat(dt * 1000.0);
 
             if (times[i] <= 0) {
                 // Dead: Swap with the last element and pop.
-                // Do NOT increment `i` so we process the newly swapped particle next.
                 self.list.swapRemove(i);
             } else {
                 // Alive: Update physics
@@ -45,16 +45,18 @@ pub const ParticleSystem = struct {
         }
     }
 
-    /// Packs the SoA data into AoS format in the scratch buffer for WebGPU
-    pub fn exportToScratch(self: *ParticleSystem, layout: *memory.MemoryLayout) void {
+    /// Packs the SoA data into AoS format in the scratch buffer for WebGPU. Overwrites data in scratch buffer, disregarding pre-existing data.
+    pub fn exportToScratch(self: *ParticleSystem) void {
         const total_bytes = self.list.len * @sizeOf(Particle);
+        memory.scratch_reset();
 
-        if (total_bytes > layout.scratch_capacity) {
-            @panic("Particle buffer exceeds scratch capacity!");
+        if (total_bytes > memory.mem.scratch_capacity) {
+            @branchHint(.cold);
+            memory.scratch_alloc(total_bytes);
         }
 
         // Cast scratch memory to a slice of Particles
-        const dest_buffer = @as([*]Particle, @ptrFromInt(layout.scratch_ptr));
+        const dest_buffer = @as([*]Particle, @ptrFromInt(memory.mem.scratch_ptr));
 
         // Copy active particles
         for (0..self.list.len) |i| {

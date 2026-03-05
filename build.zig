@@ -64,11 +64,14 @@ pub fn build(b: *std.Build) void {
     const gen_step = b.step("enum", "Regenerate TypeScript enum definitions");
     gen_step.dependOn(&install_ts.step);
 
+    const test_filter = b.option([]const u8, "test-filter", "Skip tests that do not match filter");
+
     const lib_unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("zig/root.zig"),
-            .target = b.graph.host, // Run on local machine
+            .target = b.graph.host,
         }),
+        .filters = if (test_filter) |f| &.{f} else &.{},
     });
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);

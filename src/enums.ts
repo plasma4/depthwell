@@ -6,6 +6,11 @@
 export type Pointer = number;
 
 /**
+ * Represents a set of errors from Zig.
+ */
+export type ErrorSet = number;
+
+/**
  * Configuration options for the GameEngine.
  */
 export interface EngineOptions {
@@ -55,7 +60,7 @@ export const KeyBits = {
 
 export const game_state_offsets = {
     player_pos: 0,
-    player_d: 16,
+    player_velocity: 16,
     camera_pos: 32,
     camera_scale: 48,
     keys_pressed_mask: 56,

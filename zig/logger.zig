@@ -31,6 +31,121 @@ inline fn message(ptr: [*]const u8, len: usize, message_type: LogCategory) void 
     }
 }
 
+/// Quickly logs a message for testing. Use .log() with proper arguments for non-temporary logging.
+pub inline fn quick(args: anytype) void {
+    const ArgsType = @TypeOf(args);
+    const args_type_info = @typeInfo(ArgsType);
+
+    var stream = std.io.fixedBufferStream(&logging_buffer);
+    const writer = stream.writer();
+    writer.print("", .{}) catch {};
+
+    // Use an inline switch to handle types at compile-time
+    switch (args_type_info) {
+        .@"struct" => |struct_info| {
+            inline for (struct_info.fields, 0..) |field, i| {
+                if (i > 0) writer.print(" | ", .{}) catch {};
+                const val = @field(args, field.name);
+                writeValue(writer, val);
+            }
+        },
+        // Handle every other type as a single value
+        else => {
+            writeValue(writer, args);
+        },
+    }
+
+    const written = stream.pos;
+    message(&logging_buffer, written, .log);
+}
+
+/// Quickly warns a message for testing. Use .log() with proper arguments for non-temporary logging.
+pub inline fn quickWarn(args: anytype) void {
+    const ArgsType = @TypeOf(args);
+    const args_type_info = @typeInfo(ArgsType);
+
+    var stream = std.io.fixedBufferStream(&logging_buffer);
+    const writer = stream.writer();
+    writer.print("", .{}) catch {};
+
+    // Use an inline switch to handle types at compile-time
+    switch (args_type_info) {
+        .@"struct" => |struct_info| {
+            inline for (struct_info.fields, 0..) |field, i| {
+                if (i > 0) writer.print(" | ", .{}) catch {};
+                const val = @field(args, field.name);
+                writeValue(writer, val);
+            }
+        },
+        // Handle every other type as a single value
+        else => {
+            writeValue(writer, args);
+        },
+    }
+
+    const written = stream.pos;
+    message(&logging_buffer, written, .warn);
+}
+
+inline fn writeValue(writer: anytype, val: anytype) void {
+    const T = @TypeOf(val);
+    const type_info = @typeInfo(T);
+
+    switch (type_info) {
+        .pointer => |ptr_info| {
+            if (ptr_info.size == .slice and ptr_info.child == u8) {
+                writer.print("{s}", .{val}) catch {}; // for slices
+            } else if (ptr_info.size == .one) {
+                switch (@typeInfo(ptr_info.child)) {
+                    .array => |arr_info| if (arr_info.child == u8) {
+                        writer.print("{s}", .{val}) catch {};
+                    },
+                    else => {
+                        const addr = @intFromPtr(val);
+                        writer.print("{s}@{d}", .{ @typeName(T), addr }) catch {};
+                    },
+                }
+            } else {
+                // print type and base-10 address
+                const addr = @intFromPtr(val);
+                writer.print("{s}@{d}", .{ @typeName(T), addr }) catch {};
+            }
+        },
+        .int => |int_info| {
+            if (T == usize) {
+                // usize: treat as pointer-like, show decimal
+                writer.print("usize@{d}", .{val}) catch {};
+            } else if (int_info.signedness == .signed) {
+                writer.print("{d}", .{val}) catch {};
+            } else {
+                writer.print("{d}", .{val}) catch {};
+            }
+        },
+        .float => {
+            writer.print("{d}", .{val}) catch {};
+        },
+        .comptime_int, .comptime_float => {
+            writer.print("{d}", .{val}) catch {};
+        },
+        .bool => {
+            writer.print("{}", .{val}) catch {};
+        },
+        .@"enum" => {
+            writer.print("{s}", .{@tagName(val)}) catch {};
+        },
+        .optional => {
+            if (val) |unwrapped| {
+                writeValue(writer, unwrapped);
+            } else {
+                writer.print("null", .{}) catch {};
+            }
+        },
+        else => {
+            writer.print("{any}", .{val}) catch {};
+        },
+    }
+}
+
 /// Logs a message in JS.
 pub inline fn log(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
     write_log(src, fmt, args, .log);

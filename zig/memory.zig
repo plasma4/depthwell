@@ -93,7 +93,7 @@ pub const GameState = extern struct {
     /// Represents the player's position.
     player_pos: @Vector(2, i64) align(MAIN_ALIGN_BYTES) = .{ 0, 0 },
     /// Represents the player's current movement.
-    player_d: @Vector(2, i64) = .{ 0, 0 },
+    player_velocity: @Vector(2, f64) = .{ 0, 0 },
     /// Represents the camera's position.
     camera_pos: @Vector(2, f64) = .{ 0, 0 },
     /// Represents the camera's zoom scale.
@@ -247,13 +247,6 @@ pub fn run_scratch_allocation_tests() void {
 
     scratch_reset();
     logger.log(@src(), "Scratch tests passed! Final capacity: {d} bytes.", .{scratch_buffer.len});
-}
-
-/// Allocates space in scratch buffer and copies the provided data into it if necessary.
-pub inline fn scratch_copy(data: []const u8) ?[*]u8 {
-    const ptr = scratch_alloc(data.len) orelse return null;
-    @memcpy(ptr[0..data.len], data);
-    return ptr;
 }
 
 /// Resets the scratch offset for the next frame/operation. (JS doesn't call this and instead uses handy functions in engine.ts.)
