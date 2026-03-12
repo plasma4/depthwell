@@ -115,10 +115,12 @@ struct VertexOutput {
     @location(1) @interpolate(flat) sprite_id: u32,
     @location(2) @interpolate(flat) edge_flags: u32,
     @location(3) @interpolate(flat) light: f32,
-    @location(4) @interpolate(flat) seed: u32,
+    @location(4) @interpolate(flat) seed: u32, // these bits are used as efficently as possible
 
     // Local UV (0.0 to 1.0) across the surface of the specific tile.
     @location(5) local_uv: vec2f,
+    // Where on the chunk a tile is
+    @location(6) @interpolate(flat) tile_coords: vec2u,
 };
 
 @vertex
@@ -140,7 +142,7 @@ fn vs_main(
     let tile = unpack_tile(tiles[instance_index]);
 
     // Cull empty sprite
-    if (tile.sprite_id == 0u) {
+    if (tile.sprite_id == 0u && scene.wireframe_opacity == 0) {
         var out: VertexOutput;
         out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
         return out;
@@ -173,6 +175,7 @@ fn vs_main(
     out.uv = atlas_uv;
     out.sprite_id = tile.sprite_id;
     out.edge_flags = tile.edge_flags;
+    out.tile_coords = vec2u(tile_x, tile_y);
     out.light = tile.light;
     out.seed = tile.seed;
     out.local_uv = local_pos;
@@ -185,10 +188,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var tex_color = textureSample(sprite_atlas, pixel_sampler, in.uv);
     if (scene.wireframe_opacity > 0.0) {
         // render wireframe due to being at the edge?
-        let pixel_size_uv = 1.1 / (TILE_SIZE * scene.zoom);
-        if (in.local_uv.x < pixel_size_uv || in.local_uv.x > 1.0 - pixel_size_uv ||
-            in.local_uv.y < pixel_size_uv || in.local_uv.y > 1.0 - pixel_size_uv) {
+        let pixel_size = 2.001 / (TILE_SIZE * scene.zoom);
+        // Is this pixel on the edge of the CURRENT BLOCK?
+        let is_block_edge = in.local_uv.x < pixel_size || in.local_uv.x > (1.0 - pixel_size) || in.local_uv.y < pixel_size || in.local_uv.y > (1.0 - pixel_size);
+
+        if (is_block_edge) {
+            let x_mod = in.tile_coords.x & 15;
+            let y_mod = in.tile_coords.y & 15;
+            let is_chunk_edge_x = (x_mod == 0u && in.local_uv.x < pixel_size) || (x_mod == 15u && in.local_uv.x > (1.0 - pixel_size));
+            let is_chunk_edge_y = (y_mod == 0u && in.local_uv.y < pixel_size) || (y_mod == 15u && in.local_uv.y > (1.0 - pixel_size));
+            if (is_chunk_edge_x || is_chunk_edge_y) {
+                return vec4f(1.0, 1.0, 0.0, 1.0);
+            }
             return vec4f(1.0, 0.0, 0.0, scene.wireframe_opacity);
+            // fancy schmancy coloring looks cool but is harder to visually distinguish
+            // return vec4f(1.0, f32(x_mod) * 0.0625, f32(y_mod) * 0.0625, scene.wireframe_opacity);
         }
     }
 

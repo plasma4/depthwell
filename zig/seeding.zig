@@ -3,18 +3,14 @@
 const std = @import("std");
 const testing = std.testing;
 
-test "full usage example" {
+test "basic usage example" {
     const logger = @import("logger.zig");
 
-    // Start with an arbitrary seed
+    // Start with an arbitrary seed (NOTE: seedFromBytes fails for WASM builds)
     var world_seed: [8]u64 = undefined;
-    seedFromBytes("my-game-seed", &world_seed);
+    seed_from_bytes("my-game-seed", &world_seed);
 
-    // Derive a unique seed for a specific chunk
-    const chunk_seed = mixChunkSeed(world_seed, [_]u64{ 10, 20 });
-    var rng = Xoshiro512.init(chunk_seed);
-
-    // Log or use this float value
+    var rng: Xoshiro512 = .{ .state = world_seed };
     logger.quick(rng.float(f32));
     logger.quick(rng.next());
 }
@@ -22,21 +18,18 @@ test "full usage example" {
 /// A 512-bit seed state
 pub const LayerSeed = [8]u64;
 
-/// Absorbs new coordinate data into the 512-bit seed and forces a full avalanche.
-/// This guarantees that every depth layer irreversibly entangles the entropy.
-pub fn mix_512(base_seed: LayerSeed, x_val: u64, y_val: u64) LayerSeed {
-    var state = base_seed;
+/// Mixes a 512-bit seed with an x and y coordinate into a performant BLAKE3 sponge construction algorithm.
+pub fn mix_layer_blake3(parent_seed: LayerSeed, x: u64, y: u64, depth: u32) LayerSeed {
+    var hasher = std.crypto.hash.Blake3.init(.{});
 
-    state[0] +%= staffordMix13(x_val);
-    state[1] +%= staffordMix13(y_val);
+    hasher.update(std.mem.asBytes(&parent_seed));
+    hasher.update(std.mem.asBytes(&x));
+    hasher.update(std.mem.asBytes(&y));
+    hasher.update(std.mem.asBytes(&depth));
 
-    const old = state;
-    inline for (0..8) |i| {
-        // Use this mixing to ensure full cascading
-        state[i] = staffordMix13(old[i] ^ old[(i + 1) % 8]);
-    }
-
-    return state;
+    var out_bytes: [64]u8 = undefined;
+    hasher.final(&out_bytes);
+    return @bitCast(out_bytes);
 }
 
 /// Xoshiro512** (StarStar), public domain randomness function.
@@ -91,63 +84,14 @@ pub const Xoshiro512 = struct {
 };
 
 /// Stafford Mix 13 for 64-bit entropy avalanching.
-pub inline fn staffordMix13(z_in: u64) u64 {
+pub inline fn stafford_mix_13(z_in: u64) u64 {
     var z = (z_in ^ (z_in >> 30)) *% 0xbf58476d1ce4e5b9;
     z = (z ^ (z >> 27)) *% 0x94d049bb133111eb;
     return z ^ (z >> 31);
 }
 
-/// Takes a 512-bit starting seed and mixes it with a compile-time tuple or vector using staffordMix13.
-pub inline fn mixChunkSeed(base_seed: [8]u64, inputs: anytype) [8]u64 {
-    var state = base_seed;
-    const ArgsType = @TypeOf(inputs);
-    const info = @typeInfo(ArgsType);
-
-    switch (info) {
-        .@"struct" => |s| {
-            inline for (s.fields, 0..) |field, i| {
-                validateAndMix(&state, i % 8, field.type, inputs[i]);
-            }
-        },
-        .array => |a| {
-            inline for (0..a.len) |i| {
-                validateAndMix(&state, i % 8, a.child, inputs[i]);
-            }
-        },
-        else => @compileError("mixChunkSeed requires a struct, tuple, or array. Found: " ++ @typeName(ArgsType)),
-    }
-
-    // Final diffusion pass
-    const old = state;
-    inline for (0..8) |i| {
-        state[i] = staffordMix13(old[i] ^ old[(i + 1) % 8]);
-    }
-    return state;
-}
-
-/// Validates mixChunkSeed and performs the mixing
-inline fn validateAndMix(state: *[8]u64, idx: usize, comptime T: type, val: anytype) void {
-    if (T != u64 and T != i64) {
-        @compileError("mixChunkSeed only accepts u64 or i64. Found: " ++ @typeName(T));
-    }
-    const casted_val: u64 = if (T == i64) @bitCast(val) else val;
-    state[idx] +%= staffordMix13(casted_val);
-}
-
-/// Mixes chunk data using BLAKE3 (fast and WASM-friendly).
-pub fn mixLargeChunkData(world_seed: [8]u64, data: []const u8) [8]u64 {
-    var hasher = std.crypto.hash.Blake3.init(.{});
-    hasher.update(std.mem.asBytes(&world_seed));
-    hasher.update(data);
-
-    var out: [64]u8 = undefined;
-    hasher.final(&out);
-
-    return @bitCast(out);
-}
-
 /// BROKEN WHEN EXPORTING, DO NOT USE. JS LOGIC EXISTS ALREADY. Converts a base-26 [a-z]-only string to 64 bytes. Input should  too no larger than 100 characters.
-pub fn seedFromBase26(input: []const u8, out_seed: *[8]u64) void {
+pub fn seed_from_base26(input: []const u8, out_seed: *[8]u64) void {
     // Initialize out_seed to 0
     @memset(out_seed, 0);
 
@@ -182,34 +126,23 @@ pub fn seedFromBase26(input: []const u8, out_seed: *[8]u64) void {
 pub fn wasm_seed_from_string(str_ptr: [*]const u8, str_len: u64, output_ptr: *[8]u64) void {
     const temp: usize = @intCast(str_len);
     const input = str_ptr[0..temp];
-    seedFromBase26(input, output_ptr);
+    seed_from_base26(input, output_ptr);
 }
 
 test "bijective seeding uniqueness" {
     var s1: [8]u64 = undefined;
     var s2: [8]u64 = undefined;
     var s3: [8]u64 = undefined;
-    seedFromBase26("a", &s1);
-    seedFromBase26("b", &s2);
-    seedFromBase26("c", &s3);
+    seed_from_base26("a", &s1);
+    seed_from_base26("b", &s2);
+    seed_from_base26("c", &s3);
     try testing.expect(!std.mem.eql(u64, &s1, &s2));
     try testing.expect(!std.mem.eql(u64, &s2, &s3));
 }
 
-test "chunk mixing determinism" {
-    const world_seed = [_]u64{ 1, 2, 3, 4, 5, 6, 7, 8 };
-    const input_1 = [_]u64{ 10, 20, 1 };
-    const input_2 = [_]u64{ 10, 21, 1 };
-    const c1 = mixChunkSeed(world_seed, input_1);
-    const c2 = mixChunkSeed(world_seed, input_1);
-    const c3 = mixChunkSeed(world_seed, input_2);
-    try testing.expectEqualSlices(u64, &c1, &c2);
-    try testing.expect(!std.mem.eql(u64, &c2, &c3));
-}
-
 test "Xoshiro512** initialization/consistency" {
     var seed: [8]u64 = undefined;
-    seedFromBytes("test_seed", &seed);
+    seed_from_bytes("test_seed", &seed);
     var rng1 = Xoshiro512.init(seed);
     var rng2 = Xoshiro512.init(seed);
 
@@ -221,7 +154,7 @@ test "Xoshiro512** initialization/consistency" {
 
 test "branching check" {
     var seed: [8]u64 = undefined;
-    seedFromBytes("test", &seed);
+    seed_from_bytes("test", &seed);
     var rng_main = Xoshiro512.init(seed);
 
     // Make value copies of the state
@@ -241,7 +174,7 @@ test "branching check" {
 
 /// Hashes an arbitrary string into a 512-bit seed directly into the destination (using Sha512).
 /// Used for testing only; actual seeding uses a string with only [a-z] characters and using Sha512 would be too slow for practical use.
-fn seedFromBytes(input: []const u8, out_seed: *[8]u64) void {
+fn seed_from_bytes(input: []const u8, out_seed: *[8]u64) void {
     var hash_out: [64]u8 = undefined;
     std.crypto.hash.sha2.Sha512.hash(input, &hash_out, .{});
 
@@ -258,7 +191,7 @@ pub fn hash_2d(seed: u64, x: i32, y: i32) f32 {
     var h: u64 = seed;
     h ^= @as(u64, @bitCast(@as(i64, x))) *% 0x517cc1b727220a95;
     h ^= @as(u64, @bitCast(@as(i64, y))) *% 0x6c62272e07bb0142;
-    h = staffordMix13(h);
+    h = stafford_mix_13(h);
     return @as(f32, @floatFromInt(h >> 40)) / 16777216.0; // 24 bits → [0, 1)
 }
 

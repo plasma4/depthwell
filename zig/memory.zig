@@ -135,7 +135,7 @@ pub const GameState = struct {
     last_grid_min_by: u32 = 0,
     last_active_chunk_x: u64 = 0,
     last_active_chunk_y: u64 = 0,
-    current_depth: i64 = 0,
+    current_depth: u32 = 3,
     /// Represents the keys that were pressed THIS FRAME. (On the next frame, this will be reset to 0.)
     ///
     /// Example:

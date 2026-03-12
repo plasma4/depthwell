@@ -117,7 +117,7 @@ pub const World = struct {
     pub fn push_layer(self: *World, target_x: u32, target_y: u32, parent_id: u20) void {
         const current_seed = self.path.get_current_seed();
         // Mix the coordinates of the block we are zooming into to create the new universe seed
-        const new_seed = seeding.mix_512(current_seed, target_x, target_y);
+        const new_seed = seeding.mix_layer_blake3(current_seed, target_x, target_y, memory.game.current_depth);
 
         self.path.stack.append(self.alloc, .{
             .parent_block_id = parent_id,
@@ -132,7 +132,7 @@ pub const World = struct {
 
     /// Zooms OUT to the parent layer.
     pub fn pop_layer(self: *World) void {
-        if (self.path.stack.items.len > 0) {
+        if (memory.game.current_depth > 0) {
             const last = self.path.stack.pop();
             // Restore the player's position in the parent world
             memory.game.active_chunk[0] = @intCast(last.x);
@@ -149,13 +149,11 @@ pub const World = struct {
 
         const chunk = self.alloc.create(Chunk) catch @panic("chunk alloc failed");
 
+        // Depth is the number of layers currently on the stack. This value starts at 3.
+        const current_depth = memory.game.current_depth;
         // Generate chunk seed directly from the current layer seed and chunk coordinates
         const layer_seed = self.path.get_current_seed();
-        const chunk_seed = seeding.mix_512(layer_seed, cx, cy);
-
-        // depth is the number of layers currently on the stack.
-        // You start at Depth 3, and World.init pushed 3 layers, this is 3.
-        const current_depth: u32 = @intCast(self.path.stack.items.len);
+        const chunk_seed = seeding.mix_layer_blake3(layer_seed, cx, cy, current_depth);
 
         // Call generate_chunk with the 5 required arguments
         generate_chunk(chunk, chunk_seed, cx, cy, current_depth);
@@ -178,7 +176,7 @@ pub const World = struct {
         while (i < self.path.stack.items.len) : (i += 1) {
             const prev_seed = if (i == 0) self.path.root_seed else self.path.stack.items[i - 1].seed;
             const node = &self.path.stack.items[i];
-            node.seed = seeding.mix_512(prev_seed, node.x, node.y);
+            node.seed = seeding.mix_coordinate(prev_seed, node.x, node.y);
         }
     }
 };

@@ -21,7 +21,6 @@ pub fn init() void {
 
     world_state = World.init(memory.allocator, memory.game.seed);
     const game = &memory.game;
-    game.current_depth = 3;
     game.active_chunk = .{ 0, 0 };
     game.player_pos = .{ 0, 0 };
     game.camera_pos = .{ 0, 0 };
@@ -38,10 +37,10 @@ pub fn prepare_visible_chunks() void {
     const half_w: i32 = @intFromFloat((SCREEN_WIDTH_HALF / CHUNK_SIZE_FLOAT) / game.camera_scale);
     const half_h: i32 = @intFromFloat((SCREEN_HEIGHT_HALF / CHUNK_SIZE_FLOAT) / game.camera_scale);
 
-    const min_cx: i32 = @divFloor(cam_bx - half_w, CHUNK_SIZE);
-    const min_cy: i32 = @divFloor(cam_by - half_h, CHUNK_SIZE);
-    const max_cx: i32 = @divFloor(cam_bx + half_w, CHUNK_SIZE);
-    const max_cy: i32 = @divFloor(cam_by + half_h, CHUNK_SIZE);
+    const min_cx: i32 = @divFloor(cam_bx - half_w, CHUNK_SIZE) - 1;
+    const min_cy: i32 = @divFloor(cam_by - half_h, CHUNK_SIZE) - 1;
+    const max_cx: i32 = @divFloor(cam_bx + half_w, CHUNK_SIZE) + 1;
+    const max_cy: i32 = @divFloor(cam_by + half_h, CHUNK_SIZE) + 1;
 
     const cw: u32 = @intCast(max_cx - min_cx + 1);
     const ch: u32 = @intCast(max_cy - min_cy + 1);

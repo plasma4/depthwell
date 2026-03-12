@@ -10,7 +10,7 @@ if (!isSecureContext) {
 
 if (!navigator.gpu) {
     alert(
-        "WebGPU is not supported by your browser; try installing a more modern one.",
+        "WebGPU is not supported by your browser; try playing this on an alternate or more modern browser.",
     );
 }
 
