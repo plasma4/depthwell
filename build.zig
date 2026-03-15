@@ -40,39 +40,12 @@ pub fn build(b: *std.Build) void {
         "main.wasm",
     );
     b.getInstallStep().dependOn(&install_wasm.step); // install
-    var is_enum_requested = false;
     if (gen_enums) {
-        is_enum_requested = checkFilesChanged(b, &[_][]const u8{ "zig/root.zig", "zig/types.zig" });
-    }
-
-    if (is_enum_requested) {
-        const gen_tool = b.addExecutable(.{
-            .name = "generate_types",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("zig/generate_types.zig"),
-                .target = b.graph.host,
-                .optimize = .Debug,
-            }),
-        });
-
-        const run_enums = b.addRunArtifact(gen_tool);
-        run_enums.has_side_effects = true;
-
-        const generated_enums = run_enums.captureStdOut();
-        const install_ts = b.addInstallFileWithDir(
-            generated_enums,
-            .{ .custom = "src/" },
-            "enums.ts",
-        );
-
-        // Add to the main install step
-        b.getInstallStep().dependOn(&install_ts.step);
-    } else {
-        // nothing happened
+        generateEnums(b, &[_][]const u8{ "zig/root.zig", "zig/types.zig" });
     }
 }
 
-fn checkFilesChanged(b: *std.Build, paths: []const []const u8) bool {
+fn generateEnums(b: *std.Build, paths: []const []const u8) void {
     const cache_root = b.cache_root.path orelse ".";
     const cache_path = b.pathJoin(&.{ cache_root, "content_hashes.txt" });
 
@@ -80,17 +53,17 @@ fn checkFilesChanged(b: *std.Build, paths: []const []const u8) bool {
 
     for (paths) |path| {
         const content = std.fs.cwd().readFileAlloc(b.allocator, path, 1024 * 1024 * 50) catch |err| {
-            std.debug.print("Warning: Could not read {s}: {any}\n", .{ path, err });
-            return true;
+            std.debug.print("Warning: skipping enum generation due to being unable to read {s}: {any}\n", .{ path, err });
+            return;
         };
         defer b.allocator.free(content);
         hasher.update(content);
     }
 
-    var current_hash: [32]u8 = undefined;
-    hasher.final(&current_hash);
+    var current_hash_binary: [32]u8 = undefined;
+    hasher.final(&current_hash_binary);
 
-    const current_hash_hex: []const u8 = &std.fmt.bytesToHex(current_hash, .lower);
+    const current_hash_hex: []const u8 = &std.fmt.bytesToHex(current_hash_binary, .lower);
     const old_hash_hex: []const u8 = std.fs.cwd().readFileAlloc(b.allocator, cache_path, 64) catch |err| blk: {
         if (err != error.FileNotFound) {
             std.debug.print("Warning: Could not read cache: {any}\n", .{err});
@@ -102,10 +75,36 @@ fn checkFilesChanged(b: *std.Build, paths: []const []const u8) bool {
 
     // compare array to slice and update content hash if necessary
     if (std.mem.eql(u8, current_hash_hex, old_hash_hex)) {
-        return false;
+        return;
     }
 
-    std.fs.cwd().makePath(cache_root) catch {};
-    std.fs.cwd().writeFile(.{ .sub_path = cache_path, .data = current_hash_hex }) catch {};
-    return true;
+    // now actually update
+    const gen_tool = b.addExecutable(.{
+        .name = "generate_types",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig/generate_types.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+
+    const run_enums = b.addRunArtifact(gen_tool);
+    run_enums.has_side_effects = true;
+
+    // Pass the strings as arguments to the executable
+    run_enums.addArgs(&.{
+        cache_root,
+        cache_path,
+        current_hash_hex,
+    });
+
+    const generated_enums = run_enums.captureStdOut();
+    const install_ts = b.addInstallFileWithDir(
+        generated_enums,
+        .{ .custom = "src/" },
+        "enums.ts",
+    );
+
+    // Add to the main install step
+    b.getInstallStep().dependOn(&install_ts.step);
 }

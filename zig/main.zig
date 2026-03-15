@@ -80,7 +80,7 @@ pub fn prepare_visible_chunks() void {
             } else {
                 for (0..SIDE) |ly| {
                     const row_start = (gy * SIDE + ly) * wb + gx * SIDE;
-                    @memset(out[row_start .. row_start + SIDE], memory.AIR_BLOCK);
+                    @memset(out[row_start .. row_start + SIDE], world.AIR_BLOCK);
                 }
             }
         }

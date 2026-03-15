@@ -20,7 +20,7 @@ pub const ParticleSystem = struct {
     }
 
     /// Updates physics and culls dead particles using Swap-and-Pop
-    pub fn updateAndCull(self: *ParticleSystem, dt: f32) void {
+    pub fn update_and_cull(self: *ParticleSystem, dt: f32) void {
         const times = self.list.items(.time);
         const positions = self.list.items(.position);
         const d_positions = self.list.items(.d_position);
@@ -46,7 +46,7 @@ pub const ParticleSystem = struct {
     }
 
     /// Packs the SoA data into AoS format in the scratch buffer for WebGPU. Overwrites data in scratch buffer, disregarding pre-existing data.
-    pub fn exportToScratch(self: *ParticleSystem) void {
+    pub fn export_to_scratch(self: *ParticleSystem) void {
         const total_bytes = self.list.len * @sizeOf(Particle);
         memory.scratch_reset();
 

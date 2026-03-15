@@ -1,6 +1,7 @@
+//! Defines the architecture of the fractal world, which is a Segmented Fractal Coordinate System that uses a quad-cache for coordinates and corresponding seeds.
+
 const std = @import("std");
 const memory = @import("memory.zig");
-const world = @import("world.zig");
 const seeding = @import("seeding.zig");
 
 const Chunk = memory.Chunk;
@@ -10,15 +11,21 @@ const SIDE = memory.SIDE;
 pub const WORLD_CHUNKS = 4096;
 const PLAYER_EDGE: i64 = 4096 * memory.SIDE;
 
-// Sprite IDs
-pub const SPRITE_VOID = 0;
-pub const SPRITE_PLAYER = 1;
-pub const SPRITE_EDGESTONE = 2;
-pub const SPRITE_STONE = 3;
-pub const SPRITE_GREENSTONE = 4;
-pub const SPRITE_BLOODSTONE = 5;
-pub const SPRITE_TORCH = 6;
-pub const SPRITE_MUSHROOM = 7;
+/// Sprite IDs, based on src/main.png
+pub const Sprite = enum(u20) {
+    none = 0,
+    player = 1,
+    edgestone = 2,
+    stone = 3,
+    greenstone = 4,
+    bluestone = 5,
+    bloodstone = 6,
+    torch = 9,
+    mushroom = 7,
+};
+
+/// Default block with type Sprite.none
+pub const AIR_BLOCK: Block = .{ .id = Sprite.none, .seed = 0, .light = 255, .hp = 0, .flags = 0 };
 
 /// Represents a single zoom-level transition.
 pub const PathNode = extern struct {
@@ -54,30 +61,33 @@ pub const CoordinatePath = struct {
     }
 };
 
-pub inline fn generate_initial_block(rng: *seeding.Xoshiro512, x: u64, y: u64) u20 {
+/// Generates an initial block for seeding (TODO replace with fancy perlin and other functions)
+pub inline fn generate_initial_block(rng: *seeding.Xoshiro512, x: u64, y: u64) Sprite {
     _ = x;
     _ = y;
     const entropy = rng.next();
 
-    var block_id: u20 = SPRITE_VOID;
+    var block_id = Sprite.none;
     if (entropy < odds_num(0.6)) {
-        block_id = SPRITE_VOID;
+        block_id = Sprite.none;
     } else if (entropy < odds_num(0.95)) {
-        block_id = SPRITE_STONE;
-    } else if (entropy < odds_num(0.98)) {
-        block_id = SPRITE_GREENSTONE;
+        block_id = Sprite.stone;
+    } else if (entropy < odds_num(0.97)) {
+        block_id = Sprite.greenstone;
+    } else if (entropy < odds_num(0.99)) {
+        block_id = Sprite.bluestone;
     } else {
-        block_id = SPRITE_BLOODSTONE;
+        block_id = Sprite.bloodstone;
     }
     return block_id;
 }
 
-/// Defines the size of a Macro-Region in chunks.
+/// Defines the size of a macro-region in chunks.
 /// Shift 8 = 256 chunks (4,096 blocks). A 2x2 cache covers a 512x512 chunk area.
 const MACRO_SHIFT: u6 = 8;
 const MACRO_MASK: u64 = (1 << MACRO_SHIFT) - 1;
 
-/// A 2x2 grid of 512-bit Macro-Seeds.
+/// A 2x2 grid of 512-bit macro-seeds.
 pub const QuadCache = struct {
     origin_x: u64,
     origin_y: u64,
@@ -91,7 +101,7 @@ pub const QuadCache = struct {
         const my = cy >> MACRO_SHIFT;
 
         // Unsigned wrapping subtraction. If mx < origin_x, it wraps to maxInt(u64),
-        // which is > 1, immediately triggering a rebuild. This elegantly handles negative coordinate wrapping.
+        // which is > 1, immediately triggering a rebuild.
         const rel_x = mx -% self.origin_x;
         const rel_y = my -% self.origin_y;
 
@@ -144,9 +154,9 @@ pub const World = struct {
             },
         };
 
-        // Initial spawn: 3 layers deep at the center of the root sectors (8, 8)
+        // Initial spawn: 3 layers deep
         for (0..3) |_| {
-            self.push_layer(8, 8, SPRITE_VOID);
+            self.push_layer(0, 0, Sprite.none);
         }
         return self;
     }
@@ -191,13 +201,13 @@ pub const World = struct {
     }
 
     /// Zooms IN to a specific block.
-    pub fn push_layer(self: *World, target_x: u32, target_y: u32, parent_id: u20) void {
+    pub fn push_layer(self: *World, target_x: u32, target_y: u32, parent_id: Sprite) void {
         const current_seed = self.path.get_current_seed();
         // Mix the coordinates of the block we are zooming into to create the new universe seed
         const new_seed = seeding.mix_macro_seed_blake3(current_seed, target_x, target_y);
 
         self.path.stack.append(self.alloc, .{
-            .parent_block_id = parent_id,
+            .parent_block_id = @intFromEnum(parent_id),
             .x = target_x,
             .y = target_y,
             .seed = new_seed,
@@ -238,30 +248,26 @@ pub inline fn odds_num(probability: comptime_float) u64 {
 pub fn generate_chunk(chunk: *Chunk, chunk_seed: seeding.LayerSeed, abs_cx: u64, abs_cy: u64, depth: u32) void {
     var rng = seeding.Xoshiro512.init(chunk_seed);
 
-    // Calculate limits in blocks
-    const world_limit_chunks: u64 = if (depth < SIDE) (@as(u64, 1) << @intCast(depth * memory.SIDE_LOG2)) else std.math.maxInt(u64);
-    const max_block: u64 = (world_limit_chunks * SIDE) - 1;
+    // Calculate limits safely. depth 15 is the hard limit for u64 block math (1 << 60 * 16 = 2^64).
+    const has_boundary = depth < 15;
+    const world_limit_blocks: u64 = if (has_boundary) (@as(u64, 1) << @intCast(depth * 4)) else 0;
+    const max_block: u64 = if (has_boundary) (world_limit_blocks - 1) else 0;
 
     for (0..SIDE) |ly| {
         for (0..SIDE) |lx| {
             const idx = ly * SIDE + lx;
-
-            // Absolute block coordinates in the current world layer
             const gbx = (abs_cx * SIDE) + lx;
             const gby = (abs_cy * SIDE) + ly;
 
-            // Edge of the world is stone
-            if (gbx == 0 or gbx == max_block or gby == 0 or gby == max_block) {
-                chunk.blocks[idx] = .{
-                    .id = world.SPRITE_EDGESTONE,
-                    .seed = 0,
-                    .light = 255,
-                    .hp = 0,
-                    .flags = 0,
-                };
-                continue;
+            // Hard boundary check for finite worlds
+            if (has_boundary) {
+                if (gbx == 0 or gbx == max_block or gby == 0 or gby == max_block) {
+                    chunk.blocks[idx] = .{ .id = Sprite.edgestone, .seed = 0, .light = 255, .hp = 0, .flags = 0 };
+                    continue;
+                }
             }
 
+            // Normal generation logic...
             const block_id = generate_initial_block(&rng, gbx, gby);
             const entropy = rng.next();
             chunk.blocks[idx] = .{
@@ -279,13 +285,13 @@ pub fn generate_chunk(chunk: *Chunk, chunk_seed: seeding.LayerSeed, abs_cx: u64,
             const idx = ly * SIDE + lx;
             const block_below = chunk.blocks[(ly + 1) * SIDE + lx].id;
 
-            if (chunk.blocks[idx].id == SPRITE_VOID and
-                block_below != SPRITE_VOID and block_below != SPRITE_TORCH and block_below != SPRITE_MUSHROOM)
+            if (chunk.blocks[idx].id == Sprite.none and
+                block_below != Sprite.none and block_below != Sprite.torch and block_below != Sprite.mushroom)
             {
                 const entropy = rng.next();
                 if (entropy < odds_num(0.3)) {
                     chunk.blocks[idx] = .{
-                        .id = SPRITE_MUSHROOM,
+                        .id = Sprite.mushroom,
                         .seed = @truncate(entropy >> 20),
                         .light = 255,
                         .hp = 1,

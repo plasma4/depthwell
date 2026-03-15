@@ -12,6 +12,7 @@ import SPRITE_SHEET_URL from "./assets/main.png?url";
 /** The texture format for WebGPU. */
 const TEXTURE_FORMAT: GPUTextureFormat = "rgba16float";
 
+/** Creates a new GameEngine, sets up WebGPU shaders, and calls init() from Zig. */
 export async function create(
     canvas?: HTMLCanvasElement | string,
     options?: Zig.EngineOptions,

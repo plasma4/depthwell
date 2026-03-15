@@ -42,7 +42,6 @@ pub export fn scratch_alloc(len: usize) ?[*]u8 {
 }
 
 // Debug/testing logic
-
 const in_debug_mode = builtin.mode == .Debug;
 
 /// Returns if code is in debugging mode for JS to see.
@@ -92,7 +91,6 @@ test "main_tests" {
         @import("color_rgba.zig"),
         @import("seeding.zig"),
         @import("logger.zig"),
-        @import("math.zig"),
     };
 
     inline for (modules) |mod| {

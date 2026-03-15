@@ -1,12 +1,11 @@
 const std = @import("std");
 const memory = @import("memory.zig");
-const math = @import("math.zig");
 const logger = @import("logger.zig");
 const KeyBits = @import("types.zig").KeyBits;
 const main = @import("main.zig");
 const world = @import("world.zig");
 const SIDE = memory.SIDE;
-const SIDE_SQUARED = memory.SIDE_SQUARED;
+const SIDE_SQ = memory.SIDE_SQ;
 const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
 
 const v2i64 = @Vector(2, i64);
@@ -142,8 +141,8 @@ fn is_colliding(px: i64, py: i64, w: *world.World) bool {
 
     for (corners) |c| {
         // Convert subpixel units to Block coordinates (1 block = 256 units)
-        const bx: i32 = @intCast(@divFloor(c[0], SIDE_SQUARED));
-        const by: i32 = @intCast(@divFloor(c[1], SIDE_SQUARED));
+        const bx: i32 = @intCast(@divFloor(c[0], SIDE_SQ));
+        const by: i32 = @intCast(@divFloor(c[1], SIDE_SQ));
 
         // Get the relative chunk (-1, 0, or 1 relative to player center)
         const cx = @divFloor(bx, SIDE);

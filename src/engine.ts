@@ -3,7 +3,7 @@
 import * as Zig from "./enums";
 import * as Seeding from "./seeding";
 import * as InputManager from "./inputManager";
-import * as EngineMaker from "./engineConfig";
+import * as EngineMaker from "./engineMaker";
 
 const SIDE = 16;
 
@@ -137,7 +137,7 @@ export class GameEngine {
         this.inputState = InputManager.initInput();
     }
 
-    /** Creates a new GameEngine, setting up WebGPU shaders and calling init() from Zig. */
+    /** Creates a new GameEngine instance (code in engineConfig.ts). */
     public static async create(
         canvas?: HTMLCanvasElement | string,
         options?: Zig.EngineOptions,

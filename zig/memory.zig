@@ -1,24 +1,29 @@
-//! Manages memory for WASM.
+//! Contains main data-types that bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
 const std = @import("std");
 const builtin = @import("builtin");
 const logger = @import("logger.zig");
 const ColorRGBA = @import("color_rgba.zig").ColorRGBA;
+const World = @import("world.zig");
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
 
+/// Represents log2(SIDE).
 pub const SIDE_LOG2: comptime_int = 4;
+/// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
 pub const SIDE: comptime_int = 16;
+/// The main number (as a float) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
 pub const SIDE_FLOAT: comptime_float = 16.0;
-pub const SIDE_FLOAT_SQ: comptime_float = SIDE_FLOAT * SIDE_FLOAT;
+/// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
 pub const SIDE_SQ: comptime_int = SIDE * SIDE;
+/// A float representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
+pub const SIDE_FLOAT_SQ: comptime_float = SIDE_FLOAT * SIDE_FLOAT;
+/// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
 pub const SUBPIXELS_IN_CHUNK: comptime_int = SIDE * SIDE * SIDE;
-
-pub const AIR_BLOCK: Block = .{ .id = @import("world.zig").SPRITE_VOID, .seed = 0, .light = 255, .hp = 0, .flags = 0 };
 
 // Only create an actual GPA instance if building for native.
 var gpa = if (!is_wasm and !builtin.is_test)
     std.heap.GeneralPurposeAllocator(.{}){}
 else
-    struct {}{};
+    struct {};
 
 pub const allocator = if (is_wasm)
     std.heap.wasm_allocator
@@ -41,9 +46,6 @@ pub const MAIN_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
 /// Derived from `MAIN_ALIGN_BYTES`.
 pub const GPU_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
 
-/// Simple enum allowing for easy representation of x/y
-pub const Axis = enum { x, y };
-
 /// Struct for various memory sizes.
 pub const MemorySizes = struct {
     /// Represents 1,024 bytes.
@@ -59,7 +61,7 @@ pub const MemorySizes = struct {
 /// A single block within a chunk.
 pub const Block = packed struct {
     /// Internal sprite ID
-    id: u20,
+    id: World.Sprite,
     /// The brightness of the tile
     light: u8,
     /// Mining progression for animation
@@ -114,6 +116,7 @@ const Particle = packed struct {
 pub var scratch_buffer: []align(MAIN_ALIGN_BYTES) u8 = &[_]u8{};
 var is_dynamic_scratch: bool = false;
 
+/// Non-pointer data (short known length) representing part of the game state.
 /// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
 /// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the --Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
 pub const GameState = extern struct {
@@ -296,6 +299,39 @@ pub fn run_scratch_allocation_tests() void {
 /// Resets the scratch offset for the next frame/operation. (JS doesn't call this and instead uses handy functions in engine.ts.)
 pub inline fn scratch_reset() void {
     mem.scratch_len = 0;
+}
+
+/// Sets a scratch property (uses generic compile-time inferences).
+pub inline fn set_scratch_prop(index: usize, value: anytype) void {
+    const T = @TypeOf(value);
+    switch (@typeInfo(T)) {
+        .float => mem.scratch_properties[index] = @bitCast(@as(f64, @floatCast(value))),
+        .int => |int_info| {
+            if (int_info.signedness == .signed) {
+                mem.scratch_properties[index] = @bitCast(@as(i64, @intCast(value)));
+            } else {
+                mem.scratch_properties[index] = @as(u64, @intCast(value));
+            }
+        },
+        .comptime_float => mem.scratch_properties[index] = @bitCast(@as(f64, value)),
+        .comptime_int => mem.scratch_properties[index] = @bitCast(@as(i64, value)),
+        else => @compileError("Unsupported type for set_scratch_prop: " ++ @typeName(T)),
+    }
+}
+
+/// Gets a scratch property as u64.
+pub inline fn get_scratch_prop(index: usize) u64 {
+    return mem.scratch_properties[index];
+}
+
+/// Gets a scratch property as i64.
+pub inline fn get_scratch_prop_signed(index: usize) i64 {
+    return @bitCast(mem.scratch_properties[index]);
+}
+
+/// Gets a scratch property as f64.
+pub inline fn get_scratch_prop_float(index: usize) f64 {
+    return @bitCast(mem.scratch_properties[index]);
 }
 
 const _ = {

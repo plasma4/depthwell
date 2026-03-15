@@ -1,6 +1,6 @@
 import * as Zig from "./enums";
 
-/** Represents the state of inputs for external use. */
+/** Represents the state of inputs for external use. Priority values allow for "last-win" inputting for inputs that oppose each other (such as left/right or zoom in/out). */
 export interface InputState {
     heldMask: number;
     keysHeld: number;
@@ -38,7 +38,7 @@ const keyMap: Record<string, number> = {
 
 /** Creates an initial InputState and creates event listeners. Should be updated with with updateInput() in a logic loop. */
 export function initInput(): InputState {
-    // Track individual key counts to handle multiple keys mapping to one bit, such as W and KeyUp simulataneously.
+    /** Tracks individual key counts to handle multiple keys mapping to one bit, such as W and KeyUp simulataneously. */
     const keyCounts: Record<number, number> = {};
 
     const state: InputState = {
@@ -121,14 +121,14 @@ export function initInput(): InputState {
 
 /** Updates the state object. */
 export function updateInput(state: InputState) {
-    const dirMask =
+    const directionMask =
         Zig.KeyBits.up |
         Zig.KeyBits.down |
         Zig.KeyBits.left |
         Zig.KeyBits.right;
 
     // Start with non-directional bits (digits)
-    let cleanHeld = state.heldMask & ~dirMask;
+    let cleanHeld = state.heldMask & ~directionMask;
 
     // Add only the priority directions
     cleanHeld |= state.horizontalPriority;

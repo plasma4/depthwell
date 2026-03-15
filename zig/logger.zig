@@ -1,4 +1,4 @@
-//! Contains dedicated code for JS logging.
+//! Contains dedicated code for logging. Use quickWarn to quickly create warnings when testing (using ZLS or native zig test command), and quick to quickly log values to JS. Use the write()/clear() function to write to the 4 corners of the screen with the canvas for JS.
 const std = @import("std");
 const builtin = @import("builtin");
 const memory = @import("memory.zig");
@@ -87,18 +87,17 @@ pub inline fn test_logs(skipError: bool) void {
         logger.log(@src(), "Skipping error test.", .{});
     }
     logger.log(@src(), "This log should be multiple lines.\n-----\nTesting logging with a truncated string below:", .{});
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    // var list: std.ArrayList(u8) = .empty;
-    // defer list.deinit(allocator);
-    // try list.append(allocator, 'H');
-    // try list.append(allocator, 'e');
-    // try list.append(allocator, 'l');
-    // try list.append(allocator, 'l');
-    // try list.append(allocator, 'o');
-    // try list.appendSlice(allocator, " World!");
+    const allocator = memory.allocator;
+    var list: std.ArrayList(u8) = .empty;
+    defer list.deinit(allocator);
+    list.append(allocator, 'H') catch {};
+    list.append(allocator, 'e') catch {};
+    list.append(allocator, 'l') catch {};
+    list.append(allocator, 'l') catch {};
+    list.append(allocator, 'o') catch {};
+    list.appendSlice(allocator, " World!") catch {};
 
-    logger.quick(.{ "{h}Quick log with header and 3 values", 1.0, "string", 3 });
+    logger.quick(.{ "{h}Quick log with header and 3 values", 12.34, "string", list });
     // Test truncation by taking a test hex string and making it longer than 4,096 bytes
     const long_data = ("0123456789abcdef" ** (5000 / 16 + 1))[0..5000];
     logger.log(@src(), "{s}", .{long_data});
@@ -131,15 +130,54 @@ fn write_value(writer: anytype, val: anytype) void {
     const T = @TypeOf(val);
     const type_info = @typeInfo(T);
 
+    if (comptime isString(T)) {
+        writer.print("{s}", .{val}) catch {};
+        return;
+    }
+
     switch (type_info) {
-        // ... (keep pointer, int, float, bool, enum, optional as they are)
+        .int, .comptime_int => {
+            writer.print("{d}", .{val}) catch {};
+        },
+        .float, .comptime_float => {
+            // At least 1 decimal place
+            if (val == @floor(val)) {
+                writer.print("{d}.0", .{val}) catch {};
+            } else {
+                writer.print("{d}", .{val}) catch {};
+            }
+        },
+        .bool => {
+            writer.print("{}", .{val}) catch {};
+        },
+        .enum_literal, .@"enum" => {
+            writer.print("{s}", .{@tagName(val)}) catch {};
+        },
+        .optional => {
+            if (val) |v| {
+                write_value(writer, v);
+            } else {
+                writer.writeAll("null") catch {};
+            }
+        },
+        .pointer => |ptr_info| {
+            if (ptr_info.size == .one) {
+                // De-reference single pointers and try again
+                write_value(writer, val.*);
+            } else {
+                // Opaque pointers or many-item pointers
+                writer.print("{*}", .{val}) catch {};
+            }
+        },
         .@"struct" => {
-            if (@hasField(T, "items") and isString(@TypeOf(val.items))) {
+            // Check for ArrayList or similar 'items' containers
+            if (@hasField(T, "items") and comptime isString(@TypeOf(val.items))) {
                 writer.print("{s}", .{val.items}) catch {};
             } else {
                 writer.print("{any}", .{val}) catch {};
             }
         },
+        // Fallback for everything else (unions, error sets, etc)
         else => {
             writer.print("{any}", .{val}) catch {};
         },
@@ -165,7 +203,7 @@ fn format_args(writer: anytype, args: anytype) !void {
     const type_info = @typeInfo(ArgsType);
 
     if (type_info != .@"struct") {
-        try write_value(writer, args);
+        write_value(writer, args);
         return;
     }
 

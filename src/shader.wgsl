@@ -3,7 +3,7 @@
  */
 // Sprite sheet constants. Sprites are saved as a .png, and each asset is 16x16.
 // Current sprites: [void, player, void stone, stone, greenstone, bloodstone, torch, mushrooms, mushrooms 2]
-const TILES_PER_ROW: f32 = 13.0;
+const TILES_PER_ROW: f32 = 15.0;
 const TILES_PER_COLUMN: f32 = 1.0;
 
 
@@ -185,55 +185,79 @@ fn calculate_atlas_uv(id: u32, local_pos: vec2f) -> vec2f {
     );
 }
 
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var tex_color = textureSample(sprite_atlas, pixel_sampler, in.uv);
+    
+    var is_wireframe = false;
+    var wire_color = vec4f(0.0);
+
     if (scene.wireframe_opacity > 0.0) {
         // render wireframe due to being at the edge?
-        let pixel_size = 2.001 / (TILE_SIZE * scene.zoom);
+        let pixel_size = 1.001 / (TILE_SIZE * scene.zoom);
         // Is this pixel on the edge of the CURRENT BLOCK?
         let is_block_edge = in.local_uv.x < pixel_size || in.local_uv.x > (1.0 - pixel_size) || in.local_uv.y < pixel_size || in.local_uv.y > (1.0 - pixel_size);
 
         if (is_block_edge) {
+            is_wireframe = true;
             let x_mod = in.tile_coords.x & 15;
             let y_mod = in.tile_coords.y & 15;
             let is_chunk_edge_x = (x_mod == 0u && in.local_uv.x < pixel_size) || (x_mod == 15u && in.local_uv.x > (1.0 - pixel_size));
             let is_chunk_edge_y = (y_mod == 0u && in.local_uv.y < pixel_size) || (y_mod == 15u && in.local_uv.y > (1.0 - pixel_size));
-            if (in.sprite_id == 1) {
-                return vec4f(1.0, 0.5, 0.0, 1.0);
+            
+            if (in.sprite_id == 1u) {
+                wire_color = vec4f(1.0, 0.5, 0.0, 1.0);
+            } else if (is_chunk_edge_x || is_chunk_edge_y) {
+                wire_color = vec4f(1.0, 1.0, 0.0, 1.0);
+            } else {
+                // fancy schmancy coloring looks cool but is harder to visually distinguish
+                wire_color = vec4f(1.0, f32(x_mod) * 0.0625, f32(y_mod) * 0.0625, scene.wireframe_opacity);
+                // wire_color = vec4f(1.0, 0.0, 0.0, scene.wireframe_opacity);
             }
-            if (is_chunk_edge_x || is_chunk_edge_y) {
-                return vec4f(1.0, 1.0, 0.0, 1.0);
-            }
-            return vec4f(1.0, 0.0, 0.0, scene.wireframe_opacity);
-            // fancy schmancy coloring looks cool but is harder to visually distinguish
-            // return vec4f(1.0, f32(x_mod) * 0.0625, f32(y_mod) * 0.0625, scene.wireframe_opacity);
         }
     }
 
     // too transparent?
-    if (tex_color.a < 0.01) { discard; }
+    if (tex_color.a < 0.01 && !is_wireframe) { discard; }
 
-    // convert to oklab and nudge values with seed
-    var lab = linear_srgb_to_oklab(tex_color.rgb);
+    var final_rgb = vec3f(0.0);
+    var final_a = 0.0;
 
-    // we use 10 out of the 24 seed bits here
-    let l_nudge = f32(extractBits(in.seed, 0u, 4u)) / 15.0;
-    let a_nudge = f32(extractBits(in.seed, 4u, 3u)) / 7.0;
-    let b_nudge = f32(extractBits(in.seed, 7u, 3u)) / 7.0;
+    if (tex_color.a >= 0.01) {
+        // convert to oklab and nudge values with seed
+        var lab = linear_srgb_to_oklab(tex_color.rgb);
+        // we use 10 out of the 24 seed bits here
+        let l_nudge = f32(extractBits(in.seed, 0u, 4u)) / 15.0;
+        let a_nudge = f32(extractBits(in.seed, 4u, 3u)) / 7.0;
+        let b_nudge = f32(extractBits(in.seed, 7u, 3u)) / 7.0;
 
-    // shift lightness
-    lab.x += (l_nudge - 0.5) * 0.1;
-    // shift green-red and blue-yellow
-    lab.y += (a_nudge - 0.5) * 0.02;
-    lab.z += (b_nudge - 0.5) * 0.02;
+        // shift lightness
+        lab.x += (l_nudge - 0.5) * 0.1;
+        // shift green-red and blue-yellow
+        lab.y += (a_nudge - 0.5) * 0.02;
+        lab.z += (b_nudge - 0.5) * 0.02;
 
-    // add the edge darkening and base light value, with the function using bits 10-16
-    let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
-    lab.x *= (1.0 - darkening) * in.light;
+        // add the edge darkening and base light value, with the function using bits 10-16
+        let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
+        lab.x *= (1.0 - darkening) * in.light;
 
-    let final_rgb = oklab_to_linear_srgb(lab);
-    return vec4f(final_rgb, tex_color.a * scene.chunk_opacity);
+        final_rgb = oklab_to_linear_srgb(lab);
+        final_a = tex_color.a * scene.chunk_opacity;
+    }
+
+    if (is_wireframe) {
+        // Correctly mix the wireframe dynamically depending on whether the block exists below it.
+        if (final_a > 0.0) {
+            final_rgb = mix(final_rgb, wire_color.rgb, wire_color.a);
+            final_a = max(final_a, wire_color.a);
+        } else {
+            final_rgb = wire_color.rgb;
+            final_a = wire_color.a;
+        }
+    }
+
+    return vec4f(final_rgb, final_a);
 }
 
 // Calculates edge darkening procedurally based on flags calculated in Zig.

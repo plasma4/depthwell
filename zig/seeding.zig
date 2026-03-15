@@ -6,11 +6,12 @@ const testing = std.testing;
 test "basic usage example" {
     const logger = @import("logger.zig");
 
-    // Start with an arbitrary seed (NOTE: seedFromBytes fails for WASM builds)
+    // Start with an arbitrary seed (NOTE: seed_from_bytes fails for WASM builds)
     var world_seed: [8]u64 = undefined;
     seed_from_bytes("my-game-seed", &world_seed);
 
     var rng: Xoshiro512 = .{ .state = world_seed };
+    // change to quickWarn to see result from ZLS
     logger.quick(rng.float(f32));
     logger.quick(rng.next());
 }
@@ -27,11 +28,11 @@ inline fn split_mix_64(state: *u64) u64 {
     return z ^ (z >> 31);
 }
 
-/// BLAKE3 mix specifically for Macro-Regions. Includes domain separation
+/// BLAKE3 mix specifically for macro-regions. Includes domain separation
 /// to prevent collisions with the Layer Depth hashes.
+/// TODO verify necessity and reliability of domain separation and inject depth
 pub fn mix_macro_seed_blake3(layer_seed: LayerSeed, mx: u64, my: u64) LayerSeed {
     var hasher = std.crypto.hash.Blake3.init(.{});
-    hasher.update("MACRO_REGION_DOMAIN"); // Domain separation
     hasher.update(std.mem.asBytes(&layer_seed));
     hasher.update(std.mem.asBytes(&mx));
     hasher.update(std.mem.asBytes(&my));
@@ -41,8 +42,8 @@ pub fn mix_macro_seed_blake3(layer_seed: LayerSeed, mx: u64, my: u64) LayerSeed 
     return @bitCast(out_bytes);
 }
 
-/// Bijective mixer for generating Chunk seeds from a Macro-Seed.
-/// cx and cy are local chunk offsets within a Macro-Region.
+/// Bijective mixer for generating Chunk seeds from a macro-seed.
+/// cx and cy are local chunk offsets within a macro-region.
 pub fn mix_chunk_seed(macro_seed: LayerSeed, local_cx: u64, local_cy: u64) LayerSeed {
     // Combine local coordinates into a single 64-bit state.
     const combined_offset = (local_cy << 32) | local_cx;
@@ -276,5 +277,5 @@ test "noise basic sanity" {
     try testing.expect(a > 0.0 and a < 1.0);
 
     const f = fbm_2d(42, 10, 20, 3);
-    try testing.expect(f >= 0.0 and f < 1.0);
+    try testing.expect(f > 0.0 and f < 1.0);
 }

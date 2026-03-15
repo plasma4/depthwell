@@ -159,6 +159,14 @@ pub fn main() !void {
         }
     }
 
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+    const cache_root = args[1];
+    const cache_path = args[2];
+    const current_hash_hex = args[3];
+    std.fs.cwd().makePath(cache_root) catch {};
+    std.fs.cwd().writeFile(.{ .sub_path = cache_path, .data = current_hash_hex }) catch {};
+
     const stdout = std.fs.File.stdout();
     try stdout.writeAll(bw.written());
 }
