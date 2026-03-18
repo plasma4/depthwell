@@ -65,7 +65,7 @@ inline fn write_log(comptime src: std.builtin.SourceLocation, fmt: []const u8, a
     const prefix_fmt = if (memory.is_wasm) "{s}:{d}:{d}] " else "[zig/{s}:{d}:{d}] ";
     const prefix = std.fmt.comptimePrint(prefix_fmt, .{ src.file, src.line, src.column });
     const final_fmt = prefix ++ fmt;
-    const cutoff = "... [rest of log cut off]";
+    const cutoff = "... [remaining log truncated]";
 
     if (std.fmt.bufPrint(&logging_buffer, final_fmt, args)) |res| {
         message(res.ptr, res.len, log_category);
@@ -292,12 +292,12 @@ fn attempt_write(stream: anytype, args: anytype) bool {
     return true;
 }
 
-/// Fallback for massive logs: prevents crash, writes partial data.
+/// Fallback for large logs by truncating.
 fn writer_truncate(stream: anytype, args: anytype) bool {
     const writer = stream.writer();
     // Use a small local limit to prevent infinite recursion if format_args fails
     format_args(writer, args) catch {};
-    _ = writer.writeAll("... [truncated]\n") catch {};
+    _ = writer.writeAll("... [remaining log truncated]\n") catch {};
     return true;
 }
 

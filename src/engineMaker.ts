@@ -116,10 +116,10 @@ export async function create(
                     const bytes = new Uint8Array(memory.buffer, ptr, len);
                     const str = new TextDecoder().decode(bytes);
 
-                    const el = document.getElementById(`text${id + 1}`);
-                    if (el) {
-                        el.textContent = str;
-                    }
+                    const el = document.getElementById(
+                        `text${id + 1}`,
+                    ) as HTMLSpanElement;
+                    el.textContent = str;
                 },
             },
         },

@@ -108,13 +108,13 @@ pub const ColorRGBA = extern union {
         return @intCast((@as(u16, max_c - min_c) * 255) / @as(u16, max_c));
     }
 
-    /// Value (HSV) — simply the maximum channel.
+    /// Value (simply the maximum channel).
     pub fn max_channel(self: ColorRGBA) u8 {
         const rgb = @as(@Vector(4, u8), self.v) * @Vector(4, u8){ 1, 1, 1, 0 };
         return @reduce(.Max, rgb);
     }
 
-    /// Lightness (HSL) — average of max and min channels.
+    /// Lightness (average of min and max channels).
     pub fn lightness(self: ColorRGBA) u8 {
         const max_c = @max(self.channels.r, @max(self.channels.g, self.channels.b));
         const min_c = @min(self.channels.r, @min(self.channels.g, self.channels.b));

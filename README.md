@@ -2,7 +2,8 @@
 
 Depthwell is a procedurally generated fractal mining incremental roguelite. How deep can you mine? Minimal demo releasing August 1st.
 
-Current `README` is **incomplete**; more details will be added in the future. Read the code for specific implementation details.
+> [!WARNING]
+> The current `README` is **incomplete**, as this game is still in the pre-demo stage; more details will be added in the future and details might currently be out of date. Read the code for specific implementation details.
 
 ### Building
 
@@ -18,34 +19,237 @@ cls && zig build --Dgen-enums
 
 (Replace `cls` with `printf "\033c"` for Bash, or create a custom command in `$PATH`.)
 
-### Architecture explanation
+### Architecture goal and details
 
-Chunk seeding is based on a `u4` "scale path", eliminating "repetitive" outcomes (since the entirety the "coordinate" is used for seeding a chunk). Individual blocks are seeded with the scale path plus the depth, X, and Y mixed in.
+Game is created using Zig and WebGPU, and meant to be web-first. A final product that uses Mach Engine for native building is planned, but _web will always be free and recieve updates_. The internal viewport is 480x270 and scaled up in WebGPU automatically. Functions are exported from `root.zig`.
 
-There are chunks of 16x16 blocks. Each block has 16x16 pixels. There are 16x16 places that a player can be within each pixel, meaning that X and Y of the player should be from 0-4096, but stored as i64 to allow for modulos. (See `zig/memory.zig`.)
+By using `Xoshiro512**` and a max seeding of 100 `a-z` characters, the game can generate over `10^140` possible maps, with each map containing a very large depth limit that allows for near-infinite exploration.
 
-The player can only zoom in DEEPER (hence the game's name)! This creates a neat optimization: the world can store FOUR copies of a "scale path" at any given time. The game should _error_ if the player enters a location that is not stored in a cached scale stack. To provide additional explanation:
+### Fractal Architecture & Coordinate Systems
 
-The player is always stored as a position from 0-4095, plus an "edge array" (or "active suffix"). (See `zig/player.zig`.)
+The architecture _implementation goal_ for Depthwell is to use a **Segmented Fractal Coordinate System** to manage near-infinite depth and modification persistence across scales without performance degrading. The philosophy is that the player, of course, shouldn't have to worry about any of this complexity.
 
-Consider an example where the maximum active suffix length is 4. Now, the "raw coordinate" of the player might be `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 0, 0])`, plus an X/Y from 0-4096 representing where the player is in that chunk. However, the array part of this coordinate is stored as:
+#### Coordinates (`SpatialCoord`)
 
-- Cached X: `[9, 15]`, `[10, 0]` (9, 15 "carried" to 10, 0).
-- Cached Y: `[3, 0]`, `[2, 15]` (same carrying here, notice how the carrying is to the left because `[0, 0, 0, 0]` is "below average" while `[15, 15, 15, 15]` is "above average").
-- Player X: false (boolean representing which cached value to use) and `[15, 15, 15, 15]`
-- Player Y: boolean representing `[3, 0]`, and `[0, 0, 0, 0]`.
+- 1 Pixel = 16x16 Subpixels (0-255)
+- 1 Block = 16x16 Pixels
+- 1 Chunk = 16x16 Blocks = 4096x4096 Subpixels
 
-When zooming in, a new value is pushed to either the cache (if `current_depth` is at least 16) or it's just added to each of the quad-caches if not. The game starts out with the `current_depth` at 3. World/quad-cache implementation in `zig/world.zig`.
+Things like the camera and the player concern themselves with subpixels. Seeding of specific blocks in chunks and modifications concern themselves with blocks. Asking something "where" it is involves just chunks (see later).
 
-### Known issues
+Now, bear with me here, because you might be freaking out over the fact a code segment just appeared. But don't fret, I'll break things down! This code is just those interested in specific details on what these numbers _could_ mean, because there are a lot of definitions
 
-- Individual block seeding algorithm mismatch with architecture explanation
-- Architecture of quad-cache not fully implemented properly
+Basically, all the code below is doing is declaring some constants in Zig, a fancy low-level language. The `SPAN` variable just represents 16; you don't really need to understand the code blocks so feel free to skip these. From `zig/memory.zig`:
+
+```zig
+/// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
+pub const SPAN: comptime_int = 16;
+// ...
+/// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
+pub const SPAN_SQ: comptime_int = SPAN * SPAN;
+ // ...
+/// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
+pub const SUBPIXELS_IN_CHUNK: comptime_int = SPAN * SPAN * SPAN;
+```
+
+Now, we move on to locations (which also has some technical jargon, but I'll explain). Locations (named `SpatialCoord` internally) are addressed via a struct like this:
+
+- **Prefix stack:** A memoized history of seeds and path-nibbles.
+- **Active suffix (`u64`):** The spatial chunk-coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[16]u4` (16 numbers between 0-15) squashed together.
+- **Quadrant ID (`u2`):** Identifies which of the 4 static $2^{64}$-wide quad-caches we are "using" for the prefix stack. Each Quad-Cache (QC) references a specific Prefix Stack.
+
+You can imagine the actual location of something as a "smashed together version" of the specific QC's prefix stack. Consider an example where the maximum active suffix length is 4 (so like `[4]u4`.
+
+To clarify, `[4]u4` isn't some weird Zig magic, it just represents an array (or collection) of 4 values, between 0-15. So, `[1, 2, 3, 4]` would be an example of the `[4]u4` type.
+
+Now, the "raw coordinate" of a player (or anything we want to represent, such as the chunk an NPC is in or what chunk has been modified) might be `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, plus an X/Y from 0-4096 representing where the player is in that chunk.
+
+This would actually internally look like this for the caches (the quad-cache is the same for all players/NPCs/enemies):
+
+- Cached X: `[9, 15]`, `[10, 0]` (9, 15 "carried" to 10, 0. Don't worry about carrying details too much for now, I'll explain more later!)
+- Cached Y: `[2, 15]`, `[3, 0]` (Same carrying here, notice how the carrying is to the left because `[0, 0, 1, 1]` is "below average" while `[15, 15, 15, 15]` is "above average", basically a midpoint split/weight-adjusted quad-partitioning)
+- However, since there are 4 combinations of cached X and Y, there are 4 quad-caches (so combinations $X_1Y_1,X_2Y_1,X_1Y_2,X_2Y_2$ for example), with the seed cached for each combination. Each quad-cache "points" to a combination, so the possible X/Y values aren't stored twice.
+
+And here would be the `SpatialCoord` (again, assuming that the active suffix is only 4 `u4`s long, when it normally would be 16):
+
+- Coordinate X: `[9, 15, 15, 15]`
+- Coordinate Y: `[3, 0, 1, 1]`
+- Quadrant ID stuff:
+    - Coordinate X: false (boolean representing which cached value to use), for `[2, 5]`.
+    - Coordinate Y: true, for`[3, 0]`.
+    - What happens is you encode this into a value between 0-3 (hence the `u2`), so if we consider false = 0 and true = 1, then the result is $C_x+2\times C_y$ (where $C_x$ is coordinate X and $C_y$ is coordinate Y). Then you can "extract" the boolean out from this quadrant ID with bitwise logic, for example.
+
+(Note that "expanding" these cached values is invalid in practice. These are really just one larger number, but it helps to separate these out when explaining. Also, this glosses over some details when the prefix stack is empty because the active suffix can successfully represent all possible places the player is in.)
+
+When zooming in, a new value is pushed to either the cache (if `current_depth` is at least 16) or it's just added to each of the quad-caches if not. The game starts out with the `current_depth` at 3. You can find specific implementations of the quad-cache in `zig/world.zig`.
+
+This explanation also highlights why we need 4 quad-caches: the player might be juuuust in between two possible prefix stacks for X, and two other possible ones for Y. Of course, the player doesn't have to worry about all this when enjoying the game. But sometimes it's nice to peek behind the curtain!
+
+#### Depths
+
+There's some details the previous explanation glossed over. You might have wondered how exactly that cached X and Y is stored, and it's internally stored as a `u64`, plus a length (`usize`, although the meaning of this isn't important) representing how large the cache is. And going back to this example: `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, the `current_depth` would equal 6. If the active suffix was a `u16` instead of a `u64`, this would technically be stored as this:
+
+**In the `QuadCache`:**
+
+- \[$9\times 16^1+15\times 16^0$, $10\times 16^1+0\times 16^0$] for the two cached X values.
+    - Implied length of $2$, as $6-4=2$. The active suffix can represent 4 `u4` values, so this is where the number comes from.
+- \[$2\times 16^1+15\times 16^0$, $3\times 16^1+0\times 16^0$] for cached Y, same implied length
+- Recall again these are stored as 4 combinations, each with their own 512-bit seed. However, the cache also stores the "type" of block it represents. So each of the 4 caches would store what block type $X_aY_b$ corresponded to (the block type is a `u20`, see below for exact implementation).
+
+**In the specific `SpatialCoord`:**
+
+- Coordinate X: $9\times 16^3+15\times 16^2+15\times 16^1+15\times 16^0$.
+- Coordinate Y: $3\times 16^3+0\times 16^2+1\times 16^1+1\times 16^0$.
+- Quadrant ID:
+    - Coordinate X: `false` (boolean representing which cached value to use), representing the **first** QC.
+    - Coordinate Y: `true`, representing the **second** QC.
+    - What happens is you encode this into a value between 0-3 (hence the `u2`), so if we consider false = 0 and true = 1, then the result is $C_x+2\times C_y$ (where $C_x$ is coordinate X and $C_y$ is coordinate Y). Then you can "extract" the boolean out from this quadrant ID with bitwise logic, for example.
+
+#### Deterministic seeding
+
+**This part requires an understanding of PRNGs and is not strictly important for architecture understanding.** To support $O(1)$ seeding generation per chunk at arbitrary depths, Zig maintains four `LayerSeed` constants (512-bit), for each quadrant of the QC. This then gets mixed along with the suffixes with Blake3.
+
+- **Static Bounds:** Again, the QCs are fixed at depth-change. Moving across the $2^{64}$ boundary simply toggles the `u2` quadrant ID.
+- **Mixing:** `ChunkSeed`, to oversimplify details slightly, is `BLAKE3(seed of QC determined by the quadrant ID, SuffixX, SuffixY)`. The seed of the QC itself is determined by the _initial_ seed from the string provided (specific bijective logic is rather complex, but see `src/seeding.ts` for details) and is mixed with the 4 bits of data (a "nibble") that is added to the prefix stack of each quadrant (after depth 16, where the prefix data becomes non-empty).
+- **Block RNG:** Blocks within a chunk are generated sequentially via `Xoshiro512**`. Since the order in which the blocks are generated is the same every time (go through X-axis values 0-15, then increment Y, etc.), the PRNG state is shifted multiple times yet produces deterministic outcomes, which makes things simpler.
+
+#### Storing modifications
+
+Of course, to have a fractal _mining_ game, you must store if the player has modified any chunks. This boils down to asking one crucial question for each chunk:
+
+> Does this chunk have any blocks where the player replaced a block of type A with type B?
+
+(Air/empty space is itself a type of block.) If the answer is YES (even if it's just one block in a chunk with 256 blocks), then a `ModificationStore` is created for that chunk (with a `SpatialCoord` to specify where these modifications are).
+
+But wait, what is a block? Here is `zig/memory.zig`:
+
+```zig
+/// A single block within a chunk.
+pub const Block = packed struct {
+    /// Internal sprite ID
+    id: World.Sprite,
+    /// The brightness of the tile
+    light: u8,
+    /// Mining progression for animation
+    hp: u4,
+
+    /// Per-block seed for procedural variation in the shader
+    seed: u24,
+    /// Edge flags: which neighbors are air (for edge-darkening and culling).
+    /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
+    flags: u8,
+};
+```
+
+Well, now you know what a block contains.
+
+The most complex part of Depthwell's architecture is ensuring that a hole mined at Depth 0 results in an empty 16x16 chunk at Depth 1, Depth 2, and so on. This is handled through a **Lineage Check** during chunk generation.
+
+When the generator builds a chunk at Depth $D$:
+
+1.  **Check Ancestry:** It iterates backward through the **Prefix Stack** from $D-1$ down to $0$. ($D$ is larger the "more zoomed in" the game is, and starts at $3$. It represents how many `u4`s need to represent where a chunk is, to put it another way.)
+2.  **Lookup Override:** For each ancestor level, it asks the `ModificationStore`: _"Was the portal block at this specific path modified?"_ The `ModificationStore` finds all modifications that _could_ impact this block, starting with higher depths (and it eventually asks a whole quad-cache, which stores a base type). Note that the `ModificationStore` deals with whole chunks (256 `Block`s) at a time.
+3.  **Inherit Background:**
+    - If a parent block was **Mined (Air)**, the entire current dimension inherits "Air" as its ambient background. The generator skips procedural logic and returns a void chunk in $O(1)$.
+    - If a parent block was replaced with a different material (such as gold), the current dimension inherits the "Gold Biome" as a background paralax.
+4.  **Local Overlay:** Finally, it applies any specific block-level changes made at the _current_ depth.
+
+This ensures that a single mined block at Depth 0 correctly propagates through 10,000 layers without duplicating data or crashing the memory heap.
+
+#### Prefix stack and memoization
+
+You might be wondering how the engine handles a path 10,000 layers deep without lag. The secret is in the **Memoized Hash Stack**. In `zig/world.zig`, the Prefix Path is stored using a dynamic array (specifically a `std.ArrayList(PathNode)`).
+
+```zig
+pub const PathNode = extern struct {
+    /// The 512-bit seed resulting from the BLAKE3 hash of this level.
+    seed: [8]u64 align(16),
+    /// The material ID of the block zoomed into (for Inheritance).
+    parent_block_id: u32,
+    /// Absolute coordinates of the portal block in the parent layer/cache.
+    global_bx: u64,
+    global_by: u64,
+};
+```
+
+**Why memoize and make the logic so complicated?**
+
+By storing the resulting 512-bit `seed` at every level of the stack, the game no longer needs to spent resources reseeding a bunch for each chunk (while the math working out, as if every chunk was, resulting in high-quality seeding!). We never re-calculate the entire 10,000-level BLAKE3 chain as an extra benefit; we only hash the _newest_ nibble added to the stack.
+
+#### Storing chunks with a simulation distance
+
+The "simulation distance" is 16x16 chunks, so a dedicated buffer of 256 chunks exists at all times (stored in the `SimBuffer`. This buffer basically follows the player around with an algorithm that maximizes the distance (the "above/below" average algorithm), and if something is in it such as an enemy then it is simulated. It's possible, however, that the camera might move super fast, so the game will first try to find if a chunk is in the array of simulation chunks, and if it isn't then it will dynamically generate it temporarily (which is fairly fast).
+
+Groups of objects such as enemies are stored in a `MultiArrayList` with properties and a `CoordinatePath` for ideal performance.
+
+#### Procedural generation
+
+TODO
+
+#### Particles
+
+Particles are small squares with rotation and opacity and organized using a circular buffer`ParticleSystem`. There can be a maximum of 1,000 particles at a time (the circular buffer is greedy and "loops around" to always erase the oldest particles). All data is passed to WebGPU and WebGPU automatically culls expired particles (as this part isn't super performance-strict).
+
+```zig
+/// Tightly packed data for a square particle to be sent to WebGPU.
+const Particle = packed struct {
+    /// Current position.
+    position: @Vector(2, f32),
+
+    /// Velocity vector for position.
+    d_position: @Vector(2, f32),
+
+    /// The color of the particle (alpha is multiplied by time and how long the particle lasts)
+    color: ColorRGBA,
+    /// The size of the particle
+    size: u24,
+    /// The opacity of the particle (based on time start/end)
+    opacity: u8,
+
+    /// The rotation of the particle (radians)
+    rotation: f32,
+    /// The rate of change of rotation of the particle (radians)
+    d_rotation: f32,
+
+    /// The time at which the particle spawned in from (performance.now()).
+    time_start: f64,
+
+    /// The time at which the particle will disappear.
+    time_end: f64,
+};
+```
+
+#### Persistence
+
+Depthwell stores modifications with some fancy lineage inheritance:
+
+- **The Store:** Modifications are stored per-layer.
+- **The Check:** When generating a chunk at Depth $D$, the engine traverses the `PrefixStack` (0 to $D-1$). It checks if the block taken at each ancestor depth was modified through the `ModificationStore` (eventually bubbling up to checking the type of a quad-cache if no changes were found). (Small detail: portals can only spawn in places where the player is able to enter the new depth, not stuck within a block!)
+- **The Result:** If an ancestor block was mined (Air), the current dimension inherits "Air" as its ambient background. This allows a single mined block at Depth 0 to persist correctly across 10,000 layers without duplicating data.
+
+#### Zoom logic
+
+Entering a portal shifts a bunch of data around, particularly the cache and all coordinate paths:
+
+- The current world-path is pushed to the `PrefixStack`.
+- The active suffix/quadrant ID are reset (or "rebased"), in a way that allows for the _maximum_ amount of coverable distance before a crash. Specifically, the logic explaining the coordinate system mentioned the concepts of "below average" and "above average", and the idea is basically to zoom in in such a way that the quad-cache maximizes the amount of distance you'd have to travel in any quadrant before you're out-of-bounds. In practice, this is in the _quintillions of chunks_ precisely because of this rebasing implementation.
+- The `ActiveSimBuffer` is purged, and the world re-generates at Depth $D+1$ using the inherited properties of the portal block.
+
+#### Memory transfer
+
+The interface between the TypeScript engine and the Zig core is managed via a shared **Memory Layout** buffer:
+
+- **The Scratch Buffer:** A gigantic, dynamically expanding shared heap used for high-bandwidth data transfers (mainly, drawing chunks).
+- **Scratch Properties:** An array with 20 properties of 64-bit integers and floats used for metadata (also used for drawing chunks).
+
+### Why WGSL (WebGPU)?
+
+WGSL offers several advantages (despite lower browser support). It lets you explicitly manage browser memory and is more efficient. Also, it's the more "modern" standard, so might as well.
 
 ### Next steps
 
-- Fix issues
+- Fully implement the architecture outlined above
 - Implement `ModificationStore` and changing chunk cache to ask as well as a basic mousedown-to-change-block-type implementation
-- Fully verify depth stack functionality, making sure it works past 16 values, making sure seeding works with it (goal is to not touch again after graphics/water work)
+- Fully verify depth stack functionality, making sure it works past 16 values, making sure seeding works with it (goal is to not need to touch again after graphics/water work)
 - Implement basic physics collision and movement, as well as nice features like coyote time
 - Test perlin noise and pixel erosion

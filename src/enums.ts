@@ -91,7 +91,7 @@ export const game_state_offsets = {
     last_active_chunk_x: 136,
     last_active_chunk_y: 144,
     current_depth: 152,
-    keys_pressed_mask: 156,
-    keys_held_mask: 160,
+    keys_pressed_mask: 160,
+    keys_held_mask: 164,
     seed: 176,
 } as const;

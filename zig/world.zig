@@ -24,7 +24,7 @@ pub const Sprite = enum(u20) {
     mushroom = 7,
 };
 
-/// Default block with type Sprite.none
+/// Empty block of id Sprite.none
 pub const AIR_BLOCK: Block = .{ .id = Sprite.none, .seed = 0, .light = 255, .hp = 0, .flags = 0 };
 
 /// Represents a single zoom-level transition.
@@ -62,9 +62,10 @@ pub const CoordinatePath = struct {
 };
 
 /// Generates an initial block for seeding (TODO replace with fancy perlin and other functions)
-pub inline fn generate_initial_block(rng: *seeding.Xoshiro512, x: u64, y: u64) Sprite {
+pub inline fn generate_initial_block(rng: *seeding.Xoshiro512, x: u64, y: u64, depth: u64) Sprite {
     _ = x;
     _ = y;
+    _ = depth;
     const entropy = rng.next();
 
     var block_id = Sprite.none;
@@ -111,11 +112,11 @@ pub const QuadCache = struct {
             const new_rel_x = mx -% self.origin_x;
             const new_rel_y = my -% self.origin_y;
             const index = (new_rel_y * 2) + new_rel_x;
-            return seeding.mix_chunk_seed(self.seeds[@as(usize, @intCast(index))], cx & MACRO_MASK, cy & MACRO_MASK);
+            return seeding.mix_chunk_seed(self.seeds[@as(usize, @intCast(index))], cx & MACRO_MASK, cy & MACRO_MASK, memory.game.current_depth);
         }
 
         const index = (rel_y * 2) + rel_x;
-        return seeding.mix_chunk_seed(self.seeds[@as(usize, @intCast(index))], cx & MACRO_MASK, cy & MACRO_MASK);
+        return seeding.mix_chunk_seed(self.seeds[@as(usize, @intCast(index))], cx & MACRO_MASK, cy & MACRO_MASK, memory.game.current_depth);
     }
 
     /// Calculates the 4 Macro-Seeds covering the 2x2 grid originating at (mx, my).
@@ -200,7 +201,7 @@ pub const World = struct {
         return hasher.final();
     }
 
-    /// Zooms IN to a specific block.
+    /// Zooms IN to a specific block, increasing the depth and triggering reseeding and quad-cache updates.
     pub fn push_layer(self: *World, target_x: u32, target_y: u32, parent_id: Sprite) void {
         const current_seed = self.path.get_current_seed();
         // Mix the coordinates of the block we are zooming into to create the new universe seed
@@ -212,6 +213,7 @@ pub const World = struct {
             .y = target_y,
             .seed = new_seed,
         }) catch @panic("OOM on path push");
+        memory.game.current_depth += 1;
 
         // The world has changed. Old chunks are invalid.
         self.clear_caches();
@@ -245,7 +247,7 @@ pub inline fn odds_num(probability: comptime_float) u64 {
 }
 
 /// Generates a chunk using the specific sprite probabilities and mushroom rules.
-pub fn generate_chunk(chunk: *Chunk, chunk_seed: seeding.LayerSeed, abs_cx: u64, abs_cy: u64, depth: u32) void {
+pub fn generate_chunk(chunk: *Chunk, chunk_seed: seeding.LayerSeed, abs_cx: u64, abs_cy: u64, depth: u64) void {
     var rng = seeding.Xoshiro512.init(chunk_seed);
 
     // Calculate limits safely. depth 15 is the hard limit for u64 block math (1 << 60 * 16 = 2^64).
@@ -268,7 +270,7 @@ pub fn generate_chunk(chunk: *Chunk, chunk_seed: seeding.LayerSeed, abs_cx: u64,
             }
 
             // Normal generation logic...
-            const block_id = generate_initial_block(&rng, gbx, gby);
+            const block_id = generate_initial_block(&rng, gbx, gby, depth);
             const entropy = rng.next();
             chunk.blocks[idx] = .{
                 .id = block_id,
@@ -301,8 +303,6 @@ pub fn generate_chunk(chunk: *Chunk, chunk_seed: seeding.LayerSeed, abs_cx: u64,
             }
         }
     }
-
-    chunk.modified_mask = .{ 0, 0, 0, 0 };
 }
 
 // /// Convert screen pixels to a world block coordinate

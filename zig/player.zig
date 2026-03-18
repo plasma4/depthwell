@@ -25,9 +25,9 @@ const PLAYER_BASE_SPEED = 5;
 /// Half the size of the player's hitbox.
 const PLAYER_HITBOX_HALF = 96;
 
-/// Minimum camera zoom/scale allowed.
-const CAMERA_MIN_ZOOM = 0.1;
-/// Maximum camera zoom/scale allowed.
+/// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
+const CAMERA_MIN_ZOOM = 1.0 / 3.0;
+/// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
 const CAMERA_MAX_ZOOM = 1;
 
 /// The zoom in/out keys change the zoom multipler this fast per frame.

@@ -80,12 +80,22 @@ pub const Block = packed struct {
 /// 16x16 fixed grid of blocks.
 pub const Chunk = struct {
     blocks: [SPAN_SQ]Block,
-    /// 256 bits representing which blocks have been modified from the base procedural generation.
-    modified_mask: [4]u64,
+    // /// 256 bits representing which blocks have been modified from the base procedural generation.
+    // modified_mask: [4]u64,
 
     pub inline fn getIndex(x: u4, y: u4) u8 {
         return (@as(u8, y) << 4) | @as(u8, x);
     }
+};
+
+/// Represents a coordinate, relative to a quad-cache. Stores the "active suffix" (see README for definitions).
+pub const SpatialCoord = packed struct {
+    // Active suffix X
+    sx: u64,
+    // Active suffix Y
+    sy: u64,
+    /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE)
+    cid: u2,
 };
 
 /// Tightly packed data for a square particle to be sent to WebGPU.
@@ -108,7 +118,7 @@ const Particle = packed struct {
     /// The rate of change of rotation of the particle (radians)
     d_rotation: f32,
 
-    /// The time at which the particle spawned in from.
+    /// The time at which the particle spawned in from (performance.now()).
     time_start: f64,
 
     /// The time at which the particle will disappear.
@@ -147,7 +157,9 @@ pub const GameState = extern struct {
     last_grid_min_by: u32 = 0,
     last_active_chunk_x: u64 = 0,
     last_active_chunk_y: u64 = 0,
-    current_depth: u32 = 3,
+
+    /// Represents how many layers deep the player is (defaults to 3).
+    current_depth: u64 = 0,
     /// Represents the keys that were pressed THIS FRAME. (On the next frame, this will be reset to 0.)
     ///
     /// Example:

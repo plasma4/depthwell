@@ -5,6 +5,7 @@ const root = @import("root.zig");
 
 /// Maps primitive Zig types to TypeScript type names.
 fn zigTypeToTs(comptime T: type) []const u8 {
+    if (T == u64 or T == i64) return "bigint";
     switch (@typeInfo(T)) {
         .void => return "void",
         .bool => return "boolean",
@@ -25,9 +26,16 @@ fn zigTypeToTs(comptime T: type) []const u8 {
 /// the offset of that field in the provided `T`.
 pub fn GenerateOffsets(comptime T: type) type {
     const info = @typeInfo(T).@"struct";
+    inline for (info.fields) |field| {
+        if (field.type == usize) {
+            @compileError("Field '" ++ field.name ++ "' in struct '" ++ @typeName(T) ++
+                "' uses 'usize'. Use 'u32' or 'u64' for cross-platform consistency.");
+        }
+    }
+
     const Storage = struct {
         const offsets = blk: {
-            var values: [info.fields.len]usize = undefined;
+            var values: [info.fields.len]u64 = undefined;
             for (info.fields, 0..) |field, i| {
                 values[i] = @offsetOf(T, field.name);
             }
@@ -40,11 +48,10 @@ pub fn GenerateOffsets(comptime T: type) type {
     inline for (info.fields, 0..) |field, i| {
         fields[i] = .{
             .name = field.name,
-            .type = usize,
-            // Point to the stable memory in our Storage struct
+            .type = u64,
             .default_value_ptr = @ptrCast(&Storage.offsets[i]),
             .is_comptime = false,
-            .alignment = @alignOf(usize),
+            .alignment = @alignOf(u64),
         };
     }
 

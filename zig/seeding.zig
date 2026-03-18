@@ -44,12 +44,12 @@ pub fn mix_macro_seed_blake3(layer_seed: LayerSeed, mx: u64, my: u64) LayerSeed 
 
 /// Bijective mixer for generating Chunk seeds from a macro-seed.
 /// cx and cy are local chunk offsets within a macro-region.
-pub fn mix_chunk_seed(macro_seed: LayerSeed, local_cx: u64, local_cy: u64) LayerSeed {
+pub inline fn mix_chunk_seed(macro_seed: LayerSeed, local_cx: u64, local_cy: u64, depth: u64) LayerSeed {
     // Combine local coordinates into a single 64-bit state.
-    const combined_offset = (local_cy << 32) | local_cx;
+    const combined_offset = ((local_cy << 32) | local_cx);
 
     // Avalanche the offset into a robust 64-bit state
-    var prng_state = stafford_mix_13(combined_offset);
+    var prng_state = stafford_mix_13(combined_offset) ^ stafford_mix_13(depth);
 
     var out = macro_seed;
     // Generate 512 bits of avalanched noise and strictly XOR it (maintaining bijectivity)
@@ -119,7 +119,7 @@ pub inline fn stafford_mix_13(z_in: u64) u64 {
 }
 
 /// BROKEN WHEN EXPORTING, DO NOT USE. JS LOGIC EXISTS ALREADY. Converts a base-26 [a-z]-only string to 64 bytes. Input should  too no larger than 100 characters.
-pub fn seed_from_base26(input: []const u8, out_seed: *[8]u64) void {
+pub fn seed_from_base26(noalias input: []const u8, noalias out_seed: *[8]u64) void {
     // Initialize out_seed to 0
     @memset(out_seed, 0);
 
@@ -202,7 +202,7 @@ test "branching check" {
 
 /// Hashes an arbitrary string into a 512-bit seed directly into the destination (using Sha512).
 /// Used for testing only; actual seeding uses a string with only [a-z] characters and using Sha512 would be too slow for practical use.
-fn seed_from_bytes(input: []const u8, out_seed: *[8]u64) void {
+fn seed_from_bytes(noalias input: []const u8, noalias out_seed: *[8]u64) void {
     var hash_out: [64]u8 = undefined;
     std.crypto.hash.sha2.Sha512.hash(input, &hash_out, .{});
 
@@ -213,14 +213,13 @@ fn seed_from_bytes(input: []const u8, out_seed: *[8]u64) void {
     }
 }
 
-/// Hashes 2D integer coordinates to a float in [0, 1).
-/// Quality is critical — this feeds into all noise functions.
+/// Hashes 2D integer coordinates to a float in [0, 1). TODO find better candidate and use
 pub fn hash_2d(seed: u64, x: i32, y: i32) f32 {
     var h: u64 = seed;
     h ^= @as(u64, @bitCast(@as(i64, x))) *% 0x517cc1b727220a95;
     h ^= @as(u64, @bitCast(@as(i64, y))) *% 0x6c62272e07bb0142;
     h = stafford_mix_13(h);
-    return @as(f32, @floatFromInt(h >> 40)) / 16777216.0; // 24 bits → [0, 1)
+    return @as(f32, @floatFromInt(h >> 40)) / 16777216.0;
 }
 
 /// 2D value noise with smoothstep interpolation. Returns [0, 1).
@@ -249,7 +248,7 @@ pub fn value_noise_2d(seed: u64, x: i32, y: i32, scale: i32) f32 {
 
 /// Fractal Brownian Motion: layers multiple octaves of value noise.
 /// 2 octaves = fast and decent. 3 = nicer caves. 4+ = diminishing returns.
-/// Returns [0, ~1) — not exactly normalized but close enough.
+/// Returns [0, ~1) (not exactly normalized but close enough).
 pub fn fbm_2d(seed: u64, x: i32, y: i32, octaves: u32) f32 {
     var value: f32 = 0;
     var amp: f32 = 0.5;

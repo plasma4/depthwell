@@ -258,7 +258,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
     lab.x *= (1.0 - darkening) * in.light;
 
-    final_rgb = oklab_to_linear_srgb(lab);
+    final_rgb = saturate(oklab_to_linear_srgb(lab));
     final_a = tex_color.a * scene.chunk_opacity;
 
     if (is_wireframe) {
