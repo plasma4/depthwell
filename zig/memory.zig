@@ -96,13 +96,13 @@ pub const GameState = extern struct {
     }
 
     /// Sets the player position, teleporting the previous position as well. Do not use for movement.
-    pub inline fn set_player_pos(self: *const @This(), new_position: v2i64) void {
+    pub inline fn set_player_pos(self: *@This(), new_position: v2i64) void {
         self.player_pos = new_position;
         self.last_player_pos = new_position;
     }
 
     /// Sets the camera position, teleporting the previous position as well. Do not use for movement.
-    pub inline fn set_camera_pos(self: *const @This(), new_position: v2i64) void {
+    pub inline fn set_camera_pos(self: *@This(), new_position: v2i64) void {
         self.camera_pos = new_position;
         self.last_camera_pos = new_position;
     }

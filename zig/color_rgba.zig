@@ -2,6 +2,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+test {
+    try std.testing.expectEqual(32, @bitSizeOf(@Vector(4, u8)));
+}
+
 /// Represents a color. Note that WebGPU processes colors as rgba16float;
 /// this data is used to determine similarity of blocks and is not color-space compliant.
 pub const ColorRGBA = extern union {
@@ -244,17 +248,17 @@ test "ColorRGBA color modification" {
     // A color equal to rgb(8, 240, 0).
     var test_color = comptime ColorRGBA.from_hex("#08f000");
     test_color.channels.a -|= 16; // saturating subtraction
-    try std.testing.expectEqual(test_color.channels.a, 0xef);
+    try std.testing.expectEqual(0xef, test_color.channels.a);
 
-    try std.testing.expectEqual(test_color.channels.r, 0x08);
+    try std.testing.expectEqual(0x08, test_color.channels.r);
     test_color.channels.r -|= 12;
-    try std.testing.expectEqual(test_color.channels.r, 0x00);
+    try std.testing.expectEqual(0x00, test_color.channels.r);
 
-    try std.testing.expectEqual(test_color.channels.g, 0xf0);
+    try std.testing.expectEqual(0xf0, test_color.channels.g);
     test_color.channels.g +|= 3; // saturating addition
-    try std.testing.expectEqual(test_color.channels.g, 0xf3);
+    try std.testing.expectEqual(0xf3, test_color.channels.g);
     test_color.channels.g +|= 16;
-    try std.testing.expectEqual(test_color.channels.g, 0xff);
+    try std.testing.expectEqual(0xff, test_color.channels.g);
 }
 
 test "ColorRGBA perceptual luminance" {
@@ -335,8 +339,8 @@ test "ColorRGBA hue" {
     try std.testing.expectEqual(@as(u16, 0), ColorRGBA.init(255, 0, 0, 255).hue());
     try std.testing.expectEqual(@as(u16, 120), ColorRGBA.init(0, 255, 0, 255).hue());
     try std.testing.expectEqual(@as(u16, 240), ColorRGBA.init(0, 0, 255, 255).hue());
-    try std.testing.expectEqual(@as(u16, 60), ColorRGBA.init(255, 255, 0, 255).hue()); // Yellow
-    try std.testing.expectEqual(@as(u16, 300), ColorRGBA.init(255, 0, 255, 255).hue()); // Magenta
+    try std.testing.expectEqual(@as(u16, 60), ColorRGBA.init(255, 255, 0, 255).hue()); // yellow
+    try std.testing.expectEqual(@as(u16, 300), ColorRGBA.init(255, 0, 255, 255).hue()); // magenta
 
     // Achromatic colors should return 0
     try std.testing.expectEqual(@as(u16, 0), ColorRGBA.white.hue());

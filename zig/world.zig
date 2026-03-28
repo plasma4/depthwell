@@ -378,11 +378,14 @@ pub const World = struct {
         _ = parent_id;
         memory.game.depth += 1;
 
+        // Mask the last 12 bits (0-4095)
         const player_mask: i64 = SPAN * SPAN * SPAN - 1;
-        memory.game.player_pos[0] = (memory.game.player_pos[0] << SPAN_LOG2) & player_mask;
-        memory.game.player_pos[1] = (memory.game.player_pos[1] << SPAN_LOG2) & player_mask;
-        memory.game.last_player_pos[0] = (memory.game.last_player_pos[0] << SPAN_LOG2) & player_mask;
-        memory.game.last_player_pos[1] = (memory.game.last_player_pos[1] << SPAN_LOG2) & player_mask;
+        const new_pos: memory.v2i64 = .{
+            (memory.game.player_pos[0] << SPAN_LOG2) & player_mask,
+            (memory.game.player_pos[1] << SPAN_LOG2) & player_mask,
+        };
+        memory.game.set_player_pos(new_pos);
+        memory.game.set_camera_pos(new_pos);
 
         if (memory.game.depth <= 16) {
             // Base phase: We are just filling up the 64-bit Suffix. No rebasing needed yet.
