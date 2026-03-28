@@ -174,7 +174,9 @@ export class GameEngine {
         const texture = device.createTexture({
             label: `Texture from  ${url}`,
             size: [imageBitmap.width, imageBitmap.height],
-            format: "rgba8unorm",
+            format: device.features.has("canvas-rgba16float-support")
+                ? "rgba16float"
+                : "bgra8unorm", // TODO TODO
             usage:
                 GPUTextureUsage.TEXTURE_BINDING |
                 GPUTextureUsage.COPY_DST |

@@ -16,8 +16,10 @@ pub const KeyBits = struct {
         return (bitfield & key_mask) != 0;
     }
 
+    /// Z key (increases depth, for testing)
+    pub const zoom = mask(17);
     /// Q key
-    pub const drop = mask(17);
+    pub const drop = mask(18);
 
     /// Minus (or underscore) key
     pub const minus = mask(15);

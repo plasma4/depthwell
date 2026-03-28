@@ -143,15 +143,14 @@ pub const ColorRGBA = extern union {
         return self.channels.a == 0;
     }
 
-    // TODO decide if these should modify original or create new (probably make new?)
-    /// Invert RGB, keep alpha.
-    pub fn invert(self: *@This()) ColorRGBA {
+    /// Inverts RGB while keeping alpha.
+    pub fn invert(self: *const @This()) ColorRGBA {
         var res = ColorRGBA{ .v = @as(@Vector(4, u8), @splat(255)) - self.v };
         res.channels.a = self.channels.a;
         return res;
     }
 
-    /// Convert to grayscale using luminance, keep alpha.
+    /// Convert to grayscale using luminance while keeping alpha.
     pub fn to_grayscale(self: *const @This()) ColorRGBA {
         const l = self.luminance();
         return ColorRGBA.init(l, l, l, self.channels.a);
@@ -175,8 +174,8 @@ pub const ColorRGBA = extern union {
     }
 
     /// Return color with modified alpha.
-    pub fn with_alpha(self: *@This(), a: u8) ColorRGBA {
-        var res = self;
+    pub fn with_alpha(self: *const @This(), a: u8) ColorRGBA {
+        var res: ColorRGBA = self.*; // this makes a copy!
         res.channels.a = a;
         return res;
     }

@@ -45,7 +45,8 @@ export interface EngineExports extends WebAssembly.Exports {
 
 // Generated enum and struct data from types.zig:
 export const KeyBits = {
-    drop: 131072,
+    zoom: 131072,
+    drop: 262144,
     minus: 32768,
     plus: 65536,
     up: 2048,
