@@ -24,145 +24,22 @@ pub const v2i64 = @Vector(2, i64);
 pub const v2u64 = @Vector(2, u64);
 pub const v2f64 = @Vector(2, f64);
 
-// Only create an actual GPA instance if building for native.
-var gpa = if (!is_wasm and !builtin.is_test)
-    std.heap.GeneralPurposeAllocator(.{}){}
-else
-    struct {};
-
-pub const allocator = if (is_wasm)
-    std.heap.wasm_allocator
-else if (builtin.is_test)
-    std.testing.allocator
-else
-    gpa.allocator();
-
-/// Start the scratch buffer with 256 KiB when allocating for the first time.
-const STARTING_SCRATCH_BUFFER_SIZE = 256 * MemorySizes.KiB;
-
-/// 64 bytes is ana all-round good alignment size.
-pub const MAIN_ALIGN_BYTES: usize = 64;
-/// Type-safe alignment for use with `std.mem.Allocator` functions.
-/// Derived from `MAIN_ALIGN_BYTES`.
-pub const MAIN_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
-/// Type-safe alignment for use with `std.mem.Allocator` functions.
-/// Derived from `MAIN_ALIGN_BYTES`.
-pub const GPU_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
-
-/// Struct for various memory sizes.
-pub const MemorySizes = struct {
-    /// Represents 1,024 bytes.
-    pub const KiB = 1024;
-    /// Represents 1,024 * 1,024 bytes.
-    pub const MiB = 1024 * 1024;
-    /// Represents 1,024 * 1,024 * 1,024 bytes.
-    pub const GiB = 1024 * 1024 * 1024;
-    /// Represents the size of a WebAssembly page (64KiB).
-    pub const wasm_page = 64 * 1024;
-};
-
-/// A single block within a chunk.
-pub const Block = packed struct {
-    /// Internal sprite ID.
-    id: world.Sprite,
-    /// The brightness of the tile.
-    light: u8,
-    /// How "mined" the block is. 0 is least mined, 15 is most mined.
-    hp: u4,
-
-    /// Per-block seed for procedural variation in the shader.
-    seed: u24,
-    /// Edge flags: which neighbors are air (for edge-darkening and culling).
-    /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
-    flags: u8,
-};
-
-/// 16x16 fixed grid of blocks.
-pub const Chunk = struct {
-    blocks: [SPAN_SQ]Block,
-    // /// 256 bits representing which blocks have been modified from the base procedural generation.
-    // modified_mask: [4]u64,
-
-    pub inline fn getIndex(x: u4, y: u4) u8 {
-        return (@as(u8, y) << 4) | @as(u8, x);
-    }
-};
-
-/// Represents a "coordinate", relative to a quad-cache. Stores an "active suffix" as well as the quadrant this coordinate belongs to.
-pub const Coordinate = packed struct {
-    // Active suffix (stored as a vector). You can think of the active suffix like 16 u4s packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see README.md for more details).
-    suffix: v2u64,
-    /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
-    quadrant: u2,
-    /// TODO determine if we actually want funny 3D stuff to happen (256 possible subpixel states and 256 possible important states, maybe)
-    influence: u16 = 0,
-};
-
-/// Dense storage for a modified chunk.
-pub const ModifiedChunk = struct {
-    /// 256 bits representing which blocks have been modified.
-    /// Bit index corresponds to (y * 16 + x).
-    modified_mask: [4]u64,
-    /// The specific modified block IDs. Only indices with a 1 in `modified_mask` are valid.
-    blocks: [SPAN_SQ]world.Sprite,
-
-    /// Helper to check if a specific local block is modified
-    pub inline fn is_modified(self: *const @This(), lx: u4, ly: u4) bool {
-        const index = (@as(u8, ly) << 4) | @as(u8, lx);
-        const slot = index >> 6;
-        const bit = @as(u6, @truncate(index));
-        return (self.modified_mask[slot] & (@as(u64, 1) << bit)) != 0;
-    }
-};
-
-/// Tightly packed data for a square particle to be sent to WebGPU.
-const Particle = packed struct {
-    /// Current position.
-    position: @Vector(2, f32),
-
-    /// Velocity vector for position.
-    d_position: @Vector(2, f32),
-
-    /// The color of the particle (alpha is multiplied by time and how long the particle lasts)
-    color: ColorRGBA,
-    /// The size of the particle
-    size: u24,
-    /// The opacity of the particle (based on time start/end)
-    opacity: u8,
-
-    /// The rotation of the particle (radians)
-    rotation: f32,
-    /// The rate of change of rotation of the particle (radians)
-    d_rotation: f32,
-
-    /// The time at which the particle spawned in from (performance.now()).
-    time_start: f64,
-
-    /// The time at which the particle will disappear.
-    time_end: f64,
-};
-
-/// A dynamically expandable scratch buffer for fast one-time passing through of data like strings or temporary particle data. Assumes fully single-thread communication. A separate, smaller logging_buffer is used in logger.zig.
-/// Information in the scratch buffer should be assumed to be corrupted as soon as any other function that could modify the scratch buffer is called and thought of as a temporary "handshake" between Zig and TypeScript.
-pub var scratch_buffer: []align(MAIN_ALIGN_BYTES) u8 = &[_]u8{};
-var is_dynamic_scratch: bool = false;
-
 /// Non-pointer data (short known length) representing part of the game state.
 /// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
 /// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the --Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
 pub const GameState = extern struct {
     /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095).
-    player_pos: v2i64 align(MAIN_ALIGN_BYTES) = .{ 256, 256 },
-    /// Represents the player's position. Importantly, this is not necessarily equal to the player's velocity, as this handles teleports!
-    last_player_pos: v2i64 = .{ 256, 256 },
+    player_pos: v2i64 align(MAIN_ALIGN_BYTES) = .{ 0, 0 },
+    /// Represents the player's previous subpixel position. Importantly, this is not necessarily equal to the player's velocity, as this handles teleports!
+    last_player_pos: v2i64 = .{ 0, 0 },
     /// Represents the player's active chunk coordinate.
     player_chunk: v2u64 = .{ 0, 0 },
     /// Represents the player's current movement.
     player_velocity: v2f64 = .{ 0, 0 },
     /// Represents the camera's position.
-    camera_pos: v2i64 = .{ 256, 256 },
-    /// Represents the camera's movement in a frame (derivative of camera_pos).
-    last_camera_pos: v2i64 = .{ 256, 256 },
+    camera_pos: v2i64 = .{ 0, 0 },
+    /// Represents the camera's movement in a frame (derivative of `camera_pos`).
+    last_camera_pos: v2i64 = .{ 0, 0 },
     /// Represents the camera's zoom scale.
     camera_scale: f64 = 1.0,
     /// Represents the camera's zoom scale change rate (multiplier, acts as derivative of camera_scale change).
@@ -206,10 +83,153 @@ pub const GameState = extern struct {
 
     /// The initial or "global" seed from which all generation starts.
     seed: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
+
+    pub inline fn get_player_coord(self: *const @This()) Coordinate {
+        return .{ .quadrant = @intCast(self.player_quadrant), .suffix = self.player_chunk };
+    }
+
+    pub inline fn get_block_x_in_chunk(self: *const @This()) u4 {
+        return @intCast(@divTrunc(self.player_pos[0], SPAN_SQ));
+    }
+    pub inline fn get_block_y_in_chunk(self: *const @This()) u4 {
+        return @intCast(@divTrunc(self.player_pos[1], SPAN_SQ));
+    }
+
+    /// Sets the player position, teleporting the previous position as well. Do not use for movement.
+    pub inline fn set_player_pos(self: *const @This(), new_position: v2i64) void {
+        self.player_pos = new_position;
+        self.last_player_pos = new_position;
+    }
+
+    /// Sets the camera position, teleporting the previous position as well. Do not use for movement.
+    pub inline fn set_camera_pos(self: *const @This(), new_position: v2i64) void {
+        self.camera_pos = new_position;
+        self.last_camera_pos = new_position;
+    }
 };
 
 /// The state of the current game, containing pre-allocated properties.
 pub var game: GameState = .{};
+
+// Only create an actual GPA instance if building for native.
+var gpa = if (!is_wasm and !builtin.is_test)
+    std.heap.GeneralPurposeAllocator(.{}){}
+else
+    struct {};
+
+pub const allocator = if (is_wasm)
+    std.heap.wasm_allocator
+else if (builtin.is_test)
+    std.testing.allocator
+else
+    gpa.allocator();
+
+/// Start the scratch buffer with 256 KiB when allocating for the first time.
+const STARTING_SCRATCH_BUFFER_SIZE = 256 * MemorySizes.KiB;
+
+/// 64 bytes is ana all-round good alignment size.
+pub const MAIN_ALIGN_BYTES: usize = 64;
+/// Type-safe alignment for use with `std.mem.Allocator` functions.
+/// Derived from `MAIN_ALIGN_BYTES`.
+pub const MAIN_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
+/// Type-safe alignment for use with `std.mem.Allocator` functions.
+/// Derived from `MAIN_ALIGN_BYTES`.
+pub const GPU_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
+
+/// Struct for various memory sizes.
+pub const MemorySizes = struct {
+    /// Represents 1,024 bytes.
+    pub const KiB = 1024;
+    /// Represents 1,024 * 1,024 bytes.
+    pub const MiB = 1024 * 1024;
+    /// Represents 1,024 * 1,024 * 1,024 bytes.
+    pub const GiB = 1024 * 1024 * 1024;
+    /// Represents the size of a WebAssembly page (64KiB).
+    pub const wasm_page = 64 * 1024;
+};
+
+/// A single block within a chunk.
+pub const Block = packed struct {
+    /// Internal sprite ID.
+    id: world.Sprite,
+    /// How "mined" the block is. 0 is least mined, 15 is most mined.
+    hp: u4,
+    /// The brightness of the tile.
+    light: u8,
+
+    /// Per-block seed for procedural variation in the shader.
+    seed: u24,
+    /// Edge flags: which neighbors are air (for edge-darkening and culling).
+    /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
+    flags: u8,
+};
+
+/// 16x16 fixed grid of blocks.
+pub const Chunk = struct {
+    blocks: [SPAN_SQ]Block,
+    pub inline fn getIndex(x: u4, y: u4) u8 {
+        return (@as(u8, y) << SPAN_LOG2) | @as(u8, x);
+    }
+};
+
+/// Represents a "coordinate", relative to a quad-cache. Stores an "active suffix" as well as the quadrant this coordinate belongs to.
+pub const Coordinate = struct {
+    // Active suffix (stored as a vector). You can think of the active suffix like 16 u4s packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see README.md for more details).
+    suffix: v2u64,
+    /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
+    quadrant: u2,
+    /// TODO determine if we actually want funny 3D stuff to happen (256 possible subpixel states and 256 possible important states, maybe)
+    influence: u16 = 0,
+};
+
+/// Dense storage for a modified chunk.
+pub const ModifiedChunk = struct {
+    /// 256 bits representing which blocks have been modified.
+    /// Bit index corresponds to (y * 16 + x).
+    modified_mask: [4]u64,
+    /// The specific modified block IDs. Only indices with a 1 in `modified_mask` are valid.
+    blocks: [SPAN_SQ]world.Sprite,
+
+    /// Helper to check if a specific local block is modified
+    pub inline fn is_modified(self: *const @This(), lx: u4, ly: u4) bool {
+        const index = (@as(u8, ly) << SPAN_LOG2) | @as(u8, lx);
+        const slot = index >> 6;
+        const bit = @as(u6, @truncate(index));
+        return (self.modified_mask[slot] & (@as(u64, 1) << bit)) != 0;
+    }
+};
+
+/// Tightly packed data for a square particle to be sent to WebGPU.
+const Particle = packed struct {
+    /// Current position.
+    position: @Vector(2, f32),
+
+    /// Velocity vector for position.
+    d_position: @Vector(2, f32),
+
+    /// The color of the particle (alpha is multiplied by time and how long the particle lasts)
+    color: ColorRGBA,
+    /// The size of the particle
+    size: u24,
+    /// The opacity of the particle (based on time start/end)
+    opacity: u8,
+
+    /// The rotation of the particle (radians)
+    rotation: f32,
+    /// The rate of change of rotation of the particle (radians)
+    d_rotation: f32,
+
+    /// The time at which the particle spawned in from (performance.now()).
+    time_start: f64,
+
+    /// The time at which the particle will disappear.
+    time_end: f64,
+};
+
+/// A dynamically expandable scratch buffer for fast one-time passing through of data like strings or temporary particle data. Assumes fully single-thread communication. A separate, smaller logging_buffer is used in logger.zig.
+/// Information in the scratch buffer should be assumed to be corrupted as soon as any other function that could modify the scratch buffer is called and thought of as a temporary "handshake" between Zig and TypeScript.
+pub var scratch_buffer: []align(MAIN_ALIGN_BYTES) u8 = &[_]u8{};
+var is_dynamic_scratch: bool = false;
 
 /// The layout structure shared with TypeScript. The MemoryLayout instance will not change locations, but its properties may.
 pub const MemoryLayout = extern struct {
@@ -219,7 +239,7 @@ pub const MemoryLayout = extern struct {
     scratch_len: u64,
     /// The total capacity of the fixed scratch buffer (4MB).
     scratch_capacity: u64,
-    /// Pointer to the GameState. (Can safely be pointer instead of u64 as it is the LAST property.)
+    /// Pointer to the GameState.
     game_ptr: u64,
     /// Additional properties for sending additional (pointer or short fixed-length) properties. Information in the scratch properties should be assumed to be corrupted as soon as any other function that could modify the scratch buffer is called and thought of as a temporary "handshake" between Zig and TypeScript.
     scratch_properties: [20]u64,

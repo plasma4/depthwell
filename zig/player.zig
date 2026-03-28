@@ -79,7 +79,7 @@ pub fn move(logic_speed: f64) void {
     subpixel_accum -= @as(v2f64, @floatFromInt(move_vec));
 
     inline for (0..2) |i| {
-        const carry = @divFloor(game.player_pos[i], SUBPIXELS_IN_CHUNK);
+        const carry: i64 = @divFloor(game.player_pos[i], SUBPIXELS_IN_CHUNK);
         if (carry != 0) {
             // Treat the signed carry as bits and add to the unsigned suffix
             game.player_chunk[i] +%= @bitCast(carry);
@@ -94,21 +94,7 @@ pub fn move(logic_speed: f64) void {
             game.last_camera_pos[i] -= shift_amount;
 
             // game.grid_dirty = true;
-
-            // Hard limit check for depth 3 (TODO verify acacuracy at deeper depths)
-            if (game.player_chunk[i] >= SUBPIXELS_IN_CHUNK) {
-                // If it wrapped or exceeded, clamp it
-                if (@as(i64, @bitCast(game.player_chunk[i])) < 0) {
-                    game.player_chunk[i] = 0;
-                } else {
-                    game.player_chunk[i] = SUBPIXELS_IN_CHUNK - 1;
-                }
-                game.player_pos[i] = std.math.clamp(game.player_pos[i], 0, SUBPIXELS_IN_CHUNK - 1);
-                game.player_velocity[i] = 0;
-            } else {
-                game.player_pos[i] = @mod(game.player_pos[i], SUBPIXELS_IN_CHUNK);
-                // game.grid_dirty = true;
-            }
+            game.player_pos[i] = @mod(game.player_pos[i], SUBPIXELS_IN_CHUNK);
         }
     }
 
@@ -119,9 +105,9 @@ pub fn move(logic_speed: f64) void {
     const y_deadzone = @as(i64, @intFromFloat(CAMERA_DEADZONE_Y / game.camera_scale));
     // const player_size_half = memory.SPAN_SQ / 2;
     const window_left = game.camera_pos[0] - x_deadzone;
-    const window_right = game.camera_pos[0] + x_deadzone - memory.SPAN_SQ;
+    const window_right = game.camera_pos[0] + x_deadzone;
     const window_top = game.camera_pos[1] - y_deadzone;
-    const window_bottom = game.camera_pos[1] + y_deadzone - memory.SPAN_SQ;
+    const window_bottom = game.camera_pos[1] + y_deadzone;
     // Example logs (note how the numbers are funky due to us wanting the center player to be centered in the deadzone logic): (256, 256) | (256, 256) | -2304 | 2560 | -768 | 1024
     // logger.clear(3);
     // logger.write(3, .{ game.player_pos, game.camera_pos, window_left, window_right, window_top, window_bottom });

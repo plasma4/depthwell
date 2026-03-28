@@ -52,18 +52,30 @@ struct UnpackedTile {
 @group(0) @binding(3) var pixel_sampler: sampler;
 @group(0) @binding(4) var<uniform> map_size: vec4u;
 
+// Bijective mixer when given 32 bits of data
+fn murmurmix32(number: u32) -> u32 {
+    var h = number;
+    h ^= h >> 16;
+    h *= 0x85ebca6b;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >> 16;
+    return h;
+}
+
 // Extracts the specific bit ranges defined in the Zig `packed struct(u64)`.
 fn unpack_tile(data: TileData) -> UnpackedTile {
     var out: UnpackedTile;
 
     // Word 0: [0..19] id, [20..27] light, [28..31] hp
     out.sprite_id = extractBits(data.word0, 0u, 20u);
-    let light_u = extractBits(data.word0, 20u, 8u);
-    out.light = sqrt(f32(light_u) / 240.0); // not 255.0, to allow for light > 1, also square-rooted to allow lower light values like 128 to still be fairly visible
-    out.hp = extractBits(data.word0, 28u, 4u);
+    out.hp = extractBits(data.word0, 20u, 4u);
+
+    let light_u = extractBits(data.word0, 24u, 8u);
+    out.light = sqrt(f32(light_u) / (240.0 * 4.0) + 0.75); // not 255.0 * 4.0, to allow for light > 1, also square-rooted to allow lower light values like 128 to still be fairly visible
 
     // Word 1: [0..23] seed, [24..31] edge_flags
-    out.seed = extractBits(data.word1, 0u, 24u);
+    out.seed = murmurmix32((extractBits(data.word1, 0u, 24u) << 8u) | light_u);
     out.edge_flags = extractBits(data.word1, 24u, 8u);
 
     if (out.sprite_id == 7 && (extractBits(out.seed, 16u, 2u) == 0)) { // extract bits 16-18 for random modifications

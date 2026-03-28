@@ -7,6 +7,10 @@ const seeding = @import("seeding.zig");
 const Chunk = memory.Chunk;
 const Block = memory.Block;
 const SPAN = memory.SPAN;
+const SPAN_LOG2 = memory.SPAN_LOG2;
+
+/// The single instance of a `World`.
+pub var state: World = undefined;
 
 /// Sprite IDs, based on src/main.png
 pub const Sprite = enum(u20) {
@@ -87,7 +91,7 @@ pub const SimBuffer = struct {
 };
 
 /// Generates an initial block for seeding.
-pub inline fn generate_initial_blocks(rng: *seeding.Xoshiro512) Sprite {
+pub inline fn generate_initial_block(rng: *seeding.Xoshiro512) Sprite {
     const entropy = rng.next();
 
     var block_id = Sprite.none;
@@ -127,6 +131,13 @@ fn carry_path(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
     return new_path;
 }
 
+const QuadrantEdgeDetails = struct {
+    most_top: bool,
+    most_bottom: bool,
+    most_left: bool,
+    most_right: bool,
+};
+
 /// A static 2x2 grid of seeds only updated on entering a portal/game startup. See README.md for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
     /// The 256-bit hashes for the 4 active quadrants, used for modifications across 16 depths (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
@@ -137,6 +148,12 @@ pub const QuadCache = struct {
     top_path: std.ArrayList(u64),
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
+
+    // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen
+    most_top: bool = true,
+    most_bottom: bool = true,
+    most_left: bool = true,
+    most_right: bool = true,
 
     /// Returns a seed from the lineage history (0 is current later, 15 is D-15.)
     pub inline fn get_lineage_seed(self: *const @This(), quadrant: u2, lookback: u4) seeding.Seed {
@@ -150,7 +167,7 @@ pub const QuadCache = struct {
 
     /// Returns the Y-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16).
     pub inline fn get_quadrant_path_y(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
-        return if (quadrant >= 2) self.left_path else carry_path(&self.left_path);
+        return if (quadrant < 2) self.left_path else carry_path(&self.left_path);
     }
 
     /// Deallocates a temporary instance of a QuadCache path.
@@ -163,12 +180,32 @@ pub const QuadCache = struct {
 
     /// Returns the 512-bit seed of a specified quadrant.
     pub inline fn get_quadrant_seed(self: *const @This(), quadrant: u2) seeding.Seed {
+        if (memory.game.depth <= 16) return memory.game.seed;
         return self.get_lineage_seed(quadrant, 0);
     }
 
-    /// Resolves the chunk seed. If depth > 16, uses the quadrant seeds.
-    pub inline fn get_chunk_seed(self: *const @This(), coord: memory.Coordinate) seeding.Seed {
-        return seeding.mix_chunk_seed(self.get_quadrant_seed(coord.quadrant), coord.suffix);
+    /// Resolves the chunk seeds. If depth > 16, uses the quadrant seeds.
+    pub inline fn get_chunk_seeds(self: *const @This(), coord: memory.Coordinate) [4]seeding.Seed {
+        return seeding.mix_chunk_seeds(self.get_quadrant_seed(coord.quadrant), coord.suffix);
+    }
+
+    /// Returns details on a specific quadrant and what "edges" of the world it touches.
+    pub inline fn get_quadrant_edge_details(self: *const @This(), quadrant: u2) QuadrantEdgeDetails {
+        // Quadrant IDs for reference: 00: NW, 1: NE, 2: SW, 3: SE
+        if (memory.game.depth <= 16) {
+            return .{
+                .most_top = true,
+                .most_bottom = true,
+                .most_left = true,
+                .most_right = true,
+            };
+        }
+        return .{
+            .most_top = quadrant < 2 and self.most_top,
+            .most_bottom = quadrant >= 2 and self.most_bottom,
+            .most_left = (quadrant % 2 == 0) and self.most_left,
+            .most_right = (quadrant % 2 == 1) and self.most_right,
+        };
     }
 };
 
@@ -237,6 +274,9 @@ pub const World = struct {
     /// Stores modifications of chunks.
     modification_store: std.HashMap(ModKey, memory.ModifiedChunk, ModKeyContext, 80),
 
+    /// Represents the answer to the question "what is the largest possible suffix value"? 15 at depth 1, 255 at depth 2, capped at 2**64-1 at depth 16 and beyond.
+    max_possible_suffix: u64 = 0,
+
     pub fn init(alloc: std.mem.Allocator) World {
         return .{
             .alloc = alloc,
@@ -265,35 +305,38 @@ pub const World = struct {
         return chunk;
     }
 
-    /// Generates a whole chunk (considering modifications), given a pointer to where the chunk should be and coordinates.
+    /// Generates a whole chunk (considering modifications), given a pointer to where the chunk should be stored and coordinates.
     pub fn generate_chunk(self: *const @This(), chunk: *memory.Chunk, coord: memory.Coordinate) void {
-        const chunk_seed = self.quad_cache.get_chunk_seed(coord);
-        var rng = seeding.Xoshiro512.init(chunk_seed);
-        // TODO add check to work for d >= 15
-        const has_boundary = memory.game.depth < 15;
-        const world_limit: u64 = get_world_limit() * 16;
+        const chunk_seed = self.quad_cache.get_chunk_seeds(coord);
+        var rng1 = seeding.Xoshiro512.init(chunk_seed[0]);
+        const rng2 = seeding.Xoshiro512.init(chunk_seed[0]);
+        const rng3 = seeding.Xoshiro512.init(chunk_seed[0]);
+        var rng4 = seeding.Xoshiro512.init(chunk_seed[0]);
 
-        const max_block: u64 = if (has_boundary) (world_limit - 1) else 0;
+        _ = rng2;
+        _ = rng3;
+
         const cx = coord.suffix[0];
         const cy = coord.suffix[1];
+        const quadrant_edge_details = self.quad_cache.get_quadrant_edge_details(coord.quadrant);
         for (0..SPAN) |ly| {
             for (0..SPAN) |lx| {
                 const idx = (ly * SPAN) + lx;
-                const gbx = (cx * SPAN) + lx;
-                const gby = (cy * SPAN) + ly;
 
                 // TODO make this work with quadcache to still work for edges
-                if (has_boundary and (gbx == 0 or gbx == max_block or gby == 0 or gby == max_block)) {
-                    chunk.blocks[idx] = .{ .id = Sprite.edgestone, .seed = 0, .light = 255, .hp = 0, .flags = 0 };
+                const is_absolute_edge_x = (cx == 0 and lx == 0 and quadrant_edge_details.most_left) or (cx == state.max_possible_suffix and lx == 15 and quadrant_edge_details.most_right);
+                const is_absolute_edge_y = (cy == 0 and ly == 0 and quadrant_edge_details.most_top) or (cy == state.max_possible_suffix and ly == 15 and quadrant_edge_details.most_bottom);
+                if (is_absolute_edge_x or is_absolute_edge_y) {
+                    chunk.blocks[idx] = make_basic_block(.edgestone);
                     continue;
                 }
 
-                const block_id = generate_initial_blocks(&rng);
-                const entropy = rng.next();
+                const block_id = generate_initial_block(&rng1);
+                const entropy = rng4.next();
                 chunk.blocks[idx] = .{
                     .id = block_id,
-                    .seed = @truncate(entropy >> 20),
-                    .light = 255,
+                    .seed = @truncate(entropy >> 8),
+                    .light = @truncate(entropy),
                     .hp = 15,
                     .flags = 0,
                 };
@@ -333,15 +376,28 @@ pub const World = struct {
     /// `coord` is the chunk the portal is in.
     pub fn push_layer(self: *@This(), parent_id: Sprite, coord: memory.Coordinate, bx: u4, by: u4) void {
         _ = parent_id;
-        _ = self;
         memory.game.depth += 1;
+
+        const player_mask: i64 = SPAN * SPAN * SPAN - 1;
+        memory.game.player_pos[0] = (memory.game.player_pos[0] << SPAN_LOG2) & player_mask;
+        memory.game.player_pos[1] = (memory.game.player_pos[1] << SPAN_LOG2) & player_mask;
+        memory.game.last_player_pos[0] = (memory.game.last_player_pos[0] << SPAN_LOG2) & player_mask;
+        memory.game.last_player_pos[1] = (memory.game.last_player_pos[1] << SPAN_LOG2) & player_mask;
 
         if (memory.game.depth <= 16) {
             // Base phase: We are just filling up the 64-bit Suffix. No rebasing needed yet.
-            memory.game.player_chunk[0] = (coord.suffix[0] << 4) | bx;
-            memory.game.player_chunk[1] = (coord.suffix[1] << 4) | by;
+            memory.game.player_chunk[0] = (coord.suffix[0] << SPAN_LOG2) | bx;
+            memory.game.player_chunk[1] = (coord.suffix[1] << SPAN_LOG2) | by;
+            // TODO most top/left/bottom/right logic
             // Push path hash to stack now! TODO verify+complete all this
-            // self.push_path_to_stack(self.quad_cache.get[0]); // Pushes current down, adds to top
+            // self.push_path_to_stack(self.quad_cache.get_lineage_seed(memory.game.get_player_coord().quadrant, 0)); // Pushes current down, adds to top
+
+            // Update the maximum possible suffix value here using some fancy bit-shifting logic
+            self.max_possible_suffix = if (memory.game.depth < 16)
+                (@as(u64, 1) << @intCast(memory.game.depth * memory.SPAN_LOG2)) - 1
+            else
+                std.math.maxInt(u64);
+
             return;
         }
 
@@ -364,7 +420,7 @@ pub const World = struct {
     }
 
     /// Helper to maintain the sliding window of hashes for fast lookups
-    fn push_path_to_stack(self: *@This(), new_hash: [4]u64) void {
+    fn push_path_to_stack(self: *@This(), new_hash: seeding.Seed) void {
         // Shift everything down 1
         var i: usize = 15;
         while (i > 0) : (i -= 1) {
@@ -380,11 +436,14 @@ pub inline fn odds_num(chance: comptime_float) u64 {
     return @intFromFloat(chance * 18446744073709551616.0);
 }
 
-pub inline fn get_world_limit() u64 {
-    return if (memory.game.depth < SPAN)
-        (@as(u64, 1) << @intCast(memory.game.depth * memory.SPAN_LOG2))
-    else
-        std.math.maxInt(u64);
+pub inline fn make_basic_block(sprite_type: Sprite) Block {
+    return .{
+        .id = sprite_type,
+        .seed = 0,
+        .light = 255,
+        .hp = 0,
+        .flags = 0,
+    };
 }
 
 // /// Convert screen pixels to a world block coordinate

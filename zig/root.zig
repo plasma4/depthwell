@@ -6,7 +6,8 @@ const seeding = @import("seeding.zig");
 const procedural = @import("internal/procedural.zig");
 const logger = @import("logger.zig");
 const player = @import("player.zig");
-const colors = @import("color_rgba.zig");
+const world = @import("world.zig");
+const KeyBits = @import("types.zig").KeyBits;
 const builtin = @import("builtin");
 
 pub export fn init() void {
@@ -20,6 +21,16 @@ pub export fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canv
 }
 
 pub export fn tick(speed: f64) void {
+    if (in_debug_mode and KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
+        // increase depth (testing hotkey)
+        world.state.push_layer(
+            world.Sprite.none,
+            memory.game.get_player_coord(),
+            memory.game.get_block_x_in_chunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
+            memory.game.get_block_y_in_chunk(),
+        );
+    }
+
     player.move(speed);
 }
 

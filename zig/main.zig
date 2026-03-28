@@ -13,7 +13,9 @@ const SCREEN_WIDTH = 480;
 const SCREEN_HEIGHT = 270;
 const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
 const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
-pub var world_state: ?world.World = null;
+
+/// Sets the number of times the push_layer function is called at the start. (If set to 3, the game will start off by being 4096x4096 chunks. If set to 1, it will be 16x16 chunks instead.)
+const STARTING_ZOOM_TIMES = 0;
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
 extern "env" fn js_handle_visible_chunks() void;
@@ -29,22 +31,25 @@ pub inline fn handle_visible_chunks() void {
 
 /// Initializes the game.
 pub fn init() void {
-    world_state = world.World.init(memory.allocator);
-    const player_pos = memory.game.player_pos;
-    world.World.push_layer(
-        &world_state.?,
-        world.Sprite.none,
-        .{ .quadrant = 0, .suffix = .{ 0, 0 } },
-        @intCast(@divTrunc(player_pos[0], memory.SPAN_SQ)), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
-        @intCast(@divTrunc(player_pos[0], memory.SPAN_SQ)),
-    );
+    world.state = world.World.init(memory.allocator);
+    // Some seeding to determine where the player starts off exactly with layer pushing
+    var rng = seeding.Xoshiro512.init(seeding.mix_base_seed(memory.game.seed, 1));
+    for (0..STARTING_ZOOM_TIMES) |_| {
+        world.World.push_layer(
+            &world.state,
+            world.Sprite.none,
+            .{ .quadrant = 0, .suffix = .{ 0, 0 } },
+            @truncate(rng.next()),
+            @truncate(rng.next()),
+        );
+    }
     logger.log(@src(), "Hello from Zig!", .{});
 }
 
 /// Processes data for renderFrame in TypeScript.
 pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
-    const w = world_state.?;
+    const w = world.state;
     const game = &memory.game;
 
     // this variable allows for super smooth frame interpolation :)
@@ -102,7 +107,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
     const out = memory.scratch_alloc_slice(memory.Block, wb * hb) orelse return;
 
     // TODO look at this and determine if it works properly with higher depths
-    const world_limit: u64 = world.get_world_limit();
+    const world_limit: u64 = world.state.max_possible_suffix;
 
     for (0..ch) |gy| {
         for (0..cw) |gx| {
@@ -116,9 +121,8 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
             const u_abs_cx: u64 = @bitCast(abs_cx);
             const u_abs_cy: u64 = @bitCast(abs_cy);
 
-            // BOUNDS CHECK:
-            // If abs_cx < 0, u_abs_cx will be massive (wrapping), thus > world_limit.
-            if (u_abs_cx < world_limit and u_abs_cy < world_limit) {
+            // bounds check with world limits
+            if (u_abs_cx <= world_limit and u_abs_cy <= world_limit) {
                 // TODO figure out the funny quadrant business too
                 const chunk = w.get_chunk(.{ .suffix = .{ @intCast(abs_cx), @intCast(abs_cy) }, .quadrant = 0 });
                 for (0..SPAN) |ly| {
@@ -153,8 +157,8 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
     const player_interpolated_y = @as(f64, @floatFromInt(game.player_pos[1])) + @as(f64, @floatFromInt(player_vel_y)) * dt;
 
     // Position player in the middle of the screen plus their offset from the camera center
-    const player_render_x = (player_interpolated_x - grid_origin_sub_x) / SPAN_FLOAT;
-    const player_render_y = (player_interpolated_y - grid_origin_sub_y) / SPAN_FLOAT;
+    const player_render_x = (player_interpolated_x - grid_origin_sub_x - SPAN_FLOAT * SPAN_FLOAT / 2) / SPAN_FLOAT;
+    const player_render_y = (player_interpolated_y - grid_origin_sub_y - SPAN_FLOAT * SPAN_FLOAT / 2) / SPAN_FLOAT;
 
     // Update scratch properties that JS reads
     memory.set_scratch_prop(0, wb);
@@ -166,7 +170,7 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
     memory.set_scratch_prop(6, player_render_y);
 
     logger.clear(0);
-    const qc = world_state.?.quad_cache;
+    const qc = world.state.quad_cache;
     if (game.depth > 16) {
         logger.write(0, .{ "{h}Chunk X, Y, and active suffix", qc.get_quadrant_path_x(@intCast(game.player_quadrant)), qc.get_quadrant_path_y(@intCast(game.player_quadrant)), game.player_chunk });
     } else {
@@ -185,18 +189,10 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
     // logger.write(2, .{ "{h}Zoom (scaled based on canvas resolution)", effective_zoom });
 }
 
-pub fn portal_zoom_in(bx: u32, by: u32) void {
-    const w = world_state.?;
-    const game = &memory.game;
-
-    const chunk = w.get_chunk(game.player_chunk[0], game.player_chunk[1]);
-    const parent_id = chunk.blocks[(by % SPAN) * SPAN + (bx % SPAN)].id;
-    w.push_layer(game.player_chunk[0], game.player_chunk[1], parent_id);
-
-    // TODO player_pos rearrangement logic
-    game.player_chunk = .{ 0, 0 };
-    game.player_pos = .{ 2048 - 128, 2048 - 128 };
-    // game.grid_dirty = true;
+pub fn portal_zoom_in(bx: u4, by: u4) void {
+    _ = bx;
+    _ = by;
+    // TODO complete
 }
 
 /// Resets the game state.

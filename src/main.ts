@@ -196,7 +196,6 @@ engine.renderLoop = function (_t: number) {
     );
 
     engine.logicLoop(Math.floor(accumulator + newTicks));
-    console.log(newTicks);
     accumulator = (accumulator + newTicks) % 1; // calculate new fractional accumulation of ticks
 
     // mostly arbitrary color thresholds

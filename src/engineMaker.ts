@@ -9,9 +9,6 @@ import SHADER_SOURCE from "./shader.wgsl?raw";
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_URL from "./assets/main.png?url";
 
-/** The texture format for WebGPU. */
-const TEXTURE_FORMAT: GPUTextureFormat = "rgba16float";
-
 /** Creates a new GameEngine, sets up WebGPU shaders, and calls init() from Zig. */
 export async function create(
     canvas?: HTMLCanvasElement | string,
@@ -70,9 +67,13 @@ export async function create(
         throw Error("Could not get WebGPU context from canvas.");
     }
 
+    // Firefox is silly and doesn't support the rgba16float texture format for whatever reason
+    const format = device.features.has("canvas-rgba16float-support")
+        ? "rgba16float"
+        : "bgra8unorm";
     context.configure({
         device,
-        format: TEXTURE_FORMAT, // Must match the pipeline target below
+        format: format, // Must match the pipeline target below
         alphaMode: "opaque",
     });
 
@@ -141,7 +142,7 @@ export async function create(
             entryPoint: "fs_main",
             targets: [
                 {
-                    format: TEXTURE_FORMAT,
+                    format: format,
                     blend: {
                         color: {
                             srcFactor: "src-alpha",

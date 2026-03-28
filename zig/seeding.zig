@@ -29,34 +29,58 @@ pub const Seed = [8]u64;
 //     return z ^ (z >> 31);
 // }
 
-/// BLAKE3 mix, also mixing in the layer seed. Used when appending on part of a seed to a quadrant.
+/// Mixes a base seed with some values. Since BLAKE3 is cryptographic this will yield high-quality results.
+pub fn mix_base_seed(layer_seed: Seed, number: u64) Seed {
+    const PackedInput = extern struct { // temporary struct for faster mixing :)
+        seed: Seed,
+        number: u64,
+    };
+    const input = PackedInput{ .seed = layer_seed, .number = number };
+
+    var out_bytes: [64]u8 = undefined;
+    std.crypto.hash.Blake3.hash(std.mem.asBytes(&input), &out_bytes, .{});
+    return @bitCast(out_bytes);
+}
+
+/// Mixes in the layer seed with X/Y values. Used when appending on part of a seed to a quadrant.
 pub fn mix_coordinate_seed(layer_seed: Seed, x: u64, y: u64) Seed {
     const PackedInput = extern struct { // temporary struct for faster mixing :)
         seed: Seed,
         x: u64,
         y: u64,
+        depth: u64,
     };
-    const input = PackedInput{ .seed = layer_seed, .x = x, .y = y };
+    const input = PackedInput{
+        .seed = layer_seed,
+        .x = x,
+        .y = y,
+        .depth = memory.game.depth,
+    };
 
     var out_bytes: [64]u8 = undefined;
     std.crypto.hash.Blake3.hash(std.mem.asBytes(&input), &out_bytes, .{});
     return @bitCast(out_bytes);
 }
 
-/// Bijective mixer for generating an individual seed for every chunk when combining X/Y active suffix coordinates with the seed of a quadrant.
-pub fn mix_chunk_seed(quadrant_seed: Seed, coord_vector: memory.v2u64) Seed {
+/// Generates 4 sets of seeds for every chunk when combining X/Y active suffix coordinates with the seed of a quadrant.
+pub fn mix_chunk_seeds(quadrant_seed: Seed, coord_vector: memory.v2u64) [4]Seed {
     const PackedInput = extern struct { // do the packing thing again
         seed: Seed,
         vector: memory.v2u64,
+        depth: u64,
     };
-    const input = PackedInput{ .seed = quadrant_seed, .vector = coord_vector };
+    const input = PackedInput{
+        .seed = quadrant_seed,
+        .vector = coord_vector,
+        .depth = memory.game.depth,
+    };
 
-    var out_bytes: [64]u8 = undefined;
+    var out_bytes: [256]u8 = undefined;
     std.crypto.hash.Blake3.hash(std.mem.asBytes(&input), &out_bytes, .{});
     return @bitCast(out_bytes);
 }
 
-pub const ChaCha20 = std.crypto.aead.chacha_poly.ChaCha20Poly1305; // TODO actually use this in procedural generation as a CSPRNG
+pub const ChaCha8 = std.crypto.aead.chacha_poly.ChaCha8Poly1305;
 
 /// Xoshiro512** (StarStar), public domain randomness function.
 /// A high-performance, all-purpose generator with a period of 2^512 - 1.
@@ -177,11 +201,11 @@ test "Xoshiro512** initialization/consistency" {
 test "branching check" {
     var seed: Seed = undefined;
     seed_from_bytes("test", &seed);
-    var rng_main = Xoshiro512.init(seed);
+    const rng_main = Xoshiro512.init(seed);
 
     // Make value copies of the state
-    var branch_a = rng_main.checkpoint();
-    var branch_b = rng_main.checkpoint();
+    var branch_a: Xoshiro512 = rng_main;
+    var branch_b: Xoshiro512 = rng_main;
 
     const val_a = branch_a.next();
     const val_b = branch_b.next();
