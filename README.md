@@ -187,6 +187,8 @@ Groups of objects such as enemies are stored in a `MultiArrayList` with properti
 
 TODO
 
+Utilizing `ChaCha12`, it is possible to...
+
 #### Particles
 
 Particles are small squares with rotation and opacity and organized using a circular buffer`ParticleSystem`. There can be a maximum of 1,000 particles at a time (the circular buffer is greedy and "loops around" to always erase the oldest particles). All data is passed to WebGPU and WebGPU automatically culls expired particles (as this part isn't super performance-strict).
@@ -239,20 +241,19 @@ Seeds are even more unlikely to collide than hashes (256 bits of collision resis
 A `std.AutoHashMap` stores the path hashes and a dynamically allocated array of `[memory.SPAN_SQ]BlockMod` (the dense data representing a chunk's entire modifications). See some definitions and more details:
 
 ```zig
-/// Empty block of id Sprite.none
-pub const AIR_BLOCK: Block = .{ .id = Sprite.none, .seed = 0, .light = 255, .hp = 0, .flags = 0 };
+/// Empty block of id `Sprite.none`
+pub const AIR_BLOCK: Block = .{ .id = Sprite.none, .seed = 0, .light = 255, .hp = 0, .edge_flags = 0 };
 
 /// 32-bit packed structure representing a single modified block within a chunk.
 pub const BlockMod = packed struct(u32) {
     /// The type of the block being represented. (Defaults to a special sprite type that represents "same as what procedural generation would say".)
     id: Sprite = Sprite.unchanged,
-    // /// X-coordinate of the modified block within the chunk.
-    // x: u4,
-    // /// Y-coordinate of the modified block within the chunk.
-    // y: u4,
+    /// The edge flags. TODO decide if we want modifications to actually update edge flags or if these should be updated dynamically.
+    edge_flags: u8 = undefined,
     /// How "mined" the block is. 0 is least mined, 15 is most mined. Unlike in other games like Terraria, this mined state is permanent and isn't "quietly undone" without player action.
-    hp: u4,
+    hp: u4 = undefined,
 };
+
 
 /// A full 256-block (chunk) of modifications.
 pub const ChunkMod = [memory.SPAN_SQ]BlockMod;
@@ -261,7 +262,7 @@ pub const ChunkMod = [memory.SPAN_SQ]BlockMod;
 /// Fits exactly into one 64-byte cache line.
 pub const ModKey = extern struct {
     seed: seeding.Seed,
-// ...rest of code cut off
+// ...
 ```
 
 ```zig
@@ -277,23 +278,6 @@ pub const QuadCache = struct {
     ancestor_materials: [4]Sprite,
 ```
 
-```zig
-/// The "fractal lineage sparse set" that stores all modifications. Modifications of "higher" D-values are prioritized, and lower D-values are used for backgrounds/procedural generation; at any depth D, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.)
-///
-/// Reading performance is an amortized O(1) due only needing to consider block sizes between depth D-15 to D.
-///
-/// Writing performance is an amortized O(1) due to needing to find a `HashMap.
-///
-/// Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to show a "spectator view" on death), and storing where things are with a 256-bit ModKey and assuming that collisions are impossible.
-///
-/// Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 1KiB in history, plus additional index memory (so slightly more).
-pub const FLSS = struct {
-    /// Dense, fragmentation-free storage of all chunk modifications.
-    history: std.ArrayList(ChunkModData),
-    /// Maps a coordinate (u64) to an index in the `history` array.
-    index: std.AutoHashMap(ModKey, u64), // 64-bit to prevent headaches between Memory32/64/native.
-```
-
 #### Zoom logic
 
 Entering a portal shifts a bunch of data around, particularly the cache and all coordinate paths:
@@ -306,7 +290,7 @@ Entering a portal shifts a bunch of data around, particularly the cache and all 
 
 Because the coordinate tracking suffix uses a 64-bit integer, and each depth traversal consumes exactly 4 bits (a nibble), a player can natively traverse exactly 16 depths ($2^{64}$ chunks) without exceeding standard integer bounds.
 
-To manage near-infinite zoom, Depthwell utilizes the **16-level sliding lineage window** attached to the 4 instances of the `QuadCache`! The `layer_seed_history` isn't a single global history. Instead it's split into 4 independent arrays of length 16, with each quadrant of the QuadCache containing its own `Seed` history.
+To manage near-infinite zoom, Depthwell utilizes a **16-level sliding lineage window** attached to the 4 instances of the `QuadCache`! The `layer_seed_history` isn't a single global history. Instead it's split into 4 independent arrays of length 16, with each quadrant of the QuadCache containing its own `Seed` history.
 
 When zooming past Depth 16, the engine executes a "rebase." The player is re-centered inside the 64-bit bounds, and the highest 4 bits (the overflow nibble) "fall off" the top of the suffix.
 
@@ -315,6 +299,13 @@ Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the curren
 (Modifications are not culled in order to allow for a spectating/history once the player dies, and perhaps even be a main/custom mode where you can re-spawn, although this logic might encounter its own set of difficult struggles!)
 
 Chunk modifications are hashed in the sparse set by XORing the chunk's active coordinates directly into its corresponding 512-bit `Seed`. Because the `Seed` is just the BLAKE3 of a quadrant, XOR-ing a coordinate's `cx`/`cy` is fully secure (as this would change between quadrants anyway)!
+
+Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.)
+
+- Reading performance is an amortized O(1) due only needing to consider block sizes between depth D-15 to D.
+- Writing performance is an amortized O(1) due to needing to find a `HashMap.
+- Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to show a "spectator view" on death), and storing where things are with a 256-bit ModKey and assuming that collisions are impossible.
+- Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 1KiB in history, plus additional index memory (so slightly more).
 
 #### Memory transfer
 
