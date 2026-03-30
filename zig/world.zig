@@ -27,19 +27,17 @@ pub const Sprite = enum(u20) {
     unchanged = 1048575,
 };
 
-/// Empty block of id Sprite.none
+/// Empty block of id `Sprite.none`
 pub const AIR_BLOCK: Block = .{ .id = Sprite.none, .seed = 0, .light = 255, .hp = 0, .edge_flags = 0 };
 
 /// 32-bit packed structure representing a single modified block within a chunk.
 pub const BlockMod = packed struct(u32) {
     /// The type of the block being represented. (Defaults to a special sprite type that represents "same as what procedural generation would say".)
     id: Sprite = Sprite.unchanged,
-    // /// X-coordinate of the modified block within the chunk.
-    // x: u4,
-    // /// Y-coordinate of the modified block within the chunk.
-    // y: u4,
+    /// The edge flags. TODO decide if we want modifications to actually update edge flags or if these should be updated dynamically.
+    edge_flags: u8 = undefined,
     /// How "mined" the block is. 0 is least mined, 15 is most mined. Unlike in other games like Terraria, this mined state is permanent and isn't "quietly undone" without player action.
-    hp: u4,
+    hp: u4 = undefined,
 };
 
 /// A full 256-block (chunk) of modifications.
@@ -207,60 +205,6 @@ pub const QuadCache = struct {
             .most_left = (quadrant % 2 == 0) and self.most_left,
             .most_right = (quadrant % 2 == 1) and self.most_right,
         };
-    }
-};
-
-/// The "fractal lineage sparse set" that stores all modifications. Modifications of "higher" D-values are prioritized, and lower D-values are used for backgrounds/procedural generation; at any depth D, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.)
-///
-/// Reading performance is an amortized O(1) due only needing to consider block sizes between depth D-15 to D.
-///
-/// Writing performance is an amortized O(1) due to needing to find a `HashMap.
-///
-/// Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to show a "spectator view" on death), and storing where things are with a 256-bit ModKey and assuming that collisions are impossible.
-///
-/// Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 1KiB in history, plus additional index memory (so slightly more).
-pub const FLSS = struct {
-    /// Dense, fragmentation-free storage of all chunk modifications.
-    history: std.ArrayList(ChunkMod),
-    /// Maps a coordinate (u64) to an index in the `history` array.
-    index: std.AutoHashMap(ModKey, u64), // 64-bit "pointer" to prevent headaches between Memory32/64/native.
-
-    pub fn init(alloc: std.mem.Allocator) FLSS {
-        return .{
-            .history = std.ArrayList(ChunkMod).init(alloc),
-            .index = std.AutoHashMap(ModKey, u64).init(alloc),
-        };
-    }
-
-    /// Appends a modification.
-    pub fn put_modification(self: *@This(), key: ModKey, mod: BlockMod) !void {
-        const result = try self.index.getOrPut(key);
-        if (!result.found_existing) {
-            // New chunk modified. Append a new 256-block array to the history.
-            const new_idx = @as(u64, @intCast(self.history.items.len));
-            var new_data = std.mem.zeroes(ChunkMod);
-            new_data.mods[0] = mod;
-            try self.history.append(new_data);
-            result.value_ptr.* = new_idx;
-        } else {
-            // Chunk already modified, so update existing array!
-            const idx = result.value_ptr.*;
-            var data = &self.history.items[idx];
-
-            // Overwrite existing block if it exists, otherwise append
-            var found = false;
-            for (0..data.count) |i| {
-                if (data.mods[i].x == mod.x and data.mods[i].y == mod.y) {
-                    data.mods[i] = mod;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found and data.count < 256) {
-                data.mods[data.count] = mod;
-                data.count += 1;
-            }
-        }
     }
 };
 

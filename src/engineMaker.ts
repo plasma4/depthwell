@@ -5,7 +5,7 @@ import { GameEngine } from "./engine";
 /** The URL for the WebAssembly code (compiled from zig build). */
 import WASM_URL from "./main.wasm?url";
 /** The URL for the WebGPU shader code. */
-import SHADER_SOURCE from "./shader.wgsl";
+import SHADER_SOURCE from "./shader.wgsl?raw";
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_URL from "./assets/main.png?url";
 
