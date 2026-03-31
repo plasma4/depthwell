@@ -34,6 +34,7 @@ var firstCall = false;
 /// Initializes the game.
 pub fn init() void {
     memory.game = .{}; // initialize GameState
+    // TODO destroy as needed
     world.state = world.World.init(memory.allocator);
 
     // Start off by determining where the player starts off exactly with layer pushing
@@ -137,6 +138,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
             // bounds check with world limits
             if (abs_cx >= 0 and u_abs_cx <= world_limit and abs_cy >= 0 and u_abs_cy <= world_limit) {
                 const chunk = w.get_chunk(.{ .suffix = .{ @bitCast(abs_cx), @bitCast(abs_cy) }, .quadrant = @intCast(game.player_quadrant) });
+                defer w.alloc.destroy(chunk);
                 for (0..SPAN) |ly| {
                     @memcpy(out[(gy * SPAN + ly) * wb + gx * SPAN ..][0..SPAN], chunk.blocks[ly * SPAN ..][0..SPAN]);
                 }
