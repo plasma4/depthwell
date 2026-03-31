@@ -31,11 +31,11 @@ pub const Seed = [8]u64;
 
 /// Mixes a base seed with some values. Since BLAKE3 is cryptographic this will yield high-quality results.
 pub fn mix_base_seed(layer_seed: Seed, number: u64) Seed {
-    const PackedInput = extern struct { // temporary struct for faster mixing :)
-        seed: Seed,
+    const PackedInput = packed struct { // temporary struct for faster mixing :)
+        seed: u512,
         number: u64,
     };
-    const input = PackedInput{ .seed = layer_seed, .number = number };
+    const input = PackedInput{ .seed = @bitCast(layer_seed), .number = number };
 
     var out_bytes: [64]u8 = undefined;
     std.crypto.hash.Blake3.hash(std.mem.asBytes(&input), &out_bytes, .{});
@@ -44,14 +44,14 @@ pub fn mix_base_seed(layer_seed: Seed, number: u64) Seed {
 
 /// Mixes in the layer seed with X/Y values. Used when appending on part of a seed to a quadrant.
 pub fn mix_coordinate_seed(layer_seed: Seed, x: u64, y: u64) Seed {
-    const PackedInput = extern struct { // temporary struct for faster mixing :)
-        seed: Seed,
+    const PackedInput = packed struct { // temporary struct for faster mixing :)
+        seed: u512,
         x: u64,
         y: u64,
         depth: u64,
     };
     const input = PackedInput{
-        .seed = layer_seed,
+        .seed = @bitCast(layer_seed),
         .x = x,
         .y = y,
         .depth = memory.game.depth,
@@ -64,13 +64,13 @@ pub fn mix_coordinate_seed(layer_seed: Seed, x: u64, y: u64) Seed {
 
 /// Generates 4 sets of seeds for every chunk when combining X/Y active suffix coordinates with the seed of a quadrant.
 pub fn mix_chunk_seeds(quadrant_seed: Seed, coord_vector: memory.v2u64) [4]Seed {
-    const PackedInput = extern struct { // do the packing thing again
-        seed: Seed,
+    const PackedInput = packed struct { // do the packing thing again
+        seed: u512,
         vector: memory.v2u64,
         depth: u64,
     };
     const input = PackedInput{
-        .seed = quadrant_seed,
+        .seed = @bitCast(quadrant_seed),
         .vector = coord_vector,
         .depth = memory.game.depth,
     };
@@ -125,7 +125,7 @@ pub const ChaCha12 = struct {
 
     /// Returns the next 64 bits of psuedo-random data.
     pub fn next(self: *@This()) u64 {
-        if (self.position >= 8) {
+        if (self.position == 8) {
             self.generateBlock();
             self.position = 0;
         }

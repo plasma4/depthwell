@@ -245,10 +245,10 @@ pub const World = struct {
 
     /// Generates a whole chunk (considering modifications), given a pointer to where the chunk should be stored and coordinates.
     pub fn generate_chunk(self: *const @This(), chunk: *memory.Chunk, coord: memory.Coordinate) void {
-        const chunk_seed = self.quad_cache.get_chunk_seeds(coord);
-        const rng1 = seeding.ChaCha12.init(chunk_seed[0]); // Block generation.
-        const rng3 = seeding.ChaCha12.init(chunk_seed[2]);
-        var rng4 = seeding.ChaCha12.init(chunk_seed[3]); // Visual touches only.
+        const chunk_seeds = self.quad_cache.get_chunk_seeds(coord);
+        const rng1 = seeding.ChaCha12.init(chunk_seeds[0]); // Block generation.
+        const rng3 = seeding.ChaCha12.init(chunk_seeds[2]);
+        var rng4 = seeding.ChaCha12.init(chunk_seeds[3]); // Visual touches only.
 
         _ = rng1;
         _ = rng3;
@@ -271,7 +271,7 @@ pub const World = struct {
                 }
 
                 // Use density to influence block generation
-                const density = get_test_noise(chunk_seed[1], @as(f64, @floatFromInt(block_x)) / SPAN, @as(f64, @floatFromInt(block_y)) / SPAN);
+                const density = get_test_noise_broken(chunk_seeds[1], @as(f64, @floatFromInt(block_x)) / SPAN, @as(f64, @floatFromInt(block_y)) / SPAN);
                 const entropy = rng4.next();
                 chunk.blocks[id] = .{
                     .id = generate_initial_block(0.0, density, 0.0),
@@ -445,7 +445,6 @@ pub inline fn generate_initial_block(moisture: f64, density: f64, height: f64) S
     _ = height;
 
     if (density < 0.4) return .none;
-
     if (density < 0.8) return .stone;
     if (density < 0.9) return .greenstone;
     return .bloodstone;
@@ -462,7 +461,7 @@ fn fade(t: f64) f64 {
 
 pub fn get_value_noise(seed: seeding.Seed, world_x: f64, world_y: f64) f64 {
     var base_seed = seed;
-    base_seed[0] += 0;
+    base_seed[0] ^= 0;
     base_seed[1] += 0;
     const x0 = @floor(world_x);
     const y0 = @floor(world_y);
@@ -490,20 +489,22 @@ fn get_random_value(seed: seeding.Seed, x: u64, y: u64) f64 {
     key[0] ^= @bitCast(x);
     key[1] ^= @bitCast(y);
     var prng = seeding.ChaCha12.init(key);
-    return @as(f64, @floatFromInt(prng.next() >> 11)) * (1.0 / 9007199254740992.0);
+    return @as(f64, @floatFromInt(prng.next())) * (1.0 / 18446744073709551616.0);
 }
 
 /// Simple noise for testing.
 pub fn get_test_noise(seed: seeding.Seed, x: f64, y: f64) f64 {
+    _ = .{ x, y };
     var key = seed;
     key[0] += 0; // TODO figure out why this hack is necessary
     var prng = seeding.ChaCha12.init(key);
-    return @mod((x + y + @as(f64, @floatFromInt(prng.next() & 127)) / 128.0), 1.0);
+    return @as(f64, @floatFromInt(prng.next() & 127)) / 128;
 }
 
 /// Simple noise for testing.
 pub fn get_test_noise_broken(seed: seeding.Seed, x: f64, y: f64) f64 {
+    _ = .{ x, y };
     const key = seed;
     var prng = seeding.ChaCha12.init(key);
-    return @mod((x + y + @as(f64, @floatFromInt(prng.next() & 127)) / 128.0), 1.0);
+    return @as(f64, @floatFromInt(prng.next() & 127)) / 128;
 }

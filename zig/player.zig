@@ -153,6 +153,7 @@ fn is_colliding(px: i64, py: i64, w: *world.World) bool {
         const cx = @divFloor(bx, SPAN);
         const cy = @divFloor(by, SPAN);
         const chunk = w.get_chunk(cx, cy);
+        defer w.alloc.destroy(chunk);
 
         // Get the block within that chunk
         const lx: u4 = @intCast(@mod(bx, SPAN));
