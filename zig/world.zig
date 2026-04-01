@@ -157,7 +157,7 @@ pub const ChunkCache = struct {
 
     pub fn clear() void {
         @memset(&cache_keys, null); // reset all keys
-        cache_clock_bits.mask = 0; // clear bitset
+        cache_clock_bits = std.StaticBitSet(64).initEmpty(); // clear bitset
         cache_hand = 0; // reset hand
     }
 };
@@ -430,13 +430,14 @@ pub const World = struct {
         memory.game.set_player_pos(new_pos);
         memory.game.set_camera_pos(new_pos);
 
-        // TODO clear cache logic
+        // TODO also clear SimBuffer
+        ChunkCache.clear();
 
         if (memory.game.depth <= 16) {
             // Base phase: We are just filling up the 64-bit Suffix. No rebasing needed yet.
             memory.game.player_chunk[0] = (coord.suffix[0] << SPAN_LOG2) | bx;
             memory.game.player_chunk[1] = (coord.suffix[1] << SPAN_LOG2) | by;
-            // TODO most top/left/bottom/right logic
+            // TODO create most top/left/bottom/right logic
             // Push path hash to stack now! TODO verify+complete all this
             // self.push_path_to_stack(self.quad_cache.get_lineage_seed(memory.game.get_player_coord().quadrant, 0)); // Pushes current down, adds to top
 
