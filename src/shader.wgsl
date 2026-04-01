@@ -526,8 +526,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
     var darkening = 0.0;
     let edge_width = 0.20 + f32(extractBits(seed, 10u, 3u)) / 32.0;
-    let edge_strength = 0.1 + f32(extractBits(seed, 13u, 3u)) / 48.0;
-    let corner_width = 0.15;
+    let edge_strength = 0.2 + f32(extractBits(seed, 13u, 3u)) / 48.0;
+    let corner_width = 0.3;
 
     // Curvy shadow gradient
     if ((edge_flags & EDGE_TOP) == 0u) {
