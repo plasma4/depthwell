@@ -145,7 +145,7 @@ fn is_colliding(px: i64, py: i64, w: *world.World) bool {
     };
 
     for (corners) |c| {
-        // Convert subpixel units to Block coordinates (1 block = 256 units)
+        // Convert subpixel units to block coordinates within a chunk
         const bx: i32 = @intCast(@divFloor(c[0], SPAN_SQ));
         const by: i32 = @intCast(@divFloor(c[1], SPAN_SQ));
 
@@ -153,7 +153,6 @@ fn is_colliding(px: i64, py: i64, w: *world.World) bool {
         const cx = @divFloor(bx, SPAN);
         const cy = @divFloor(by, SPAN);
         const chunk = w.get_chunk(cx, cy);
-        defer w.alloc.destroy(chunk);
 
         // Get the block within that chunk
         const lx: u4 = @intCast(@mod(bx, SPAN));

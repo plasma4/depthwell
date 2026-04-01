@@ -178,8 +178,13 @@ pub const Coordinate = struct {
     suffix: v2u64,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u2,
-    /// TODO determine if we actually want funny 3D stuff to happen (256 possible subpixel states and 256 possible important states, maybe)
-    influence: u16 = 0,
+    // /// TODO determine if we actually want funny 3D stuff to happen (256 possible subpixel states and 256 possible important states, maybe)
+    // influence: u16 = 0,
+
+    /// Checks equality between two `Coordinate` values.
+    pub fn eql(self: Coordinate, other: Coordinate) bool {
+        return @reduce(.And, self.suffix == other.suffix) and self.quadrant == other.quadrant;
+    }
 };
 
 /// Dense storage for a modified chunk.

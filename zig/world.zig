@@ -76,18 +76,89 @@ pub const ModKeyContext = struct {
     }
 };
 
-/// Constant-size buffer caching the simulation buffer. 512 KiB in size.
+const SIM_BUFFER_SIZE = 256;
+const CHUNK_CACHE_SIZE = 64;
+const CHUNK_POOL_SIZE = SIM_BUFFER_SIZE + CHUNK_CACHE_SIZE;
+
+/// A combined pool of SimBuffer and chunk cache data.
+var chunk_pool: [CHUNK_POOL_SIZE]memory.Chunk = undefined;
+
 pub const SimBuffer = struct {
-    chunks: [256]*memory.Chunk, // hard-capped to 256, representing a 16x16 area around the player
+    const sim_buffer_ptr: *[SIM_BUFFER_SIZE]memory.Chunk = chunk_pool[CHUNK_CACHE_SIZE..][0..SIM_BUFFER_SIZE];
 
     /// Returns the chunk from the specified x and y.
     pub inline fn get_index(cx: u64, cy: u64) usize {
         return (@as(usize, cy & 0xF) << 4) | @as(usize, cx & 0xF);
     }
 
-    /// Sets a chunk from the specified x and y to a new chunk.
-    pub inline fn set_index(self: *@This(), new_chunk: *const memory.Chunk, cx: u64, cy: u64) void {
-        self.chunks[(@as(usize, cy & 0xF) << 4) | @as(usize, cx & 0xF)] = new_chunk;
+    /// Sets a chunk from the specified x and y to the chunk instance given.
+    pub inline fn set_index(chunk: *const memory.Chunk, cx: u64, cy: u64) void {
+        sim_buffer_ptr[(@as(usize, cy & 0xF) << 4) | @as(usize, cx & 0xF)] = chunk;
+    }
+};
+
+pub const ChunkCache = struct {
+    var cache_keys: [CHUNK_CACHE_SIZE]?Coordinate = [_]?Coordinate{null} ** CHUNK_CACHE_SIZE;
+    var cache_chunk_data: *[CHUNK_CACHE_SIZE]memory.Chunk = chunk_pool[0..CHUNK_CACHE_SIZE];
+
+    // Clock metadata
+    var cache_clock_bits: std.StaticBitSet(CHUNK_CACHE_SIZE) = std.StaticBitSet(CHUNK_CACHE_SIZE).initEmpty();
+    var cache_hand: usize = 0;
+
+    /// Retrieves a chunk if it exists, marking it as "recently used"
+    pub fn get(coord: Coordinate) ?*memory.Chunk {
+        for (&cache_keys, 0..) |maybe_key, i| {
+            if (maybe_key) |k| {
+                if (k.eql(coord)) {
+                    cache_clock_bits.set(i); // give it a second chance (ref_bit becomes 1)
+                    return &cache_chunk_data[i];
+                }
+            }
+        }
+        return null;
+    }
+
+    pub fn allocate_slot(coord: Coordinate) *memory.Chunk {
+        while (true) {
+            const idx = cache_hand;
+            cache_hand = (cache_hand + 1) % CHUNK_CACHE_SIZE;
+
+            if (cache_clock_bits.isSet(idx)) {
+                // Give second chance: clear bit and move hand
+                cache_clock_bits.setValue(idx, false);
+            } else {
+                // Found a "victim" (either null key or ref_bit was 0)
+                cache_keys[idx] = coord;
+                cache_clock_bits.set(idx); // Mark as recently used
+                return &cache_chunk_data[idx];
+            }
+        }
+    }
+
+    /// Inserts a chunk using the clock algorithm to find an eviction candidate.
+    pub fn insert(coord: Coordinate, chunk: memory.Chunk) *memory.Chunk {
+        while (true) {
+            const idx = cache_hand;
+
+            // Advance the hand for next time
+            cache_hand = (cache_hand + 1) % CHUNK_CACHE_SIZE;
+
+            // Clock logic: second chance if ref_bit is 1, otherwise evict
+            if (cache_clock_bits.isSet(idx)) {
+                cache_clock_bits.setValue(idx, false);
+            } else {
+                cache_keys[idx] = coord;
+                cache_chunk_data[idx] = chunk;
+                cache_clock_bits.set(idx); // new entries start with ref bit as 1
+                return &cache_chunk_data[idx];
+            }
+        }
+    }
+
+    pub fn clear() void {
+        @memset(&cache_keys, null); // reset all keys
+        cache_clock_bits.mask = 0; // clear bitset
+        cache_hand = 0; // reset hand
     }
 };
 
@@ -190,25 +261,10 @@ pub const QuadCache = struct {
         };
     }
 };
-
-pub const CachedChunk = struct {
-    x: u64,
-    y: u64,
-    depth: u64,
-    quadrant: u32,
-    chunk_ptr: ?*memory.Chunk = null,
-};
-
 /// Stores the blocks and state of the world of Depthwell.
 pub const World = struct {
     /// Allocator used in the World.
     alloc: std.mem.Allocator,
-    /// A SimBuffer with 256 chunks that is cached to prevent constant recalculations (effectively centered around the player and constantly rearranged). TODO actual shifting logic along with chunk_cache, of course
-    sim_buffer: SimBuffer,
-    /// A super simple LRU that stores chunks accessed recently, particularly useful for edge flags and temporary logic like sim_buffer shifting that could potentially exceed the `SimBuffer`'s boundaries. Stores just 64 chunks, and checked after the SimBuffer through linear search. TODO, implement and add search features.
-    chunk_cache: [64]CachedChunk,
-    /// Actual raw chunk data stored in the chunk_cache.
-    chunk_cache_data: [64]*memory.Chunk,
     /// The QuadCache that stores information about the 4 quadrants and their seeds.
     quad_cache: QuadCache,
     /// Represents the answer to the question "what is the largest possible suffix value"? 15 at depth 1, 255 at depth 2, capped at 2**64-1 at depth 16 and beyond.
@@ -217,7 +273,6 @@ pub const World = struct {
     pub fn init(alloc: std.mem.Allocator) World {
         return .{
             .alloc = alloc,
-            .sim_buffer = undefined,
             .quad_cache = .{
                 .path_hashes = undefined,
                 .left_path = std.ArrayList(u64){
@@ -230,17 +285,30 @@ pub const World = struct {
                 },
                 .ancestor_materials = .{Sprite.none} ** 4,
             },
-            .chunk_cache = undefined,
-            .chunk_cache_data = undefined,
             // .modification_store = std.HashMap(ModKey, memory.ModifiedChunk, ModKeyContext, 80).init(alloc),
         };
     }
 
-    pub fn get_chunk(self: *const @This(), coord: Coordinate) *memory.Chunk {
+    /// Creates a new instance of a Chunk where specified.
+    pub fn write_chunk(self: *const @This(), chunk: *memory.Chunk, coord: Coordinate) void {
         // logger.write(3, .{ "{h}Chunk requested", coord });
-        // TODO figure out this whole allocation and SimBuffer/chunk_cache usage business
-        const chunk = self.alloc.create(memory.Chunk) catch @panic("chunk alloc failed");
-        self.generate_chunk(chunk, coord);
+        // TODO use SimBuffer
+
+        if (ChunkCache.get(coord)) |cached_ptr| { // see if it's in the cache, if it's not in SimBuffer
+            chunk.* = cached_ptr.*; // Copy from cache to caller
+            return;
+        }
+
+        const new_slot_ptr = ChunkCache.allocate_slot(coord); // we must create the chunk now
+        self.generate_chunk(new_slot_ptr, coord); // generate the data in the cache's memory
+        chunk.* = new_slot_ptr.*; // make a copy for a result
+        // TODO handle new modification logic when the time comes
+    }
+
+    /// Creates a new instance of a Chunk, placed into the stack.
+    pub inline fn get_chunk(self: *const @This(), coord: Coordinate) memory.Chunk {
+        const chunk: memory.Chunk = undefined;
+        self.write_chunk(chunk, coord);
         return chunk;
     }
 
@@ -361,6 +429,8 @@ pub const World = struct {
         memory.game.player_velocity = .{ 0, 0 };
         memory.game.set_player_pos(new_pos);
         memory.game.set_camera_pos(new_pos);
+
+        // TODO clear cache logic
 
         if (memory.game.depth <= 16) {
             // Base phase: We are just filling up the 64-bit Suffix. No rebasing needed yet.
