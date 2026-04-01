@@ -123,6 +123,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
     // TODO look at this and determine if it works properly with higher depths
     const world_limit: u64 = world.state.max_possible_suffix;
 
+    var chunk: memory.Chunk = undefined;
     for (0..ch) |gy| {
         for (0..cw) |gx| {
             const suffix_x = @as(i64, @bitCast(game.player_chunk[0]));
@@ -137,8 +138,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
 
             // bounds check with world limits
             if (abs_cx >= 0 and u_abs_cx <= world_limit and abs_cy >= 0 and u_abs_cy <= world_limit) {
-                const chunk = w.get_chunk(.{ .suffix = .{ @bitCast(abs_cx), @bitCast(abs_cy) }, .quadrant = @intCast(game.player_quadrant) });
-                defer w.alloc.destroy(chunk);
+                w.write_chunk(&chunk, .{ .suffix = .{ @bitCast(abs_cx), @bitCast(abs_cy) }, .quadrant = @intCast(game.player_quadrant) });
                 for (0..SPAN) |ly| {
                     @memcpy(out[(gy * SPAN + ly) * wb + gx * SPAN ..][0..SPAN], chunk.blocks[ly * SPAN ..][0..SPAN]);
                 }

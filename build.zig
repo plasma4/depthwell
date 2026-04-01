@@ -38,18 +38,19 @@ pub fn build(b: *std.Build) void {
         }),
     });
     if (optimize == .Debug) {
-        // exe.root_module.strip = false;
-        // exe.lto = .none;
-        // exe.export_table = true;
+        exe.root_module.strip = false; // try to reduce any WASM optimization
+        exe.lto = .none;
+        exe.export_table = true;
     }
     exe.rdynamic = true; // export functions with "export" keyword
     exe.entry = .disabled; // No main()
-    // exe.stack_size = 4 * 65536; // can increase as necessary
+    exe.stack_size = 4 * 65536; // 4 pages, can increase as necessary
+    if (optimize == .Debug) {
+        // exe.use_llvm = false; // can't do this for WASM ):
+        // exe.use_lld = false; // nope
+    }
+
     // exe.global_base = 8; // removed in favor of letting Zig manage pointers
-    // if (optimize == .Debug) {
-    //     exe.use_llvm = false;
-    //     exe.use_lld = false;
-    // }
 
     const install_wasm = b.addInstallFileWithDir(
         exe.getEmittedBin(),
