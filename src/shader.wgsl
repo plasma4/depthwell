@@ -1,9 +1,8 @@
 /*
  * Main shader for Depthwell.
  */
-// Sprite sheet constants. Sprites are saved as a .png, and each asset is 16x16. Currently, there are some sprites further to the right that are unused (due to being bad or unnecessary).
-// Current sprites: [void, player, void stone, stone, greenstone, bloodstone, torch, mushrooms, mushrooms 2]
-const TILES_PER_ROW: f32 = 15.0;
+// Sprite sheet constants. Sprites are saved as a .png, and each asset is 16x16. See zig/world.zig's Sprite definitions for what these all are.
+const TILES_PER_ROW: f32 = 12.0;
 const TILES_PER_COLUMN: f32 = 1.0;
 
 const TILE_SIZE: f32 = 16.0;

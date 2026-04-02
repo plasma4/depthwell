@@ -3,6 +3,6 @@ compile_commands.json
 **/.DS_Store
 /.zig-cache
 /node_modules
-/src/assets/main.aseprite
+/src/assets/*.aseprite
 /zig/internal
 /dist
