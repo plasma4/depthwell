@@ -191,6 +191,42 @@ pub const ChaCha12 = struct {
         @compileError("Only f32 and f64 floats are supported.");
     }
 
+    /// High-performance stateless 2D hash (using the first 384 seed bits).
+    /// Treats X and Y as the `ChaCha12` nonce/counter to return
+    /// a random value for a specific global coordinate.
+    pub fn hash2d(seed_data: Seed, x: u64, y: u64) u64 {
+        const s: [16]u32 = @bitCast(seed_data);
+
+        var x0 = @as(v4u32, @bitCast(s[0..4].*));
+        var x1 = @as(v4u32, @bitCast(s[4..8].*));
+        var x2 = @as(v4u32, @bitCast(s[8..12].*));
+        // Inject coordinates directly into the final row
+        var x3 = v4u32{
+            @as(u32, @truncate(x)),
+            @as(u32, @truncate(x >> 32)),
+            @as(u32, @truncate(y)),
+            @as(u32, @truncate(y >> 32)),
+        };
+
+        const orig0 = x0;
+        const orig1 = x1;
+
+        inline for (0..6) |_| {
+            quarterRound(&x0, &x1, &x2, &x3);
+            x1 = @shuffle(u32, x1, undefined, [4]i32{ 1, 2, 3, 0 });
+            x2 = @shuffle(u32, x2, undefined, [4]i32{ 2, 3, 0, 1 });
+            x3 = @shuffle(u32, x3, undefined, [4]i32{ 3, 0, 1, 2 });
+            quarterRound(&x0, &x1, &x2, &x3);
+            x1 = @shuffle(u32, x1, undefined, [4]i32{ 3, 0, 1, 2 });
+            x2 = @shuffle(u32, x2, undefined, [4]i32{ 2, 3, 0, 1 });
+            x3 = @shuffle(u32, x3, undefined, [4]i32{ 1, 2, 3, 0 });
+        }
+
+        const res_low = x0[0] +% orig0[0];
+        const res_high = x0[1] +% orig1[0];
+        return @as(u64, res_low) | (@as(u64, res_high) << 32);
+    }
+
     /// Generates the next 64 bytes of seeding data.
     fn generateBlock(self: *@This()) void {
         var x0 = self.row0; // SIMD-optimized vectors

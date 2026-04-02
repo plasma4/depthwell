@@ -24,7 +24,7 @@ pub export fn tick(speed: f64) void {
     if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
         // if (in_debug_mode) {
         // increase depth (testing hotkey)
-        world.state.push_layer(
+        world.push_layer(
             world.Sprite.none,
             memory.game.get_player_coord(),
             memory.game.get_block_x_in_chunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
