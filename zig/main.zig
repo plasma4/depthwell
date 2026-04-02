@@ -29,13 +29,12 @@ pub inline fn handle_visible_chunks() void {
     }
 }
 
-var firstCall = false;
+var alreadyStarted = false;
 
 /// Initializes the game.
 pub fn init() void {
     memory.game = .{}; // initialize GameState
-    // TODO destroy as needed
-    world.state = world.World.init(memory.allocator);
+    // TODO destroy World values as needed
 
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(seeding.mix_base_seed(memory.game.seed, 1));
@@ -46,7 +45,7 @@ pub fn init() void {
             @intCast(rng.next() & (memory.SUBPIXELS_IN_CHUNK - 1)),
         });
 
-        world.state.push_layer(
+        world.push_layer(
             world.Sprite.none,
             memory.game.get_player_coord(),
             memory.game.get_block_x_in_chunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
@@ -54,16 +53,16 @@ pub fn init() void {
         );
     }
 
-    if (firstCall) {
+    if (!alreadyStarted) {
         logger.log(@src(), "Hello from Zig!", .{});
-        firstCall = false;
+        alreadyStarted = true;
     }
 }
 
 /// Processes data for renderFrame in TypeScript.
 pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
-    const w = &world.state;
+    const w = world;
     const game = &memory.game;
 
     // this variable allows for super smooth frame interpolation :)
@@ -121,7 +120,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
     const out = memory.scratch_alloc_slice(memory.Block, wb * hb) orelse return;
 
     // TODO look at this and determine if it works properly with higher depths
-    const world_limit: u64 = world.state.max_possible_suffix;
+    const world_limit: u64 = world.max_possible_suffix;
 
     var chunk: memory.Chunk = undefined;
     for (0..ch) |gy| {
@@ -138,7 +137,9 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
 
             // bounds check with world limits
             if (abs_cx >= 0 and u_abs_cx <= world_limit and abs_cy >= 0 and u_abs_cy <= world_limit) {
-                w.write_chunk(&chunk, .{ .suffix = .{ @bitCast(abs_cx), @bitCast(abs_cy) }, .quadrant = @intCast(game.player_quadrant) });
+                const coord: memory.Coordinate = .{ .suffix = .{ @bitCast(abs_cx), @bitCast(abs_cy) }, .quadrant = @intCast(game.player_quadrant) };
+                w.write_chunk(&chunk, coord);
+                w.add_edge_flags(&chunk, coord);
                 for (0..SPAN) |ly| {
                     @memcpy(out[(gy * SPAN + ly) * wb + gx * SPAN ..][0..SPAN], chunk.blocks[ly * SPAN ..][0..SPAN]);
                 }
@@ -184,7 +185,7 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
     memory.set_scratch_prop(6, player_render_y);
 
     logger.clear(0);
-    const qc = world.state.quad_cache;
+    const qc = world.quad_cache;
     if (game.depth > 16) {
         logger.write(0, .{ "{h}Chunk X, Y, and active suffix", qc.get_quadrant_path_x(@intCast(game.player_quadrant)), qc.get_quadrant_path_y(@intCast(game.player_quadrant)), game.player_chunk });
     } else {

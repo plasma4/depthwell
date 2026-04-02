@@ -178,12 +178,68 @@ pub const Coordinate = struct {
     suffix: v2u64,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u2,
-    // /// TODO determine if we actually want funny 3D stuff to happen (256 possible subpixel states and 256 possible important states, maybe)
-    // influence: u16 = 0,
 
     /// Checks equality between two `Coordinate` values.
-    pub fn eql(self: Coordinate, other: Coordinate) bool {
+    pub fn eql(self: @This(), other: Coordinate) bool {
         return @reduce(.And, self.suffix == other.suffix) and self.quadrant == other.quadrant;
+    }
+
+    /// Adds a certain X value, creating a new Coordinate and handling quadrants. Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    pub fn move_x(self: @This(), x_shift: i64) ?Coordinate {
+        var res = self;
+        if (x_shift >= 0) {
+            const ov = @addWithOverflow(res.suffix[0], @as(u64, @intCast(x_shift)));
+            res.suffix[0] = ov[0];
+            if (ov[1] != 0) {
+                if (game.depth <= 16) return null;
+                // Positive overflow: must be in a western quadrant (0 or 2) to move east (to 1 or 3)
+                if (res.quadrant & 1 != 0) return null; // Already east, can't move further east
+                res.quadrant |= 1;
+            }
+        } else {
+            const abs_shift = @as(u64, @intCast(-%x_shift));
+            const ov = @subWithOverflow(res.suffix[0], abs_shift);
+            res.suffix[0] = ov[0];
+            if (ov[1] != 0) {
+                if (game.depth <= 16) return null;
+                // Negative overflow: must be in an eastern quadrant (1 or 3) to move west (to 0 or 2)
+                if (res.quadrant & 1 == 0) return null; // Already west
+                res.quadrant &= ~@as(u2, 1);
+            }
+        }
+        return res;
+    }
+
+    /// Adds a certain Y value, creating a new Coordinate and handling quadrants. Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    pub fn move_y(self: @This(), y_shift: i64) ?Coordinate {
+        var res = self;
+        if (y_shift >= 0) {
+            const ov = @addWithOverflow(res.suffix[1], @as(u64, @intCast(y_shift)));
+            res.suffix[1] = ov[0];
+            if (ov[1] != 0) {
+                if (game.depth <= 16) return null;
+                // Positive overflow (south): must be in a northern quadrant (0 or 1) to move south (to 2 or 3)
+                if (res.quadrant & 2 != 0) return null; // Already south
+                res.quadrant |= 2;
+            }
+        } else {
+            const abs_shift = @as(u64, @intCast(-%y_shift));
+            const ov = @subWithOverflow(res.suffix[1], abs_shift);
+            res.suffix[1] = ov[0];
+            if (ov[1] != 0) {
+                if (game.depth <= 16) return null;
+                // Negative overflow (north): must be in a southern quadrant (2 or 3) to move north (to 0 or 1)
+                if (res.quadrant & 2 == 0) return null; // Already north
+                res.quadrant &= ~@as(u2, 2);
+            }
+        }
+        return res;
+    }
+
+    /// Adds both an X and Y value, creating a new Coordinate and handling quadrants. Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    pub fn move(self: @This(), x_shift: i64, y_shift: i64) ?Coordinate {
+        const moved_x = self.move_x(x_shift) orelse return null;
+        return moved_x.move_y(y_shift);
     }
 };
 

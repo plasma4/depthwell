@@ -135,7 +135,7 @@ pub fn move(logic_speed: f64) void {
 }
 
 /// AABB check against the world grid
-fn is_colliding(px: i64, py: i64, w: *world.World) bool {
+fn is_colliding(px: i64, py: i64, w: *world) bool {
     // Check the 4 corners of the player hitbox
     const corners = [_][2]i64{
         .{ px - PLAYER_HITBOX_HALF, py - PLAYER_HITBOX_HALF },
