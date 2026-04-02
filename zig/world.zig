@@ -17,13 +17,14 @@ const SPAN_LOG2 = memory.SPAN_LOG2;
 pub const Sprite = enum(u20) {
     none = 0,
     player = 1,
-    edgestone = 2,
+    edge_stone = 2,
     stone = 3,
-    greenstone = 4,
-    bluestone = 5,
-    bloodstone = 6,
-    torch = 9,
-    mushroom = 7,
+    iron = 4,
+    grass = 5,
+    spiral_plant = 6,
+    ceiling_flower = 7,
+    mushroom = 8,
+    torch = 10,
     unchanged = 1048575,
 };
 
@@ -327,7 +328,7 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
             const is_absolute_edge_x = (cx == 0 and block_x == 0 and quadrant_edge_details.most_left) or (cx == max_possible_suffix and block_x == 15 and quadrant_edge_details.most_right);
             const is_absolute_edge_y = (cy == 0 and block_y == 0 and quadrant_edge_details.most_top) or (cy == max_possible_suffix and block_y == 15 and quadrant_edge_details.most_bottom);
             if (is_absolute_edge_x or is_absolute_edge_y) {
-                chunk.blocks[id] = make_basic_block(.edgestone);
+                chunk.blocks[id] = make_basic_block(.edge_stone);
                 // This does mean there are fewer PRNG .next() calls but this doesn't matter here
                 continue;
             }

@@ -12,8 +12,8 @@ pub inline fn generate_initial_block(moisture: f64, density: f64, height: f64) S
 
     if (density < 0.4) return .none;
     if (density < 0.8) return .stone;
-    if (density < 0.9) return .greenstone;
-    return .bloodstone;
+    if (density < 0.9) return .iron;
+    return .spiral_plant;
 }
 
 inline fn lerp(a: f64, b: f64, t: f64) f64 {
