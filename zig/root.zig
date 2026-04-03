@@ -41,17 +41,17 @@ pub export fn wasm_seed_from_string() void {
 }
 
 // Layout logic
-pub export fn get_memory_layout_ptr() *const memory.MemoryLayout {
-    return memory.get_memory_layout_ptr();
+pub export fn get_memory_layout_ptr() u64 { // pointer like *const memory.MemoryLayout, Memory64 hack
+    return @intFromPtr(memory.get_memory_layout_ptr());
 }
-pub export fn wasm_alloc(len: usize) ?[*]u8 {
-    return memory.wasm_alloc(len);
+pub export fn scratch_alloc(len: usize) u64 { // pointer like [*]u8, Memory64 hack
+    return @intFromPtr(memory.scratch_alloc(len));
 }
-pub export fn wasm_free(ptr: [*]u8, len: usize) void {
-    memory.wasm_free(ptr, len);
+pub export fn wasm_alloc(len: usize) u64 { // pointer like [*]u8, Memory64 hack
+    return @intFromPtr(memory.wasm_alloc(len));
 }
-pub export fn scratch_alloc(len: usize) ?[*]u8 {
-    return memory.scratch_alloc(len);
+pub export fn wasm_free(ptr: u64, len: usize) void {
+    memory.wasm_free(@ptrFromInt(@as(usize, @intCast(ptr))), len); // Memory64 hack
 }
 
 // Debug/testing logic

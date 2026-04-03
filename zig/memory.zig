@@ -346,8 +346,8 @@ pub fn scratch_alloc(len: usize) ?[*]u8 {
         const growth_150_percent = scratch_buffer.len + (scratch_buffer.len >> 1);
         const clamped_growth = @min(growth_150_percent, scratch_buffer.len + (32 * MemorySizes.MiB));
 
-        // Final capacity: (256KiB, 1.5x growth, the requested length), whichever is greater.
-        const new_cap = @max(@max(STARTING_SCRATCH_BUFFER_SIZE, clamped_growth), new_scratch_len);
+        // Final capacity becomes 256KiB, 1.5x growth, or the requested length, whichever is largest.
+        const new_cap = @max(STARTING_SCRATCH_BUFFER_SIZE, clamped_growth, new_scratch_len);
         const current_used: usize = @intCast(mem.scratch_len);
 
         if (!is_dynamic_scratch) {

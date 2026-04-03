@@ -10,9 +10,9 @@ fn zigTypeToTs(comptime T: type) []const u8 {
         .void => return "void",
         .bool => return "boolean",
         .int, .float, .comptime_int, .comptime_float => return "number",
-        .pointer => return "Pointer",
+        .pointer => return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */",
         .optional => |opt| {
-            if (@typeInfo(opt.child) == .pointer) return "Pointer";
+            if (@typeInfo(opt.child) == .pointer) return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */";
             return zigTypeToTs(opt.child); // Simplified for this example
         },
 
@@ -76,6 +76,7 @@ pub fn main() !void {
     try writer.print(
         \\// This is a dynamically generated file from generate_types.zig for use in engine.ts and should not be manually modified. See types.zig for where type definitions come from.
         \\
+        // getting rid of these because of Memory64 hacks: an error SHOULD be expected if these are referenced
         \\/**
         \\ * A pointer in the WASM memory. Equals 0/0n to represent a null value.
         \\ */
@@ -87,7 +88,7 @@ pub fn main() !void {
         \\export type LengthLike = number | bigint;
         \\
         \\/**
-        \\ * A pointer in the WASM memory (converted from potential BigInt to number).
+        \\ * A pointer in the WASM memory (converted from potential BigInt to number). Safe because memory size can't reasonably grow past 2**53 bytes.
         \\ */
         \\export type PointerLike = number;
         \\

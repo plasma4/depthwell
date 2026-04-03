@@ -11,7 +11,7 @@ export type Pointer = number | bigint;
 export type LengthLike = number | bigint;
 
 /**
- * A pointer in the WASM memory (converted from potential BigInt to number).
+ * A pointer in the WASM memory (converted from potential BigInt to number). Safe because memory size can't reasonably grow past 2**53 bytes.
  */
 export type PointerLike = number;
 
@@ -36,10 +36,10 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly prepare_visible_chunks: (arg0: number, arg1: number, arg2: number) => void;
     readonly tick: (arg0: number) => void;
     readonly wasm_seed_from_string: () => void;
-    readonly get_memory_layout_ptr: () => Pointer;
-    readonly wasm_alloc: (arg0: number) => Pointer;
-    readonly wasm_free: (arg0: Pointer, arg1: number) => void;
-    readonly scratch_alloc: (arg0: number) => Pointer;
+    readonly get_memory_layout_ptr: () => bigint;
+    readonly scratch_alloc: (arg0: number) => bigint;
+    readonly wasm_alloc: (arg0: number) => bigint;
+    readonly wasm_free: (arg0: bigint, arg1: number) => void;
     readonly isDebug: () => boolean;
 }
 

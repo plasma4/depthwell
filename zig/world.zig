@@ -29,7 +29,7 @@ pub const Sprite = enum(u20) {
 };
 
 /// Empty block of id `Sprite.none`
-pub const AIR_BLOCK: Block = .{ .id = Sprite.none, .seed = 0, .light = 255, .hp = 0, .edge_flags = 0 };
+pub const AIR_BLOCK: Block = .{ .id = Sprite.none, .seed = 0, .light = 255, .hp = 0, .edge_flags = 255 };
 
 /// 32-bit packed structure representing a single modified block within a chunk.
 pub const BlockMod = packed struct(u32) {
@@ -277,7 +277,7 @@ var edge_flags_data: [9]memory.Chunk = undefined;
 /// Allocator used for the world.
 var alloc = std.mem.Allocator;
 
-/// Creates a new instance of a `Chunk` where specified. Does not update edge flags.
+/// Creates a new instance of a `Chunk` where specified, given a coordinate. Copies over from cache if possible. Does not update edge flags.
 pub fn write_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
     // logger.write(3, .{ "{h}Chunk requested", coord });
     // TODO use SimBuffer
@@ -463,6 +463,7 @@ fn is_solid(sprite: Sprite) bool {
 pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
     memory.game.depth += 1;
+    const depth = memory.game.depth;
 
     // Mask the last 12 bits (0-4095)
     const player_mask: i64 = SPAN * SPAN * SPAN - 1;
@@ -477,39 +478,63 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     // TODO also clear SimBuffer
     ChunkCache.clear();
 
-    if (memory.game.depth <= 16) {
-        // Base phase: We are just filling up the 64-bit Suffix. No rebasing needed yet.
+    if (depth <= 16) {
+        // Just filling up the 64-bit suffix. No rebasing needed yet.
         memory.game.player_chunk[0] = (coord.suffix[0] << SPAN_LOG2) | bx;
         memory.game.player_chunk[1] = (coord.suffix[1] << SPAN_LOG2) | by;
-        // TODO create most top/left/bottom/right logic
-        // Push path hash to stack now! TODO verify+complete all this
-        // push_path_to_stack(quad_cache.get_lineage_seed(memory.game.get_player_coord().quadrant, 0)); // Pushes current down, adds to top
 
         // Update the maximum possible suffix value here using some fancy bit-shifting logic
-        max_possible_suffix = if (memory.game.depth < 16)
-            (@as(u64, 1) << @intCast(memory.game.depth * memory.SPAN_LOG2)) - 1
+        max_possible_suffix = if (depth == 16)
+            std.math.maxInt(u64)
         else
-            std.math.maxInt(u64);
+            (@as(u64, 1) << @intCast(depth * memory.SPAN_LOG2)) - 1;
 
         return;
     }
 
-    // Extract the 4 bits that are about to fall off the edge of the u64 Suffix
-    // const overflow_x = coord.suffix[0] >> 60;
-    // const overflow_y = coord.suffix[1] >> 60;
+    // TODO finish
+    // Identify the bits falling off the top
+    const shift = 60; // top nibble
+    const ox = coord.suffix[0] >> shift;
+    const oy = coord.suffix[1] >> shift;
 
-    // Mix these overflow bits into the new PathHash
-    // TODO figure out quadrant stuff
-    // const new_path_hash = seeding.mix_chunk_seed(quad_cache.get_quadrant_seed(quadrant: u2), .{ overflow_x, overflow_y });
-    // push_path_to_stack(new_path_hash);
+    // Update the lineage stack for all 4 quadrants
+    for (0..4) |q_idx| {
+        // Shift existing history down to make room for index 0
+        var i: usize = 15;
+        while (i > 0) : (i -= 1) {
+            quad_cache.path_hashes[q_idx][i] = quad_cache.path_hashes[q_idx][i - 1];
+        }
 
-    // Place the new top-left quadrant between max(d1, d2, d3, d4), where d1-d4 represent how many chunks it would take from the coord to the edge of the world if just travelling up, down, left, and right. Basically, make the QuadCache work for as long as possible by placing it "sort of centered", while making sure to cap it (TODO explain this more clearly)
+        // Calculate new root seed for this quadrant.
+        // q_idx % 2 gives us the X-offset of the quadrant (0 or 1)
+        // q_idx / 2 gives us the Y-offset (0 or 1)
+        const q_ox = ox + (q_idx % 2);
+        const q_oy = oy + (q_idx / 2);
+
+        // Mix the parent seed with the specific spatial nibble for this quadrant
+        quad_cache.path_hashes[q_idx][0] = seeding.mix_coordinate_seed(quad_cache.path_hashes[q_idx][1], q_ox, q_oy); // this logic is deterministic, which is the main thing that matters.
+    }
+
+    // Append 4 bits
+    if (memory.game.depth % 16 == 1) {
+        quad_cache.left_path.append(memory.allocator, ox) catch @panic("quad cache append failed");
+        quad_cache.top_path.append(memory.allocator, oy) catch @panic("quad cache append failed");
+    } else {
+        // quad_cache.left_path.items.len - 1 == depth / 16
+        const last_item_index: usize = @intCast(depth / 16 - 1);
+        quad_cache.left_path.items[last_item_index] = (quad_cache.left_path.items[last_item_index] << 4) + ox;
+        quad_cache.top_path.items[last_item_index] = (quad_cache.top_path.items[last_item_index] << 4) + oy;
+    }
+
     const ideal_center: u64 = 0x80000000_00000000;
+    const delta_x = ideal_center -% coord.suffix[0];
+    const delta_y = ideal_center -% coord.suffix[1];
 
-    // TODO the actual QuadCache array readjustment
-    // TODO logic to "clamp" the quadrant so it doesn't go past world bounds, no overflowing, or cap logic fixes this automatically
-    memory.game.player_chunk[0] = ideal_center;
-    memory.game.player_chunk[1] = ideal_center;
+    // Rebase the player
+    memory.game.player_chunk[0] = delta_x;
+    memory.game.player_chunk[1] = delta_y;
+    // TODO edge case logic of [15, 15, ...]
 }
 
 // /// Helper to maintain the sliding window of hashes for fast lookups

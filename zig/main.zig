@@ -16,6 +16,8 @@ const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
 /// Sets the number of times the push_layer function is called at the start. (If set to 3, the game will start off by being 4096x4096 chunks. If set to 1, it will be 16x16 chunks instead.)
 const STARTING_ZOOM_TIMES = 3;
+/// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` > 0).
+const SET_PLAYER_SPAWN_RANDOMLY = false;
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
 extern "env" fn js_handle_visible_chunks() void;
@@ -40,7 +42,7 @@ pub fn init() void {
     var rng = seeding.ChaCha12.init(seeding.mix_base_seed(memory.game.seed, 1));
     for (0..STARTING_ZOOM_TIMES) |_| {
         // Set the player position to somewhere random in the current chunk
-        memory.game.set_player_pos(.{
+        if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.set_player_pos(.{
             @intCast(rng.next() & (memory.SUBPIXELS_IN_CHUNK - 1)),
             @intCast(rng.next() & (memory.SUBPIXELS_IN_CHUNK - 1)),
         });
@@ -75,7 +77,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
     const effective_zoom = interpolated_zoom * resolution_scale;
 
     // calculate the screen's half-extents in world sub-pixels (as floats to preserve zoom precision)
-    const subpixels_per_pixel: f64 = @as(f64, @floatFromInt(SPAN_SQ)) / @as(f64, @floatFromInt(SPAN));
+    const subpixels_per_pixel: f64 = @as(f64, SPAN);
     const subpixels_per_chunk: f64 = @as(f64, @floatFromInt(SUBPIXELS_IN_CHUNK));
     const half_w_sp = (@as(f64, SCREEN_WIDTH_HALF) / interpolated_zoom) * subpixels_per_pixel;
     const half_h_sp = (@as(f64, SCREEN_HEIGHT_HALF) / interpolated_zoom) * subpixels_per_pixel;
@@ -119,27 +121,30 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
     memory.scratch_reset();
     const out = memory.scratch_alloc_slice(memory.Block, wb * hb) orelse return;
 
-    // TODO look at this and determine if it works properly with higher depths
     const world_limit: u64 = world.max_possible_suffix;
+    const player_coord = memory.game.get_player_coord();
 
     var chunk: memory.Chunk = undefined;
     for (0..ch) |gy| {
+        const offset_y: i64 = @as(i64, @intCast(min_cy)) + @as(i64, @intCast(gy));
+
         for (0..cw) |gx| {
-            const suffix_x = @as(i64, @bitCast(game.player_chunk[0]));
-            const suffix_y = @as(i64, @bitCast(game.player_chunk[1]));
+            const offset_x: i64 = @as(i64, @intCast(min_cx)) + @as(i64, @intCast(gx));
 
-            const abs_cx = suffix_x + @as(i64, @intCast(min_cx)) + @as(i64, @intCast(gx));
-            const abs_cy = suffix_y + @as(i64, @intCast(min_cy)) + @as(i64, @intCast(gy));
+            // Let the Coordinate abstraction handle the u64 wrapping and Quadrant logic
+            if (player_coord.move(offset_x, offset_y)) |target_coord| {
+                if (game.depth <= 16) {
+                    if (target_coord.suffix[0] > world_limit or target_coord.suffix[1] > world_limit) {
+                        for (0..SPAN) |ly| {
+                            const row_start = (gy * SPAN + ly) * wb + gx * SPAN;
+                            @memset(out[row_start .. row_start + SPAN], world.AIR_BLOCK);
+                        }
+                        continue;
+                    }
+                }
 
-            // Check the unsigned magnitude against the limit
-            const u_abs_cx: u64 = @bitCast(abs_cx);
-            const u_abs_cy: u64 = @bitCast(abs_cy);
-
-            // bounds check with world limits
-            if (abs_cx >= 0 and u_abs_cx <= world_limit and abs_cy >= 0 and u_abs_cy <= world_limit) {
-                const coord: memory.Coordinate = .{ .suffix = .{ @bitCast(abs_cx), @bitCast(abs_cy) }, .quadrant = @intCast(game.player_quadrant) };
-                w.write_chunk(&chunk, coord);
-                w.add_edge_flags(&chunk, coord);
+                w.write_chunk(&chunk, target_coord);
+                w.add_edge_flags(&chunk, target_coord);
                 for (0..SPAN) |ly| {
                     @memcpy(out[(gy * SPAN + ly) * wb + gx * SPAN ..][0..SPAN], chunk.blocks[ly * SPAN ..][0..SPAN]);
                 }

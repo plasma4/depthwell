@@ -451,7 +451,7 @@ export class GameEngine {
         if (len === 0) return null;
         if (resetScratchBuffer) this.setScratchLen(0);
         const ptr = this.exports.scratch_alloc(len);
-        if (ptr === 0) return null;
+        if (ptr === 0n) return null;
 
         const bytes = new Uint8Array(this.memory.buffer, Number(ptr), len);
         const result = this.encoder.encodeInto(str, bytes);
