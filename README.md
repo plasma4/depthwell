@@ -9,7 +9,7 @@ Depthwell is a procedurally generated fractal mining incremental roguelite. How 
 
 Run `zig build` for the main build of Zig code, `zig test "zig/root.zig"` to run (all) tests, and `zig build --Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
 
-When building for production with Vite (`npm run build` instead of `npm run dev`), edit `SHADER_SOURCE` in `engineMaker.ts` to `"./shader.wgsl"` temporarily (without the `?raw` property) to actually compress `shader.wgsl`.
+Use `npm run build` instead of `npm run dev` to build for production. The code currently does not require cross-origin isolation, and is meant to be single-core.
 
 With a clear-screen command that uses ANSI-escape codes, you can clear the screen every time after building:
 

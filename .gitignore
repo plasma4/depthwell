@@ -5,4 +5,3 @@ compile_commands.json
 /node_modules
 /src/assets/*.aseprite
 /zig/internal
-/dist
