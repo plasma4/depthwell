@@ -48,7 +48,7 @@ pub const ChunkMod = [memory.SPAN_SQ]BlockMod;
 /// Fits exactly into one 64-byte cache line.
 pub const ModKey = extern struct {
     /// Represents 512 bits of data.
-    seed: seeding.Seed align(memory.MAIN_ALIGN_BYTES), // aligned for cache size optimization
+    seed: seeding.Seed, // aligned for cache size optimization
 
     pub fn init(base_seed: seeding.Seed, cx: u64, cy: u64) ModKey {
         var key = ModKey{ .seed = base_seed };
@@ -61,13 +61,6 @@ pub const ModKey = extern struct {
 };
 
 pub const ModKeyContext = struct {
-    // pub fn hash(self: @This(), key: ModKey) u64 {
-    //     _ = self;
-    //     // Fast "folding" of the 512-bit key into a 64-bit hash for the map.
-    //     // This is extremely cheap and ensures all bits contribute to the bucket index.
-    //     const s = key.seed;
-    //     return s[0] ^ s[1] ^ s[2] ^ s[3] ^ s[4] ^ s[5] ^ s[6] ^ s[7];
-    // }
     pub fn eql(self: @This(), a: ModKey, b: ModKey) bool {
         _ = self;
         // Zig optimizes this to SIMD if the target supports it.

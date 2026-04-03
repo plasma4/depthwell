@@ -289,7 +289,7 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.edge_flags = extractBits(data.word0, 24u, 8u);
 
     let light_u = extractBits(data.word1, 0u, 8u);
-    out.light = sqrt(f32(light_u) / 2000.0 + 1.0); // allow for (and expect) light > 1, also square-rooted to allow lower light values like 128 to still be fairly visible with OKLAB colors
+    out.light = f32(light_u) / 3000.0 + 1.0; // allow for (and expect) light > 1, no longer square-rooted
 
     // Contains light in the first 8 bytes and seed in the next 24, since all 32 bits are technically random we use murmurmix32 to mix these quite simply with decent results!
     out.seed = murmurmix32(data.word1);

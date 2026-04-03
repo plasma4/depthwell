@@ -7,11 +7,24 @@ pub fn build(b: *std.Build) void {
     // TODO add in wasm-opt for ReleaseFast builds for even more optimization!
     b.install_path = ".";
     const gen_enums = b.option(bool, "gen-enums", "Regenerate TypeScript enum definitions") orelse false; // -Dgen-enums
+    const memory64 = b.option(bool, "memory64", "Utilize Memory64 (and enable relaxed SIMD)") orelse false; // -Dmemory64
     const target = b.standardTargetOptions(.{
         .default_target = .{
-            .cpu_arch = .wasm32, // WASM 32-bit. Should work with 64-bit too (if Memory64 is needed for some reason).
+            .cpu_arch = if (memory64) .wasm64 else .wasm32, // WASM 32-bit. Works with 64-bit too (if Memory64 is needed in the future).
             .os_tag = .freestanding,
-            .cpu_features_add = std.Target.wasm.featureSet(&.{ // We add features that are almost certainly supported by a browser that already supports WebGPU.
+            .cpu_features_add = std.Target.wasm.featureSet(if (memory64) &.{ // We add features that are almost certainly supported by a browser that already supports WebGPU.
+                .simd128,
+                .tail_call,
+                .bulk_memory,
+                .mutable_globals,
+                .sign_ext,
+                .nontrapping_fptoint,
+                .reference_types,
+                .multivalue,
+                .exception_handling,
+                .extended_const,
+                .relaxed_simd,
+            } else &.{ // We add features that are almost certainly supported by a browser that already supports WebGPU.
                 .simd128,
                 .tail_call,
                 .bulk_memory,
