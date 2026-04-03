@@ -113,8 +113,16 @@ export async function create(
                         ][category](str);
                     }
                 },
-                js_write_text: (id: number, ptr: number, len: number) => {
-                    const bytes = new Uint8Array(memory.buffer, ptr, len);
+                js_write_text: (
+                    id: number,
+                    ptr: Zig.Pointer,
+                    len: Zig.Pointer,
+                ) => {
+                    const bytes = new Uint8Array(
+                        memory.buffer,
+                        Number(ptr),
+                        Number(len),
+                    );
                     const str = new TextDecoder().decode(bytes);
 
                     const el = document.getElementById(
