@@ -201,12 +201,12 @@ pub const ColorRGBA = extern union {
         }
 
         // parse RGB components
-        const r = std.fmt.parseInt(u8, hex[0..2], 16) catch unreachable;
-        const g = std.fmt.parseInt(u8, hex[2..4], 16) catch unreachable;
-        const b = std.fmt.parseInt(u8, hex[4..6], 16) catch unreachable;
+        const r = std.fmt.parseInt(u8, hex[0..2], 16) catch @compileError("Red component is not valid hex.");
+        const g = std.fmt.parseInt(u8, hex[2..4], 16) catch @compileError("Green component is not valid hex.");
+        const b = std.fmt.parseInt(u8, hex[4..6], 16) catch @compileError("Blue component is not valid hex.");
 
         const a = if (hex.len == 8) // parse alpha
-            std.fmt.parseInt(u8, hex[6..8], 16) catch unreachable
+            std.fmt.parseInt(u8, hex[6..8], 16) catch @compileError("Alpha component is not valid hex.")
         else
             255;
 

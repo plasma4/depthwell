@@ -44,6 +44,10 @@ pub const BlockMod = packed struct(u32) {
 /// A full 256-block (chunk) of modifications.
 pub const ChunkMod = [memory.SPAN_SQ]BlockMod;
 
+/// Arena for long-lasting data.
+pub var world_arena = memory.make_arena();
+const allocator = world_arena.allocator();
+
 /// A 512-bit key for the ModificationStore.
 /// Fits exactly into one 64-byte cache line.
 pub const ModKey = extern struct {
@@ -155,13 +159,13 @@ pub const ChunkCache = struct {
     }
 };
 
-/// Adds 1 to the path as if the ArrayList represented one giant number. Performs allocation; the caller should deinit the path eventually.
-fn carry_path(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
-    const new_path = path.clone(memory.allocator) catch @panic("carry alloc for QuadCache coordinates failed");
+/// UNUSED. Adds 1 to the path as if the `SegmentedList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `world_arena`.
+fn carry_path(path: *const std.SegmentedList(u64)) std.SegmentedList(u64) {
+    const new_path = path.clone(world_arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
+    world_arena.reset(.retain_capacity); // TODO decide
     var carry: u1 = 1;
 
     for (new_path.items) |*word| {
-        // add_res is { .value = result, .overflow = 0 or 1 }
         const add_res = @addWithOverflow(word.*, @as(u64, carry));
         word.* = add_res[0];
         carry = add_res[1];
@@ -189,13 +193,13 @@ pub const QuadCache = struct {
     /// The 256-bit hashes for the 4 active quadrants, used for modifications across 16 depths (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4][16]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
     /// Stores the leftmost QuadCache's X-coordinate.
-    left_path: std.ArrayList(u64),
+    left_path: std.SegmentedList(u64, 1024),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: std.ArrayList(u64),
+    top_path: std.SegmentedList(u64, 1024),
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
 
-    // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen
+    // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen/zooming in
     most_top: bool = true,
     most_bottom: bool = true,
     most_left: bool = true,
@@ -206,23 +210,23 @@ pub const QuadCache = struct {
         return self.path_hashes[quadrant][lookback];
     }
 
-    /// Returns the X-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16).
-    pub inline fn get_quadrant_path_x(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
-        return if (quadrant % 2 == 0) self.left_path else carry_path(&self.left_path);
-    }
+    // /// Returns the X-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16). Call `cleanup_path` afterward.
+    // pub inline fn get_quadrant_path_x(self: *const @This(), quadrant: u2) std.SegmentedList(u64) {
+    //     return if (quadrant % 2 == 0) self.left_path else carry_path(&self.left_path);
+    // }
 
-    /// Returns the Y-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16).
-    pub inline fn get_quadrant_path_y(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
-        return if (quadrant < 2) self.top_path else carry_path(&self.top_path);
-    }
+    // /// Returns the Y-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16). Call `cleanup_path` afterward.
+    // pub inline fn get_quadrant_path_y(self: *const @This(), quadrant: u2) std.SegmentedList(u64) {
+    //     return if (quadrant < 2) self.top_path else carry_path(&self.top_path);
+    // }
 
-    /// Deallocates a temporary instance of a QuadCache path.
-    pub inline fn cleanup_path(self: *const @This(), path: std.ArrayList(u64)) void {
-        // Memory comparison is safe because QuadCache will never be de-initialized, top_left_path is always non-empty (so nothing weird), and there's no multicore/async shenanigans here.
-        if (self.left_path.items.ptr != path.items.ptr and self.top_path.items.ptr != path.items.ptr) {
-            path.deinit(memory.allocator);
-        }
-    }
+    // /// Deallocates a temporary instance of a QuadCache path. (THIS DOESN'T WORK WITH ARENA)
+    // pub inline fn cleanup_path(self: *const @This(), path: std.SegmentedList(u64)) void {
+    //     // Memory comparison is safe because QuadCache will never be de-initialized, top_left_path is always non-empty (so nothing weird), and there's no multicore/async shenanigans here.
+    //     if (self.left_path.items.ptr != path.items.ptr and self.top_path.items.ptr != path.items.ptr) {
+    //         path.deinit(world_arena);
+    //     }
+    // }
 
     /// Returns the 512-bit seed of a specified quadrant.
     pub inline fn get_quadrant_seed(self: *const @This(), quadrant: u2) seeding.Seed {
@@ -258,14 +262,8 @@ pub const QuadCache = struct {
 /// The QuadCache that stores information about the 4 quadrants and their seeds.
 pub var quad_cache: QuadCache = .{
     .path_hashes = undefined,
-    .left_path = std.ArrayList(u64){
-        .items = &[_]u64{},
-        .capacity = 0,
-    },
-    .top_path = std.ArrayList(u64){
-        .items = &[_]u64{},
-        .capacity = 0,
-    },
+    .left_path = std.SegmentedList(u64, 1024){},
+    .top_path = std.SegmentedList(u64, 1024){},
     .ancestor_materials = .{Sprite.none} ** 4,
 };
 
@@ -319,8 +317,8 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
             const id = (block_y * SPAN) + block_x;
 
             // TODO make this work with quadcache to still work for edges
-            const is_absolute_edge_x = (cx == 0 and block_x == 0 and quadrant_edge_details.most_left) or (cx == max_possible_suffix and block_x == 15 and quadrant_edge_details.most_right);
-            const is_absolute_edge_y = (cy == 0 and block_y == 0 and quadrant_edge_details.most_top) or (cy == max_possible_suffix and block_y == 15 and quadrant_edge_details.most_bottom);
+            const is_absolute_edge_x = (cx == 0 and block_x < 2 and quadrant_edge_details.most_left) or (cx == max_possible_suffix and block_x >= (SPAN - 2) and quadrant_edge_details.most_right);
+            const is_absolute_edge_y = (cy == 0 and block_y < 2 and quadrant_edge_details.most_top) or (cy == max_possible_suffix and block_y >= (SPAN - 2) and quadrant_edge_details.most_bottom);
             if (is_absolute_edge_x or is_absolute_edge_y) {
                 chunk.blocks[id] = make_basic_block(.edge_stone);
                 // This does mean there are fewer PRNG .next() calls but this doesn't matter here
@@ -458,8 +456,8 @@ fn is_solid(sprite: Sprite) bool {
 //     return null;
 // }
 
-/// Handles entering a portal.
-/// `coord` is the chunk the portal is in.
+/// Handles increasing the depth.
+/// `coord` is the chunk the portal is in. `bx` and `by` represent the specific block within a chunk the zoom should be in.
 pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
     memory.game.depth += 1;
@@ -493,9 +491,23 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     }
 
     // TODO finish
+    // Here, we use a fixed-point rebasing algorithm.
+    // Basically, our goal is to maximize the distance the player has to go before the game crashes (due to none of the 4 quadrants being a valid position for a chunk). We can consider this problem on depth increase as turning the ordinary 2x2 grid of "cells" (4 quadrants) into a 32x32 grid instead (since we are increasing by a depth, this makes logical sense). We're trying to select which cell should be our top left one.
+    // Then, using the coordinate, we determine which cell in the current 32x32 grid the player is. For the first zoom, this grid would be 16x16, but sizing remains the same. Call this cell's coordinates (x, y). In this cell, we find which corner the player is closest to (using coordinate and bx/by as tie-breaker).
+    // If top left:     select (max(x - 1, 0), max(y - 1, 0)) as our new quadrant/grid cell to select (where x/y should be from 0-15).
+    // If top right:    select (x            , max(y - 1, 0)) as ...
+    // If bottom left:  select (max(x - 1, 0), y            )
+    // If bottom right: select (max(x - 1, 0), y            )
+    // The maximum logic is to ensure x can't be negative (top left).
+    // Then, we can use this grid values to determine where from the original quadrants to hash, and append X/Y values to our.
+    // In this way, we have successfully found what quadrant is best. But, there is a potential problem!
+    // Let's say our player has gone from depth 16 to 17. However, the player was closest to (15, 15) with our cell logic. This means we not only could have selected a better value, but we also might create issues for ourselves in the future with coordinate wrapping.
+    // So, this means that the bottom right quadrant is (16, 16). Of course, we can cap both X and Y to 15 for going to depth 17. For greater depths, though, we can use the most_top/bottom/left/right booleans (which is already used in chunk generation for edges, so we basically get this for free, and change in push_layer as necessary). No complicated allocation/carry logic necessary!
+    // The actual implementation makes this work by doing a bunch of management work between the "prefix" (big SegmentedList) and "suffix" (coordinate of the player), and updates the quadrant of where the player is as necessary. We want to select the right prefix, and move the player to the correct quadrant and position.
+
     // Identify the bits falling off the top
-    const shift = 60; // top nibble
-    const ox = coord.suffix[0] >> shift;
+    const shift = 60;
+    const ox = coord.suffix[0] >> shift; // top nibble
     const oy = coord.suffix[1] >> shift;
 
     // Update the lineage stack for all 4 quadrants
@@ -518,22 +530,25 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
     // Append 4 bits
     if (memory.game.depth % 16 == 1) {
-        quad_cache.left_path.append(memory.allocator, ox) catch @panic("quad cache append failed");
-        quad_cache.top_path.append(memory.allocator, oy) catch @panic("quad cache append failed");
+        quad_cache.left_path.append(world_arena.allocator(), ox) catch @panic("quad cache append failed"); // new u64 value to store this nibble required!
+        quad_cache.top_path.append(world_arena.allocator(), oy) catch @panic("quad cache append failed");
     } else {
-        // quad_cache.left_path.items.len - 1 == depth / 16
+        // quad_cache.left_path.items.len - 1 == depth / 16, since quad_cache is an SegmentedList of u64s
         const last_item_index: usize = @intCast(depth / 16 - 1);
-        quad_cache.left_path.items[last_item_index] = (quad_cache.left_path.items[last_item_index] << 4) + ox;
-        quad_cache.top_path.items[last_item_index] = (quad_cache.top_path.items[last_item_index] << 4) + oy;
+        const left_ptr: *u64 = quad_cache.left_path.at(last_item_index);
+        const top_ptr: *u64 = quad_cache.top_path.at(last_item_index);
+
+        left_ptr.* = (left_ptr.* << 4) + ox;
+        top_ptr.* = (top_ptr.* << 4) + oy;
     }
 
-    const ideal_center: u64 = 0x80000000_00000000;
-    const delta_x = ideal_center -% coord.suffix[0];
-    const delta_y = ideal_center -% coord.suffix[1];
+    // TODO fix this completely wrong logic
+    // const delta_x = ideal_center -% coord.suffix[0];
+    // const delta_y = ideal_center -% coord.suffix[1];
 
-    // Rebase the player
-    memory.game.player_chunk[0] = delta_x;
-    memory.game.player_chunk[1] = delta_y;
+    // // Rebase the player
+    // memory.game.player_chunk[0] = delta_x;
+    // memory.game.player_chunk[1] = delta_y;
     // TODO edge case logic of [15, 15, ...]
 }
 
