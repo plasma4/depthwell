@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Depthwell</title>
+    <style>
+        html {
+            background-color: black;
+            color: white;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            position: fixed;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            margin: auto;
+            padding: 0;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        ::selection {
+            background-color: white;
+        }
+
+        #text1,
+        #text2,
+        #text3,
+        #text4,
+        #logicText,
+        #renderText {
+            position: fixed;
+            display: none;
+            font-family: monospace;
+            user-select: text;
+            font-size: 20px;
+            padding: 2px;
+            margin: 4px;
+            line-height: 1.1;
+            transition: background-color 250ms;
+            background-color: #0008;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+
+        #text1,
+        #text2,
+        #text3,
+        #text4 {
+            position: relative;
+            display: inline-block;
+            max-width: 45%;
+        }
+
+        #textTop,
+        #textBottom {
+            position: fixed;
+            display: flex;
+            justify-content: space-between;
+            width: calc(100% - 8px);
+            flex-wrap: wrap;
+        }
+
+        #textTop {
+            top: 6px;
+            left: 4px;
+        }
+
+        #textBottom {
+            bottom: 4px;
+            left: 4px;
+        }
+
+        #text1:hover,
+        #text2:hover,
+        #text3:hover,
+        #text4:hover {
+            background-color: #000c;
+        }
+
+        #text1 {
+            color: oklch(0.6676 0.3059 355);
+        }
+
+        #text2 {
+            color: oklch(80.741% 0.16209 86);
+        }
+
+        #text3 {
+            color: oklch(76.85% 0.22766 145);
+        }
+
+        #text4 {
+            color: oklch(0.5971 0.1875 245);
+        }
+
+        #logicText {
+            top: -6px;
+            left: -3px;
+            font-size: 12px;
+        }
+
+        #renderText {
+            top: -6px;
+            right: -3px;
+            font-size: 12px;
+        }
+    </style>
+  <script type="module" crossorigin src="./assets/index-CE78vDkl.js"></script>
+</head>
+
+<body>
+    <canvas></canvas>
+    <div id="textTop">
+        <div id="text1"></div>
+        <div id="text2"></div>
+    </div>
+    <div id="textBottom">
+        <div id="text3"></div>
+        <div id="text4"></div>
+    </div>
+    <div id="logicText"></div>
+    <div id="renderText"></div>
+</body>
+
+</html>
