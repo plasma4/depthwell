@@ -75,7 +75,8 @@ pub const ModKeyContext = struct {
     }
 };
 
-const SIM_BUFFER_SIZE = 256;
+const SIM_BUFFER_WIDTH = 18;
+const SIM_BUFFER_SIZE = SIM_BUFFER_WIDTH * SIM_BUFFER_WIDTH;
 const CHUNK_CACHE_SIZE = 128;
 const CHUNK_POOL_SIZE = SIM_BUFFER_SIZE + CHUNK_CACHE_SIZE;
 
@@ -92,7 +93,7 @@ pub const SimBuffer = struct {
 
     /// Sets a chunk from the specified x and y to the chunk instance given.
     pub inline fn set_index(chunk: *const memory.Chunk, cx: u64, cy: u64) void {
-        sim_buffer_ptr[(@as(usize, cy & 0xF) << 4) | @as(usize, cx & 0xF)] = chunk;
+        sim_buffer_ptr[get_index(cx, cy)] = chunk;
     }
 };
 
@@ -349,12 +350,45 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
 
 /// Adds edge flags to an already generated chunk. Requests adjacent chunks in a 3x3.
 pub fn add_edge_flags(target_chunk: *memory.Chunk, coord: Coordinate) void {
-    var edge_flags_calculated = std.mem.zeroes([9]bool); // since getting chunks is way more expensive than a some branch mispredictions here, having pre-calc logic is almost certainly faster vs. generating everything up-front
+    // Since getting chunks is way more expensive than branch mispredictions,
+    // having lazy-fetch logic is almost certainly faster here :)
+    var neighbors: [9]?*const memory.Chunk = .{null} ** 9;
+    neighbors[4] = target_chunk; // center chunk is always available
 
+    // Interior blocks (1..15) never go out of bounds, working with the same chunk!
+    for (1..SPAN - 1) |ly| {
+        for (1..SPAN - 1) |lx| {
+            const id = ly * SPAN + lx;
+            if (!is_solid(target_chunk.blocks[id].id)) {
+                target_chunk.blocks[id].edge_flags = 0xFF; // prevent erosion/edge darkening
+                continue;
+            }
+
+            var flags: u8 = 0;
+            inline for (.{ -1, 0, 1 }) |dy| {
+                inline for (.{ -1, 0, 1 }) |dx| {
+                    if (dx == 0 and dy == 0) continue;
+                    const nx = @as(usize, @intCast(@as(i32, @intCast(lx)) + dx));
+                    const ny = @as(usize, @intCast(@as(i32, @intCast(ly)) + dy));
+                    if (is_solid(target_chunk.blocks[ny * 16 + nx].id)) {
+                        flags |= types.EdgeFlags.get_flag_bit(dx, dy);
+                    }
+                }
+            }
+            target_chunk.blocks[id].edge_flags = flags;
+        }
+    }
+
+    // Edge blocks (row 0, row 15, col 0, col 15), save neighbor chunk logic for here
     for (0..SPAN) |ly| {
         for (0..SPAN) |lx| {
-            const id = (ly * SPAN) + lx;
-            if (target_chunk.blocks[id].id == .none) continue;
+            if (lx >= 1 and lx < SPAN - 1 and ly >= 1 and ly < SPAN - 1) continue;
+
+            const id = ly * SPAN + lx;
+            if (!is_solid(target_chunk.blocks[id].id)) {
+                target_chunk.blocks[id].edge_flags = 0xFF; // prevent erosion/edge darkening
+                continue;
+            }
 
             var flags: u8 = 0;
             inline for (.{ -1, 0, 1 }) |dy| {
@@ -364,34 +398,43 @@ pub fn add_edge_flags(target_chunk: *memory.Chunk, coord: Coordinate) void {
                     const nx = @as(i32, @intCast(lx)) + dx;
                     const ny = @as(i32, @intCast(ly)) + dy;
 
-                    const is_solid = if (nx >= 0 and nx < 16 and ny >= 0 and ny < 16)
-                        target_chunk.blocks[@as(usize, @intCast(ny * 16 + nx))].id != .none
+                    const block_is_solid = if (nx >= 0 and nx < 16 and ny >= 0 and ny < 16)
+                        is_solid(target_chunk.blocks[@as(usize, @intCast(ny * 16 + nx))].id)
                     else blk: {
-                        // Offset the nx/ny to the neighbor chunk's space
                         const neighbor_x = @as(usize, @intCast(@mod(nx, 16)));
                         const neighbor_y = @as(usize, @intCast(@mod(ny, 16)));
                         // Determine which of the 9 chunks in our grid to sample
                         const grid_x = if (nx < 0) @as(usize, 0) else if (nx >= 16) @as(usize, 2) else 1;
                         const grid_y = if (ny < 0) @as(usize, 0) else if (ny >= 16) @as(usize, 2) else 1;
-                        break :blk {
-                            const idx = grid_y * 3 + grid_x;
+                        const idx = grid_y * 3 + grid_x;
 
-                            if (!edge_flags_calculated[idx]) {
-                                @branchHint(.unlikely); // randomly occurs once
-                                const neighbor_coord = coord.move(@as(i64, @intCast(grid_x)) - 1, @as(i64, @intCast(grid_y)) - 1);
-                                edge_flags_data[idx] = if (neighbor_coord) |c| get_chunk(c) else std.mem.zeroes(memory.Chunk); // assume being on the edge isn't super likely
-                                edge_flags_calculated[idx] = true;
-                            }
-                            break :blk edge_flags_data[idx].blocks[neighbor_y * 16 + neighbor_x].id != .none;
-                        };
+                        if (neighbors[idx] == null) {
+                            @branchHint(.unlikely); // each neighbor fetched at most once
+                            const neighbor_coord = coord.move(@as(i64, @intCast(grid_x)) - 1, @as(i64, @intCast(grid_y)) - 1);
+                            edge_flags_data[idx] = if (neighbor_coord) |c| get_chunk(c) else std.mem.zeroes(memory.Chunk);
+                            neighbors[idx] = &edge_flags_data[idx];
+                        }
+                        break :blk is_solid(neighbors[idx].?.blocks[neighbor_y * 16 + neighbor_x].id);
                     };
 
-                    if (is_solid) flags |= types.EdgeFlags.get_flag_bit(dx, dy);
+                    if (block_is_solid) flags |= types.EdgeFlags.get_flag_bit(dx, dy);
                 }
             }
             target_chunk.blocks[id].edge_flags = flags;
         }
     }
+}
+
+fn is_solid(sprite: Sprite) bool {
+    return switch (sprite) {
+        .none,
+        .spiral_plant,
+        .torch,
+        .mushroom,
+        .player,
+        => false,
+        else => true,
+    };
 }
 
 // /// The 16-step ascendent projection read loop thingy
@@ -499,7 +542,7 @@ pub inline fn make_basic_block(sprite_type: Sprite) Block {
         .seed = 0,
         .light = 255,
         .hp = 0,
-        .edge_flags = 0,
+        .edge_flags = 0xFF,
     };
 }
 

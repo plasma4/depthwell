@@ -210,7 +210,7 @@ engine.renderLoop = function (_t: number) {
     if (engine.isDebug) {
         const debugElem: HTMLSpanElement =
             document.getElementById("renderText")!;
-        debugElem.textContent = `Time since last render: ${delta.toFixed(1)}ms\nTime in Zig: ${(performance.now() - tempTime).toFixed(1)}ms`;
+        debugElem.textContent = `Time since last render and Zig compute time: ${delta.toFixed(1)}ms, ${(performance.now() - tempTime).toFixed(1)}ms`;
         debugElem.style.fontWeight = (
             delta > 30 ? (delta > 55 ? 700 : 600) : 500
         ) as any; // gee thanks TypeScript
