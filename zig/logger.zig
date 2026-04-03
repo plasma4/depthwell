@@ -213,20 +213,29 @@ fn write_value(writer: anytype, val: anytype) void {
             }
         },
         .@"struct" => |ptr_info| {
-            if (@hasField(T, "items") and comptime isString(@TypeOf(val.items))) {
-                writer.print("{s}", .{val.items}) catch {};
-            } else {
-                writer.writeAll("{ ") catch {};
-                inline for (ptr_info.fields, 0..) |field, i| {
-                    if (i > 0) writer.writeAll(", ") catch {};
-                    writer.print(".{s} = ", .{field.name}) catch {};
-                    write_value(writer, @field(val, field.name));
+            if (@hasField(T, "items")) {
+                const items_val = val.items;
+                const ItemsType = @TypeOf(items_val);
+                if (comptime isString(ItemsType)) {
+                    writer.print("\"{s}\"", .{items_val}) catch {};
+                    return;
+                } else {
+                    // It's an ArrayList of something else:
+                    write_value(writer, items_val);
+                    return;
                 }
-
-                writer.writeAll(" }") catch {};
             }
-        }, // Fallback for everything else (unions, error sets, etc)
-        else => {
+
+            // print as a standard struct { .field = value }
+            writer.writeAll("{ ") catch {};
+            inline for (ptr_info.fields, 0..) |field, i| {
+                if (i > 0) writer.writeAll(", ") catch {};
+                writer.print(".{s} = ", .{field.name}) catch {};
+                write_value(writer, @field(val, field.name));
+            }
+            writer.writeAll(" }") catch {};
+        },
+        else => { // acts as a fallback for everything else (unions, error sets, etc)
             writer.print("{any}", .{val}) catch {};
         },
     }
