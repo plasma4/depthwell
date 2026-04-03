@@ -261,8 +261,8 @@ pub const ChaCha12 = struct {
         x3 +%= self.row3;
 
         // Interleave into u64 pairs and write to keystream.
-        // Row layout: x0 = [s0, s1, s2, s3], x1 = [s4, s5, s6, s7], etc.
-        // Make keystream u64 values: (s0|s1), (s2|s3), (s4|s5), (s6|s7), ...
+        // Row layout is x0 = [s0, s1, s2, s3], x1 = [s4, s5, s6, s7], and so on
+        // Then make keystream u64 values like (s0|s1), (s2|s3), (s4|s5), (s6|s7)
         self.keystream[0] = packU64(x0, 0, 1); // these functions are optimized with comptime and inline
         self.keystream[1] = packU64(x0, 2, 3);
         self.keystream[2] = packU64(x1, 0, 1);

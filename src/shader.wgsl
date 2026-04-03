@@ -68,11 +68,8 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     let px = u32(local_uv.x * TILE_SIZE);
     let py = u32(local_uv.y * TILE_SIZE);
 
-    let s0 = seed2;
-    let s1 = murmurmix32(s0);
-    let s2 = murmurmix32(s1);
-    let s3 = murmurmix32(s2);
-    let s4 = murmurmix32(s3);
+    let se = seed2;
+    let sc = murmurmix32(seed2);
 
     let has_top    = (edge_flags & EDGE_TOP) != 0u;
     let has_bottom = (edge_flags & EDGE_BOTTOM) != 0u;
@@ -83,81 +80,83 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     let has_bl     = (edge_flags & EDGE_BOTTOM_LEFT) != 0u;
     let has_br     = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
+    // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
+    let r_tl = 2u + extractBits(sc, 0u, 1u);  // top-left: 2 or 3
+    let r_tr = 4u + extractBits(sc, 2u, 1u);  // top-right: 4 or 5
+    let r_bl = 4u + extractBits(sc, 4u, 1u);  // bottom-left: 4 or 5
+    let r_br = 4u + extractBits(sc, 6u, 1u);  // bottom-right: 4 or 5
+
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 
     // Top-left outer corner (top AND left both missing)
     if (!has_top && !has_left) {
-        let r = 2u + extractBits(s4, 0u, 1u); // radius 2/3
-        let r_sq = r * r;
-        let dx = r - px;  // distance from the arc center (r, r)
-        let dy = r - py;
-        if (px < r && py < r) {
+        let r_sq = r_tl * r_tl;
+        let dx = r_tl - px;
+        let dy = r_tl - py;
+        if (px < r_tl && py < r_tl) {
             let dist_sq = dx * dx + dy * dy;
             if (dist_sq > r_sq) { return 0u; }
-            if (dist_sq > r_sq - r) { return 2u; } // darken ring of 1 pixel
+            if (dist_sq > r_sq - r_tl) { return 2u; } // darken ring of 1 pixel
         }
     }
 
     // Top-right outer corner
     if (!has_top && !has_right) {
-        let r = 4u + extractBits(s4, 2u, 1u);
-        let r_sq = r * r;
+        let r_sq = r_tr * r_tr;
         let fpx = 15u - px; // flip x
-        if (fpx < r && py < r) {
-            let dx = r - fpx;
-            let dy = r - py;
+        if (fpx < r_tr && py < r_tr) {
+            let dx = r_tr - fpx;
+            let dy = r_tr - py;
             let dist_sq = dx * dx + dy * dy;
             if (dist_sq > r_sq) { return 0u; }
-            if (dist_sq > r_sq - r) { return 2u; }
+            if (dist_sq > r_sq - r_tr) { return 2u; }
         }
     }
 
     // Bottom-left outer corner
     if (!has_bottom && !has_left) {
-        let r = 4u + extractBits(s4, 4u, 1u);
-        let r_sq = r * r;
+        let r_sq = r_bl * r_bl;
         let fpy = 15u - py;
-        if (px < r && fpy < r) {
-            let dx = r - px;
-            let dy = r - fpy;
+        if (px < r_bl && fpy < r_bl) {
+            let dx = r_bl - px;
+            let dy = r_bl - fpy;
             let dist_sq = dx * dx + dy * dy;
             if (dist_sq > r_sq) { return 0u; }
-            if (dist_sq > r_sq - r) { return 2u; }
+            if (dist_sq > r_sq - r_bl) { return 2u; }
         }
     }
 
     // Bottom-right outer corner
     if (!has_bottom && !has_right) {
-        let r = 4u + extractBits(s4, 6u, 1u);
-        let r_sq = r * r;
+        let r_sq = r_br * r_br;
         let fpx = 15u - px;
         let fpy = 15u - py;
-        if (fpx < r && fpy < r) {
-            let dx = r - fpx;
-            let dy = r - fpy;
+        if (fpx < r_br && fpy < r_br) {
+            let dx = r_br - fpx;
+            let dy = r_br - fpy;
             let dist_sq = dx * dx + dy * dy;
             if (dist_sq > r_sq) { return 0u; }
-            if (dist_sq > r_sq - r) { return 2u; }
+            if (dist_sq > r_sq - r_br) { return 2u; }
         }
     }
 
-    // Straight edges
+    // Straight edges (8 bits each from se: bits 0-7 top, 8-15 bottom, 16-23 left, 24-31 right)
 
     // Top edge
     if (!has_top) {
-        let base_depth = 1u + extractBits(s0, 0u, 1u);
-        let notch_pos = extractBits(s0, 1u, 4u);
-        let notch_dir = extractBits(s0, 5u, 1u);
-        let notch_width = 2u + extractBits(s0, 6u, 2u);
+        let base_depth = 1u + extractBits(se, 0u, 1u);
+        let notch_pos = extractBits(se, 1u, 4u);
+        let notch_dir = extractBits(se, 5u, 1u);
+        let notch_width = 2u + extractBits(se, 6u, 2u);
 
         var depth = base_depth;
         if (px >= notch_pos && px < notch_pos + notch_width) {
-            if (notch_dir == 0u) { depth = depth + 1u; } else { depth = max(depth, 1u) - 1u; }
+            if (notch_dir == 0u) { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
 
         // Only apply straight edge outside the corner rounding zones
-        let left_safe = select(0u, 4u + extractBits(s4, 0u, 1u), !has_left);
-        let right_safe = select(16u, 16u - 4u - extractBits(s4, 2u, 1u), !has_right);
+        let left_safe = select(0u, r_tl, !has_left);
+        let right_safe = select(16u, 16u - r_tr, !has_right);
 
         if (px >= left_safe && px < right_safe) {
             if (py < depth) { return 0u; }
@@ -167,18 +166,18 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Bottom edge
     if (!has_bottom) {
-        let base_depth = 1u + extractBits(s1, 0u, 1u);
-        let notch_pos = extractBits(s1, 1u, 4u);
-        let notch_dir = extractBits(s1, 5u, 1u);
-        let notch_width = 2u + extractBits(s1, 6u, 2u);
+        let base_depth = 1u + extractBits(se, 8u, 1u);
+        let notch_pos = extractBits(se, 9u, 4u);
+        let notch_dir = extractBits(se, 13u, 1u);
+        let notch_width = 2u + extractBits(se, 14u, 2u);
 
         var depth = base_depth;
         if (px >= notch_pos && px < notch_pos + notch_width) {
-            if (notch_dir == 0u) { depth = depth + 1u; } else { depth = max(depth, 1u) - 1u; }
+            if (notch_dir == 0u) { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
 
-        let left_safe = select(0u, 4u + extractBits(s4, 4u, 1u), !has_left);
-        let right_safe = select(16u, 16u - 4u - extractBits(s4, 6u, 1u), !has_right);
+        let left_safe = select(0u, r_bl, !has_left);
+        let right_safe = select(16u, 16u - r_br, !has_right);
 
         if (px >= left_safe && px < right_safe) {
             if (py > 15u - depth) { return 0u; }
@@ -188,18 +187,18 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Left edge
     if (!has_left) {
-        let base_depth = 1u + extractBits(s2, 0u, 1u);
-        let notch_pos = extractBits(s2, 1u, 4u);
-        let notch_dir = extractBits(s2, 5u, 1u);
-        let notch_width = 2u + extractBits(s2, 6u, 2u);
+        let base_depth = 1u + extractBits(se, 16u, 1u);
+        let notch_pos = extractBits(se, 17u, 4u);
+        let notch_dir = extractBits(se, 21u, 1u);
+        let notch_width = 2u + extractBits(se, 22u, 2u);
 
         var depth = base_depth;
         if (py >= notch_pos && py < notch_pos + notch_width) {
-            if (notch_dir == 0u) { depth = depth + 1u; } else { depth = max(depth, 1u) - 1u; }
+            if (notch_dir == 0u) { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
 
-        let top_safe = select(0u, 4u + extractBits(s4, 0u, 1u), !has_top);
-        let bottom_safe = select(16u, 16u - 4u - extractBits(s4, 4u, 1u), !has_bottom);
+        let top_safe = select(0u, r_tl, !has_top);
+        let bottom_safe = select(16u, 16u - r_bl, !has_bottom);
 
         if (py >= top_safe && py < bottom_safe) {
             if (px < depth) { return 0u; }
@@ -209,18 +208,18 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Right edge
     if (!has_right) {
-        let base_depth = 1u + extractBits(s3, 0u, 1u);
-        let notch_pos = extractBits(s3, 1u, 4u);
-        let notch_dir = extractBits(s3, 5u, 1u);
-        let notch_width = 2u + extractBits(s3, 6u, 2u);
+        let base_depth = 1u + extractBits(se, 24u, 1u);
+        let notch_pos = extractBits(se, 25u, 4u);
+        let notch_dir = extractBits(se, 29u, 1u);
+        let notch_width = 2u + extractBits(se, 30u, 2u);
 
         var depth = base_depth;
         if (py >= notch_pos && py < notch_pos + notch_width) {
-            if (notch_dir == 0u) { depth = depth + 1u; } else { depth = max(depth, 1u) - 1u; }
+            if (notch_dir == 0u) { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
 
-        let top_safe = select(0u, 4u + extractBits(s4, 2u, 1u), !has_top);
-        let bottom_safe = select(16u, 16u - 4u - extractBits(s4, 6u, 1u), !has_bottom);
+        let top_safe = select(0u, r_tr, !has_top);
+        let bottom_safe = select(16u, 16u - r_br, !has_bottom);
 
         if (py >= top_safe && py < bottom_safe) {
             if (px > 15u - depth) { return 0u; }
@@ -231,7 +230,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     // Inner corners (no diagonal neighbor)
 
     if (!has_tl && has_top && has_left) {
-        let r = 2u + extractBits(s4, 8u, 1u); // 2 or 3
+        let r = 2u + extractBits(sc, 8u, 1u); // 2 or 3
         if (px < r && py < r) {
             let dx = px + 1u; // +1 so the circle center is at (-0.5, -0.5) effectively
             let dy = py + 1u;
@@ -242,7 +241,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_tr && has_top && has_right) {
-        let r = 2u + extractBits(s4, 10u, 1u);
+        let r = 2u + extractBits(sc, 10u, 1u);
         let fpx = 15u - px;
         if (fpx < r && py < r) {
             let dx = fpx + 1u;
@@ -254,7 +253,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_bl && has_bottom && has_left) {
-        let r = 2u + extractBits(s4, 12u, 1u);
+        let r = 2u + extractBits(sc, 12u, 1u);
         let fpy = 15u - py;
         if (px < r && fpy < r) {
             let dx = px + 1u;
@@ -266,7 +265,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_br && has_bottom && has_right) {
-        let r = 2u + extractBits(s4, 14u, 1u);
+        let r = 2u + extractBits(sc, 14u, 1u);
         let fpx = 15u - px;
         let fpy = 15u - py;
         if (fpx < r && fpy < r) {
@@ -290,7 +289,7 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.edge_flags = extractBits(data.word0, 24u, 8u);
 
     let light_u = extractBits(data.word1, 0u, 8u);
-    out.light = sqrt(f32(light_u) / (240.0 * 8.0) + 0.875); // not 255.0 * 8.0, to allow for light > 1, also square-rooted to allow lower light values like 128 to still be fairly visible
+    out.light = sqrt(f32(light_u) / 2000.0 + 1.0); // allow for (and expect) light > 1, also square-rooted to allow lower light values like 128 to still be fairly visible with OKLAB colors
 
     // Contains light in the first 8 bytes and seed in the next 24, since all 32 bits are technically random we use murmurmix32 to mix these quite simply with decent results!
     out.seed = murmurmix32(data.word1);
@@ -336,7 +335,7 @@ fn vs_main(
     let total_tiles = map_size.x * map_size.y;
 
     var out: VertexOutput;
-    if (instance_index >= total_tiles) {
+    if (instance_index == total_tiles) {
         // There's intentionally one more instance than the number of tiles to render the player!
         let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
         let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
@@ -357,8 +356,9 @@ fn vs_main(
 
         out.position = vec4f(ndc, 0.0, 1.0);
         out.uv = atlas_uv;
+        out.edge_flags = 255u;
         out.sprite_id = 1u;
-        out.light = 1;
+        out.light = 255;
         out.local_uv = local_pos;
         return out;
     }
@@ -487,21 +487,23 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
 
     var final_rgb = vec3f(0.0);
-    var final_a = 0.0;
+    var final_a = tex_color.a * scene.chunk_opacity;
 
-    let erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2);
-    if (erode_mask == 0u) {
-        final_a = 0.0;
-    } else {
-        // add the edge darkening and base light value, with the function using bits 10-16
-        let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
-        lch.x = min(1.0, lch.x * (1.0 - darkening) * in.light);
+    if (in.edge_flags != 0xFF) {
+        let erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2);
+        if (erode_mask == 0u) {
+            final_a = 0.0;
+        } else {
+            // add the edge darkening and base light value, with the function using bits 10-16
+            let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
+            lch.x = min(1.0, lch.x * (1.0 - darkening) * in.light);
 
-        if (erode_mask == 2u) {
-            lch.x *= 0.8 + extracted_l * 0.01; // lower lightness
-            lch.y *= 1.3 + extracted_a * 0.04; // increase chroma
+            if (erode_mask == 2u) {
+                lch.x *= 0.8 + extracted_l * 0.01; // lower lightness
+                lch.y *= 1.3 + extracted_a * 0.04; // increase chroma
+            }
+            final_a = tex_color.a * scene.chunk_opacity;
         }
-        final_a = tex_color.a * scene.chunk_opacity;
     }
 
     lab = oklch_to_oklab(lch);
@@ -566,35 +568,37 @@ fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 
 
 // OKLAB stuff
 fn linear_srgb_to_oklab(c: vec3f) -> vec3f {
-    let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
-    let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
-    let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
-
-    let l_ = pow(l, 1.0 / 3.0);
-    let m_ = pow(m, 1.0 / 3.0);
-    let s_ = pow(s, 1.0 / 3.0);
-
-    return vec3f(
-        0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
-        1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
-        0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086758031 * s_
+    let m1 = mat3x3f( // convert to LMS
+        0.4122214708, 0.2119034982, 0.0883024619,
+        0.5363325363, 0.6806995451, 0.2817188376,
+        0.0514459929, 0.1073969566, 0.6299787005
     );
+    let lms = m1 * c;
+    let lms_ = pow(max(lms, vec3f(0.0)), vec3f(1.0 / 3.0));
+
+    let m2 = mat3x3f( // convert to OKLAB
+        0.2104542553, 1.9779984951, 0.0259040371,
+        0.7936177850, -2.4285922050, 0.7827717662,
+        -0.0040720468, 0.4505937099, -0.8086758031
+    );
+    return m2 * lms_;
 }
 
 fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
-    let l_ = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
-    let m_ = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
-    let s_ = c.x - 0.0894841775 * c.y - 1.2914855480 * c.z;
-
-    let l = l_ * l_ * l_;
-    let m = m_ * m_ * m_;
-    let s = s_ * s_ * s_;
-
-    return vec3f(
-        4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-       -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-       -0.0041960863 * l - 0.7034186147 * m + 1.7076127010 * s
+    let m1 = mat3x3f( // LMS again
+        1.0, 1.0, 1.0,
+        0.3963377774, -0.1055613458, -0.0894841775,
+        0.2158037573, -0.0638541728, -1.2914855480
     );
+    let lms_ = m1 * c;
+    let lms = lms_ * lms_ * lms_;
+
+    let m2 = mat3x3f( // convert back to normal srgb
+        4.0767416621, -1.2684380046, -0.0041960863,
+        -3.3077115913, 2.6097574011, -0.7034186147,
+        0.2309699292, -0.3413193965, 1.7076127010
+    );
+    return m2 * lms;
 }
 
 fn oklab_to_oklch(lab: vec3f) -> vec3f {
