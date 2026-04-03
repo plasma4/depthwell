@@ -169,7 +169,7 @@ If any blocks are modified they get modified in the `SimBuffer` as well.
 
 #### Prefix stack and memoization
 
-You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using a dynamic array (specifically a `std.ArrayList(u64)` for efficient performance).
+You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using a dynamic array (specifically a `std.SegmentedList(u64)` for efficient performance).
 
 **Why memoize and make the logic so complicated?**
 
@@ -185,7 +185,9 @@ Groups of objects such as enemies are stored in a `MultiArrayList` with properti
 
 #### Procedural generation
 
-TODO
+TODO finish
+
+The primary goal with procedural generation is to create **consistent, high-quality outcomes, independent of the path taken**. This means that the path the user takes should not influence the quality, and quadrant or chunk bounds should not be visually apparent. Performance is also a major concern here, as even with chunk caching, it is possible for 32 chunks to be requested in a single frame.
 
 Utilizing `ChaCha12`, it is possible to...
 
@@ -271,11 +273,12 @@ pub const QuadCache = struct {
     /// The 256-bit hashes for the 4 active quadrants, used for modifications across 16 depths (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4][16]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
     /// Stores the leftmost QuadCache's X-coordinate.
-    left_path: std.ArrayList(u64),
+    left_path: std.SegmentedList(u64, 1024),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: std.ArrayList(u64),
+    top_path: std.SegmentedList(u64, 1024),
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
+// ...
 ```
 
 #### Zoom logic
@@ -285,6 +288,8 @@ Entering a portal shifts a bunch of data around, particularly the cache and all 
 - The current world-path is pushed to the prefix data.
 - The active suffix/quadrant ID are reset (or "rebased"), in a way that allows for the _maximum_ amount of coverable distance before a crash. If the player ever travels to a coordinate or the game accesses a chunk that cannot be represented with either of the four quadrants, the **game will crash**. Specifically, the logic explaining the coordinate system mentioned the concepts of "below average" and "above average", and the idea is basically to zoom in in such a way that the quad-cache maximizes the amount of distance you'd have to travel in any quadrant before you're out-of-bounds. In practice, this is in the _quintillions of chunks_ precisely because of this rebasing implementation.
 - The `SimBuffer` is purged, and the world re-generates at Depth $D+1$ using the inherited properties of the portal block.
+
+See the big chunk of comments in `push_layer` for specific details on zoom logic. Since the game has hard bounds, instead of looping, there's quite a bit of extra logic here than you might expect.
 
 #### More rebasing explanation
 

@@ -111,21 +111,38 @@ pub const GameState = extern struct {
 /// The state of the current game, containing pre-allocated properties.
 pub var game: GameState = undefined;
 
-// Only create an actual GPA instance if building for native.
+/// Only create a GPA instance if building for native or testing. WASM does not support this.
 var gpa = if (!is_wasm and !builtin.is_test)
-    std.heap.GeneralPurposeAllocator(.{}){}
+    std.heap.GeneralPurposeAllocator(.{
+        .thread_safe = false,
+    }){}
 else
     struct {};
 
-pub const allocator = if (is_wasm)
-    std.heap.wasm_allocator
-else if (builtin.is_test)
-    std.testing.allocator
-else
-    gpa.allocator();
+/// System-level allocator for pages. On WASM, this grows the linear heap. On native, this
+/// requests pages from the OS. Use as a backing for other allocators.
+pub const page_allocator = if (is_wasm) std.heap.wasm_allocator else std.heap.page_allocator;
 
-/// Start the scratch buffer with 256 KiB when allocating for the first time.
-const STARTING_SCRATCH_BUFFER_SIZE = 256 * MemorySizes.KiB;
+/// An instance of the general-purpose allocator (or testing allocator when running tests). Use `make_arena()` to create an `ArenaAllocator` around this.
+const allocator = if (is_wasm) std.heap.wasm_allocator else if (builtin.is_test) std.testing.allocator else gpa.allocator();
+
+/// Creates an `ArenaAllocator` around either the WASM allocator, testing allocator, or GPA, as necessary. It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
+///
+/// Example:
+/// ```zig
+/// const memory = @import("memory.zig");
+/// var arena = memory.make_arena();
+/// const allocator = arena.allocator();
+/// defer arena.deinit();
+/// var list: std.ArrayList(u64) = .empty;
+/// list.append(allocator, 12345) catch {};
+/// ```
+pub fn make_arena() std.heap.ArenaAllocator {
+    return std.heap.ArenaAllocator.init(allocator);
+}
+
+/// Start the scratch buffer with 4 MiB when allocating for the first time.
+const STARTING_SCRATCH_BUFFER_SIZE = 4 * MemorySizes.MiB;
 
 /// 64 bytes is ana all-round good alignment size.
 pub const MAIN_ALIGN_BYTES: usize = 64;
@@ -351,10 +368,10 @@ pub fn scratch_alloc(len: usize) ?[*]u8 {
         const current_used: usize = @intCast(mem.scratch_len);
 
         if (!is_dynamic_scratch) {
-            scratch_buffer = allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch return null;
+            scratch_buffer = page_allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch return null;
             is_dynamic_scratch = true;
         } else {
-            scratch_buffer = allocator.realloc(scratch_buffer, new_cap) catch return null;
+            scratch_buffer = page_allocator.realloc(scratch_buffer, new_cap) catch return null;
         }
 
         // Update JS metadata

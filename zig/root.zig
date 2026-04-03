@@ -55,7 +55,7 @@ pub export fn wasm_free(ptr: u64, len: usize) void {
 }
 
 // Debug/testing logic
-const in_debug_mode = builtin.mode == .Debug;
+pub const in_debug_mode = builtin.mode == .Debug;
 
 /// Returns if code is in debugging mode for JS to see.
 pub export fn isDebug() bool {

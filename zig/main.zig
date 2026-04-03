@@ -192,7 +192,13 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
     logger.clear(0);
     const qc = world.quad_cache;
     if (game.depth > 16) {
-        logger.write(0, .{ "{h}Chunk X, Y, and active suffix", qc.get_quadrant_path_x(@intCast(game.player_quadrant)), qc.get_quadrant_path_y(@intCast(game.player_quadrant)), game.player_chunk });
+        logger.write(0, .{
+            "{h}Top left quadrant X, Y, current quadrant, and active suffix",
+            qc.left_path,
+            qc.top_path,
+            ([_][]const u8{ "top left", "top right", "bottom left", "bottom right" })[game.player_quadrant],
+            game.player_chunk,
+        });
     } else {
         const d = @min(memory.game.depth, 16);
         var resultX = std.mem.zeroes([16]u4); // or [_]u4{0} ** 16 :)
@@ -204,7 +210,7 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
         }
         logger.write(0, .{ "{h}Chunk active suffix X/Y", resultX[0..d], resultY[0..d] });
     }
-    logger.write(0, .{ "{h}Depth and position in chunk", game.depth, game.player_pos });
+    // logger.write(0, .{ "{h}Depth and position in chunk", game.depth, game.player_pos });
 
     // logger.clear(1);
     // logger.write(1, .{ "{h}Keys held down", game.keys_held_mask });

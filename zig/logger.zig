@@ -104,15 +104,17 @@ pub inline fn test_logs(skipError: bool) void {
         logger.log(@src(), "Skipping error test.", .{});
     }
     logger.log(@src(), "This log should be multiple lines.\n-----\nTesting logging with a truncated string below:", .{});
-    const allocator = memory.allocator;
+    var arena = memory.make_arena();
+    const allocator = arena.allocator();
+    defer arena.deinit();
     var list: std.ArrayList(u8) = .empty;
-    defer list.deinit(allocator);
-    list.append(allocator, 'H') catch {};
-    list.append(allocator, 'e') catch {};
-    list.append(allocator, 'l') catch {};
-    list.append(allocator, 'l') catch {};
-    list.append(allocator, 'o') catch {};
-    list.appendSlice(allocator, " World!") catch {};
+
+    list.append(allocator, 'H') catch @panic("character append failed");
+    list.append(allocator, 'e') catch @panic("character append failed");
+    list.append(allocator, 'l') catch @panic("character append failed");
+    list.append(allocator, 'l') catch @panic("character append failed");
+    list.append(allocator, 'o') catch @panic("character append failed");
+    list.appendSlice(allocator, " World!") catch @panic("string append failed");
 
     logger.quick(.{ "{h}Quick log with header and 3 values", 12.34, "string", list });
     // Test truncation by taking a test hex string and making it longer than 4,096 bytes
@@ -175,26 +177,22 @@ fn write_value(writer: anytype, val: anytype) void {
         },
         .vector => |ptr_info| {
             writer.writeAll("(") catch {};
-
-            // Vectors have a fixed length known at compile-time
-            comptime var i: usize = 0;
-            inline while (i < ptr_info.len) : (i += 1) {
+            var i: usize = 0;
+            while (i < ptr_info.len) : (i += 1) {
                 if (i > 0) writer.writeAll(", ") catch {};
-
-                // Recursively call write_value for each element
                 write_value(writer, val[i]);
             }
-
             writer.writeAll(")") catch {};
         },
         .array => |ptr_info| {
             writer.writeAll("[") catch {};
-            inline for (0..ptr_info.len) |i| {
+            for (0..ptr_info.len) |i| {
                 if (i > 0) writer.writeAll(", ") catch {};
                 write_value(writer, val[i]);
             }
             writer.writeAll("]") catch {};
         },
+
         .pointer => |ptr_info| {
             if (ptr_info.size == .one) {
                 // De-reference single pointers and try again
@@ -224,6 +222,18 @@ fn write_value(writer: anytype, val: anytype) void {
                     write_value(writer, items_val);
                     return;
                 }
+            }
+
+            // for SegmentedList
+            if (@hasField(T, "prealloc_segment") and @hasField(T, "len")) {
+                writer.writeAll("[") catch {};
+                var i: usize = 0;
+                while (i < val.len) : (i += 1) {
+                    if (i > 0) writer.writeAll(", ") catch {};
+                    write_value(writer, val.at(i).*);
+                }
+                writer.writeAll("]") catch {};
+                return;
             }
 
             // print as a standard struct { .field = value }
