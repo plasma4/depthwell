@@ -565,46 +565,42 @@ fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 
 struct BackgroundOutput {
     @builtin(position) position: vec4f,
     @location(0) world_uv: vec2f,
+    @location(1) time: f32,
+    @location(2) time2: f32,
 };
 
 @vertex
 fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
     let x = f32(i32(vertex_index & 1u) << 2u) - 1.0;
     let y = f32(i32(vertex_index & 2u) << 1u) - 1.0;
-    
+
     var out: BackgroundOutput;
     out.position = vec4f(x, y, 1.0, 1.0);
 
-    // 1. Convert NDC to Screen UV (0 to 1 range)
-    let screen_uv = vec2f(x, -y) * 0.5 + 0.5;
-    
-    // 2. Map Screen UV to World Space
-    // We remove the TILE_SIZE division and the floor() function.
-    // This gives us a continuous coordinate that scales with zoom and moves with the camera.
+    let screen_uv = vec2f(x, -y) * 0.5 + 0.5; // update data for frag shader
     out.world_uv = (screen_uv * scene.viewport_size) / scene.zoom + scene.camera;
-    
+    let time_ms = scene.time;
+    let t = time_ms / 128.0;
+
+    // Zig-zag wrapping for colors
+    var t_wrap = (t / 30.0) % 2.0;
+    if (t_wrap > 1.0) { t_wrap = 2.0 - t_wrap; }
+    var t_wrap_2 = (8.0 + t / 95.0) % 20.0;
+    if (t_wrap_2 > 1.0) { t_wrap_2 = 2.0 - t_wrap_2; }
+    out.time = t_wrap;
+    out.time2 = t_wrap_2;
+
     return out;
 }
 
 @fragment
 fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
-    // 1. Setup Time and Looping
-    let time_ms = scene.time;
-    let t = time_ms / 128.0;
-    
-    // Zig-zag wrapping for colors
-    var t_wrap = (t / 30.0) % 2.0;
-    if (t_wrap > 1.0) { t_wrap = 2.0 - t_wrap; }
-    
-    var t_wrap_2 = (8.0 + t / 95.0) % 20.0;
-    if (t_wrap_2 > 1.0) { t_wrap_2 = 2.0 - t_wrap_2; }
-
     let parallax_offset = scene.camera * 0.02;
-    let st = (in.world_uv + parallax_offset) * 0.005 * 3.0; 
-
+    let st = (in.world_uv + parallax_offset) * 0.015;
+    let t = scene.time / 1000.0;
     // FBM domain warping
     var q = vec2f(0.0);
-    q.x = fbm(st + 0.00 * t);
+    q.x = fbm(st);
     q.y = fbm(st + vec2f(1.0));
 
     var r = vec2f(0.0);
@@ -614,27 +610,27 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let f = fbm(st + r);
 
     var color = mix( // mix in colors
-        vec3f(0.101961, 0.619608, mix(0.0, 0.966667, t_wrap)),
-        vec3f(0.666667, 0.666667, 0.798039),
+        vec3f(0.1, 0.6, mix(0.0, 0.94, in.time)),
+        vec3f(0.6, 0.7, 0.8),
         clamp((f * f) * 4.0, 0.0, 1.0)
     );
 
     color = mix(
         color,
-        vec3f(mix(0.0, 0.8, t_wrap_2), mix(0.0, 0.4, t_wrap), 0.864706),
+        vec3f(mix(0.0, 0.8, in.time2), mix(0.0, 0.4, in.time), 0.85),
         clamp(length(q), 0.0, 1.0)
     );
 
     color = mix(
         color,
-        vec3f(0.666667, 1.0, 1.0),
+        vec3f(0.6, 1.0, 1.0),
         clamp(abs(r.x), 0.0, 1.0)
     );
 
     let intensity = f * f * f + 0.6 * f * f + 0.5 * f;
     let final_rgb = intensity * color;
-    
-    let opacity = 0.3 * scene.chunk_opacity; 
+
+    let opacity = 0.3 * scene.chunk_opacity;
     return vec4f(final_rgb * opacity, opacity);
 }
 
@@ -675,7 +671,7 @@ fn rand2d_pcg(v: vec2f) -> f32 { // TODO see if better ones exist
     var v_u = bitcast<vec2u>(v);
     // Mix the two inputs into a single state
     var state = v_u.x * 1664525u + v_u.y;
-    
+
     state = state * 747796405u + 2891336453u; // standard PCG
     var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     let result = (word >> 22u) ^ word;
