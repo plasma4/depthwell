@@ -200,25 +200,22 @@ const QuadrantEdgeDetails = struct {
 
 /// A static 2x2 grid of seeds only updated on entering a portal/game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
-    /// The 256-bit hashes for the 4 active quadrants, used for modifications across 16 depths (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
-    path_hashes: [4][SPAN]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
-    /// Stores the leftmost QuadCache's X-coordinate.
+    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
+    path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
+    /// TODO actual logic
+    hash_cache_1: [4]seeding.Seed,
+    /// The block IDs for each of the 4 places the QuadCache represents.
+    ancestor_materials: [4]Sprite,
+    /// A list representing the prefix stack of the top left quadrant's X-coordinate.
     left_path: std.SegmentedList(u64, 4096),
     /// Stores the topmost QuadCache's Y-coordinate.
     top_path: std.SegmentedList(u64, 4096),
-    /// The block IDs for each of the 4 places the QuadCache represents.
-    ancestor_materials: [4]Sprite,
 
     // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen/zooming in
     most_top: bool = true,
     most_bottom: bool = true,
     most_left: bool = true,
     most_right: bool = true,
-
-    /// Returns a seed from the lineage history (0 is current later, 15 is D-15.)
-    pub inline fn get_lineage_seed(self: *const @This(), quadrant: u2, lookback: u4) seeding.Seed {
-        return self.path_hashes[quadrant][lookback];
-    }
 
     // /// Returns the X-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16). Call `cleanup_path` afterward.
     // pub inline fn get_quadrant_path_x(self: *const @This(), quadrant: u2) std.SegmentedList(u64) {
@@ -238,10 +235,10 @@ pub const QuadCache = struct {
     //     }
     // }
 
-    /// Returns the 512-bit seed of a specified quadrant.
+    /// Returns the 512-bit seed of a specified quadrant (or the global seed if the current depth is <= 16).
     pub inline fn get_quadrant_seed(self: *const @This(), quadrant: u2) seeding.Seed {
         if (memory.game.depth <= 16) return memory.game.seed;
-        return self.get_lineage_seed(quadrant, 0);
+        return self.path_hashes[quadrant];
     }
 
     /// Resolves the chunk seeds. If depth > 16, uses the quadrant seeds.
@@ -272,6 +269,7 @@ pub const QuadCache = struct {
 /// The QuadCache that stores information about the 4 quadrants and their seeds.
 pub var quad_cache: QuadCache = .{
     .path_hashes = undefined,
+    .hash_cache_1 = undefined,
     .left_path = std.SegmentedList(u64, 4096){},
     .top_path = std.SegmentedList(u64, 4096){},
     .ancestor_materials = .{Sprite.none} ** 4,
@@ -324,7 +322,7 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
 
     for (0..SPAN) |block_y| {
         for (0..SPAN) |block_x| {
-            const id = (block_y * SPAN) + block_x;
+            const id = block_x + block_y * SPAN;
 
             // simple edge-of-the-world solid block logic
             const is_absolute_edge_x = (cx == 0 and block_x < 2 and quadrant_edge_details.most_left) or (cx == max_possible_suffix and block_x >= (SPAN - 2) and quadrant_edge_details.most_right);
@@ -336,7 +334,11 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
             }
 
             // Use density to influence block generation
-            const density = procedural.get_value_noise(chunk_seeds[1], @as(f64, @floatFromInt(block_x)) / SPAN, @as(f64, @floatFromInt(block_y)) / SPAN);
+            // const density = procedural.get_value_noise(chunk_seeds[1], @as(f64, @floatFromInt(block_x)) / SPAN, @as(f64, @floatFromInt(block_y)) / SPAN);
+
+            // TODO finish
+            // BASE CASE: depth = 3.
+            const density = procedural.get_density_value(memory.game.seed, cx * 16 + block_x, cy * 16 + block_y, 16);
             chunk.blocks[id] = Block.make_basic_block(
                 procedural.generate_initial_block(0.0, density, 0.0),
                 rng4.next(),
@@ -557,24 +559,19 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     quad_cache.most_top = quad_cache.most_top and top_cell_y == 0;
     quad_cache.most_bottom = quad_cache.most_bottom and top_cell_y == highest_possible_top_left_cell;
 
-    var parent_seeds: [4]seeding.Seed = undefined; // save older seeds
-    inline for (0..4) |i| parent_seeds[i] = quad_cache.path_hashes[i][0];
-
     const SPAN_MASK = SPAN - 1; // 0xF
 
+    const old_hashes = quad_cache.path_hashes;
     // update the seed lineage for all 4 quadrants
     inline for (0..4) |q_id| {
-        const slice = &quad_cache.path_hashes[q_id];
-        std.mem.copyBackwards(seeding.Seed, slice[1..SPAN], slice[0 .. SPAN - 1]);
-
         const cell_x = left_cell_x + utils.intFromBool(u64, q_id % 2 == 1);
         const cell_y = top_cell_y + utils.intFromBool(u64, q_id >= 2);
 
         // map this cell back to the specific parent quadrant (0-3)
         const old_q_id = utils.intFromBool(usize, cell_x >= SPAN) + utils.intFromBool(usize, cell_y >= SPAN) * 2;
 
-        slice[0] = seeding.mix_coordinate_seed(
-            parent_seeds[old_q_id],
+        quad_cache.path_hashes[q_id] = seeding.mix_coordinate_seed(
+            old_hashes[old_q_id],
             cell_x & SPAN_MASK,
             cell_y & SPAN_MASK,
         );
@@ -614,11 +611,6 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 //     // Insert new current path at index 0
 //     path_stack[0] = new_hash;
 // }
-
-/// Multiplies a float by 2**64, returning an integer x such that a random u64 value has its probability to be less than x equal to the chance variable.
-pub inline fn odds_num(chance: comptime_float) u64 {
-    return @intFromFloat(chance * 18446744073709551616.0);
-}
 
 // /// Convert screen pixels to a world block coordinate
 // pub fn screen_to_world(screen_x: f64, screen_y: f64, viewport_w: f64, viewport_h: f64, cam_x: f64, cam_y: f64, zoom: f64) @Vector(2, f64) {

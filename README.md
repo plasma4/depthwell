@@ -1,6 +1,6 @@
 # Depthwell
 
-Depthwell is a procedurally generated fractal mining incremental roguelite. How deep can you mine? Minimal demo releasing August 1st.
+Depthwell is a procedural fractal mining incremental. How deep can you explore? Minimal demo releasing August 1st.
 
 > [!WARNING]
 > The current `README` is **incomplete**, as this game is still in the pre-demo stage; more details will be added in the future and details might currently be out of date. Read the code for specific implementation details.
@@ -55,9 +55,9 @@ pub const SUBPIXELS_IN_CHUNK: comptime_int = SPAN * SPAN * SPAN;
 
 Now, we move on to locations (which also has some technical jargon, but I'll explain). Locations (named `Coordinate` internally) are addressed via a struct like this:
 
-- **Prefix stack:** A memoized history of seeds and path-nibbles.
-- **Active suffix (`u64`):** The spatial chunk-coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[16]u4` (16 numbers between 0-15) squashed together. This is **always relative to a quadrant**.
-- **Quadrant ID (`u2`):** Identifies which of the 4 static $2^{64}$-wide quad-caches we are "using" for the prefix stack. Each Quad-Cache (QC) references a specific Prefix Stack.
+- There is a globally shared **prefix stack**, which is a memoized history of the path (not stored individually for each `Coordinate`, but in the `QuadCache`.
+- Each coordinate has an **active suffix** (2 `u64` values, stored as a `@Vector`), representing chunk's coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[16]u4` (16 numbers between 0-15) squashed together. This is **always relative to a quadrant**.
+- Finally, a **Quadrant ID** is stored as a `u2` integer from 0-3. This identifies which of the 4 static $2^{64}$-wide quad-caches we are "using" for the prefix stack. Each Quad-Cache (QC) references a specific Prefix Stack.
 
 > [!NOTE]
 > Important detail! If the `depth` is at or below 16, the quadrant ID is useless and will defaults to 0. Any processing of the active suffix will first determine the current depth and also "crop" the suffix.
@@ -272,8 +272,8 @@ pub const ModKey = extern struct {
 ```zig
 /// A static 2x2 grid of seeds only updated on entering a portal/game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
-    /// The 256-bit hashes for the 4 active quadrants, used for modifications across 16 depths (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
-    path_hashes: [4][16]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
+    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
+path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
     /// Stores the leftmost QuadCache's X-coordinate.
     left_path: std.SegmentedList(u64, 1024),
     /// Stores the topmost QuadCache's Y-coordinate.

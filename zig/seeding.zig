@@ -5,6 +5,9 @@ const logger = @import("logger.zig");
 const memory = @import("memory.zig");
 const testing = std.testing;
 
+/// Represents 2^64.
+pub const POW_2_64 = 18446744073709551616.0;
+
 test "basic usage example" {
     // Start with an arbitrary seed (NOTE: seed_from_bytes fails for WASM builds)
     var world_seed: Seed = undefined;
@@ -184,17 +187,17 @@ pub const ChaCha12 = struct {
     /// Returns a float value from [0, 1), using 64 bits of seeding data.
     pub fn float(self: *@This(), comptime T: type) T {
         if (T == f64) {
-            return @as(f64, @floatFromInt(self.next())) * (1.0 / 18446744073709551616.0);
+            return @as(f64, @floatFromInt(self.next())) * (1.0 / POW_2_64);
         } else if (T == f32) {
-            return @as(f32, @floatFromInt(self.next())) * (1.0 / 18446744073709551616.0);
+            return @as(f32, @floatFromInt(self.next())) * (1.0 / POW_2_64);
         }
         @compileError("Only f32 and f64 floats are supported.");
     }
 
-    /// High-performance stateless 2D hash (using the first 384 seed bits).
+    /// High-performance stateless 2D hash (using the first 384 seed bits), returning 128 bits of data.
     /// Treats X and Y as the `ChaCha12` nonce/counter to return
     /// a random value for a specific global coordinate.
-    pub fn hash2d(seed_data: Seed, x: u64, y: u64) u64 {
+    pub fn hash_2d(comptime T: type, seed_data: Seed, x: u64, y: u64) @Vector(2, T) {
         const s: [16]u32 = @bitCast(seed_data);
 
         var x0 = @as(v4u32, @bitCast(s[0..4].*));
@@ -222,9 +225,22 @@ pub const ChaCha12 = struct {
             x3 = @shuffle(u32, x3, undefined, [4]i32{ 1, 2, 3, 0 });
         }
 
-        const res_low = x0[0] +% orig0[0];
-        const res_high = x0[1] +% orig1[0];
-        return @as(u64, res_low) | (@as(u64, res_high) << 32);
+        x0 +%= orig0;
+        x1 +%= orig1;
+
+        // Return 128 bits (as two u64s)
+        if (T == f64) {
+            return .{
+                @as(f64, @floatFromInt(@as(u64, x0[0]) | (@as(u64, x0[1]) << 32))) / POW_2_64,
+                @as(f64, @floatFromInt(@as(u64, x0[2]) | (@as(u64, x0[3]) << 32))) / POW_2_64,
+            };
+        } else if (T == u64) {
+            return .{
+                @as(u64, x0[0]) | (@as(u64, x0[1]) << 32),
+                @as(u64, x0[2]) | (@as(u64, x0[3]) << 32),
+            };
+        }
+        @compileError("Only u64 and f64 values are supported.");
     }
 
     /// Generates the next 64 bytes of seeding data.
@@ -434,9 +450,9 @@ pub const Xoshiro512 = struct {
     /// Returns a float value from [0, 1), using 64 bits of seeding data.
     pub fn float(self: *@This(), comptime T: type) T {
         if (T == f64) {
-            return @as(f64, @floatFromInt(self.next())) * (1.0 / 18446744073709551616.0);
+            return @as(f64, @floatFromInt(self.next())) * (1.0 / POW_2_64);
         } else if (T == f32) {
-            return @as(f32, @floatFromInt(self.next())) * (1.0 / 18446744073709551616.0);
+            return @as(f32, @floatFromInt(self.next())) * (1.0 / POW_2_64);
         }
         @compileError("Only f32 and f64 floats are supported.");
     }
