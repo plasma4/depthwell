@@ -6,7 +6,7 @@ test {
     try std.testing.expectEqual(32, @bitSizeOf(@Vector(4, u8)));
 }
 
-/// Represents a color. Note that WebGPU processes colors as rgba16float;
+/// Represents a color. Note that WebGPU processes colors as `rgba16float` by default;
 /// this data is used to determine similarity of blocks and is not color-space compliant.
 pub const ColorRGBA = extern union {
     /// Single-word access for quick equality checks.
