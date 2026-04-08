@@ -14,12 +14,15 @@ pub inline fn generate_initial_block(moisture: f64, density: f64, height: f64) S
     _ = moisture;
     _ = height;
 
-    if (density < 0.5) return .none;
+    if (density < 0.35) return .none;
     // if (density < 0.4) return .spiral_plant;
-    // if (density < 0.55) return .green_stone;
+    // if (density < 0.45) return .green_stone;
+    // if (density < 0.5) return .seagreen_stone;
+    // if (density < 0.55) return .blue_stone;
     // if (density < 0.65) return .stone;
     // if (density < 0.8) return .iron;
-    // if (density < 0.9) return .silver;
+    // if (density < 0.88) return .silver;
+    // if (density < 0.9) return .gold;
     return .stone;
 }
 
@@ -147,6 +150,37 @@ pub inline fn odds_num(chance: comptime_float) u64 {
 }
 
 // UNUSED AREA
+
+pub fn get_value_noise(base_seed: seeding.Seed, world_x: f64, world_y: f64) f64 {
+    const x0 = @floor(world_x);
+    const y0 = @floor(world_y);
+
+    const fx = world_x - x0;
+    const fy = world_y - y0;
+
+    // Get 4 random values for the corners
+    const v00 = get_random_value(base_seed, @intFromFloat(x0), @intFromFloat(y0));
+    const v10 = get_random_value(base_seed, @intFromFloat(x0 + 1), @intFromFloat(y0));
+    const v01 = get_random_value(base_seed, @intFromFloat(x0), @intFromFloat(y0 + 1));
+    const v11 = get_random_value(base_seed, @intFromFloat(x0 + 1), @intFromFloat(y0 + 1));
+
+    // Smooth the coordinates
+    const u = fade(fx);
+    const v = fade(fy);
+
+    // Bilinear interpolation
+    return lerp(lerp(v00, v10, u), lerp(v01, v11, u), v);
+}
+
+/// Linearly interpolates between a and b.
+inline fn lerp(a: f64, b: f64, time: f64) f64 {
+    return a + time * (b - a);
+}
+
+/// Smootherstep formula.
+inline fn fade(t: f64) f64 {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+}
 
 /// Returns a random deterministic value based on an X and Y value.
 fn get_random_value(seed: Seed, x: u64, y: u64) f64 {

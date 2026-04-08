@@ -78,12 +78,6 @@ export class GameEngine {
     public tileMapHeight!: number;
     /** Specifies if the GameEngine instance is destroyed (providing a reason string for the error). Is `false` if not destroyed. */
     public destroyed: string | false = false;
-    /** Provides the bind groups for WebGPU. */
-    public bindGroups: GPUBindGroup[] = Array(MAX_WEBGPU_BUFFERS);
-    /** Provides the bind groups for WebGPU. */
-    public uniformBuffers: GPUBuffer[] = Array(MAX_WEBGPU_BUFFERS);
-    /** The GPU buffers for tile data. */
-    public tileBuffers: GPUBuffer[] = Array(MAX_WEBGPU_BUFFERS);
     /** The current bind group for WebGPU. */
     public bindGroup!: GPUBindGroup;
     /** The current GPU buffer for uniform data. */
@@ -121,10 +115,10 @@ export class GameEngine {
     private currentEncoder: GPUCommandEncoder | null = null;
     /** Internal texture view for just the current frame. */
     private currentTextureView: GPUTextureView | null = null;
-    /** The depth texture for discarding. */
-    public depthTexture!: GPUTexture;
-    /** Internal texture view for just the depth texture. */
-    private depthTextureView: GPUTextureView | null = null;
+
+    private sceneDataBuffer = new ArrayBuffer(56); // allow for both f32 and u32 values to be imported to the uniform data
+    private sceneDataF32 = new Float32Array(this.sceneDataBuffer);
+    private sceneDataU32 = new Uint32Array(this.sceneDataBuffer);
 
     public readonly renderPipeline: GPURenderPipeline;
     public readonly bgPipeline: GPURenderPipeline;
@@ -217,6 +211,7 @@ export class GameEngine {
 
     /** Function called from Zig (using the `js_handle_visible_chunks` function in `env`) that actually draws the chunks. */
     public handleVisibleChunks(opacity: number) {
+        this.renderCallId++;
         // Ensure we have an active encoder from renderFrame to satisfy TS
         if (
             !this.currentEncoder ||
@@ -244,27 +239,24 @@ export class GameEngine {
 
         const neededBytes = u32Count * 4;
         this.recreateBufferAndBindGroup(neededBytes);
-        this.updateBuffersAndBindGroup(this.renderCallId);
         this.renderPass.setPipeline(this.renderPipeline);
         this.renderPass.setBindGroup(0, this.bindGroup);
 
-        if (this.renderCallId == 1) {
-            this.renderPass.setViewport(
-                0,
-                0,
-                this.canvas.width,
-                this.canvas.height,
-                0,
-                1,
-            );
-        }
+        this.renderPass.setViewport(
+            0,
+            0,
+            this.canvas.width,
+            this.canvas.height,
+            0,
+            1,
+        );
 
         this.setSceneData(opacity, tileDataWidth, tileDataHeight);
         this.device.queue.writeBuffer(this.tileBuffer, 0, wasmView);
 
-        // Draw all tiles as instances. Uses a triangle-strip so vertexCount is 4 instead of 6.
+        // Draw all tiles as instances. Draws tiles as quads so we have vertexCount as 6.
         const instanceCount = tileDataWidth * tileDataHeight + 1; // 1 extra instance to draw the player
-        this.renderPass.draw(4, instanceCount);
+        this.renderPass.draw(6, instanceCount);
         this.isVisibleDataNew = false;
     }
 
@@ -281,50 +273,60 @@ export class GameEngine {
         const playerX = this.getScratchProperty(5, WasmTypeCode.Float64);
         const playerY = this.getScratchProperty(6, WasmTypeCode.Float64);
 
-        const buffer = new ArrayBuffer(56); // allow for both f32 and u32 values to be imported to the uniform data
-        const f32 = new Float32Array(buffer);
-        const u32 = new Uint32Array(buffer);
+        this.sceneDataF32[0] = camX; // camera pos
+        this.sceneDataF32[1] = camY;
+        this.sceneDataF32[2] = this.canvas.width; // canvas res
+        this.sceneDataF32[3] = this.canvas.height;
+        const cycleLength = 60000;
+        const elapsed = performance.now() - this.startTime;
+        const cyclePos = elapsed % (cycleLength * 2);
 
-        f32[0] = camX; // camera pos
-        f32[1] = camY;
-        f32[2] = this.canvas.width; // canvas res
-        f32[3] = this.canvas.height;
-        f32[4] = (performance.now() - this.startTime) % 16777216; // time for animations
-        f32[5] = effectiveZoom; // zoom to scale with
-        f32[6] = effectiveZoom < 0.25 ? 0 : this.wireframeOpacity; // wireframe opacity: hidden if zoom is too small
-        f32[7] = opacity; // opacity all tiles/sprites when rendering
-        f32[8] = playerX; // player pos
-        f32[9] = playerY;
+        let shaderTime;
+        if (cyclePos < cycleLength) {
+            // Going forward
+            shaderTime = cyclePos / 1000.0;
+        } else {
+            // Going backward (smoothly reverses "wind" direction)
+            shaderTime = (cycleLength - (cyclePos - cycleLength)) / 1000.0;
+        }
 
-        u32[10] = tileDataWidth; // map size
-        u32[11] = tileDataHeight;
+        this.sceneDataF32[4] = shaderTime; // time value for animating
 
-        this.device.queue.writeBuffer(this.uniformBuffer, 0, f32);
+        this.sceneDataF32[5] = effectiveZoom; // zoom to scale with
+        this.sceneDataF32[6] = effectiveZoom < 0.25 ? 0 : this.wireframeOpacity; // wireframe opacity: hidden if zoom is too small
+        this.sceneDataF32[7] = opacity; // opacity all tiles/sprites when rendering
+        this.sceneDataF32[8] = playerX; // player pos
+        this.sceneDataF32[9] = playerY;
+
+        this.sceneDataU32[10] = tileDataWidth; // map size
+        this.sceneDataU32[11] = tileDataHeight;
+
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, this.sceneDataF32);
     }
 
     /** Creates a new buffer and bind group, if none exists or `tileBuffer`'s size is greater or equal to `neededBytes`. */
     private recreateBufferAndBindGroup(neededBytes: number) {
         if (!this.tileBuffer || this.tileBuffer.size < neededBytes) {
-            this.tileBuffers[this.renderCallId] = this.device.createBuffer({
+            this.tileBuffer = this.device.createBuffer({
                 label: "Tile grid",
                 size: neededBytes,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             });
             // Rebuild bind group with new buffer
-            this.bindGroups[this.renderCallId] = this.device.createBindGroup({
+            this.bindGroup = this.device.createBindGroup({
                 label: "Tilemap bind group",
                 layout: this.renderPipeline.getBindGroupLayout(0),
                 entries: [
                     {
                         binding: 0,
                         resource: {
-                            buffer: this.uniformBuffers[this.renderCallId],
+                            buffer: this.uniformBuffer,
                         },
                     },
                     {
                         binding: 1,
                         resource: {
-                            buffer: this.tileBuffers[this.renderCallId],
+                            buffer: this.tileBuffer,
                         },
                     },
                     { binding: 2, resource: this.atlasTextureView },
@@ -332,13 +334,6 @@ export class GameEngine {
                 ],
             });
         }
-    }
-
-    /** Updates the current `tileBuffer`, `uniformBuffer`, and `bindGroup`. */
-    private updateBuffersAndBindGroup(elementId: number) {
-        this.tileBuffer = this.tileBuffers[elementId];
-        this.uniformBuffer = this.uniformBuffers[elementId];
-        this.bindGroup = this.bindGroups[elementId];
     }
 
     // -----
@@ -557,12 +552,12 @@ export class GameEngine {
         if (this.canvas.width !== w || this.canvas.height !== h) {
             this.canvas.width = w;
             this.canvas.height = h;
-            if (this.depthTexture) this.depthTexture.destroy();
-            this.depthTexture = this.device.createTexture({
-                size: [w, h],
-                format: "depth24plus",
-                usage: GPUTextureUsage.RENDER_ATTACHMENT,
-            });
+            // if (this.depthTexture) this.depthTexture.destroy();
+            // this.depthTexture = this.device.createTexture({
+            //     size: [w, h],
+            //     format: "depth24plus",
+            //     usage: GPUTextureUsage.RENDER_ATTACHMENT,
+            // });
         }
     };
 
@@ -576,11 +571,11 @@ export class GameEngine {
         // Initialize the encoder and view for this specific frame
         this.currentEncoder = this.device.createCommandEncoder();
         this.currentTextureView = this.context.getCurrentTexture().createView();
-        this.depthTextureView = this.depthTexture.createView(); // Create view for this frame
+        // this.depthTextureView = this.depthTexture.createView(); // Create view for this frame
 
         // Clear if this is the FIRST time data is being rendered this frame. Otherwise, keep.
         // const loadOp: GPULoadOp = this.isVisibleDataNew ? "clear" : "load";
-        const loadOp: GPULoadOp = "clear";
+        const loadOp: GPULoadOp = "load";
 
         const renderPass = this.currentEncoder.beginRenderPass({
             colorAttachments: [
@@ -591,26 +586,26 @@ export class GameEngine {
                     storeOp: "store",
                 },
             ],
-            depthStencilAttachment: {
-                view: this.depthTextureView!,
-                depthClearValue: 1.0,
-                depthLoadOp: "clear",
-                depthStoreOp: "store",
-            },
+            // depthStencilAttachment: {
+            //     view: this.depthTextureView!,
+            //     depthClearValue: 1.0,
+            //     depthLoadOp: "clear",
+            //     depthStoreOp: "store",
+            // },
         });
         this.renderPass = renderPass;
 
+        // Draw background (same bind group as chunk drawing)
+        this.recreateBufferAndBindGroup(65536); // start off with a minimum byte size I suppose
+        this.sceneDataF32[7] = 1.0; // set opacity of BG to 1.0, TODO figure out how to allow multiple uniform buffer values in singular draw call!
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, this.sceneDataF32);
+
+        this.renderPass.setPipeline(this.bgPipeline);
+        this.renderPass.setBindGroup(0, this.bindGroup);
+        this.renderPass.draw(3); // Draws the background triangle (not a quad, neat little hack!)
         // Trigger Zig logic, which will call handleVisibleChunks() (potentially multiple times)
         this.uploadVisibleChunks(timeInterpolated);
 
-        // Don't have background on depth transition, which draws a second batch of tiles
-        if (this.renderCallId == 0) {
-            // Draw background (same bind group as chunk drawing)
-            this.updateBuffersAndBindGroup(this.renderCallId);
-            this.renderPass.setPipeline(this.bgPipeline);
-            this.renderPass.setBindGroup(0, this.bindGroup);
-            this.renderPass.draw(3); // Draws the large background triangle (not a quad, neat little hack!)
-        }
         this.renderPass.end();
 
         // Finalize the frame
