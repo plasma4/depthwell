@@ -105,8 +105,12 @@ fn vs_main(
     //     vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0), // bottom-right, top-left triangle
     //     vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0)  // top-left, bottom-right triangle
     // );
-    let x = f32(vertex_index == 1u || vertex_index == 4u || vertex_index == 5u);
-    let y = f32(vertex_index == 2u || vertex_index == 3u || vertex_index == 5u);
+
+    // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50)
+    let x = f32((50u >> vertex_index) & 1u);
+
+    // A bitmask where bits 2, 3, and 5 are set (0b101100 = 44)
+    let y = f32((44u >> vertex_index) & 1u);
 
     let local_pos = vec2f(x, y);
     let total_tiles = scene.map_size.x * scene.map_size.y;
@@ -197,6 +201,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     var tex_color = textureSample(sprite_atlas, pixel_sampler, in.uv);
+    if (in.sprite_id > 255 && in.sprite_id < 511) {
+        let color = (f32(in.sprite_id) - 256.0) / 256.0;
+        return vec4f(color, color, color, 1.0);
+    }
 
     var is_wireframe = false;
     var wire_color = vec4f(0.0);
@@ -257,8 +265,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
 
     var final_rgb = vec3f(0.0);
-
-    // TODO fix this genuinely terrible branching
     if (in.edge_flags != 0xFF) {
         // add the edge darkening and base light value, with the function using bits 10-16
         let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
@@ -269,6 +275,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
             lch.y *= 1.3 + extracted_a * 0.04; // increase chroma
         }
     }
+
     lab = oklch_to_oklab(lch);
     final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
     var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, in.sprite_id == 1u); // use chunk_opacity, unless this sprite is for the player

@@ -34,6 +34,7 @@ pub const Sprite = enum(u20) {
     mushroom = 14,
     torch = 15,
     unchanged = 1048575,
+    _, // non-exhaustive
 };
 
 /// Empty block of id `Sprite.none`
@@ -342,7 +343,7 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
 
             // TODO finish
             // BASE CASE: depth = 3.
-            const density = procedural.get_density_value(memory.game.seed, cx * 16 + block_x, cy * 16 + block_y, 16);
+            const density = procedural.get_fbm_worley_density(memory.game.seed, cx * 16 + block_x, cy * 16 + block_y);
             chunk.blocks[id] = Block.make_basic_block(
                 procedural.generate_initial_block(0.0, density, 0.0),
                 rng4.next(),
