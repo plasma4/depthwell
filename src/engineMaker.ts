@@ -189,14 +189,14 @@ export async function create(
             ],
         },
         primitive: {
-            topology: "triangle-strip",
+            topology: "triangle-list",
             cullMode: "none",
         },
-        depthStencil: {
-            depthWriteEnabled: true,
-            depthCompare: "less-equal",
-            format: "depth24plus",
-        },
+        // depthStencil: {
+        //     depthWriteEnabled: true,
+        //     depthCompare: "less-equal",
+        //     format: "depth24plus",
+        // },
     });
 
     const bgPipeline = device.createRenderPipeline({
@@ -214,11 +214,11 @@ export async function create(
         primitive: {
             topology: "triangle-list",
         },
-        depthStencil: {
-            depthWriteEnabled: false, // Background doesn't need to write to depth
-            depthCompare: "less-equal", // Only draw where Z is 1.0 (empty space)
-            format: "depth24plus",
-        },
+        // depthStencil: {
+        //     depthWriteEnabled: false, // Background doesn't need to write to depth
+        //     depthCompare: "less-equal", // Only draw where Z is 1.0 (empty space)
+        //     format: "depth24plus",
+        // },
     });
 
     engine = new GameEngine(
@@ -274,19 +274,12 @@ export async function create(
     engine.atlasTextureView = atlasTexture.createView();
     engine.pixelSampler = pixelSampler;
 
-    const uniformBuffers = [
-        device.createBuffer({
-            label: "SceneUniforms",
-            size: 56, // see setSceneData() in engine.ts/SceneUniforms in shader.wgsl
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        }),
-        device.createBuffer({
-            label: "SceneUniforms",
-            size: 56, // see setSceneData() in engine.ts/SceneUniforms in shader.wgsl
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        }),
-    ];
-    engine.uniformBuffers = uniformBuffers;
+    const uniformBuffer = device.createBuffer({
+        label: "SceneUniforms",
+        size: 56, // see setSceneData() in engine.ts OR SceneUniforms in shader.wgsl to understand this
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    engine.uniformBuffer = uniformBuffer;
 
     // engine.uploadVisibleChunks();
     // engine.handleVisibleChunks();
