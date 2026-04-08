@@ -277,6 +277,8 @@ export class GameEngine {
         this.sceneDataF32[1] = camY;
         this.sceneDataF32[2] = this.canvas.width; // canvas res
         this.sceneDataF32[3] = this.canvas.height;
+
+        // Some cycling logic for animations: floating point can become imprecise otherwise
         const cycleLength = 60000;
         const elapsed = performance.now() - this.startTime;
         const cyclePos = elapsed % (cycleLength * 2);
