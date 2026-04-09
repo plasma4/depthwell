@@ -87,42 +87,44 @@ pub fn mix_chunk_seeds(quadrant_seed: Seed, coord_vector: memory.v2u64) [4]Seed 
     return out_seeds;
 }
 
+/// Multiplies a float by 2^64, returning an integer `x` such that a random 64-bit integer has its probability to be less than `x` equal `chance`.
+pub inline fn odds_num(chance: comptime_float) u64 {
+    return @intFromFloat(chance * POW_2_64);
+}
+
 /// A high-performance, stateless hash.
 /// Significantly faster than both ChaCha12/Xoshiro512** for procedural generation
 /// Acts like a diffuser for `x`/`y`: assumes `seed` is securely generated from BLAKE3 already.
 pub const FastHash = struct {
-    const M1 = 0x9E3779B97F4A7C15;
-    const M2 = 0xBF58476D1CE4E5B9;
-    const M3 = 0x94D049BB133111EB;
+    const secret = [_]u64{ // Wyhash values within std.hash.Wyhash!
+        0xa0761d6478bd642f,
+        0xe7037ed1a0b428db,
+        0x8ebc6af09c88c6e3,
+        0x589965cc75374cc3,
+    };
+
+    /// A multiply-unrolled-multiply mixer.
+    inline fn mix(a: u64, b: u64) u64 {
+        const res = @as(u128, a) *% b;
+        return @as(u64, @truncate(res)) ^ @as(u64, @truncate(res >> 64));
+    }
 
     pub inline fn hash_2d(seed: Seed, x: u64, y: u64) u64 {
-        // bind X/Y to the first 128 bits of high-entropy seed
-        var h: u64 = x ^ seed[0];
-        var k: u64 = y ^ seed[1];
+        var h = mix(x ^ seed[0], seed[1] ^ secret[0]); // proces these simultaneously
+        var k = mix(y ^ seed[2], seed[3] ^ secret[1]);
 
-        // mix, swapping h and k here to "cross-pollinate"
-        h = (h ^ (k >> 30)) *% M1;
-        h ^= seed[2];
-
-        k = (k ^ (h >> 27)) *% M2;
-        k ^= seed[3];
-
-        // make a final pass with more seed bits
-        h = (h ^ (k >> 31)) *% M3;
+        // cross-pollinate X/Y together
         h ^= seed[4];
-
-        k = (k ^ (h >> 24)) *% M1;
         k ^= seed[5];
 
-        // Final convergence
-        var res = h ^ k;
-        res = (res ^ (res >> 30)) *% M2;
-        return res ^ (res >> 31);
+        // Now, combine and apply a finalizer.
+        // This lets every bit of x and y affect the output.
+        return mix(h ^ secret[2], k ^ secret[3]);
     }
 
     pub inline fn float_2d(seed: Seed, x: u64, y: u64) f32 {
         const h = hash_2d(x, y, seed);
-        return @as(f32, @floatFromInt(h >> 40)) * (1.0 / 16777216.0);
+        return @as(f32, @floatFromInt(h)) / POW_2_64;
     }
 };
 

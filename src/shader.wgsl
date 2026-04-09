@@ -206,6 +206,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // technically I could optimize this part
     // but it doesn't really matter because its for procedural generation testing anyway
     if (in.sprite_id >= 256 && in.sprite_id <= 512) {
+        // Heatmap logic!
         // if (in.sprite_id == 256) { discard; }
         let color = (f32(in.sprite_id) - 256.0) / 256.0;
         var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
