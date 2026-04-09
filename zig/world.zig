@@ -361,8 +361,14 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
             var sprite_type = procedural.generate_block_from_values(0.0, density, 0.0);
 
             // TODO better ore logic
-            if (sprite_type == .seagreen_stone and rng1.next() < odds_num(0.01)) {
-                sprite_type = .iron;
+            if (sprite_type == .seagreen_stone) {
+                if (rng1.next() < odds_num(0.03)) {
+                    sprite_type = .iron;
+                } else if (rng1.next() < odds_num(0.01)) {
+                    sprite_type = .silver;
+                } else if (rng1.next() < odds_num(0.005)) {
+                    sprite_type = .gold;
+                }
             }
 
             chunk.blocks[id] = Block.make_basic_block(
