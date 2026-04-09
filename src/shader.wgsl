@@ -74,7 +74,7 @@ struct VertexOutput {
     @location(7) @interpolate(flat) tile_coords: vec2u,
 };
 
-// Extracts the specific bit ranges in Block (see zig/memory.zig).
+// Extracts the specific bit ranges in the Block type (see zig/memory.zig).
 fn unpack_tile(data: TileData) -> UnpackedTile {
     var out: UnpackedTile;
 
@@ -83,10 +83,10 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.edge_flags = extractBits(data.word0, 24u, 8u);
 
     let light_u = extractBits(data.word1, 0u, 8u);
-    out.light = f32(light_u) / 3000.0 + 1.0; // allow for (and expect) light > 1, no longer square-rooted
+    out.light = f32(light_u) / 5000.0 + 1.0; // allow for (and expect) light > 1, no longer square-rooted
 
     // Contains light in the first 8 bytes and seed in the next 24, since all 32 bits are technically random we use murmurmix32 to mix these quite simply with decent results!
-    out.seed = murmurmix32(data.word1);
+    out.seed = murmurmix32(data.word1); // mix, since light is directly visible and technically, the seed is only 24 bits
     out.seed2 = murmurmix32(out.seed);
 
     if (out.sprite_id == 14 && (extractBits(out.seed, 16u, 2u) == 0)) { // extract bits 16-18 for random modifications
@@ -103,7 +103,7 @@ fn vs_main(
 ) -> VertexOutput {
     // const POSITIONS = array<vec2f, 6>(
     //     vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0), // bottom-right, top-left triangle
-    //     vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0)  // top-left, bottom-right triangle
+    //     vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0) // top-left, bottom-right triangle
     // );
 
     // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50)

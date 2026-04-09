@@ -25,7 +25,7 @@ pub inline fn generate_block_from_values(moisture: f64, density: f64, height: f6
 
     if (USE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
-    if (density < 0.5) return .none;
+    if (density < 0.45) return .none;
     // if (density < 0.6) return .green_stone;
     // if (density < 0.7) return .seagreen_stone;
     // if (density < 0.8) return .blue_stone;
@@ -74,10 +74,8 @@ pub fn get_fbm_worley_density(world_seed: *const Seed, x: u64, y: u64) f32 {
     var d2_sq = std.math.inf(f32);
 
     // Worley search
-    var ox: i32 = -1;
-    while (ox <= 1) : (ox += 1) {
-        var oy: i32 = -1;
-        while (oy <= 1) : (oy += 1) {
+    inline for (.{ -1, 0, 1 }) |ox| {
+        inline for (.{ -1, 0, 1 }) |oy| {
             const cur_x = @as(u64, @bitCast(cx_i + ox));
             const cur_y = @as(u64, @bitCast(cy_i + oy));
 
