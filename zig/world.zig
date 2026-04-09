@@ -356,13 +356,43 @@ fn generate_chunk(chunk: *memory.Chunk, coord: Coordinate) void {
             // Use density to influence block generation
             // const density = procedural.get_value_noise(chunk_seeds[1], @as(f64, @floatFromInt(block_x)) / SPAN, @as(f64, @floatFromInt(block_y)) / SPAN);
 
-            // TODO finish
+            // TODO finish for higher depths with some cubic bezier-like upscaling method
+
             // BASE CASE: depth = 3.
             const density = procedural.get_fbm_worley_density(memory.game.seed, cx * 16 + block_x, cy * 16 + block_y);
             chunk.blocks[id] = Block.make_basic_block(
                 procedural.generate_block_from_values(0.0, density, 0.0),
                 rng4.next(),
             ); // edge flags updated in second pass
+        }
+    }
+
+    // Extra decor passes (doesn't worry about cross-chunk sadly)
+    for (0..SPAN - 1) |block_y| {
+        for (0..SPAN) |block_x| {
+            const id = block_x + block_y * SPAN;
+            if (is_solid(chunk.blocks[id + 16].id) and chunk.blocks[id].id == .none) {
+                const val = rng4.next();
+                if (val < seeding.odds_num(0.3)) {
+                    chunk.blocks[id].id = .mushroom;
+                }
+            }
+        }
+    }
+
+    for (1..SPAN) |block_y| {
+        for (0..SPAN) |block_x| {
+            const id = block_x + block_y * SPAN;
+            if (chunk.blocks[id - 16].id == .spiral_plant and rng4.next() < seeding.odds_num(0.5)) {
+                chunk.blocks[id].id = .spiral_plant;
+            } else if (is_solid(chunk.blocks[id - 16].id) and chunk.blocks[id].id == .none) {
+                const val = rng4.next();
+                if (val < seeding.odds_num(0.3)) {
+                    chunk.blocks[id].id = .ceiling_flower;
+                } else if (val < seeding.odds_num(0.35)) {
+                    chunk.blocks[id].id = .spiral_plant;
+                }
+            }
         }
     }
 }
@@ -462,6 +492,7 @@ pub inline fn is_solid(sprite: Sprite) bool {
     return switch (sprite) {
         .none,
         .spiral_plant,
+        .ceiling_flower,
         .torch,
         .mushroom,
         => false,

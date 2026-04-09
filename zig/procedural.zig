@@ -25,11 +25,11 @@ pub inline fn generate_block_from_values(moisture: f64, density: f64, height: f6
 
     if (USE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
-    if (density < 0.4) return .none;
-    if (density < 0.6) return .green_stone;
-    if (density < 0.8) return .seagreen_stone;
-    if (density < 0.9) return .blue_stone;
-    return .stone;
+    if (density < 0.5) return .none;
+    // if (density < 0.6) return .green_stone;
+    // if (density < 0.7) return .seagreen_stone;
+    // if (density < 0.8) return .blue_stone;
+    return .seagreen_stone;
 
     // if (density < 0.98) return .iron;
     // if (density < 0.99) return .silver;
@@ -44,7 +44,7 @@ pub fn get_fbm_worley_density(world_seed: Seed, x: u64, y: u64) f32 {
     const fy = @as(f32, @floatFromInt(y * 2)); // scaled Y
 
     const cell_size: f32 = 16.0;
-    const h_stretch: f32 = 4.0;
+    const h_stretch: f32 = 3.0;
     const fbm_octaves: usize = 3;
 
     var warp_x: f32 = 0;
@@ -102,14 +102,9 @@ pub fn get_fbm_worley_density(world_seed: Seed, x: u64, y: u64) f32 {
         }
     }
 
-    const normalization = 25.0; // idk anymore
+    const normalization = 20.0; // idk anymore
     const density = (@sqrt(d2_sq) - @sqrt(d1_sq)) / normalization;
     return @min(1.0, density);
-}
-
-/// Multiplies a float by 2^64, returning an integer `x` such that a random 64-bit integer has its probability to be less than `x` equal `chance`.
-pub inline fn odds_num(chance: comptime_float) u64 {
-    return @intFromFloat(chance * POW_2_64);
 }
 
 /// Returns two independent noise values based on the classic Value Noise algorithm.
