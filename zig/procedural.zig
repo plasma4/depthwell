@@ -28,7 +28,7 @@ pub const USE_ORE_HEATMAP = false;
 const TerrainOptions = struct {
     cell_size: comptime_float,
     fbm_shift_size: comptime_float,
-    horizontally_wide: bool,
+    horizontally_wide: bool = false,
     use_f2_f1: bool = true,
 };
 
@@ -91,7 +91,7 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
 ///
 /// This function uses fractal brownian motion with value noise in an initial pass for domain warping,
 /// then Worley noise to generate terrain.
-fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, options: TerrainOptions) f32 {
+fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: TerrainOptions) f32 {
     const fx = @as(f32, @floatFromInt(x));
     const fy = @as(f32, @floatFromInt(if (options.horizontally_wide) y * 2 else y)); // scaled Y
 
@@ -151,9 +151,11 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, options: TerrainOpti
         }
     }
 
-    var density = if (options.use_f2_f1) @sqrt(d2_sq) - @sqrt(d1_sq) else @max(0.0, @sqrt(d1_sq));
-    density /= options.cell_size;
-    return @min(1.0, density);
+    if (options.use_f2_f1) {
+        return @min((@sqrt(d2_sq) - @sqrt(d1_sq)) / options.cell_size, 1.0);
+    } else {
+        return @min(@sqrt(d1_sq) / options.cell_size, 1.0);
+    }
 }
 
 /// Returns two independent noise values (32-bit float) based on the classic Value Noise algorithm.
@@ -213,17 +215,17 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector: v2u64, rng1: *seeding.C
 
     if (USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
-    if (base_data.density > 0.45 and base_data.density < 0.6) {
-        if (is_within(v, 0.6, 0.68)) {
+    if (base_data.density > 0.45 and base_data.density < 0.65) {
+        if (base_data.density > 0.5 and is_within(v, 0.6, 0.7)) {
             new_sprite = .iron;
-        } else if (is_within(v, 0.82, 0.88)) {
+        } else if (is_within(v, 0.2, 0.24)) {
             new_sprite = .silver;
-        } else if (base_data.density > 0.54 and is_within(v, 0.3, 0.4)) {
+        } else if (base_data.density > 0.6 and is_within(v, 0.3, 0.4)) {
             new_sprite = .gold;
         }
     }
 
-    if (base_data.sprite == .strange_stone and is_within(v, 0.6, 0.63)) {
+    if (base_data.sprite == .strange_stone and is_within(v, 0.56, 0.6)) {
         new_sprite = .iron; // higher iron odds from strange stone
     }
 
