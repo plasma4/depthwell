@@ -7,6 +7,7 @@ const types = @import("types.zig");
 const seeding = @import("seeding.zig");
 const procedural = @import("procedural.zig");
 
+const v2u64 = memory.v2u64;
 const Chunk = memory.Chunk;
 const Block = memory.Block;
 const Coordinate = memory.Coordinate;
@@ -29,14 +30,14 @@ pub const Sprite = enum(u20) {
     iron,
     silver,
     gold,
-    darkblue_thing,
+    darkblue_stone,
     weird_gem_pile_thing,
     spiral_plant,
     ceiling_flower,
     mushroom = 14, // there is another variant of mushrooms
     torch = 16,
     unchanged = 1048575,
-    _, // non-exhaustive
+    _, // non-exhaustive for heatmap
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation. This returns false for edge stone, unlike `is_solid`.
     pub inline fn is_foundation(self: @This()) bool {
@@ -68,6 +69,24 @@ pub const Sprite = enum(u20) {
     /// Determines if the sprite's type is `none` (air/void).
     pub inline fn is_empty(self: @This()) bool {
         return self == .none;
+    }
+
+    /// Determines if the sprite is stone (or a variation). Excludes edge stone.
+    pub inline fn is_stone(self: @This()) bool {
+        return switch (self) {
+            .stone,
+            .blue_stone,
+            .seagreen_stone,
+            .green_stone,
+            .darkblue_stone,
+            => true,
+            else => false,
+        };
+    }
+
+    /// Determines if the sprite is a heatmap (types 256-512).
+    pub inline fn is_heatmap(self: @This()) bool {
+        return procedural.USE_BASE_HEATMAP and @intFromEnum(self) >= 256 and @intFromEnum(self) <= 512;
     }
 };
 
@@ -362,8 +381,12 @@ pub inline fn get_chunk(coord: Coordinate) Chunk {
 
 /// Internal function to generate a whole chunk (considering modifications), given a pointer to where the chunk should be stored and coordinates. Does not go through the cache.
 fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
-    const seed_vec = memory.game.seed_vec;
     const chunk_seeds = quad_cache.get_chunk_seeds(coord);
+
+    const seed_vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
+    const seed_vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
+    const seed_vec3: v2u64 = .{ memory.game.seed2[4], memory.game.seed2[5] };
+
     var rng1 = seeding.ChaCha12.init(chunk_seeds[0]); // Block generation.
     var rng4 = seeding.ChaCha12.init(chunk_seeds[3]); // Visual touches only.
 
@@ -384,14 +407,24 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
                 continue;
             }
 
-            // Use density to influence block generation
-            // const density = procedural.get_value_noise(chunk_seeds[1], @as(f64, @floatFromInt(block_x)) / SPAN, @as(f64, @floatFromInt(block_y)) / SPAN);
-
             // TODO finish for higher depths with some cubic bezier-like upscaling method
 
             // BASE CASE: depth = 3.
-            var sprite_type = procedural.get_base_sprite_type(seed_vec, cx, cy, block_x, block_y);
-            if (sprite_type.is_foundation()) sprite_type = procedural.add_ores(sprite_type, &rng1, cx * 16 + block_x, cy * 16 + block_y);
+            var sprite_type = procedural.get_base_sprite_type(
+                seed_vec1,
+                seed_vec2,
+                @intCast(cx),
+                @intCast(cy),
+                @intCast(block_x),
+                @intCast(block_y),
+            );
+            if (sprite_type.is_stone() or sprite_type.is_heatmap()) sprite_type = procedural.add_ores(
+                sprite_type,
+                seed_vec3,
+                &rng1,
+                @intCast(cx * 16 + block_x),
+                @intCast(cy * 16 + block_y),
+            );
 
             chunk.blocks[id] = Block.make_basic_block(
                 sprite_type,
@@ -407,7 +440,8 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
 /// Adds edge flags to an already generated chunk. Utilizes `get_base_sprite_type` to prevent a chunk creation dependency loop.
 /// TODO swap out with an actual cache, probably (asking to regen 60 blocks is probably expensive)
 fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate) void {
-    const seed_vec = memory.game.seed_vec;
+    const vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
+    const vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
 
     // Interior blocks (when x and y are between 1-14) only check the current chunk
     for (1..SPAN - 1) |block_y| {
@@ -465,7 +499,14 @@ fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate) void {
                         const n_by: u4 = @intCast(@as(u32, @bitCast(ny)) % SPAN);
 
                         // Call base procedural logic. Adding ores isn't necessary!
-                        const sprite = procedural.get_base_sprite_type(seed_vec, new_coord.suffix[0], new_coord.suffix[1], n_bx, n_by);
+                        const sprite = procedural.get_base_sprite_type(
+                            vec1,
+                            vec2,
+                            @intCast(new_coord.suffix[0]),
+                            @intCast(new_coord.suffix[1]),
+                            @intCast(n_bx),
+                            @intCast(n_by),
+                        );
                         break :blk sprite.is_foundation();
                     };
 

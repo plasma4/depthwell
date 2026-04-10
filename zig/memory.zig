@@ -84,8 +84,9 @@ pub const GameState = extern struct {
 
     /// The initial or "global" seed from which all generation starts.
     seed: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
+
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
-    seed_vec: v2u64 = .{ 0, 0 },
+    seed2: seeding.Seed align(16) = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
 
     pub inline fn get_player_coord(self: *const @This()) Coordinate {
         return .{ .quadrant = @intCast(self.player_quadrant), .suffix = self.player_chunk };
@@ -208,6 +209,16 @@ pub const Block = packed struct(u64) {
     /// Determines if the block's type is `none` (air/void).
     pub inline fn is_empty(self: @This()) bool {
         return self.id.is_empty();
+    }
+
+    /// Determines if the sprite is stone (or a variation). Excludes edge stone.
+    pub inline fn is_stone(self: @This()) bool {
+        return self.id.is_stone();
+    }
+
+    /// Determines if the sprite is a heatmap (types 256-512).
+    pub inline fn is_heatmap(self: @This()) bool {
+        return self.id.is_heatmap();
     }
 
     /// Determines if there is a solid block adjacent based on edge flags.

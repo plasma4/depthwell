@@ -390,7 +390,7 @@ pub const ChaCha12 = struct {
         return @as(u64, v[lo]) | (@as(u64, v[hi]) << 32);
     }
 
-    inline fn rotl(v: v4u32, comptime n: u32) v4u32 {
+    inline fn rotl(v: v4u32, n: comptime_int) v4u32 {
         const shift_left: v4u32 = @splat(n);
         const shift_right: v4u32 = @splat(32 - n);
         return (v << shift_left) | (v >> shift_right);
