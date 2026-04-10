@@ -21,7 +21,7 @@ const friction: v2f64 = .{ 0.2, 0.2 };
 const inv_friction: v2f64 = @as(v2f64, @splat(1.0)) - friction;
 
 /// The base speed of the player.
-const PLAYER_BASE_SPEED = 5;
+const PLAYER_BASE_SPEED = 5.0;
 /// Half the size of the player's hitbox.
 const PLAYER_HITBOX_HALF = 96;
 

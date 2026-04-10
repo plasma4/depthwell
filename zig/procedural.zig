@@ -19,24 +19,20 @@ const Sprite = world.Sprite;
 const v2f64 = memory.v2f64;
 const v2u64 = memory.v2u64;
 
-/// Determines whether to use a heatmap or not.
-const USE_HEATMAP = false;
+/// Determines whether to use a heatmap or not for base terrain.
+pub const USE_BASE_HEATMAP = false;
+/// Determines whether to use a heatmap or not for ore generation.
+pub const USE_ORE_HEATMAP = false;
 
 /// Generates a block for seeding (based on previous procedural generation logic).
 pub inline fn generate_block_from_values(moisture: f64, density: f64) Sprite {
-    _ = moisture;
+    if (USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
-    if (USE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
-
-    if (density < 0.45) return .none;
-    // if (density < 0.6) return .green_stone;
-    // if (density < 0.7) return .seagreen_stone;
-    // if (density < 0.8) return .blue_stone;
-    return .seagreen_stone;
-
-    // if (density < 0.98) return .iron;
-    // if (density < 0.99) return .silver;
-    // return .gold;
+    if (density < 0.45 or density > 0.9) return if (moisture > 0.96) .darkblue_stone else .none;
+    if (moisture < 0.3) return .stone;
+    if (moisture < 0.5) return .green_stone;
+    if (moisture < 0.8) return .seagreen_stone;
+    return .blue_stone;
 }
 
 /// Returns a base sprite type. Does 3 passes:
@@ -44,10 +40,25 @@ pub inline fn generate_block_from_values(moisture: f64, density: f64) Sprite {
 /// 1. Generate initial terrain density value. (moisture TODO or remove)
 /// 2. Generate a block from density value.
 /// 3. Generates structures (TODO)
-pub fn get_base_sprite_type(seed_vector: v2u64, chunk_x: u64, chunk_y: u64, block_x: u64, block_y: u64) Sprite {
-    const density = get_fbm_worley_density(seed_vector, chunk_x * 16 + block_x, chunk_y * 16 + block_y);
-    const sprite_type = generate_block_from_values(0.0, density);
-    return sprite_type;
+pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) Sprite {
+    const moisture = get_fbm_worley_value(
+        vec2,
+        chunk_x * 16 + block_x,
+        chunk_y * 16 + block_y,
+        512.0,
+        24.0,
+        false,
+    );
+    const density = get_fbm_worley_value(
+        vec1,
+        chunk_x * 16 + block_x,
+        chunk_y * 16 + block_y,
+        60.0,
+        24.0,
+        true,
+    );
+
+    return generate_block_from_values(moisture, density);
 }
 
 /// Returns a value between 0-1, used as a terrain starting point for the default depth (D = 3).
@@ -56,22 +67,21 @@ pub fn get_base_sprite_type(seed_vector: v2u64, chunk_x: u64, chunk_y: u64, bloc
 ///
 /// This function uses fractal brownian motion with value noise in an initial pass for domain warping,
 /// then Worley noise to generate terrain.
-fn get_fbm_worley_density(seed_vector: v2u64, x: u64, y: u64) f32 {
+fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, cell_size: comptime_float, fbm_shift_size: comptime_float, horizontally_wide: bool) f32 {
     const fx = @as(f32, @floatFromInt(x));
-    const fy = @as(f32, @floatFromInt(y * 2)); // scaled Y
+    const fy = @as(f32, @floatFromInt(if (horizontally_wide) y * 2 else y)); // scaled Y
 
-    const cell_size = 20.0; // larger = bigger blobs from Worley
-    const h_stretch = 3.0;
-
+    // buncha config options
+    const h_stretch = 1.5;
     const fbm_octaves = 3; // amount of octaves to use for FBM
-    var amp: f32 = 24.0; // size of FBM shifts
     var warp_x: f32 = 0; // 32-bit means possible performance gains from SIMD and stuff, possibly
     var warp_y: f32 = 0;
-    var freq: u64 = 1;
 
+    comptime var freq: u64 = 1;
+    comptime var amp = fbm_shift_size;
     // FBM warping
     inline for (0..fbm_octaves) |_| {
-        const noise = get_dual_value_noise(seed_vector, x *% freq, y *% freq); // make shifting smooth!
+        const noise = get_dual_value_noise(seed_vector, x * freq, y * freq); // make shifting smooth!
         warp_x += noise[0] * amp;
         warp_y += noise[1] * amp;
         amp *= 0.5;
@@ -117,8 +127,7 @@ fn get_fbm_worley_density(seed_vector: v2u64, x: u64, y: u64) f32 {
         }
     }
 
-    const normalization = 30.0; // idk anymore
-    const density = (@sqrt(d2_sq) - @sqrt(d1_sq)) / normalization;
+    const density = (@sqrt(d2_sq) - @sqrt(d1_sq)) / cell_size;
     return @min(1.0, density);
 }
 
@@ -160,20 +169,41 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
 /// Generates ores over certain types of blocks, returning a sprite type (possibly changed to an ore type).
 /// Continues from steps 1-3 in `get_base_sprite_type()`.
 ///
-/// 4. Disperses ores using Worley noise. Assumes that `is_foundation()` was checked before calling.
-pub fn add_ores(sprite_type: Sprite, rng1: *seeding.ChaCha12, x: u64, y: u64) Sprite {
+/// 4. Disperses ores using Worley noise. Assumes that `is_stone()` was checked before calling.
+pub fn add_ores(sprite_type: Sprite, seed_vector: v2u64, rng1: *seeding.ChaCha12, x: u32, y: u32) Sprite {
     var new_sprite = sprite_type;
-    _ = .{ x, y };
-    if (sprite_type == .seagreen_stone) {
-        if (rng1.next() < odds_num(0.03)) {
-            new_sprite = .iron;
-        } else if (rng1.next() < odds_num(0.01)) {
-            new_sprite = .silver;
-        } else if (rng1.next() < odds_num(0.005)) {
-            new_sprite = .gold;
-        }
+    _ = rng1;
+    // Generate new density: the seed vector should be different from the `get_fbm_worley_density()` vector.
+    const v = get_fbm_worley_value(
+        seed_vector,
+        x,
+        y,
+        24.0,
+        30.0,
+        false,
+    );
+
+    if (USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
+
+    if (is_within(v, 0.5, 0.6)) {
+        new_sprite = .iron;
+    } else if (is_within(v, 0.88, 0.92)) {
+        new_sprite = .silver;
+    } else if (is_within(v, 0.4, 0.41)) {
+        new_sprite = .gold;
     }
+
+    if (sprite_type == .stone and is_within(v, 0.6, 0.63)) {
+        new_sprite = .iron; // higher iron odds in plain stone
+    }
+
     return new_sprite;
+}
+
+/// Returns true if `v` is between `min` and `max` (inclusive).
+pub inline fn is_within(v: f32, min: comptime_float, max: comptime_float) bool {
+    if (max <= min) @compileError("Maximum value must be larger than minimum value.");
+    return v >= min and v <= max;
 }
 
 /// Generates decorative blocks (such as mushrooms or ceiling plants).
@@ -201,8 +231,8 @@ pub fn add_decorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) voi
         for (0..SPAN) |block_x| {
             const id = block_x + block_y * SPAN;
             var block = &target_chunk.blocks[id];
-            if (target_chunk.blocks[id - 16].is_empty()) continue;
-            if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() < odds_num(0.5)) {
+            if (block.is_foundation() or target_chunk.blocks[id - 16].is_empty()) continue;
+            if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() < odds_num(0.7)) {
                 block.id = .spiral_plant;
             } else if (target_chunk.blocks[id - 16].is_foundation() and block.is_empty()) {
                 const val = rng1.next();

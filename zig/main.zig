@@ -16,9 +16,9 @@ const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
 const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
 /// Sets the number of times the push_layer function is called at the start. (If set to 3, the game will start off by being 4096x4096 chunks. If set to 1, it will be 16x16 chunks instead.)
-const STARTING_ZOOM_TIMES = 0;
+const STARTING_ZOOM_TIMES = 3;
 /// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` > 0).
-const SET_PLAYER_SPAWN_RANDOMLY = false;
+const SET_PLAYER_SPAWN_RANDOMLY = true;
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
 extern "env" fn js_handle_visible_chunks(opacity: f64) void;
@@ -37,7 +37,16 @@ var alreadyStarted = false;
 /// Initializes the game.
 pub fn init() void {
     var temp_seed = seeding.ChaCha12.init(seeding.mix_base_seed(&memory.game.seed, 1));
-    memory.game.seed_vec = .{ temp_seed.next(), temp_seed.next() };
+    memory.game.seed2 = .{
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+    };
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(seeding.mix_base_seed(&memory.game.seed, 2));
     for (0..STARTING_ZOOM_TIMES) |_| {
