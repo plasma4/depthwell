@@ -46,8 +46,8 @@ pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
 
     if (density < 0.2 or density > 0.9) return if (moisture > 0.96 and moisture < 0.99) .strange_stone else .none;
     if (moisture < 0.5) return .stone;
-    if (moisture < 0.52 and density < 0.7) return .green_stone;
-    if (moisture < 0.54 and density > 0.4) return .seagreen_stone;
+    if (moisture < 0.52 and density < 0.5) return .green_stone;
+    if (moisture < 0.54 and density > 0.4 and density < 0.6) return .seagreen_stone;
     return .stone;
 }
 
@@ -198,9 +198,10 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
 ///
 /// 4. Disperses ores using Worley noise. Assumes that `is_stone()` was checked before calling.
 pub fn add_ores(base_data: BaseTerrainData, seed_vector: v2u64, rng1: *seeding.ChaCha12, x: u32, y: u32) Sprite {
-    var new_sprite = base_data.sprite;
+    var sprite = base_data.sprite;
     _ = rng1;
-    // Generate new density: the seed vector should be different from the `get_fbm_worley_density()` vector.
+
+    // Generate new density for ores: the seed vector should be different from the `get_fbm_worley_density()` vector.
     const v = get_fbm_worley_value(
         seed_vector,
         x,
@@ -213,29 +214,66 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector: v2u64, rng1: *seeding.C
         },
     );
 
-    if (USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
+    // sprite IDs from 256-512 create a neat little heatmap, overriding normal ore logic
+    if (USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v * 256.0)));
 
-    if (base_data.density > 0.45 and base_data.density < 0.65) {
-        if (base_data.density > 0.5 and is_within(v, 0.6, 0.7)) {
-            new_sprite = .iron;
-        } else if (is_within(v, 0.2, 0.24)) {
-            new_sprite = .silver;
-        } else if (base_data.density > 0.6 and is_within(v, 0.3, 0.4)) {
-            new_sprite = .gold;
-        }
+    if (base_data.density >= 0.45 and base_data.density <= 0.65) {
+        // Change the sprite for ore-generation purposes:
+        sprite = select_sprite(
+            .{ sprite, .iron },
+            true,
+            .{ v, 0.6, 0.7 },
+        );
+
+        sprite = select_sprite(
+            .{ sprite, .silver },
+            base_data.density >= 0.5,
+            .{ v, 0.2, 0.26 },
+        );
+        sprite = select_sprite(
+            .{ sprite, .silver },
+            base_data.sprite == .strange_stone,
+            .{ v, 0.18, 0.2 },
+        );
+
+        sprite = select_sprite(
+            .{ sprite, .gold },
+            base_data.density >= 0.6,
+            .{ v, 0.3, 0.4 },
+        );
     }
 
-    if (base_data.sprite == .strange_stone and is_within(v, 0.56, 0.6)) {
-        new_sprite = .iron; // higher iron odds from strange stone
-    }
+    return sprite;
+}
 
-    return new_sprite;
+/// Represents 3 values: `v`, `min`, and `max`.
+const ValueRange = struct { f32, f32, f32 };
+
+/// Represents 2 sprites: `old_sprite` and `new_sprite`.
+const SpritePair = struct { Sprite, Sprite };
+
+/// Reads like a sentence: returns the new sprite if condition holds and v is between min and max, but the old sprite otherwise.
+///
+/// Technical definition: returns the second `Sprite` in the pair if `condition` is satisfied `range[0]` falls within `range[1]`, and the first `Sprite` otherwise.
+///
+/// Example usage:
+/// ```zig
+/// // Returns iron if density is larger than 0.6 AND my_value is between 0.6 and 0.7, and stone otherwise.
+/// Sprite sprite = cw(.iron, my_density > 0.6, my_value, 0.6, 0.7, .stone);
+/// ```
+pub inline fn select_sprite(sprites: SpritePair, condition: bool, range: ValueRange) Sprite {
+    const v = range[0];
+    const min = range[1];
+    const max = range[2];
+    const old_sprite = sprites[0];
+    const new_sprite = sprites[1];
+    return if (condition and v >= min and v <= max) new_sprite else old_sprite;
 }
 
 /// Returns true if `v` is between `min` and `max` (inclusive).
 pub inline fn is_within(v: f32, min: comptime_float, max: comptime_float) bool {
     if (max <= min) @compileError("Maximum value must be larger than minimum value.");
-    return v >= min and v <= max;
+    return v >= min and v <= max; // inclusive may mean more aggressive LLVM optimizations when inlining, for free
 }
 
 /// Generates decorative blocks (such as mushrooms or ceiling plants).

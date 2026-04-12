@@ -186,13 +186,17 @@ pub const Block = packed struct(u64) {
     seed: u24,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
-    /// Using the BOTTOM 32 bits from `seed_bits`, 8 bits of `light` and 24 bits of `seed` are extracted.
+    /// Using the BOTTOM 32 bits from `seed_bits`, (up to, but not necessarily) 8 bits of `light` and (guaranteed) 24 bits of `seed`.
     pub inline fn make_basic_block(sprite_type: world.Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
             .hp = 0,
             .edge_flags = 0,
-            .light = @truncate(seed_bits >> 24),
+
+            // TODO decide if shining ores works
+            .light = if (sprite_type.is_ore()) (@as(u8, @intCast((seed_bits >> 24) % 128))) + 128 else 0,
+            // .light = @truncate(seed_bits >> 24),
+
             .seed = @truncate(seed_bits),
         };
     }
@@ -215,6 +219,11 @@ pub const Block = packed struct(u64) {
     /// Determines if the sprite is stone (or a variation). Excludes edge stone.
     pub inline fn is_stone(self: @This()) bool {
         return self.id.is_stone();
+    }
+
+    /// Determines if the sprite is an ore.
+    pub inline fn is_ore(self: @This()) bool {
+        return self.id.is_ore();
     }
 
     /// Determines if the sprite is a heatmap (types 256-512).
