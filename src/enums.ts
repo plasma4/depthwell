@@ -94,4 +94,5 @@ export const game_state_offsets = {
     keys_pressed_mask: 136,
     keys_held_mask: 140,
     seed: 144,
+    seed2: 208,
 } as const;

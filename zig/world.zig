@@ -84,6 +84,17 @@ pub const Sprite = enum(u20) {
         };
     }
 
+    /// Determines if the sprite is an ore.
+    pub inline fn is_ore(self: @This()) bool {
+        return switch (self) {
+            .iron,
+            .silver,
+            .gold,
+            => true,
+            else => false,
+        };
+    }
+
     /// Determines if the sprite is a heatmap (types 256-512).
     pub inline fn is_heatmap(self: @This()) bool {
         return procedural.USE_BASE_HEATMAP and @intFromEnum(self) >= 256 and @intFromEnum(self) <= 512;

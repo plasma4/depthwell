@@ -84,8 +84,8 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     // out.edge_flags = 0u; // test
 
     let light_u = extractBits(data.word1, 0u, 8u);
-    // out.light = f32(light_u) / 5000.0 + 1.0; // allow for (and expect) light > 1, no longer square-rooted
-    out.light = 1.0; // DISABLED
+    out.light = f32(light_u) / 3000.0 + 1.0; // allow for (and expect) light > 1, no longer square-rooted
+    // out.light = 1.0; // test
     // Contains light in the first 8 bytes and seed in the next 24, since all 32 bits are technically random we use murmurmix32 to mix these quite simply with decent results!
     out.seed = murmurmix32(data.word1); // mix, since light is directly visible and technically, the seed is only 24 bits
     out.seed2 = murmurmix32(out.seed);
@@ -139,7 +139,7 @@ fn vs_main(
         out.uv = atlas_uv;
         out.edge_flags = 255u;
         out.sprite_id = 1u;
-        out.light = 0;
+        out.light = 1.0;
         out.local_uv = local_pos;
         return out;
     }
@@ -240,7 +240,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
                     (y_mod == 15u && in.local_uv.y > (1.0 - inv_tile_scale));
 
                 if (is_chunk_edge) {
-                    wire_color = vec4f(1.0, 1.0, 0.0, min(1, scene.wireframe_opacity * 2.5));
+                    wire_color = vec4f(1.0, 1.0, 0.0, min(1.0, scene.wireframe_opacity * 2.5));
                 } else {
                     // wire_color = vec4f(1.0, 0.0, 0.0, scene.wireframe_opacity);
 
@@ -270,15 +270,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let b_nudge = f32(extractBits(in.seed, 7u, 3u)) / 4.0;
 
     // DISABLED
-    // lch.x += (l_nudge - 0.5) * 0.1; // shift lightness (0-1)
-    // lch.y += a_nudge * 0.01; // shift chroma, which acts similar to saturation (0-1)
-    // lch.z += (b_nudge - 0.5) * 0.15; // shift hue (in RADIANS)
+    lch.x += (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
+    lch.y += a_nudge * 0.008; // shift chroma, which acts similar to saturation (0-1)
+    lch.z += (b_nudge - 0.5) * 0.15; // shift hue (in RADIANS, red isn't exactly 0)
 
     var final_rgb = vec3f(0.0);
+    lch.x *= in.light;
     if (in.edge_flags != 0xFFu) {
         // add the edge darkening and base light value, with the function using bits 10-16
         let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
-        lch.x = min(1.0, lch.x * (1.0 - darkening) * in.light);
+        lch.x = lch.x * (1.0 - darkening);
 
         if (erode_mask == 2u) {
             lch.x *= 0.6 + extracted_l * 0.01; // lower lightness significantly
