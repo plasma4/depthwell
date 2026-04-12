@@ -46,8 +46,8 @@ pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
 
     if (density < 0.2 or density > 0.9) return if (moisture > 0.96 and moisture < 0.99) .strange_stone else .none;
     if (moisture < 0.5) return .stone;
-    if (moisture < 0.52 and density < 0.5) return .green_stone;
-    if (moisture < 0.54 and density > 0.4 and density < 0.6) return .seagreen_stone;
+    if (moisture < 0.55 and density < 0.5) return .green_stone;
+    if (moisture < 0.6 and density > 0.4) return .seagreen_stone;
     return .stone;
 }
 

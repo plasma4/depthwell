@@ -276,7 +276,7 @@ if (engine.isDebug) {
         "Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs.",
     );
 
-    engine.wireframeOpacity = 1.0 / 3.0;
+    // engine.wireframeOpacity = 1.0 / 3.0;
     loggingElementIds.forEach((id) => {
         (document.getElementById(id) as HTMLDivElement).style.display =
             "inline";
