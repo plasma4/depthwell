@@ -196,7 +196,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
     if (in.edge_flags != 0xFFu) {
         erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2);
-        if (erode_mask == 0u) {
+        if (scene.wireframe_opacity == 0.0 && erode_mask == 0u) {
             discard; // discard early
         }
     }
@@ -216,7 +216,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         return vec4f(final_rgb, 1.0);
     }
 
-    var is_wireframe = false;
     var wire_color = vec4f(0.0);
 
     if (scene.wireframe_opacity > 0.0) {
@@ -225,7 +224,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let is_block_edge = any(in.local_uv < vec2f(inv_tile_scale)) || any(in.local_uv > vec2f(1.0 - inv_tile_scale));
 
         if (is_block_edge) {
-            is_wireframe = true;
             let x_mod = in.tile_coords.x & 15u;
             let y_mod = in.tile_coords.y & 15u;
 
@@ -254,9 +252,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         }
     }
 
-    // too transparent? exit early (removed as unlikely to matter unless wireframes are enabled)
+    // too transparent? exit early (removed, as unlikely to matter unless wireframes are enabled: most blocks are dense)
     // if (tex_color.a < 0.005 && !is_wireframe) { discard; }
-
 
     // convert to oklab and nudge values with seed
     var lab = linear_srgb_to_oklab(tex_color.rgb);
@@ -291,15 +288,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
     var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, in.sprite_id == 1u); // use chunk_opacity, unless this sprite is for the player
 
-    if (is_wireframe) {
+    if (scene.wireframe_opacity > 0.0) {
         // Correctly mix the wireframe dynamically depending on whether the block exists below it.
-        if (final_a > 0.005) {
-            final_rgb = mix(final_rgb, wire_color.rgb, wire_color.a);
-            final_a = max(final_a, wire_color.a);
-        } else {
-            final_rgb = wire_color.rgb;
-            final_a = wire_color.a;
-        }
+        final_rgb = mix(final_rgb, wire_color.rgb, wire_color.a);
+        final_a = max(final_a, wire_color.a);
     }
 
     return vec4f(final_rgb, final_a);

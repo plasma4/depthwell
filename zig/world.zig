@@ -253,7 +253,7 @@ pub const ChunkCache = struct {
     }
 };
 
-/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the path as if the `SegmentedList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `world_arena`.
+/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `SegmentedList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `world_arena`.
 fn carry_path(path: *const std.SegmentedList(u64)) std.SegmentedList(u64) {
     const new_path = path.clone(world_arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
     world_arena.reset(.retain_capacity); // TODO decide
@@ -540,6 +540,7 @@ fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha
 
 inline fn should_have_edge_flags(sprite: Sprite, current_sprite: Sprite) bool {
     _ = .{current_sprite};
+    // return (sprite.is_foundation() and !sprite.is_ore() and current_sprite.is_foundation() and !current_sprite.is_ore()) or sprite == current_sprite;
     return sprite.is_foundation();
 }
 
