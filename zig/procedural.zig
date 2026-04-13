@@ -44,10 +44,16 @@ const BaseTerrainData = struct {
 pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
     if (USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
-    if (density < 0.2 or density > 0.9) return if (moisture > 0.96 and moisture < 0.99) .strange_stone else .none;
+    if (density <= 0.1 and moisture >= 0.3 and moisture <= 0.4) {
+        return .strange_stone;
+    } else if (density <= 0.2 or density >= 0.9) {
+        return if (moisture >= 0.93 and moisture <= 0.99) .strange_stone_other else .none;
+    }
+
     if (moisture < 0.5) return .stone;
-    if (moisture < 0.55 and density < 0.5) return .green_stone;
-    if (moisture < 0.6 and density > 0.4) return .seagreen_stone;
+    if (moisture < 0.53 and density < 0.5) return .green_stone;
+    if (moisture < 0.58 and density > 0.4) return .seagreen_stone;
+    if (moisture < 0.65 and density > 0.6) return .blue_stone;
     return .stone;
 }
 
@@ -197,13 +203,13 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
 /// Continues from steps 1-3 in `get_base_sprite_type()`.
 ///
 /// 4. Disperses ores using Worley noise. Assumes that `is_stone()` was checked before calling.
-pub fn add_ores(base_data: BaseTerrainData, seed_vector: v2u64, rng1: *seeding.ChaCha12, x: u32, y: u32) Sprite {
+pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2: v2u64, rng1: *seeding.ChaCha12, x: u32, y: u32) Sprite {
     var sprite = base_data.sprite;
     _ = rng1;
 
     // Generate new density for ores: the seed vector should be different from the `get_fbm_worley_density()` vector.
-    const v = get_fbm_worley_value(
-        seed_vector,
+    const v1 = get_fbm_worley_value(
+        seed_vector_1,
         x,
         y,
         .{
@@ -213,33 +219,53 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector: v2u64, rng1: *seeding.C
             .use_f2_f1 = false,
         },
     );
+    const v2 = get_fbm_worley_value(
+        seed_vector_2,
+        x,
+        y,
+        .{
+            .cell_size = 35.0,
+            .fbm_shift_size = 60.0,
+            .horizontally_wide = false,
+            .use_f2_f1 = false,
+        },
+    );
 
-    // sprite IDs from 256-512 create a neat little heatmap, overriding normal ore logic
-    if (USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v * 256.0)));
+    // sprite IDs from 256-512 create a neat little heatmap (using only the first value), overriding normal ore logic
+    if (USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v1 * 256.0)));
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
-        // Change the sprite for ore-generation purposes:
+        // Change the sprite to various ore types:
+        sprite = select_sprite(
+            .{ sprite, .copper },
+            true,
+            .{ v2, 0.0, 0.2 },
+        );
+        if (sprite == .copper or v2 > 0.7) return sprite;
+
         sprite = select_sprite(
             .{ sprite, .iron },
             true,
-            .{ v, 0.6, 0.7 },
+            .{ v1, 0.55, 0.6 },
         );
+        if (sprite == .iron and base_data.sprite != .strange_stone) return sprite;
 
         sprite = select_sprite(
             .{ sprite, .silver },
-            base_data.density >= 0.5,
-            .{ v, 0.2, 0.26 },
+            base_data.density >= 0.55,
+            .{ v1, 0.2, 0.26 },
         );
         sprite = select_sprite(
             .{ sprite, .silver },
             base_data.sprite == .strange_stone,
-            .{ v, 0.18, 0.2 },
+            .{ v1, 0.18, 0.2 },
         );
+        if (sprite == .silver) return sprite;
 
         sprite = select_sprite(
             .{ sprite, .gold },
-            base_data.density >= 0.6,
-            .{ v, 0.3, 0.4 },
+            base_data.density >= 0.62,
+            .{ v2, 0.3, 0.4 },
         );
     }
 

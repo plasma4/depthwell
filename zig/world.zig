@@ -24,18 +24,20 @@ pub const Sprite = enum(u20) {
     player,
     edge_stone,
     strange_stone,
+    strange_stone_other,
     blue_stone,
     seagreen_stone,
     green_stone,
     stone,
+    copper,
     iron,
     silver,
     gold,
     weird_gem_pile_thing,
-    spiral_plant = 12,
-    ceiling_flower = 13,
-    mushroom = 14, // there is another variant of mushrooms
-    torch = 16,
+    spiral_plant,
+    ceiling_flower,
+    mushroom = 16, // there is another variant of mushrooms
+    torch = 18,
     unchanged = 1048575,
     _, // non-exhaustive for heatmap
 
@@ -79,6 +81,7 @@ pub const Sprite = enum(u20) {
             .seagreen_stone,
             .green_stone,
             .strange_stone,
+            .strange_stone_other,
             => true,
             else => false,
         };
@@ -87,6 +90,7 @@ pub const Sprite = enum(u20) {
     /// Determines if the sprite is an ore.
     pub inline fn is_ore(self: @This()) bool {
         return switch (self) {
+            .copper,
             .iron,
             .silver,
             .gold,
@@ -397,6 +401,7 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
     const seed_vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
     const seed_vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
     const seed_vec3: v2u64 = .{ memory.game.seed2[4], memory.game.seed2[5] };
+    const seed_vec4: v2u64 = .{ memory.game.seed2[6], memory.game.seed2[6] };
 
     var rng1 = seeding.ChaCha12.init(chunk_seeds[0]); // Block generation.
     var rng4 = seeding.ChaCha12.init(chunk_seeds[3]); // Visual touches only.
@@ -433,6 +438,7 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
             if (sprite.is_stone() or sprite.is_heatmap()) sprite = procedural.add_ores(
                 base_data,
                 seed_vec3,
+                seed_vec4,
                 &rng1,
                 @intCast(cx * 16 + block_x),
                 @intCast(cy * 16 + block_y),

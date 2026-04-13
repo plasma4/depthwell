@@ -138,12 +138,17 @@ export async function create(
         label: "Main shader",
         // constant patching, basically override keyword in WGSL
         code: SHADER_SOURCE.replace(
-            "/* TILES_PER_ROW */ 1.0 /* TILES_PER_ROW */",
+            "/* TILES_PER_ROW */ 1 /* TILES_PER_ROW */",
             "" + exports.get_tiles_per_row(),
-        ).replace(
-            "/* TILES_PER_COLUMN */ 1.0 /* TILES_PER_COLUMN */",
-            "" + exports.get_tiles_per_column(),
-        ),
+        )
+            .replace(
+                "/* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */",
+                "" + exports.get_tiles_per_column(),
+            )
+            .replace(
+                "/* DECOR_START */ 1 /* DECOR_START */",
+                "" + exports.get_decor_start(),
+            ),
     });
 
     const bindGroupLayout = device.createBindGroupLayout({

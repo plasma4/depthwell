@@ -30,6 +30,9 @@ pub export fn get_tiles_per_row() u32 {
 pub export fn get_tiles_per_column() u32 {
     return 1;
 }
+pub export fn get_decor_start() u32 {
+    return @intCast(@intFromEnum(world.Sprite.spiral_plant));
+}
 
 pub export fn tick(speed: f64) void {
     if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {

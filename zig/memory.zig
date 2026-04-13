@@ -87,7 +87,7 @@ pub const GameState = extern struct {
     seed: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
 
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
-    seed2: seeding.Seed align(16) = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    seed2: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
 
     pub inline fn get_player_coord(self: *const @This()) Coordinate {
         return .{ .quadrant = @intCast(self.player_quadrant), .suffix = self.player_chunk };

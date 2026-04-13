@@ -1,9 +1,12 @@
 /*
  * Main shader for Depthwell. ADD ?raw FOR DEBUGGING SHADER TO THE END OF engineMaker.ts's `SHADER_SOURCE` VARIABLE TO NOT COMPRESS.
  */
-// Sprite sheet constants. Sprites are saved as a .png, and each asset is 16x16. See zig/world.zig's Sprite definitions for what these all are. These row/column are dynamically patched in from TypeScript, so do not set them here.
-const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1.0 /* TILES_PER_ROW */;
-const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1.0 /* TILES_PER_COLUMN */;
+
+// These are sprite sheet constants. Sprites are saved as a .png, and each asset is 16x16. See zig/world.zig's Sprite definitions for what these all are.
+// These first three values are dynamically patched in from TypeScript, so do not set them here.
+const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
+const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */;
+const DECOR_START: u32 = /* DECOR_START */ 1 /* DECOR_START */;
 
 const TILE_SIZE: f32 = 16.0;
 const PIXEL_UV_SIZE: f32 = 1.0 / TILE_SIZE;
@@ -90,8 +93,9 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.seed = murmurmix32(data.word1); // mix, since light is directly visible and technically, the seed is only 24 bits
     out.seed2 = murmurmix32(out.seed);
 
-    if (out.sprite_id == 14 && (extractBits(out.seed, 16u, 2u) == 0)) { // extract bits 16-18 for random modifications
-        out.sprite_id++; // 2 mushroom types
+    let random_mod = extractBits(out.seed, 16u, 2u);
+    if (out.sprite_id == (DECOR_START + 2u) && (random_mod == 0u)) { // extract bits 16-18 for random modifications
+        out.sprite_id++; // 2 mushroom type sprites
     }
 
     return out;
@@ -161,15 +165,15 @@ fn vs_main(
     // scale that offset by zoom, then add the screen center
     let screen_pos = (offset_from_cam * scene.zoom) + (scene.viewport_size * 0.5);
 
-    // normalize, but spiral plant and ceiling flower should move up by 3 pixels, mushroom should move down 2 pixels
+    // normalize, but spiral plant and ceiling flower should move up by 2 pixels, mushroom should move down 2 pixels
     var vertical_offset = select(
         select(
             0.0,
-            -2.0 * scene.zoom,
-            tile.sprite_id == 14u || tile.sprite_id == 15u
+            2.0 * scene.zoom,
+            tile.sprite_id == (DECOR_START + 0u) || tile.sprite_id == (DECOR_START + 1u) // spiral plant, ceiling flower
         ),
-        3.0 * scene.zoom,
-        tile.sprite_id == 12u || tile.sprite_id == 13u
+        -2.0 * scene.zoom,
+        tile.sprite_id == (DECOR_START + 2u) || tile.sprite_id == (DECOR_START + 3u) // mushroom sprites
     );
 
     // apply to screen_pos.y before converting to NDC
@@ -282,8 +286,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     // DISABLED
     lch.x += (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
-    lch.y *= 1 + a_nudge * 0.3; // shift chroma, which acts similar to saturation (0-1)
-    lch.z += (b_nudge - 0.5) * 0.15; // shift hue (in RADIANS, red isn't exactly 0)
+    lch.y *= 1.0 + a_nudge * 0.25; // shift chroma, which acts similar to saturation (0-1)
+    lch.z += (b_nudge - 0.5) * 0.1; // shift hue (in RADIANS, red isn't exactly 0)
 
     var final_rgb = vec3f(0.0);
     lch.x *= in.light;
