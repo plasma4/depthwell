@@ -43,13 +43,14 @@ pub const GameState = extern struct {
     /// Represents the camera's movement in a frame (derivative of `camera_pos`).
     last_camera_pos: v2i64 = .{ 0, 0 },
     /// Represents the camera's zoom scale.
-    camera_scale: f64 = player.CAMERA_MIN_ZOOM,
+    camera_scale: f64 = player.CAMERA_MAX_ZOOM,
     /// Represents the camera's zoom scale change rate (multiplier, acts as derivative of camera_scale change).
     camera_scale_change: f64 = 1.0,
     /// Represents how many layers deep the player is (defaults to 3).
     depth: u64 = 0,
 
-    /// Represents which quadrant (0-3) of the QuadCache the player is in (starts at 0 when depth is <= 16).
+    /// Represents which quadrant (0-3) of the `QuadCache` the player is in (starts at 0 when depth is <= 16).
+    /// (0: NW, 1: NE, 2: SW, 3: SE)
     player_quadrant: u32 = 0,
 
     /// Represents where the player should be rendered for WGSL.

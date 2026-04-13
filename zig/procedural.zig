@@ -50,17 +50,18 @@ pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
         return if (moisture >= 0.93 and moisture <= 0.99) .strange_stone_other else .none;
     }
 
-    if (moisture < 0.5) return .stone;
-    if (moisture < 0.53 and density < 0.5) return .green_stone;
-    if (moisture < 0.58 and density > 0.4) return .seagreen_stone;
-    if (moisture < 0.65 and density > 0.6) return .blue_stone;
+    if (moisture >= 0.88 and moisture <= 0.92) return .lava_stone;
+    if (moisture <= 0.5) return .stone;
+    if (moisture <= 0.53 and density <= 0.5) return .green_stone;
+    if (moisture <= 0.58 and density >= 0.4) return .seagreen_stone;
+    if (moisture <= 0.65 and density >= 0.6) return .blue_stone;
     return .stone;
 }
 
 /// Returns a base sprite type. Does 3 passes:
 ///
-/// 1. Generate initial terrain density value. (moisture TODO or remove)
-/// 2. Generate a block from density value.
+/// 1. Generate an initial terrain density+moisture value using the seed vectors.
+/// 2. Generate a block from those values.
 /// 3. Generates structures (TODO)
 pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) BaseTerrainData {
     const moisture = get_fbm_worley_value(
@@ -68,8 +69,8 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
         .{
-            .cell_size = 256.0,
-            .fbm_shift_size = 80.0,
+            .cell_size = 400.0,
+            .fbm_shift_size = 160.0,
             .horizontally_wide = false,
         },
     );
@@ -241,7 +242,7 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
             true,
             .{ v2, 0.0, 0.2 },
         );
-        if (sprite == .copper or v2 > 0.7) return sprite;
+        if (sprite == .copper or v2 >= 0.7) return sprite;
 
         sprite = select_sprite(
             .{ sprite, .iron },
@@ -264,7 +265,7 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
 
         sprite = select_sprite(
             .{ sprite, .gold },
-            base_data.density >= 0.62,
+            base_data.density >= 0.62 or (base_data.density >= 0.58 and base_data.sprite == .lava_stone),
             .{ v2, 0.3, 0.4 },
         );
     }
@@ -284,8 +285,8 @@ const SpritePair = struct { Sprite, Sprite };
 ///
 /// Example usage:
 /// ```zig
-/// // Returns iron if density is larger than 0.6 AND my_value is between 0.6 and 0.7, and stone otherwise.
-/// Sprite sprite = cw(.iron, my_density > 0.6, my_value, 0.6, 0.7, .stone);
+/// // Returns iron if density is larger than 0.6 AND my_value is between 0.6 and 0.7 (inclusive), and stone otherwise.
+/// Sprite sprite = cw(.iron, my_density >= 0.6, my_value, 0.6, 0.7, .stone);
 /// ```
 pub inline fn select_sprite(sprites: SpritePair, condition: bool, range: ValueRange) Sprite {
     const v = range[0];

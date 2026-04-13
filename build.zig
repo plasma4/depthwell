@@ -3,7 +3,7 @@ const std = @import("std");
 // Run zig build normally, and zig build -Doptimize=ReleaseFast for a production version. Use zig build --Dgen-enums as well to automatically construct src/enums.ts and zig test "zig/root.zig" to run all tests across the codebase.
 
 // To make a final ReleaseFast build with even more optimization, use wasm-opt like this (no fast-math options for determinism):
-// { TEMP_WASM=$(mktemp -t wasm_opt_XXXXXX); wasm-opt src/main.wasm -o "$TEMP_WASM" -O4 --strip-debug --strip-dwarf --strip-producers --enable-simd --enable-sign-ext --enable-tail-call --enable-bulk-memory --enable-multivalue --enable-reference-type --converge --gufa-optimizing --traps-never-happen --ignore-implicit-traps --limit-segments --closed-world --inline-functions-with-loops --inline-max-combined-binary-size=100000 --directize --memory-packing --optimize-added-constants-propagate --flexible-inline-max-function-size=100 --one-caller-inline-max-function-size=1 --roundtrip --low-memory-unused && mv "$TEMP_WASM" src/main.wasm; }
+// { TEMP_WASM=$(mktemp -t wasm_opt_XXXXXX); wasm-opt src/main.wasm -o "$TEMP_WASM" -O4 --strip-debug --strip-dwarf --strip-producers --enable-simd --enable-sign-ext --enable-tail-call --enable-bulk-memory --enable-multivalue --enable-reference-types --converge --gufa-optimizing --traps-never-happen --ignore-implicit-traps --limit-segments --closed-world --inline-functions-with-loops --inline-max-combined-binary-size=100000 --directize --memory-packing --optimize-added-constants-propagate --flexible-inline-max-function-size=100 --one-caller-inline-max-function-size=1 --roundtrip --low-memory-unused && mv "$TEMP_WASM" src/main.wasm; }
 // (Add --enable-memory64 for 64-bit builds)
 
 pub fn build(b: *std.Build) void {
