@@ -68,7 +68,7 @@ struct VertexOutput {
     @location(1) @interpolate(flat) sprite_id: u32,
     @location(2) @interpolate(flat) edge_flags: u32,
     @location(3) @interpolate(flat) light: f32,
-    @location(4) @interpolate(flat) seed: u32, // these bits are used as efficently as possible
+    @location(4) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
     @location(5) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
 
     // Local UV (0.0 to 1.0) across the surface of the specific tile.
@@ -81,16 +81,16 @@ struct VertexOutput {
 fn unpack_tile(data: TileData) -> UnpackedTile {
     var out: UnpackedTile;
 
-    out.sprite_id = extractBits(data.word0, 0u, 20u);
-    out.hp = extractBits(data.word0, 20u, 4u);
-    out.edge_flags = extractBits(data.word0, 24u, 8u);
+    out.sprite_id = extractBits(data.word0, 0u, 16u);
+    out.edge_flags = extractBits(data.word0, 16u, 8u);
     // out.edge_flags = 0u; // test
 
-    let light_u = extractBits(data.word1, 0u, 8u);
+    let light_u = extractBits(data.word0, 24u, 8u);
     out.light = f32(light_u) / 3000.0 + 1.0; // allow for (and expect) light > 1, no longer square-rooted
+
     // out.light = 1.0; // test
-    // Contains light in the first 8 bytes and seed in the next 24, since all 32 bits are technically random we use murmurmix32 to mix these quite simply with decent results!
-    out.seed = murmurmix32(data.word1); // mix, since light is directly visible and technically, the seed is only 24 bits
+    out.hp = extractBits(data.word1, 0u, 4u);
+    out.seed = extractBits(data.word1, 4u, 28u); // 28-bit seed
     out.seed2 = murmurmix32(out.seed);
 
     let random_mod = extractBits(out.seed, 16u, 2u);
@@ -317,7 +317,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     return vec4f(final_rgb, final_a);
 }
 
-// Bijective mixer, given 32 bits of data
+// Bijective mixer for 32-bit integers
 fn murmurmix32(number: u32) -> u32 {
     var h = number;
     h ^= h >> 16;
