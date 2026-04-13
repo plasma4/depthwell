@@ -165,11 +165,13 @@ fn vs_main(
     // scale that offset by zoom, then add the screen center
     let screen_pos = (offset_from_cam * scene.zoom) + (scene.viewport_size * 0.5);
 
-    // normalize, but spiral plant and ceiling flower should move up by 2 pixels, mushroom should move down 2 pixels
+    // normalize coordinates
+    // first, make sure spiral plant and ceiling flower should move up by 3 pixels, mushroom should move down 2 pixels
+    // this is necessary because otherwise, they would look like they're floating in space
     var vertical_offset = select(
         select(
             0.0,
-            2.0 * scene.zoom,
+            3.0 * scene.zoom,
             tile.sprite_id == (DECOR_START + 0u) || tile.sprite_id == (DECOR_START + 1u) // spiral plant, ceiling flower
         ),
         -2.0 * scene.zoom,
