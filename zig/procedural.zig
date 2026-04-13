@@ -44,9 +44,9 @@ const BaseTerrainData = struct {
 pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
     if (USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
-    if (density <= 0.1 and moisture >= 0.3 and moisture <= 0.4) {
+    if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
         return .strange_stone;
-    } else if (density <= 0.2 or density >= 0.9) {
+    } else if (density <= 0.32 or density >= 0.9) {
         return if (moisture >= 0.93 and moisture <= 0.99) .strange_stone_other else .none;
     }
 
@@ -69,7 +69,7 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
         .{
-            .cell_size = 400.0,
+            .cell_size = 400.0, // very LARGE cells for biome generation
             .fbm_shift_size = 160.0,
             .horizontally_wide = false,
         },
@@ -79,7 +79,7 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
         .{
-            .cell_size = 40.0,
+            .cell_size = 80.0, // smaller cells for cave terrain
             .fbm_shift_size = 24.0,
             .horizontally_wide = true,
         },
