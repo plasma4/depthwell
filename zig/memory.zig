@@ -175,16 +175,16 @@ pub const MemorySizes = struct {
 pub const Block = packed struct(u64) {
     /// Internal sprite ID.
     id: world.Sprite,
-    /// How "mined" the block is. 0 is least mined, 15 is most mined.
-    hp: u4,
     /// Edge flags: which neighbors are air (for edge-darkening and culling).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
     edge_flags: u8,
-
     /// The brightness of the tile.
     light: u8,
+
+    /// How "mined" the block is. 0 is least mined, 15 is most mined.
+    hp: u4,
     /// Per-block seed for procedural variation in the shader.
-    seed: u24,
+    seed: u28,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
     /// Using the BOTTOM 32 bits from `seed_bits`, (up to, but not necessarily) 8 bits of `light` and (guaranteed) 24 bits of `seed`.
@@ -195,7 +195,7 @@ pub const Block = packed struct(u64) {
             .edge_flags = 0,
 
             // TODO decide if shining ores works
-            .light = if (sprite_type.is_ore()) (@as(u8, @intCast((seed_bits >> 24) % 128))) + 128 else 0,
+            .light = if (sprite_type.is_ore()) (@as(u8, @intCast((seed_bits >> 24) % 64))) + 64 else 0,
             // .light = @truncate(seed_bits >> 24),
 
             .seed = @truncate(seed_bits),

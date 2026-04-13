@@ -19,7 +19,7 @@ const SPAN_LOG2 = memory.SPAN_LOG2;
 const odds_num = seeding.odds_num;
 
 /// Sprite IDs, based on src/main.png
-pub const Sprite = enum(u20) {
+pub const Sprite = enum(u16) {
     none,
     player,
     edge_stone,
@@ -41,7 +41,7 @@ pub const Sprite = enum(u20) {
     mushroom, // there is another variant of mushrooms
     _mushroom, // visual variation
     torch,
-    unchanged = 1048575,
+    unchanged = 65535,
     _, // non-exhaustive for heatmap
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation. This returns false for edge stone, unlike `is_solid`.
@@ -111,7 +111,7 @@ pub const Sprite = enum(u20) {
 };
 
 pub const max_sprite_value = blk: {
-    var max_val: u20 = 0;
+    var max_val: u16 = 0;
     const fields = @typeInfo(Sprite).@"enum".fields;
 
     for (fields) |field| {
