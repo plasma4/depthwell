@@ -23,12 +23,14 @@ pub const Sprite = enum(u20) {
     none,
     player,
     edge_stone,
+    _edge_stone, // visual variation
     strange_stone,
     strange_stone_other,
     blue_stone,
     seagreen_stone,
     green_stone,
     stone,
+    lava_stone,
     copper,
     iron,
     silver,
@@ -36,8 +38,9 @@ pub const Sprite = enum(u20) {
     weird_gem_pile_thing,
     spiral_plant,
     ceiling_flower,
-    mushroom = 16, // there is another variant of mushrooms
-    torch = 18,
+    mushroom, // there is another variant of mushrooms
+    _mushroom, // visual variation
+    torch,
     unchanged = 1048575,
     _, // non-exhaustive for heatmap
 
@@ -50,6 +53,7 @@ pub const Sprite = enum(u20) {
             .torch,
             .mushroom,
             .edge_stone,
+            ._edge_stone,
             => false,
             else => true,
         };
@@ -77,6 +81,7 @@ pub const Sprite = enum(u20) {
     pub inline fn is_stone(self: @This()) bool {
         return switch (self) {
             .stone,
+            .lava_stone,
             .blue_stone,
             .seagreen_stone,
             .green_stone,
@@ -288,7 +293,8 @@ const QuadrantEdgeDetails = struct {
 
 /// A static 2x2 grid of seeds only updated on entering a portal/game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
-    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
+    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15).
+    /// (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
     /// TODO actual logic
     hash_cache_1: [4]seeding.Seed,
@@ -418,7 +424,10 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
             const is_absolute_edge_x = (cx == 0 and block_x < 2 and quadrant_edge_details.most_left) or (cx == max_possible_suffix and block_x >= (SPAN - 2) and quadrant_edge_details.most_right);
             const is_absolute_edge_y = (cy == 0 and block_y < 2 and quadrant_edge_details.most_top) or (cy == max_possible_suffix and block_y >= (SPAN - 2) and quadrant_edge_details.most_bottom);
             if (is_absolute_edge_x or is_absolute_edge_y) {
-                chunk.blocks[id] = Block.make_basic_block(.edge_stone, rng4.next());
+                chunk.blocks[id] = Block.make_basic_block(
+                    if ((block_x % 2) + (block_y % 2) == 1) ._edge_stone else .edge_stone,
+                    rng4.next(),
+                );
                 // This does mean there are fewer PRNG .next() calls but this doesn't matter here
                 continue;
             }

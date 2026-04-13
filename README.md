@@ -272,14 +272,15 @@ pub const ModKey = extern struct {
 ```zig
 /// A static 2x2 grid of seeds only updated on entering a portal/game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
-    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15). (0: NW, 1: NE, 2: SW, 3: SE)
+    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15).
+    /// (0: NW, 1: NE, 2: SW, 3: SE)
 path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
-    /// Stores the leftmost QuadCache's X-coordinate.
-    left_path: std.SegmentedList(u64, 1024),
-    /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: std.SegmentedList(u64, 1024),
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
+    /// A list representing the prefix stack of the top left quadrant's X-coordinate.
+    left_path: std.SegmentedList(u64, 4096),
+    /// Stores the topmost QuadCache's Y-coordinate.
+    top_path: std.SegmentedList(u64, 4096),
 // ...
 ```
 

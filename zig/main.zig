@@ -15,7 +15,7 @@ const SCREEN_HEIGHT = 270;
 const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
 const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
-/// Sets the number of times the push_layer function is called at the start. (If set to 3, the game will start off by being 4096x4096 chunks. If set to 1, it will be 16x16 chunks instead.)
+/// Sets the number of times the push_layer function is called at the start. (If set to 3 (default), the game will start off by being 4096x4096 chunks. If set to 1, for example, it will be 1 chunk with 16x16 blocks instead.)
 const STARTING_ZOOM_TIMES = 3;
 /// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` > 0).
 const SET_PLAYER_SPAWN_RANDOMLY = true;
