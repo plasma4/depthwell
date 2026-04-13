@@ -161,10 +161,24 @@ fn vs_main(
     // scale that offset by zoom, then add the screen center
     let screen_pos = (offset_from_cam * scene.zoom) + (scene.viewport_size * 0.5);
 
-    // normalize
+    // normalize, but spiral plant and ceiling flower should move up by 3 pixels, mushroom should move down 2 pixels
+    var vertical_offset = select(
+        select(
+            0.0,
+            -2.0 * scene.zoom,
+            tile.sprite_id == 14u || tile.sprite_id == 15u
+        ),
+        3.0 * scene.zoom,
+        tile.sprite_id == 12u || tile.sprite_id == 13u
+    );
+
+    // apply to screen_pos.y before converting to NDC
+    // subtract from Y because in screen space, lower values are "higher" up
+    let adjusted_y = screen_pos.y - vertical_offset;
+
     let ndc = vec2f(
         (screen_pos.x / scene.viewport_size.x) * 2.0 - 1.0,
-        1.0 - (screen_pos.y / scene.viewport_size.y) * 2.0
+        1.0 - (adjusted_y / scene.viewport_size.y) * 2.0
     );
 
     // Calculate which sprite in the atlas to sample
@@ -218,7 +232,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     var wire_color = vec4f(0.0);
 
-    if (scene.wireframe_opacity > 0.0) {
+    if (scene.wireframe_opacity != 0.0) {
         // render wireframe due to being at the edge of a block?
         let inv_tile_scale = 1.00001 / (TILE_SIZE * scene.zoom);
         let is_block_edge = any(in.local_uv < vec2f(inv_tile_scale)) || any(in.local_uv > vec2f(1.0 - inv_tile_scale));
@@ -268,7 +282,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     // DISABLED
     lch.x += (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
-    lch.y += a_nudge * 0.008; // shift chroma, which acts similar to saturation (0-1)
+    lch.y *= 1 + a_nudge * 0.3; // shift chroma, which acts similar to saturation (0-1)
     lch.z += (b_nudge - 0.5) * 0.15; // shift hue (in RADIANS, red isn't exactly 0)
 
     var final_rgb = vec3f(0.0);
@@ -288,7 +302,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
     var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, in.sprite_id == 1u); // use chunk_opacity, unless this sprite is for the player
 
-    if (scene.wireframe_opacity > 0.0) {
+    if (scene.wireframe_opacity != 0.0) {
         // Correctly mix the wireframe dynamically depending on whether the block exists below it.
         final_rgb = mix(final_rgb, wire_color.rgb, wire_color.a);
         final_a = max(final_a, wire_color.a);
@@ -326,7 +340,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     let has_br     = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 2u + extractBits(sc, 0u, 1u);  // top-left: 2 or 3
+    let r_tl = 4u + extractBits(sc, 0u, 1u);  // top-left: 2 or 3
     let r_tr = 4u + extractBits(sc, 2u, 1u);  // top-right: 4 or 5
     let r_bl = 4u + extractBits(sc, 4u, 1u);  // bottom-left: 4 or 5
     let r_br = 4u + extractBits(sc, 6u, 1u);  // bottom-right: 4 or 5
@@ -389,7 +403,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Top edge
     if (!has_top) {
-        let base_depth = 1u + extractBits(se, 0u, 1u);
+        let base_depth = 2u + extractBits(se, 0u, 1u); // 2 or 3 pixels inward
         let notch_pos = extractBits(se, 1u, 4u);
         let notch_dir = extractBits(se, 5u, 1u);
         let notch_width = 2u + extractBits(se, 6u, 2u);
@@ -411,7 +425,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Bottom edge
     if (!has_bottom) {
-        let base_depth = 1u + extractBits(se, 8u, 1u);
+        let base_depth = 2u + extractBits(se, 8u, 1u);
         let notch_pos = extractBits(se, 9u, 4u);
         let notch_dir = extractBits(se, 13u, 1u);
         let notch_width = 2u + extractBits(se, 14u, 2u);
@@ -432,7 +446,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Left edge
     if (!has_left) {
-        let base_depth = 1u + extractBits(se, 16u, 1u);
+        let base_depth = 2u + extractBits(se, 16u, 1u);
         let notch_pos = extractBits(se, 17u, 4u);
         let notch_dir = extractBits(se, 21u, 1u);
         let notch_width = 2u + extractBits(se, 22u, 2u);
@@ -453,7 +467,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Right edge
     if (!has_right) {
-        let base_depth = 1u + extractBits(se, 24u, 1u);
+        let base_depth = 2u + extractBits(se, 24u, 1u);
         let notch_pos = extractBits(se, 25u, 4u);
         let notch_dir = extractBits(se, 29u, 1u);
         let notch_width = 2u + extractBits(se, 30u, 2u);
@@ -475,7 +489,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     // Inner corners (no diagonal neighbor)
 
     if (!has_tl && has_top && has_left) {
-        let r = 2u + extractBits(sc, 8u, 1u); // 2 or 3
+        let r = 2u + extractBits(sc, 8u, 1u); // 2 or 3 pixel radius
         if (px < r && py < r) {
             let dx = px + 1u; // +1 so the circle center is at (-0.5, -0.5) effectively
             let dy = py + 1u;

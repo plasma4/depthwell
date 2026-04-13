@@ -32,8 +32,8 @@ pub const Sprite = enum(u20) {
     silver,
     gold,
     weird_gem_pile_thing,
-    spiral_plant,
-    ceiling_flower,
+    spiral_plant = 12,
+    ceiling_flower = 13,
     mushroom = 14, // there is another variant of mushrooms
     torch = 16,
     unchanged = 1048575,
