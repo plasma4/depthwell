@@ -9,17 +9,23 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 Run `zig build` for the main build of Zig code, `zig test "zig/root.zig"` to run (all) tests, and `zig build --Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
 
-When building for production with Vite (`npm run build` instead of `npm run dev`), edit `SHADER_SOURCE` in `engineMaker.ts` to `"./shader.wgsl"` temporarily (without the `?raw` property) to actually compress `shader.wgsl`.
+Useful variables to customize include `CONFIG` in `src/main.ts`, `engine.wireframeOpacity`, `engine.baseSpeed`, and `zig/player.zig` config options.
 
-With a clear-screen command that uses ANSI-escape codes, you can clear the screen every time after building:
+When building for production with Vite (using `npm run build` instead of `npm run dev`), edit `SHADER_SOURCE` in `engineMaker.ts` to `"./shader.wgsl"` temporarily (without the `?raw` property) to actually compress `shader.wgsl`.
+
+Currently, Depthwell does not utilize web worker technology so custom headers are not necessary (and this means it's fairly easily to save as a file/folder, _after building_).
+
+#### Easy building tips
+
+It is quite helpful to use the Zig Language Server in VSCode and set it to "watch" mode, which automatically builds the WASM while providing helpful error feedback.
+
+Alternatively, with a clear-screen command that uses ANSI-escape codes, you can clear the screen every time after building:
 
 ```bash
 cls && zig build --Dgen-enums
 ```
 
 (Replace `cls` with `printf "\033c"` for Bash, or create a custom command in `$PATH`.)
-
-Currently, Depthwell does not utilize web worker technology so custom headers are not necessary (and this means it's fairly easily to save as a file/folder, _after building_).
 
 ### Architecture details
 
@@ -314,6 +320,22 @@ Modifications of "higher" $D$-values are prioritized, and lower $D$-values are u
 - Writing performance is an amortized O(1) due to needing to find a `HashMap.
 - Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `ModKey` and assuming that collisions are impossible.
 - Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 1KiB in history, plus additional index memory (so slightly more).
+
+#### Smart chunk loading
+
+Despite the fact that chunks are procedural and written in Zig (you'd think that means blazing fast), there's a lot of heavy computation internally due to needing to calculate several FBM+Worley passes, _per block_.
+
+That's why the code tries as hard as possible to only generate 2 chunks per frame (except on startup or depth increase, as that will use different logic). By doing this, the code can easily extract these chunks from `ChunkCache` lazily when the player moves in a way that requires the `SimBuffer` to pull chunks near the edge.
+
+The algorithm does this each frame (with a budget of 2, meaning 2 chunks):
+
+1. The player's current velocity creates a "leading edge." Smart chunk loading here prioritizes generating chunks in the direction the player is currently heading.
+2. Budget is spent on a 68-chunk ring outside the simulation window (based on the leading edge from the first part), using a persistent cursor.
+3. Finally, the `ChunkCache` provides a "second chance." Using a clock algorithm, the cache differentiates between chunks the player is moving toward and chunks the player has left behind, evicting the latter to keep the memory footprint stable.
+
+This system prevents frame spikes (as you may normally have to generate a whole 16 chunks/frame to keep `SimBuffer` happy)! Note that this logic doesn't at all change the _logic_: the player could still teleport trillions of chunks away in a frame: these would just get gradually neglected by the `ChunkCache` naturally.
+
+A little bit on the `ChunkCache`: it has 256 slots by default. When the cache is full and a new chunk needs to be stored, a "hand" sweeps through the slots. If a chunk's "reference bit" is 1 (meaning it was recently accessed), the bit is flipped to 0 and the hand moves on. If the bit is already 0, the chunk is evicted. This provides a highly efficient approximation of "Least Recently Used" (LRU) logic without the overhead of tracking timestamps for every single block access (perfect here!).
 
 #### Memory transfer
 

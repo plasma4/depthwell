@@ -91,9 +91,9 @@ export const game_state_offsets = {
     camera_scale_change: 104,
     depth: 112,
     player_quadrant: 120,
-    player_screen_offset: 128,
-    keys_pressed_mask: 136,
-    keys_held_mask: 140,
+    frame: 124,
+    keys_pressed_mask: 128,
+    keys_held_mask: 132,
     seed: 144,
     seed2: 208,
 } as const;

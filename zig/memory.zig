@@ -32,11 +32,12 @@ pub const v2f64 = @Vector(2, f64);
 pub const GameState = extern struct {
     /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095).
     player_pos: v2i64 align(MAIN_ALIGN_BYTES) = .{ 0, 0 },
-    /// Represents the player's previous subpixel position. Importantly, this is not necessarily equal to the player's velocity, as this handles teleports!
+    /// Represents the player's previous subpixel position.
+    /// Importantly, this is not necessarily equal to the player's velocity, as this handles teleports!
     last_player_pos: v2i64 = .{ 0, 0 },
     /// Represents the player's active chunk coordinate.
     player_chunk: v2u64 = .{ 0, 0 },
-    /// Represents the player's current movement.
+    /// Represents the player's current movement velocity.
     player_velocity: v2f64 = .{ 0, 0 },
     /// Represents the camera's position.
     camera_pos: v2i64 = .{ 0, 0 },
@@ -53,8 +54,8 @@ pub const GameState = extern struct {
     /// (0: NW, 1: NE, 2: SW, 3: SE)
     player_quadrant: u32 = 0,
 
-    /// Represents where the player should be rendered for WGSL.
-    player_screen_offset: @Vector(2, f32) = .{ 0, 0 },
+    /// Current frame ID. 32-bit; expect wrap-arounds and access with powers-of-2 checks.
+    frame: u32 = 0,
 
     // /// Represents if the grid needs to be recalculated/passed to WGSL.
     // grid_dirty: bool = true,
@@ -90,13 +91,16 @@ pub const GameState = extern struct {
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
     seed2: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
 
+    /// Gets the player's current chunk location as a `Coordinate`.
     pub inline fn get_player_coord(self: *const @This()) Coordinate {
         return .{ .quadrant = @intCast(self.player_quadrant), .suffix = self.player_chunk };
     }
 
+    /// Gets which (x-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
     pub inline fn get_block_x_in_chunk(self: *const @This()) u4 {
         return @intCast(@divTrunc(self.player_pos[0], SPAN_SQ));
     }
+    /// Gets which (y-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
     pub inline fn get_block_y_in_chunk(self: *const @This()) u4 {
         return @intCast(@divTrunc(self.player_pos[1], SPAN_SQ));
     }
@@ -194,7 +198,7 @@ pub const Block = packed struct(u64) {
             .hp = 0,
             .edge_flags = 0,
 
-            // TODO decide if shining ores works
+            // TODO decide if shining ores is the right approach
             .light = if (sprite_type.is_ore()) (@as(u8, @intCast((seed_bits >> 24) % 64))) + 64 else 0,
             // .light = @truncate(seed_bits >> 24),
 
@@ -240,7 +244,7 @@ pub const Block = packed struct(u64) {
 
 /// 16x16 fixed grid of blocks. Each chunk is 2KiB in size.
 pub const Chunk = struct {
-    blocks: [SPAN_SQ]Block,
+    blocks: [SPAN_SQ]Block align(MAIN_ALIGN_BYTES),
     pub inline fn getIndex(x: u4, y: u4) u8 {
         return (@as(u8, y) << SPAN_LOG2) | @as(u8, x);
     }

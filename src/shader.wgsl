@@ -34,9 +34,7 @@ struct SceneUniforms {
     chunk_opacity: f32,
     player_screen_pos: vec2f,
     map_size: vec2u,
-    _pad: vec2u,
-    // _pad: vec2f, // Padding to ensure struct is 16-byte aligned
-    // _extra_padding: array<vec4f, 13>, // Pad to 256 bytes for dynamic offsets
+    _extra_padding: array<vec4f, 13>, // Pad to 256 bytes for dynamic offsets
 };
 
 struct TileData {

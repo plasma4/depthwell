@@ -1,6 +1,6 @@
 import * as Zig from "./enums";
 import * as Seeding from "./seeding";
-import { GameEngine } from "./engine";
+import { MAX_DRAW_CALLS, GameEngine } from "./engine";
 
 /** The URL for the WebAssembly code (compiled from zig build). */
 import WASM_URL from "./main.wasm?url";
@@ -14,12 +14,11 @@ export async function create(
     canvas?: HTMLCanvasElement | string,
     options?: Zig.EngineOptions,
 ): Promise<GameEngine> {
-    const config = { highPerformance: false, ...options };
-
     const adapter = await navigator.gpu.requestAdapter({
-        powerPreference: config.highPerformance
-            ? "high-performance"
-            : "low-power",
+        powerPreference:
+            options && options.highPerformance
+                ? "high-performance"
+                : "low-power",
     });
     if (!adapter)
         throw new DOMException(
@@ -157,7 +156,7 @@ export async function create(
             {
                 binding: 0,
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                buffer: { type: "uniform" },
+                buffer: { type: "uniform", hasDynamicOffset: true }, // can be swapped live
             }, // SceneUniforms
             {
                 binding: 1,
@@ -289,7 +288,7 @@ export async function create(
 
     const uniformBuffer = device.createBuffer({
         label: "SceneUniforms",
-        size: 56, // see setSceneData() in engine.ts OR SceneUniforms in shader.wgsl to understand this
+        size: 256 * MAX_DRAW_CALLS, // see setSceneData() in engine.ts OR SceneUniforms in shader.wgsl to understand this
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     engine.uniformBuffer = uniformBuffer;

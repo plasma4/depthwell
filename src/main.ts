@@ -23,6 +23,7 @@ import { GameEngine } from "./engine";
 
 /**
  * Debug/testing options. Set all values to false in production.
+ * TODO set to false for prod :P
  */
 export const CONFIG = {
     /** Whether to expose engine to globalThis or not. */
@@ -182,8 +183,9 @@ if (CONFIG.verbose) {
 
 window.addEventListener("blur", () => (time = Infinity)); // basically, don't let frames when the tab is hidden cause any simulation.
 
-var past60SlowestRenders = Array(60).fill(0);
-var past60SlowestZigRenders = Array(60).fill(0);
+const past60SlowestLogicLoops = Array(60).fill(0);
+const past60SlowestRenders = Array(60).fill(0);
+const past60SlowestZigRenders = Array(60).fill(0);
 
 // Add custom properties into the engine object (not handled by TypeScript)
 engine.isDebug = !!engine.exports.isDebug(); // This function is only true if Doptimize=Debug (default with zig build).
@@ -201,30 +203,33 @@ engine.renderLoop = function (_t: number) {
     engine.logicLoop(Math.floor(accumulator + newTicks));
     accumulator = (accumulator + newTicks) % 1; // calculate new fractional accumulation of ticks
 
-    // mostly arbitrary color thresholds
-    let color = "#cccccc";
-    if (delta > 55) {
-        color = "#e83769";
-    } else if (delta > 30) {
-        color = "#f39c19";
-    } else if (delta > 20) {
-        color = "#f7ce1a";
-    }
-
     if (engine.isDebug) {
         past60SlowestRenders.shift();
         past60SlowestRenders.push(delta);
         past60SlowestZigRenders.shift();
         past60SlowestZigRenders.push(engine.prepare_visible_chunks_time);
 
+        const slowestRender = Math.max.apply(null, past60SlowestRenders);
+        const slowestZigRender = Math.max.apply(null, past60SlowestZigRenders);
+
+        // mostly arbitrary color thresholds
+        let color = "#cccccc";
+        if (slowestRender > 55) {
+            color = "#e83769";
+        } else if (slowestRender > 30) {
+            color = "#f39c19";
+        } else if (slowestRender > 20) {
+            color = "#f7ce1a";
+        }
+
         const debugElem = document.getElementById(
             "renderText",
         ) as HTMLDivElement;
         debugElem.textContent = `Time since last render/prepare_visible_chunks time: ${delta.toFixed(1)}ms, ${engine.prepare_visible_chunks_time.toFixed(1)}ms
-Worst (past 60 frames): ${Math.max.apply(null, past60SlowestRenders).toFixed(1)}ms, ${Math.max.apply(null, past60SlowestZigRenders).toFixed(1)}ms`;
+Worst (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixed(1)}ms`;
 
         debugElem.style.fontWeight = (
-            delta > 30 ? (delta > 55 ? 700 : 600) : 500
+            slowestRender > 40 ? (slowestRender > 55 ? 700 : 600) : 500
         ) as any; // gee thanks TypeScript
         debugElem.style.color = color;
     }
@@ -245,25 +250,30 @@ engine.logicLoop = function (ticks: number) {
     time = performance.now();
     let delta = time - startTime;
 
-    // mostly arbitrary color thresholds
-    let color = "#cccccc";
-    if (delta > 30) {
-        color = "#e83769";
-    } else if (delta > 15) {
-        color = "#f39c19";
-    } else if (delta > 10) {
-        color = "#f7ce1a";
-    }
-
     if (engine.isDebug) {
+        past60SlowestLogicLoops.shift();
+        past60SlowestLogicLoops.push(delta);
+
+        const slowestLogicLoop = Math.max.apply(null, past60SlowestLogicLoops);
+
+        // mostly arbitrary color thresholds
+        let color = "#cccccc";
+        if (slowestLogicLoop > 30) {
+            color = "#e83769";
+        } else if (slowestLogicLoop > 15) {
+            color = "#f39c19";
+        } else if (slowestLogicLoop > 10) {
+            color = "#f7ce1a";
+        }
+
         const debugElem = document.getElementById(
             "logicText",
         ) as HTMLDivElement;
-        debugElem.textContent = `Logic diff: ${delta.toFixed(1)}ms for ${ticks} tick${ticks == 1 ? "" : "s"}\n`;
+        debugElem.textContent = `Logic diff: ${delta.toFixed(1)}ms for ${ticks} tick${ticks == 1 ? "" : "s"}\nWorst (past 60 frames): ${slowestLogicLoop.toFixed(1)}ms\n`;
         // new-line in string for copy and paste
 
         debugElem.style.fontWeight = (
-            delta > 30 ? (delta > 55 ? 700 : 600) : 500
+            slowestLogicLoop > 20 ? (slowestLogicLoop > 40 ? 700 : 600) : 500
         ) as any; // gee thanks TypeScript
         debugElem.style.color = color;
     }

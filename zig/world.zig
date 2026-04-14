@@ -7,7 +7,9 @@ const types = @import("types.zig");
 const seeding = @import("seeding.zig");
 const procedural = @import("procedural.zig");
 
+const v2i64 = memory.v2i64;
 const v2u64 = memory.v2u64;
+const v2f64 = memory.v2f64;
 const Chunk = memory.Chunk;
 const Block = memory.Block;
 const Coordinate = memory.Coordinate;
@@ -175,25 +177,256 @@ pub const ModKeyContext = struct {
     }
 };
 
+/// Width of the simulation buffer.
 const SIM_BUFFER_WIDTH = 16;
+/// Size of the simulation buffer (`SIM_BUFFER_WIDTH` squared).
 const SIM_BUFFER_SIZE = SIM_BUFFER_WIDTH * SIM_BUFFER_WIDTH;
-const CHUNK_CACHE_SIZE = 128;
+/// Size of the chunk cache (can be arbitrarily adjusted).
+const CHUNK_CACHE_SIZE = 256;
+/// Total size of the chunk pool, which is in one contiguous memory block (simulation and cache buffer size added together).
 const CHUNK_POOL_SIZE = SIM_BUFFER_SIZE + CHUNK_CACHE_SIZE;
 
 /// A combined pool of SimBuffer and chunk cache data.
 var chunk_pool: [CHUNK_POOL_SIZE]Chunk = undefined;
 
+/// The simulation buffer containing 16x16 chunks, centered around the player.
 pub const SimBuffer = struct {
-    const sim_buffer_ptr: *[SIM_BUFFER_SIZE]Chunk = chunk_pool[CHUNK_CACHE_SIZE..][0..SIM_BUFFER_SIZE];
+    /// Size of the outside ring `background_generation_tick` uses.
+    const RING_SIZE = 68;
+    const RING_OFFSETS = blk: {
+        var offs: [RING_SIZE]v2i64 = undefined;
+        var i: usize = 0;
+        // Top and bottom rows (18 chunks each)
+        var x: i64 = -9;
+        while (x <= 8) : (x += 1) {
+            offs[i] = .{ x, -9 };
+            i += 1;
+            offs[i] = .{ x, 8 };
+            i += 1;
+        }
+        // Left and right columns (16 chunks each, avoiding corners already covered)
+        var y: i64 = -8;
+        while (y <= 7) : (y += 1) {
+            offs[i] = .{ -9, y };
+            i += 1;
+            offs[i] = .{ 8, y };
+            i += 1;
+        }
+        break :blk offs;
+    };
+    var bg_scan_id: usize = 0;
 
-    /// Returns the chunk from the specified x and y.
-    pub inline fn get_index(cx: u64, cy: u64) usize {
-        return (cy / SIM_BUFFER_WIDTH) * SIM_BUFFER_WIDTH + cx % SIM_BUFFER_WIDTH;
+    const sim_buffer_ptr: *[SIM_BUFFER_SIZE]Chunk = chunk_pool[CHUNK_CACHE_SIZE..][0..SIM_BUFFER_SIZE];
+    var keys: [SIM_BUFFER_SIZE]?Coordinate = [_]?Coordinate{null} ** SIM_BUFFER_SIZE;
+
+    /// The coordinate corresponding to the chunk at the "logical" (0,0) of the 16x16 window.
+    var origin: ?Coordinate = null;
+    var ring_x: u4 = 0;
+    var ring_y: u4 = 0;
+
+    /// Returns the internal index into the 256-chunk array.
+    pub inline fn get_index(cx: u4, cy: u4) usize {
+        const rx: u4 = @intCast((@as(u32, ring_x) + cx) % SIM_BUFFER_WIDTH);
+        const ry: u4 = @intCast((@as(u32, ring_y) + cy) % SIM_BUFFER_WIDTH);
+        return @as(u32, ry) * SIM_BUFFER_WIDTH + rx;
+    }
+    /// Clears the whole `SimBuffer`, invalidating previous data.
+    pub inline fn clear() void {
+        @memset(sim_buffer_ptr, std.mem.zeroes(Chunk));
+        @memset(&keys, null);
+        origin = null;
+        ring_x = 0;
+        ring_y = 0;
     }
 
-    /// Sets a chunk from the specified x and y to the chunk instance given.
-    pub inline fn set_index(chunk: *const Chunk, cx: u64, cy: u64) void {
-        sim_buffer_ptr[get_index(cx, cy)] = chunk;
+    /// Attempts to retrieve a chunk from the buffer. Returns null if the coordinate is outside the 16x16 window.
+    pub fn get(coord: Coordinate) ?*Chunk {
+        // Because 256 is extremely small, and linear iteration across contiguous memory is blisteringly fast,
+        // a basic scan is preferable to inverse coordinate matching (which requires complicated quadrant wrapping math).
+        for (&keys, 0..) |maybe_key, i| {
+            if (maybe_key) |k| {
+                if (k.eql(coord)) return &sim_buffer_ptr[i];
+            }
+        }
+        return null;
+    }
+
+    /// Helper to safely step an origin coordinate, returning the furthest possible coordinate
+    /// if a game boundary is hit (when Coordinate.move returns null).
+    fn get_clamped_move(coord: Coordinate, dx: i64, dy: i64) Coordinate {
+        var curr = coord;
+        var step_x = dx;
+        while (step_x != 0) {
+            const dir: i64 = if (step_x > 0) 1 else -1;
+            if (curr.move_x(dir)) |next| {
+                curr = next;
+                step_x -= dir;
+            } else break;
+        }
+        var step_y = dy;
+        while (step_y != 0) {
+            const dir: i64 = if (step_y > 0) 1 else -1;
+            if (curr.move_y(dir)) |next| {
+                curr = next;
+                step_y -= dir;
+            } else break;
+        }
+        return curr;
+    }
+
+    /// Synchronizes the buffer to center on the provided coordinate/position.
+    /// Safely handles shifts exceeding 1 chunk per frame via `shift`.
+    pub fn sync(coord: Coordinate, shift: v2i64) void {
+        if (origin == null) {
+            const target_origin = get_clamped_move(coord, -8, -8);
+            full_refresh(target_origin);
+            return;
+        }
+
+        if (shift[0] != 0 or shift[1] != 0) {
+            if (@abs(shift[0]) >= SIM_BUFFER_WIDTH or @abs(shift[1]) >= SIM_BUFFER_WIDTH) {
+                const target_origin = get_clamped_move(coord, -8, -8);
+                full_refresh(target_origin);
+            } else {
+                incremental_refresh(shift[0], shift[1]);
+            }
+        }
+    }
+
+    fn full_refresh(new_origin: Coordinate) void {
+        origin = new_origin;
+        ring_x = 0;
+        ring_y = 0;
+
+        for (0..SIM_BUFFER_WIDTH) |cy| {
+            for (0..SIM_BUFFER_WIDTH) |cx| {
+                const id = get_index(@intCast(cx), @intCast(cy));
+                if (new_origin.move(.{ @intCast(cx), @intCast(cy) })) |cell_coord| {
+                    keys[id] = cell_coord;
+                    if (ChunkCache.get(cell_coord)) |cached| {
+                        sim_buffer_ptr[id] = cached.*;
+                    } else {
+                        generate_chunk(&sim_buffer_ptr[id], cell_coord);
+                    }
+                } else {
+                    keys[id] = null;
+                }
+            }
+        }
+    }
+
+    fn incremental_refresh(dx: i64, dy: i64) void {
+        const new_origin = get_clamped_move(origin.?, dx, dy);
+        origin = new_origin;
+
+        // Shift 2D ring buffer origin safely
+        ring_x = @intCast(@mod(@as(i64, ring_x) + dx, SIM_BUFFER_WIDTH));
+        ring_y = @intCast(@mod(@as(i64, ring_y) + dy, SIM_BUFFER_WIDTH));
+
+        // Evaluate bounds to only process the new chunks entering the window
+        for (0..SIM_BUFFER_WIDTH) |cy| {
+            for (0..SIM_BUFFER_WIDTH) |cx| {
+                const is_new_x = if (dx > 0) cx >= SIM_BUFFER_WIDTH - @as(usize, @intCast(dx)) else cx < @as(usize, @intCast(-dx));
+                const is_new_y = if (dy > 0) cy >= SIM_BUFFER_WIDTH - @as(usize, @intCast(dy)) else cy < @as(usize, @intCast(-dy));
+
+                if (is_new_x or is_new_y) {
+                    const id = get_index(@intCast(cx), @intCast(cy));
+                    if (new_origin.move(.{ @intCast(cx), @intCast(cy) })) |cell_coord| {
+                        keys[id] = cell_coord;
+                        if (ChunkCache.get(cell_coord)) |cached| {
+                            sim_buffer_ptr[id] = cached.*;
+                        } else {
+                            generate_chunk(&sim_buffer_ptr[id], cell_coord);
+                        }
+                    } else {
+                        keys[id] = null;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Background caching heuristic: scans the boundary immediately outside the 16x16 chunk in the
+    /// direction of movement and creates it in ChunkCache before the player reaches it.
+    ///
+    /// Fairly naive, generating `amount_to_generate` chunks when called (suggested value of 1-2).
+    pub fn background_generation_tick(player_coord: Coordinate, velocity: v2f64, amount_to_generate: comptime_int) void {
+        if (amount_to_generate <= 0) @compileError("Amount of chunks to generate in the background must be positive!");
+        const game = &memory.game;
+        var generated_count: usize = 0;
+
+        // Velocity X takes precedence here (fast movement horizontally is more likely).
+        // Defaults to alternating between L/R if idle.
+        var dir_x: i64 = undefined;
+        if (@abs(velocity[0]) >= 1.0) {
+            if (velocity[0] >= 1.0) {
+                dir_x = 1;
+            } else {
+                dir_x = -1;
+            }
+        } else {
+            if (game.frame % 2 == 1) {
+                dir_x = 1;
+            } else {
+                dir_x = -1;
+            }
+        }
+
+        // Y-position within a chunk determines the vertical priority if velocity is low.
+        var dir_y: i64 = undefined;
+        if (@abs(velocity[1]) >= 1.0) {
+            if (velocity[1] >= 1.0) {
+                dir_y = 1;
+            } else {
+                dir_y = -1;
+            }
+        } else {
+            if (game.player_pos[1] < 2048) {
+                dir_y = -1;
+            } else if (game.frame % 2 == 1) {
+                dir_y = 1;
+            } else {
+                dir_y = -1;
+            }
+        }
+
+        // removed silly logic of priorities, that doesn't really matter here
+        // const tx: i64 = if (dir_x > 0) 8 else -9;
+        // const ty: i64 = if (dir_y > 0) 8 else -9;
+
+        // // Priorities of the leading corner and edges are based on "most likely" directional candidates
+        // const priority_offsets = [_]v2i64{
+        //     .{ tx, ty }, // the specific corner we are heading toward
+        //     .{ tx, 0 }, // directly ahead (horizontal)
+        //     .{ 0, ty }, // directly ahead (vertical)
+        //     .{ tx, -dir_y }, // slightly "above" the horizontal lead
+        //     .{ -dir_x, ty }, // slightly "beside" the vertical lead
+        // };
+
+        // for (priority_offsets) |off| {
+        //     if (generated_count >= amount_to_generate) break;
+        //     if (player_coord.move(off)) |c| {
+        //         if (get(c) == null and ChunkCache.get(c) == null) {
+        //             generate_chunk(ChunkCache.allocate_slot(c), c);
+        //             generated_count += 1;
+        //         }
+        //     }
+        // }
+
+        // Background backfill is done with ring sweeping.
+        // If priority chunks were already cached, use the budget to finish the ring.
+        var checked_in_ring: usize = 0;
+        while (generated_count < amount_to_generate and checked_in_ring < RING_SIZE) : (checked_in_ring += 1) {
+            const off = RING_OFFSETS[bg_scan_id];
+            bg_scan_id = (bg_scan_id + 1) % RING_SIZE;
+
+            if (player_coord.move(off)) |c| {
+                if (get(c) == null and ChunkCache.get(c) == null) {
+                    generate_chunk(ChunkCache.allocate_slot(c), c);
+                    generated_count += 1;
+                }
+            }
+        }
     }
 };
 
@@ -220,17 +453,17 @@ pub const ChunkCache = struct {
 
     pub fn allocate_slot(coord: Coordinate) *Chunk {
         while (true) {
-            const idx = cache_hand;
+            const id = cache_hand;
             cache_hand = (cache_hand + 1) % CHUNK_CACHE_SIZE;
 
-            if (cache_clock_bits.isSet(idx)) {
+            if (cache_clock_bits.isSet(id)) {
                 // Give second chance: clear bit and move hand
-                cache_clock_bits.setValue(idx, false);
+                cache_clock_bits.setValue(id, false);
             } else {
                 // Found a "victim" (either null key or ref_bit was 0)
-                cache_keys[idx] = coord;
-                cache_clock_bits.set(idx); // Mark as recently used
-                return &cache_chunk_data[idx];
+                cache_keys[id] = coord;
+                cache_clock_bits.set(id); // Mark as recently used
+                return &cache_chunk_data[id];
             }
         }
     }
@@ -238,23 +471,24 @@ pub const ChunkCache = struct {
     /// Inserts a chunk using the clock algorithm to find an eviction candidate.
     pub fn insert(coord: Coordinate, chunk: Chunk) *Chunk {
         while (true) {
-            const idx = cache_hand;
+            const id = cache_hand;
 
             // Advance the hand for next time
             cache_hand = (cache_hand + 1) % CHUNK_CACHE_SIZE;
 
             // Clock logic: second chance if ref_bit is 1, otherwise evict
-            if (cache_clock_bits.isSet(idx)) {
-                cache_clock_bits.setValue(idx, false);
+            if (cache_clock_bits.isSet(id)) {
+                cache_clock_bits.setValue(id, false);
             } else {
-                cache_keys[idx] = coord;
-                cache_chunk_data[idx] = chunk;
-                cache_clock_bits.set(idx); // new entries start with ref bit as 1
-                return &cache_chunk_data[idx];
+                cache_keys[id] = coord;
+                cache_chunk_data[id] = chunk;
+                cache_clock_bits.set(id); // new entries start with ref bit as 1
+                return &cache_chunk_data[id];
             }
         }
     }
 
+    /// Clears the whole `ChunkCache`, invalidating previous data.
     pub fn clear() void {
         @memset(&cache_keys, null); // reset all keys
         cache_clock_bits = std.StaticBitSet(CHUNK_CACHE_SIZE).initEmpty(); // clear bitset
@@ -380,10 +614,13 @@ var alloc = std.mem.Allocator;
 /// Creates a new instance of a `Chunk` where specified, given a coordinate. Copies over from cache if possible. Does not update edge flags.
 pub fn write_chunk(chunk: *Chunk, coord: Coordinate) void {
     // logger.write(3, .{ "{h}Chunk requested", coord });
-    // TODO use SimBuffer
+    if (SimBuffer.get(coord)) |cached_ptr| {
+        chunk.* = cached_ptr.*; // Copy from cache to caller
+        return;
+    }
 
     if (ChunkCache.get(coord)) |cached_ptr| { // see if it's in the cache, if it's not in SimBuffer
-        chunk.* = cached_ptr.*; // Copy from cache to caller
+        chunk.* = cached_ptr.*;
         return;
     }
 
@@ -608,7 +845,7 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     // memory.game.set_player_pos(.{ 2048, 2048 });
     // memory.game.set_camera_pos(.{ 2048, 2048 });
 
-    // TODO also clear SimBuffer
+    SimBuffer.clear();
     ChunkCache.clear();
 
     if (depth <= 16) {
