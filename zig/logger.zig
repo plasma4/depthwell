@@ -130,6 +130,13 @@ fn quickFmt(args: anytype, prefix: []const u8) usize {
     writer.print("{s}", .{prefix}) catch {};
     format_args(writer, args) catch {};
     return stream.pos;
+
+    // Zig 0.16.0 impl
+    // var writer: std.Io.Writer = .fixed(&logging_buffer);
+
+    // writer.print("{s}", .{prefix}) catch {};
+    // format_args(&writer, args) catch {};
+    // return writer.pos();
 }
 
 /// Quickly logs a message for testing. Use .log() with proper arguments for non-temporary logging.
@@ -325,6 +332,8 @@ pub inline fn write(buffer_id: u2, args: anytype) void {
     const targets = [4][]u8{ text_1, text_2, text_3, text_4 };
     const buf = targets[buffer_id];
     var stream = std.io.fixedBufferStream(buf);
+    // Zig 0.16.0 impl
+    // var stream: std.Io.Writer = .fixed(buf);
 
     // Resume from previous length
     stream.pos = text_lengths[buffer_id];
@@ -359,7 +368,7 @@ pub inline fn write_once(buffer_id: u2, args: anytype) void {
 }
 
 fn attempt_write(stream: anytype, args: anytype) bool {
-    const writer = stream.writer();
+    var writer = stream.writer();
     format_args(writer, args) catch return false;
     writer.writeByte('\n') catch return false;
     return true;
@@ -367,7 +376,7 @@ fn attempt_write(stream: anytype, args: anytype) bool {
 
 /// Fallback for large logs by truncating.
 fn writer_truncate(stream: anytype, args: anytype) bool {
-    const writer = stream.writer();
+    var writer = stream.writer();
     // Use a small local limit to prevent infinite recursion if format_args fails
     format_args(writer, args) catch {};
     _ = writer.writeAll("... [remaining log truncated]\n") catch {};
