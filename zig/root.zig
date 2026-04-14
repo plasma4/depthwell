@@ -48,6 +48,7 @@ pub export fn tick(speed: f64) void {
     }
 
     player.move(speed);
+    memory.game.frame +%= 1;
 }
 
 pub export fn wasm_seed_from_string() void {

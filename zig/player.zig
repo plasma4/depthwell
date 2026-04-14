@@ -17,7 +17,7 @@ const JUMP_FORCE: f64 = -8.0; // idk TODO
 
 /// Friction of player movement.
 const friction: v2f64 = .{ 0.2, 0.2 };
-/// 1 - friction.
+/// Equal to 1 - friction.
 const inv_friction: v2f64 = @as(v2f64, @splat(1.0)) - friction;
 
 /// The base speed of the player.
@@ -26,8 +26,11 @@ const PLAYER_BASE_SPEED = 5.0;
 const PLAYER_HITBOX_HALF = 96;
 
 /// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
-pub const CAMERA_MIN_ZOOM = 1.0 / 3.0; // ~33% (too small and sim_buffer nor chunk_cache would no longer be able to reliably cache, remember that simulation is centered around the player!)
+/// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache.
+pub const CAMERA_MIN_ZOOM = 1.0 / 3.0;
+
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
+/// Any more and it would look weird, and camera deadzone would start to no longer work.
 pub const CAMERA_MAX_ZOOM = 1.0; // 100%
 
 /// The zoom in/out keys change the zoom multiplier this fast per frame.
@@ -78,6 +81,9 @@ pub fn move(logic_speed: f64) void {
     game.player_pos += move_vec;
     subpixel_accum -= @as(v2f64, @floatFromInt(move_vec));
 
+    var chunk_shift: v2i64 = .{ 0, 0 };
+
+    // The joys of inlining!
     inline for (0..2) |i| {
         const carry: i64 = @divFloor(game.player_pos[i], SUBPIXELS_IN_CHUNK);
         if (carry != 0) {
@@ -95,6 +101,7 @@ pub fn move(logic_speed: f64) void {
             const shift_amount = carry * SUBPIXELS_IN_CHUNK;
             game.last_player_pos[i] -= shift_amount;
             game.camera_pos[i] -= shift_amount; // rebase the camera
+            chunk_shift[i] = carry;
         }
     }
 
@@ -132,11 +139,15 @@ pub fn move(logic_speed: f64) void {
     const smooth_speed = 1.0 - std.math.pow(f64, 1.0 - CAMERA_SMOOTHING, logic_speed);
     game.camera_pos[0] += @intFromFloat(@as(f64, @floatFromInt(shift_x)) * smooth_speed);
     game.camera_pos[1] += @intFromFloat(@as(f64, @floatFromInt(shift_y)) * smooth_speed);
+
+    // now, sync SimBuffer and quietly generate ticks
+    world.SimBuffer.sync(game.get_player_coord(), chunk_shift);
+    world.SimBuffer.background_generation_tick(game.get_player_coord(), game.player_velocity, 2);
 }
 
 /// AABB check against the world grid
 fn is_colliding(px: i64, py: i64) bool {
-    // Check the 4 corners of the player hitbox
+    const game = &memory.game;
     const corners = [_][2]i64{
         .{ px - PLAYER_HITBOX_HALF, py - PLAYER_HITBOX_HALF },
         .{ px + PLAYER_HITBOX_HALF, py - PLAYER_HITBOX_HALF },
@@ -145,23 +156,18 @@ fn is_colliding(px: i64, py: i64) bool {
     };
 
     for (corners) |c| {
-        // Convert subpixel units to block coordinates within a chunk
-        const bx: i32 = @intCast(@divFloor(c[0], SPAN_SQ));
-        const by: i32 = @intCast(@divFloor(c[1], SPAN_SQ));
+        // Calculate the chunk-relative offset from the current player_pos.
+        // We use @divFloor to ensure negative subpixels correctly map to previous chunks.
+        const cx_shift = @divFloor(c[0], SUBPIXELS_IN_CHUNK);
+        const cy_shift = @divFloor(c[1], SUBPIXELS_IN_CHUNK);
 
-        // Get the relative chunk (-1, 0, or 1 relative to player center)
-        const cx = @divFloor(bx, SPAN);
-        const cy = @divFloor(by, SPAN);
-        const chunk = world.get_chunk(cx, cy);
+        const coord = game.get_player_coord().move(.{ cx_shift, cy_shift }) orelse continue;
+        const chunk = world.get_chunk(coord);
 
-        // Get the block within that chunk
-        const lx: u4 = @intCast(@mod(bx, SPAN));
-        const ly: u4 = @intCast(@mod(by, SPAN));
-        const block = chunk.blocks[ly * SPAN + lx];
+        const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(c[0], SPAN_SQ))) % SPAN);
+        const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(c[1], SPAN_SQ))) % SPAN);
 
-        if (world.is_solid(block.id)) {
-            return true;
-        }
+        if (chunk.blocks[ly * SPAN + lx].is_solid()) return true;
     }
     return false;
 }
