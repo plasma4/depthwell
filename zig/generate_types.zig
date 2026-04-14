@@ -63,6 +63,29 @@ pub fn GenerateOffsets(comptime T: type) type {
             .is_tuple = false,
         },
     });
+
+    // Zig 0.16.0 impl
+    //     const field_count = info.fields.len;
+    // var names: [field_count][]const u8 = undefined;
+    // var field_types: [field_count]type = undefined;
+    // var field_attrs: [field_count]std.builtin.Type.StructField.Attributes = undefined;
+
+    // inline for (info.fields, 0..) |field, i| {
+    //     names[i] = field.name;
+    //     field_types[i] = u64;
+    //     field_attrs[i] = .{
+    //         .alignment = @alignOf(u64),
+    //         .is_comptime = false,
+    //     };
+    // }
+
+    // return @Struct(
+    //     .auto,
+    //     null,
+    //     &names,
+    //     &field_types,
+    //     &field_attrs,
+    // );
 }
 
 pub fn main() !void {
@@ -139,8 +162,17 @@ pub fn main() !void {
         const ValueType = @TypeOf(value);
 
         if (ValueType == type) {
-            const inner_info = @typeInfo(value);
-            if (inner_info == .@"enum") {
+            const inner_info = @typeInfo(ValueType);
+            if (inner_info == .@"struct") {
+                try writer.print("\nexport const {s} = {{\n", .{decl.name});
+
+                inline for (inner_info.@"struct".fields) |field| {
+                    const field_value = @field(value, field.name);
+                    try writer.print("    {s}: {d},\n", .{ field.name, field_value });
+                }
+
+                try writer.print("}} as const;\n", .{});
+            } else if (inner_info == .@"enum") {
                 try writer.print("\nexport enum {s} {{\n", .{decl.name});
 
                 inline for (inner_info.@"enum".fields) |field| {
@@ -148,17 +180,6 @@ pub fn main() !void {
                 }
 
                 try writer.print("}}\n", .{});
-            } else if (inner_info == .@"struct") {
-                // Handle types like KeyBits that contain constants
-                try writer.print("\nexport const {s} = {{\n", .{decl.name});
-                inline for (inner_info.@"struct".decls) |struct_decl| {
-                    const field_value = @field(value, struct_decl.name);
-                    // Only export it if it's a number (skips functions like mask())
-                    if (@TypeOf(field_value) == comptime_int or @TypeOf(field_value) == u32) {
-                        try writer.print("    {s}: {d},\n", .{ struct_decl.name, field_value });
-                    }
-                }
-                try writer.print("}} as const;\n", .{});
             }
         } else {
             const inner_info = @typeInfo(ValueType);
