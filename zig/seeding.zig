@@ -35,6 +35,7 @@ pub const Seed = [8]u64;
 /// Mixes a base seed with some values. Since BLAKE3 is cryptographic this will yield high-quality results. It may be more useful to use a custom nonce with `ChaCha12` instead.
 pub fn mix_base_seed(layer_seed: *const Seed, number: u64) Seed {
     const PackedInput = extern struct { // temporary struct for faster mixing :)
+        // Using packed here does NOT work. It must be extern or else asBytes will be corrupted.
         seed: Seed,
         number: u64,
     };

@@ -1,5 +1,6 @@
 //! Root file. Imports main.zig and handles exporting functions to WASM. All functions here (excluding internal ones like panic) should be pub export to expose functions to generate_types.zig and WASM (with no other exports within other Zig files).
 const std = @import("std");
+const builtin = @import("builtin");
 const main = @import("main.zig");
 const memory = @import("memory.zig");
 const seeding = @import("seeding.zig");
@@ -8,7 +9,6 @@ const logger = @import("logger.zig");
 const player = @import("player.zig");
 const world = @import("world.zig");
 const KeyBits = @import("types.zig").KeyBits;
-const builtin = @import("builtin");
 
 pub export fn setup() void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
@@ -29,6 +29,15 @@ pub export fn get_tiles_per_row() u32 {
 }
 pub export fn get_tiles_per_column() u32 {
     return 1;
+}
+pub export fn get_stone_start() u32 {
+    return @intCast(@intFromEnum(world.Sprite.stone));
+}
+pub export fn get_ore_start() u32 {
+    return @intCast(@intFromEnum(world.Sprite.emerald));
+}
+pub export fn get_ore_mask_start() u32 {
+    return @intCast(@intFromEnum(world.Sprite.ore_mask));
 }
 pub export fn get_decor_start() u32 {
     return @intCast(@intFromEnum(world.Sprite.spiral_plant));
