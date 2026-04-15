@@ -39,7 +39,7 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly get_tiles_per_column: () => number;
     readonly get_stone_start: () => number;
     readonly get_ore_start: () => number;
-    readonly get_ore_mask_start: () => number;
+    readonly get_gem_mask_start: () => number;
     readonly get_decor_start: () => number;
     readonly tick: (arg0: number) => void;
     readonly wasm_seed_from_string: () => void;
