@@ -149,12 +149,12 @@ export async function create(
                 "" + exports.get_stone_start(),
             )
             .replace(
-                "/* ORE_START */ 1 /* ORE_START */",
+                "/* GEM_START */ 1 /* GEM_START */",
                 "" + exports.get_ore_start(),
             )
             .replace(
-                "/* ORE_MASK_START */ 1 /* ORE_MASK_START */",
-                "" + exports.get_ore_mask_start(),
+                "/* GEM_MASK_START */ 1 /* GEM_MASK_START */",
+                "" + exports.get_gem_mask_start(),
             )
             .replace(
                 "/* DECOR_START */ 1 /* DECOR_START */",

@@ -218,23 +218,23 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
     var sprite = base_data.sprite;
 
     // Generate new density for ores: the seed vector should be different from the `get_fbm_worley_density()` vector.
-    const v1 = get_fbm_worley_value(
+    const v1 = get_fbm_worley_value( // smaller cells, less FBM variation
         seed_vector_1,
         x,
         y,
         .{
-            .cell_size = 24.0,
+            .cell_size = 20.0,
             .fbm_shift_size = 30.0,
             .horizontally_wide = false,
             .use_f2_f1 = false,
         },
     );
-    const v2 = get_fbm_worley_value(
+    const v2 = get_fbm_worley_value( // larger cells, much more FBM variation
         seed_vector_2,
         x,
         y,
         .{
-            .cell_size = 35.0,
+            .cell_size = 36.0,
             .fbm_shift_size = 60.0,
             .horizontally_wide = false,
             .use_f2_f1 = false,
@@ -262,7 +262,7 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
 
         sprite = select_sprite(
             .{ sprite, .silver },
-            base_data.density >= 0.55,
+            base_data.density <= 0.55,
             .{ v1, 0.2, 0.26 },
         );
         sprite = select_sprite(
@@ -279,18 +279,26 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
         );
         if (sprite == .gold) return sprite;
 
-        if (base_data.density <= 0.6 and v2 > 0.1 and v2 < 0.3) {
+        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.54 else 0.3;
+        if (base_data.density <= 0.6 and v2 >= 0.1 and v2 <= gem_v2_bound) {
             const random_value = rng1.next();
             sprite = select_sprite(
+                .{ sprite, .sapphire },
+                random_value < odds_num(0.35),
+                null,
+            );
+            if (sprite == .sapphire) return sprite;
+
+            sprite = select_sprite(
                 .{ sprite, .emerald },
-                random_value < odds_num(0.2),
+                random_value < odds_num(0.55),
                 null,
             );
             if (sprite == .emerald) return sprite;
 
             sprite = select_sprite(
                 .{ sprite, .ruby },
-                random_value < odds_num(0.4),
+                random_value < odds_num(0.7),
                 null,
             );
             if (sprite == .ruby) return sprite;

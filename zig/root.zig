@@ -34,10 +34,10 @@ pub export fn get_stone_start() u32 {
     return @intCast(@intFromEnum(world.Sprite.stone));
 }
 pub export fn get_ore_start() u32 {
-    return @intCast(@intFromEnum(world.Sprite.emerald));
+    return @intCast(@intFromEnum(world.Sprite.sapphire));
 }
-pub export fn get_ore_mask_start() u32 {
-    return @intCast(@intFromEnum(world.Sprite.ore_mask));
+pub export fn get_gem_mask_start() u32 {
+    return @intCast(@intFromEnum(world.Sprite.gem_mask));
 }
 pub export fn get_decor_start() u32 {
     return @intCast(@intFromEnum(world.Sprite.spiral_plant));

@@ -8,8 +8,8 @@
 const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
 const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */;
 const STONE_START: u32 = /* STONE_START */ 1 /* STONE_START */;
-const ORE_START: u32 = /* ORE_START */ 1 /* ORE_START */;
-const ORE_MASK_START: u32 = /* ORE_MASK_START */ 1 /* ORE_MASK_START */;
+const GEM_START: u32 = /* GEM_START */ 1 /* GEM_START */;
+const GEM_MASK_START: u32 = /* GEM_MASK_START */ 1 /* GEM_MASK_START */;
 const DECOR_START: u32 = /* DECOR_START */ 1 /* DECOR_START */;
 
 const TILE_SIZE: f32 = 16.0;
@@ -130,9 +130,6 @@ fn vs_main(
             1.0 - (screen_pos.y / scene.viewport_size.y) * 2.0
         );
 
-        // Prevent "texture bleeding"
-        // let local_pos = clamp(local_pos, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
-
         let atlas_uv = vec2f(
             (1 + local_pos.x) * SPRITE_W, // player sprite at (1, 0)
             (0 + local_pos.y) * SPRITE_H
@@ -206,9 +203,6 @@ fn vs_main(
     let sprite_col = f32(id % u32(TILES_PER_ROW));
     let sprite_row = f32(id / u32(TILES_PER_ROW));
 
-    // Prevent "texture bleeding"
-    // let local_pos = clamp(local_pos, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
-
     let atlas_uv = vec2f(
         (sprite_col + local_pos.x) * SPRITE_W,
         (sprite_row + local_pos.y) * SPRITE_H
@@ -231,7 +225,7 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
-    let local_uv = clamp(in.local_uv, vec2f(0.0), vec2f(1 - TEXTURE_BLEEDING_EPSILON));
+    let local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
     if (in.edge_flags != 0xFFu) {
         erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2);
         if (scene.wireframe_opacity == 0.0 && erode_mask == 0u) {
@@ -239,9 +233,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         }
     }
 
-    var final_uv = clamp(in.uv, vec2f(0.0), vec2f(1 - TEXTURE_BLEEDING_EPSILON));
-    if (in.sprite_id >= ORE_START && in.sprite_id < ORE_MASK_START) {
-        let shift_bits = extractBits(in.seed, 18u, 8u);
+    var final_uv = clamp(in.uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+    if (in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START) {
+        let shift_bits = extractBits(in.seed, 18u, 8u); // shift the gem sprite around 0-15 pixels using bits 18-26
         let shift = vec2f(
             f32(shift_bits & 0xFu) / 16.0,
             f32(shift_bits >> 4u) / 16.0
@@ -250,36 +244,40 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         final_uv = in.sprite_uv_origin + wrapped_local * vec2f(SPRITE_W, SPRITE_H);
     }
 
-    // put here to prevent control flow breakage error
+    // Sample the primary color (the actual original sprite, gem or not)
     var tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
 
     // ore sampling pixel logic
-    if (in.sprite_id >= ORE_START && in.sprite_id < ORE_MASK_START) {
-        // Use 2x2 grid logic for the background stone ID
+    if (in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START) {
+        let mask_variation = extractBits(in.seed, 16u, 2u); // 4 masks
+        let mask_id = GEM_MASK_START + mask_variation;
+
+        // Use 2x2 grid logic for the background stone's ID (similar to the id-determining part of vs_main)
         let bg_id = STONE_START + (in.tile_coords.y % 2u) * 2u + (in.tile_coords.x % 2u);
 
-        // Convert bg_id to atlas UV coordinates
+        // Calculate UVs for the background stone
         let bg_col = f32(bg_id % u32(TILES_PER_ROW));
         let bg_row = f32(bg_id / u32(TILES_PER_ROW));
-        
-        // Prevent bleeding by clamping local_uv slightly
-        let safe_uv = clamp(in.local_uv, vec2f(0.001), vec2f(0.999));
-        
+        let safe_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
         let stone_uv = vec2f(bg_col * SPRITE_W, bg_row * SPRITE_H) + (safe_uv * vec2f(SPRITE_W, SPRITE_H));
 
-        // Ore mask (located ORE_MASK_START - ORE_START tiles away)
-        let mask_offset_id = ORE_MASK_START - ORE_START;
-        let mask_uv = final_uv + vec2f(f32(mask_offset_id % u32(TILES_PER_ROW)) * SPRITE_W,
-        f32(mask_offset_id / u32(TILES_PER_ROW)) * SPRITE_H);
+        // Calculate UVs for the mask (using the UNSHIFTED safe_uv)
+        let mask_col = f32(mask_id % u32(TILES_PER_ROW));
+        let mask_row = f32(mask_id / u32(TILES_PER_ROW));
+        let mask_uv = vec2f(mask_col * SPRITE_W, mask_row * SPRITE_H) + (safe_uv * vec2f(SPRITE_W, SPRITE_H));
 
         let tex_stone = textureSampleLevel(sprite_atlas, pixel_sampler, stone_uv, 0.0);
         let tex_mask = textureSampleLevel(sprite_atlas, pixel_sampler, mask_uv, 0.0);
 
-        // Apply logic: use mask to lerp or multiply
-        let u1 = in.uv[0] - 0.5;
-        let u2 = in.uv[1] - 0.5;
-        let u_dist = max(abs(u1), abs(u2));
-        tex_color = vec4f(mix(tex_stone.rgb * (u_dist + 0.75), tex_color.rgb, tex_mask.r + 0.5 - u_dist), tex_color.a);
+        let u_dist = max(abs(in.local_uv.x - 0.5), abs(in.local_uv.y - 0.5));
+
+        // r component of mask determines mix amount, multiply stone brightness based on dist, u_dist some base color change also based on u_dist
+        let final_rgb_ore = mix(
+            tex_stone.rgb * vec3f(0.4 + u_dist * 1.2),
+            tex_color.rgb,
+            tex_mask.r + 0.8 * (0.5 - u_dist)
+        );
+        tex_color = vec4f(final_rgb_ore, tex_color.a);
     }
 
     // technically I could optimize this part
@@ -404,10 +402,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     let has_br     = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 4u + extractBits(sc, 0u, 1u);  // top-left: 2 or 3
-    let r_tr = 4u + extractBits(sc, 2u, 1u);  // top-right: 4 or 5
-    let r_bl = 4u + extractBits(sc, 4u, 1u);  // bottom-left: 4 or 5
-    let r_br = 4u + extractBits(sc, 6u, 1u);  // bottom-right: 4 or 5
+    let r_tl = 4u + extractBits(sc, 0u, 1u);
+    let r_tr = 4u + extractBits(sc, 2u, 1u);
+    let r_bl = 4u + extractBits(sc, 4u, 1u);
+    let r_br = 4u + extractBits(sc, 6u, 1u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 
@@ -467,7 +465,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Top edge
     if (!has_top) {
-        let base_depth = 2u + extractBits(se, 0u, 1u); // 2 or 3 pixels inward
+        let base_depth = 1u + extractBits(se, 0u, 1u); // 1 or 2 pixels inward for each edge
         let notch_pos = extractBits(se, 1u, 4u);
         let notch_dir = extractBits(se, 5u, 1u);
         let notch_width = 2u + extractBits(se, 6u, 2u);
@@ -489,7 +487,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Bottom edge
     if (!has_bottom) {
-        let base_depth = 2u + extractBits(se, 8u, 1u);
+        let base_depth = 1u + extractBits(se, 8u, 1u);
         let notch_pos = extractBits(se, 9u, 4u);
         let notch_dir = extractBits(se, 13u, 1u);
         let notch_width = 2u + extractBits(se, 14u, 2u);
@@ -510,7 +508,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Left edge
     if (!has_left) {
-        let base_depth = 2u + extractBits(se, 16u, 1u);
+        let base_depth = 1u + extractBits(se, 16u, 1u);
         let notch_pos = extractBits(se, 17u, 4u);
         let notch_dir = extractBits(se, 21u, 1u);
         let notch_width = 2u + extractBits(se, 22u, 2u);
@@ -531,7 +529,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Right edge
     if (!has_right) {
-        let base_depth = 2u + extractBits(se, 24u, 1u);
+        let base_depth = 1u + extractBits(se, 24u, 1u);
         let notch_pos = extractBits(se, 25u, 4u);
         let notch_dir = extractBits(se, 29u, 1u);
         let notch_width = 2u + extractBits(se, 30u, 2u);
