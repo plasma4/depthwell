@@ -145,6 +145,18 @@ export async function create(
                 "" + exports.get_tiles_per_column(),
             )
             .replace(
+                "/* STONE_START */ 1 /* STONE_START */",
+                "" + exports.get_stone_start(),
+            )
+            .replace(
+                "/* ORE_START */ 1 /* ORE_START */",
+                "" + exports.get_ore_start(),
+            )
+            .replace(
+                "/* ORE_MASK_START */ 1 /* ORE_MASK_START */",
+                "" + exports.get_ore_mask_start(),
+            )
+            .replace(
                 "/* DECOR_START */ 1 /* DECOR_START */",
                 "" + exports.get_decor_start(),
             ),

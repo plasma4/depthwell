@@ -85,8 +85,18 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
         },
     );
 
+    const sprite = generate_sprite_from_values(moisture, density);
+
+    // drawing sprite change in WGSL now after tile unpacking, quite silly to be here
+    // if (sprite == .stone) {
+    //     if (block_y % 2 == 0) {
+    //         sprite = if (block_x == 0) .stone else ._stone;
+    //     } else {
+    //         sprite = if (block_x == 0) .__stone else .___stone;
+    //     }
+    // }
     return .{
-        .sprite = generate_sprite_from_values(moisture, density),
+        .sprite = sprite,
         .moisture = moisture,
         .density = density,
     };
@@ -206,7 +216,6 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
 /// 4. Disperses ores using Worley noise. Assumes that `is_stone()` was checked before calling.
 pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2: v2u64, rng1: *seeding.ChaCha12, x: u32, y: u32) Sprite {
     var sprite = base_data.sprite;
-    _ = rng1;
 
     // Generate new density for ores: the seed vector should be different from the `get_fbm_worley_density()` vector.
     const v1 = get_fbm_worley_value(
@@ -247,7 +256,7 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
         sprite = select_sprite(
             .{ sprite, .iron },
             true,
-            .{ v1, 0.55, 0.6 },
+            .{ v1, 0.55, 0.65 },
         );
         if (sprite == .iron and base_data.sprite != .strange_stone) return sprite;
 
@@ -261,13 +270,31 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
             base_data.sprite == .strange_stone,
             .{ v1, 0.18, 0.2 },
         );
-        if (sprite == .silver) return sprite;
+        if (sprite == .iron or sprite == .silver) return sprite;
 
         sprite = select_sprite(
             .{ sprite, .gold },
             base_data.density >= 0.62 or (base_data.density >= 0.58 and base_data.sprite == .lava_stone),
             .{ v2, 0.3, 0.4 },
         );
+        if (sprite == .gold) return sprite;
+
+        if (base_data.density <= 0.6 and v2 > 0.1 and v2 < 0.3) {
+            const random_value = rng1.next();
+            sprite = select_sprite(
+                .{ sprite, .emerald },
+                random_value < odds_num(0.2),
+                null,
+            );
+            if (sprite == .emerald) return sprite;
+
+            sprite = select_sprite(
+                .{ sprite, .ruby },
+                random_value < odds_num(0.4),
+                null,
+            );
+            if (sprite == .ruby) return sprite;
+        }
     }
 
     return sprite;
@@ -288,13 +315,17 @@ const SpritePair = struct { Sprite, Sprite };
 /// // Returns iron if density is larger than 0.6 AND my_value is between 0.6 and 0.7 (inclusive), and stone otherwise.
 /// Sprite sprite = cw(.iron, my_density >= 0.6, my_value, 0.6, 0.7, .stone);
 /// ```
-pub inline fn select_sprite(sprites: SpritePair, condition: bool, range: ValueRange) Sprite {
-    const v = range[0];
-    const min = range[1];
-    const max = range[2];
+pub inline fn select_sprite(sprites: SpritePair, condition: bool, range: ?ValueRange) Sprite {
     const old_sprite = sprites[0];
     const new_sprite = sprites[1];
-    return if (condition and v >= min and v <= max) new_sprite else old_sprite;
+    if (range) |r| {
+        const v = r[0];
+        const min = r[1];
+        const max = r[2];
+        return if (condition and v >= min and v <= max) new_sprite else old_sprite;
+    } else {
+        return if (condition) new_sprite else old_sprite;
+    }
 }
 
 /// Returns true if `v` is between `min` and `max` (inclusive).

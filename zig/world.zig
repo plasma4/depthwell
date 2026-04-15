@@ -24,20 +24,28 @@ const odds_num = seeding.odds_num;
 pub const Sprite = enum(u16) {
     none,
     player,
-    edge_stone,
-    _edge_stone, // visual variation
+    edge_stone, // has visual variation
+    _edge_stone,
     strange_stone,
     strange_stone_other,
     blue_stone,
     seagreen_stone,
     green_stone,
-    stone,
+    stone, // visual variations are in a 2x2
+    _stone,
+    __stone,
+    ___stone,
     lava_stone,
     copper,
     iron,
     silver,
     gold,
-    weird_gem_pile_thing,
+    emerald,
+    ruby,
+    ore_mask,
+    _ore_mask,
+    __ore_mask,
+    ___ore_mask,
     spiral_plant,
     ceiling_flower,
     mushroom, // there is another variant of mushrooms
@@ -662,7 +670,9 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
             const is_absolute_edge_y = (cy == 0 and block_y < 2 and quadrant_edge_details.most_top) or (cy == max_possible_suffix and block_y >= (SPAN - 2) and quadrant_edge_details.most_bottom);
             if (is_absolute_edge_x or is_absolute_edge_y) {
                 chunk.blocks[id] = Block.make_basic_block(
-                    if ((block_x % 2) + (block_y % 2) == 1) ._edge_stone else .edge_stone,
+                    // drawing sprite change in WGSL now after tile unpacking, quite silly to be here
+                    // if ((block_x % 2) + (block_y % 2) == 1) ._edge_stone else .edge_stone,
+                    .edge_stone,
                     rng4.next(),
                 );
                 // This does mean there are fewer PRNG .next() calls but this doesn't matter here
