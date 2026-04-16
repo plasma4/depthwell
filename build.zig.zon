@@ -3,7 +3,7 @@
     // Semantic version: https://semver.org/
     .version = "0.1.0",
     .fingerprint = 0x1d5dd33c1ffd989d, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         // No longer using Mach Engine.
         // .mach = .{
