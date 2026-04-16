@@ -87,8 +87,8 @@ pub const ColorRGBA = extern union {
         const r: i32 = self.channels.r;
         const g: i32 = self.channels.g;
         const b: i32 = self.channels.b;
-        const max_c = @max(r, g, b);
         const min_c = @min(r, g, b);
+        const max_c = @max(r, g, b);
         const delta = max_c - min_c;
         if (delta == 0) return 0;
 
@@ -106,8 +106,8 @@ pub const ColorRGBA = extern union {
 
     /// Saturation as 0-255 (HSV saturation scaled to byte range).
     pub fn saturation(self: *const @This()) u8 {
-        const max_c = @max(self.channels.r, @max(self.channels.g, self.channels.b));
-        const min_c = @min(self.channels.r, @min(self.channels.g, self.channels.b));
+        const min_c = @min(self.channels.r, self.channels.g, self.channels.b);
+        const max_c = @max(self.channels.r, self.channels.g, self.channels.b);
         if (max_c == 0) return 0;
         return @intCast((@as(u16, max_c - min_c) * 255) / @as(u16, max_c));
     }
@@ -120,8 +120,8 @@ pub const ColorRGBA = extern union {
 
     /// Lightness (average of min and max channels).
     pub fn lightness(self: *const @This()) u8 {
-        const max_c = @max(self.channels.r, @max(self.channels.g, self.channels.b));
-        const min_c = @min(self.channels.r, @min(self.channels.g, self.channels.b));
+        const min_c = @min(self.channels.r, self.channels.g, self.channels.b);
+        const max_c = @max(self.channels.r, self.channels.g, self.channels.b);
         return @intCast((@as(u16, max_c) + min_c) / 2);
     }
 
@@ -313,14 +313,14 @@ test "ColorRGBA color distance" {
 }
 
 test "ColorRGBA packed layout integrity" {
-    // Ensure bitCast works as expected for your mix function logic
     const color = ColorRGBA.init(0xAA, 0xBB, 0xCC, 0xDD);
     const as_u32: u32 = color.word;
 
+    // check endian-ness
     if (builtin.cpu.arch.endian() == .little) {
         try std.testing.expectEqual(@as(u32, 0xDDCCBBAA), as_u32);
     } else {
-        // Expect little-endian.
+        // Expect little-endian, this should be impossible.
         unreachable;
     }
 }
