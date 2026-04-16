@@ -40,13 +40,6 @@ pub fn init() void {
     if (!alreadyStarted) {
         alreadyStarted = true;
         logger.log(@src(), "Hello from Zig!", .{});
-        world.quad_cache = .{
-            .path_hashes = undefined,
-            .hash_cache_1 = undefined,
-            .left_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
-            .top_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
-            .ancestor_materials = .{.none} ** 4,
-        };
     }
     var temp_seed = seeding.ChaCha12.init(seeding.mix_base_seed(&memory.game.seed, 1));
     memory.game.seed2 = .{
