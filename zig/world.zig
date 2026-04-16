@@ -249,13 +249,21 @@ pub const SimBuffer = struct {
         ring_y = 0;
     }
 
-    /// Attempts to retrieve a chunk from the buffer. Returns null if the coordinate is outside the 16x16 window.
+    /// Attempts to retrieve a chunk from the buffer using O(1) spatial mapping.
     pub fn get(coord: Coordinate) ?*Chunk {
-        // Because 256 is extremely small, and linear iteration across contiguous memory is blisteringly fast,
-        // a basic scan is preferable to inverse coordinate matching (which requires complicated quadrant wrapping math).
-        for (&keys, 0..) |maybe_key, i| {
-            if (maybe_key) |k| {
-                if (k.eql(coord)) return &sim_buffer_ptr[i];
+        const og = origin orelse return null;
+
+        // Check if coordinate is in the same quadrant/macro-region
+        if (coord.quadrant != og.quadrant) return null;
+
+        const dx = @as(i64, @intCast(coord.suffix[0])) - @as(i64, @intCast(og.suffix[0]));
+        const dy = @as(i64, @intCast(coord.suffix[1])) - @as(i64, @intCast(og.suffix[1]));
+
+        if (dx >= 0 and dx < SIM_BUFFER_WIDTH and dy >= 0 and dy < SIM_BUFFER_WIDTH) {
+            const id = get_index(@intCast(dx), @intCast(dy));
+            // Verification check: ensure the key actually matches (handles edge cases in wrapping)
+            if (keys[id]) |k| {
+                if (k.eql(coord)) return &sim_buffer_ptr[id];
             }
         }
         return null;
@@ -293,6 +301,7 @@ pub const SimBuffer = struct {
             return;
         }
 
+        // logger.quick(.{ coord, shift });
         if (shift[0] != 0 or shift[1] != 0) {
             if (@abs(shift[0]) >= SIM_BUFFER_WIDTH or @abs(shift[1]) >= SIM_BUFFER_WIDTH) {
                 const target_origin = get_clamped_move(coord, -8, -8);
@@ -359,77 +368,45 @@ pub const SimBuffer = struct {
     /// Background caching heuristic: scans the boundary immediately outside the 16x16 chunk in the
     /// direction of movement and creates it in ChunkCache before the player reaches it.
     ///
-    /// Fairly naive, generating `amount_to_generate` chunks when called (suggested value of 1-2).
-    pub fn background_generation_tick(player_coord: Coordinate, velocity: v2f64, amount_to_generate: comptime_int) void {
-        if (amount_to_generate <= 0) @compileError("Amount of chunks to generate in the background must be positive!");
+    /// Fairly naive, generating `default_amount` chunks when called (suggested value of 1-2).
+    /// It is recommended to set a higher `max_amount` (so more budget is available in high-velocity falling situations).
+    pub fn background_generation_tick(player_coord: Coordinate, velocity: v2f64, default_amount: comptime_int, max_amount: comptime_int) void {
+        if (default_amount < 1 or max_amount < 1) {
+            @compileError("Amount of chunks to generate in the background must be positive!");
+        }
         const game = &memory.game;
-        var generated_count: usize = 0;
+        var generated_count: u32 = 0;
 
-        // Velocity X takes precedence here (fast movement horizontally is more likely).
-        // Defaults to alternating between L/R if idle.
-        var dir_x: i64 = undefined;
-        if (@abs(velocity[0]) >= 1.0) {
-            if (velocity[0] >= 1.0) {
-                dir_x = 1;
-            } else {
-                dir_x = -1;
-            }
-        } else {
-            if (game.frame % 2 == 1) {
-                dir_x = 1;
-            } else {
-                dir_x = -1;
-            }
-        }
+        // Determine primary sweep direction based on highest absolute velocity
+        const vx = velocity[0];
+        const vy = velocity[1];
+        const budget: u32 = if (vx * vx + vy * vy < 500.0) default_amount else max_amount;
 
-        // Y-position within a chunk determines the vertical priority if velocity is low.
-        var dir_y: i64 = undefined;
-        if (@abs(velocity[1]) >= 1.0) {
-            if (velocity[1] >= 1.0) {
-                dir_y = 1;
-            } else {
-                dir_y = -1;
-            }
-        } else {
-            if (game.player_pos[1] < 2048) {
-                dir_y = -1;
-            } else if (game.frame % 2 == 1) {
-                dir_y = 1;
-            } else {
-                dir_y = -1;
+        // Priority target based on movement
+        const tx: i64 = if (vx > 1.0) 8 else if (vx < -1.0) -9 else (if (game.frame % 2 == 0) @as(i64, 8) else -9);
+        const ty: i64 = if (vy > 1.0) 8 else if (vy < -1.0) -9 else 8; // Default downward for gravity
+
+        // Check the three chunks in the primary direction of travel
+        const targets = if (@abs(vy) > @abs(vx))
+            [_]v2i64{ .{ 0, ty }, .{ -1, ty }, .{ 1, ty } } // Vertical lead
+        else
+            [_]v2i64{ .{ tx, 0 }, .{ tx, -1 }, .{ tx, 1 } }; // Horizontal lead
+
+        for (targets) |off| {
+            if (generated_count >= budget) break;
+            if (player_coord.move(off)) |c| {
+                if (get(c) == null and ChunkCache.get(c) == null) {
+                    generate_chunk(ChunkCache.allocate_slot(c), c);
+                    generated_count += 1;
+                }
             }
         }
 
-        // removed silly logic of priorities, that doesn't really matter here
-        // const tx: i64 = if (dir_x > 0) 8 else -9;
-        // const ty: i64 = if (dir_y > 0) 8 else -9;
-
-        // // Priorities of the leading corner and edges are based on "most likely" directional candidates
-        // const priority_offsets = [_]v2i64{
-        //     .{ tx, ty }, // the specific corner we are heading toward
-        //     .{ tx, 0 }, // directly ahead (horizontal)
-        //     .{ 0, ty }, // directly ahead (vertical)
-        //     .{ tx, -dir_y }, // slightly "above" the horizontal lead
-        //     .{ -dir_x, ty }, // slightly "beside" the vertical lead
-        // };
-
-        // for (priority_offsets) |off| {
-        //     if (generated_count >= amount_to_generate) break;
-        //     if (player_coord.move(off)) |c| {
-        //         if (get(c) == null and ChunkCache.get(c) == null) {
-        //             generate_chunk(ChunkCache.allocate_slot(c), c);
-        //             generated_count += 1;
-        //         }
-        //     }
-        // }
-
-        // Background backfill is done with ring sweeping.
-        // If priority chunks were already cached, use the budget to finish the ring.
-        var checked_in_ring: usize = 0;
-        while (generated_count < amount_to_generate and checked_in_ring < RING_SIZE) : (checked_in_ring += 1) {
+        // Standard ring sweep for remaining budget
+        var checked: usize = 0;
+        while (generated_count < budget and checked < RING_SIZE) : (checked += 1) {
             const off = RING_OFFSETS[bg_scan_id];
             bg_scan_id = (bg_scan_id + 1) % RING_SIZE;
-
             if (player_coord.move(off)) |c| {
                 if (get(c) == null and ChunkCache.get(c) == null) {
                     generate_chunk(ChunkCache.allocate_slot(c), c);
@@ -647,7 +624,8 @@ pub inline fn get_chunk(coord: Coordinate) Chunk {
     return chunk;
 }
 
-/// Internal function to generate a whole chunk (considering modifications), given a pointer to where the chunk should be stored and coordinates. Does not go through the cache.
+/// Internal function to generate a whole chunk (considering modifications), given a pointer to where the chunk should be stored and coordinates.
+/// Does not go through the cache; use `write_chunk` to create a chunk at a specified location and `get_chunk` for a new one.
 fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
     const chunk_seeds = quad_cache.get_chunk_seeds(coord);
 

@@ -122,6 +122,8 @@ export class GameEngine {
 
     /** Specifies when the game started. */
     public startTime: number = performance.now();
+    /** A random integer between 0-120000 that gets added to `startTime` for animation. */
+    public startDelta!: number;
     /** A string representing the game seed (up to 100 characters). */
     public seed: string = "";
 
@@ -298,7 +300,7 @@ export class GameEngine {
 
         // Some cycling logic for animations: floating point can become imprecise otherwise
         const cycleLength = 60000;
-        const elapsed = performance.now() - this.startTime;
+        const elapsed = performance.now() - this.startTime + this.startDelta;
         const cyclePos = elapsed % (cycleLength * 2);
 
         let shaderTime;

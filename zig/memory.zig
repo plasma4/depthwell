@@ -1,4 +1,4 @@
-//! Contains main data-types that bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
+//! Contains important datatypes, some of which bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
 const std = @import("std");
 const builtin = @import("builtin");
 const types = @import("types.zig");
@@ -411,8 +411,8 @@ pub fn wasm_free(ptr: [*]u8, len: usize) void {
     allocator.free(ptr[0..len]);
 }
 
-/// Determines if scratch_buffer has at least len capacity. If not, expands with the system allocator. Does NOT set the length property; only allocates sufficiently.
-/// TODO scratch_free_and_alloc function(?)
+/// Determines if scratch_buffer has at least `len` additional available capacity. If not, expands with the system allocator.
+/// Does NOT set the `scratch_len` property; only allocates sufficiently (using `scratch_capacity`).
 pub fn scratch_alloc(len: usize) ?[*]u8 {
     const base_addr = @intFromPtr(scratch_buffer.ptr);
     const current_addr = base_addr + @as(usize, @intCast(mem.scratch_len));
@@ -452,7 +452,7 @@ pub fn scratch_alloc(len: usize) ?[*]u8 {
 }
 
 /// Allocates a typed slice in the scratch buffer.
-/// This is the ideal way to write structural data (like `Particle`) directly into the buffer.
+/// This is the ideal way to write structural data (like chunks) directly into the buffer.
 pub fn scratch_alloc_slice(comptime T: type, count: usize) ?[]T {
     const byte_count = count * @sizeOf(T);
     const ptr = scratch_alloc(byte_count) orelse return null;
@@ -461,6 +461,7 @@ pub fn scratch_alloc_slice(comptime T: type, count: usize) ?[]T {
 
 /// Views the entirely used portion of the scratch buffer as a single typed slice.
 /// Note: This will panic if `mem.scratch_len` is not an exact multiple of `@sizeOf(T)`.
+///
 /// Only use this if the entire frame's scratch buffer contains a single data type.
 pub fn scratch_as_slice(comptime T: type) []T {
     const bytes = scratch_buffer[0..mem.scratch_len];

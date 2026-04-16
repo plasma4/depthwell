@@ -247,7 +247,11 @@ fn write_value(writer: anytype, val: anytype) void {
             writer.writeAll("{ ") catch {};
             inline for (ptr_info.fields, 0..) |field, i| {
                 if (i > 0) writer.writeAll(", ") catch {};
-                writer.print(".{s} = ", .{field.name}) catch {};
+                const is_tuple_index = comptime blk: {
+                    _ = std.fmt.parseInt(usize, field.name, 10) catch break :blk false;
+                    break :blk true;
+                };
+                if (!is_tuple_index) writer.print(".{s} = ", .{field.name}) catch {};
                 write_value(writer, @field(val, field.name));
             }
             writer.writeAll(" }") catch {};

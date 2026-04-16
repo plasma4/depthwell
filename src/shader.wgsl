@@ -118,7 +118,7 @@ fn vs_main(
     // A bitmask where bits 2, 3, and 5 are set (0b101100 = 44)
     let y = f32((44u >> vertex_index) & 1u);
 
-    let local_pos = vec2f(x, y);
+    let local_pos = clamp(vec2f(x, y), vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
     let total_tiles = scene.map_size.x * scene.map_size.y;
 
     var out: VertexOutput;
