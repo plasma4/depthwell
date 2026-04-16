@@ -165,7 +165,7 @@ If any blocks are modified they get modified in the `SimBuffer` as well.
 
 #### Prefix stack and memoization
 
-You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using a dynamic array (specifically a `std.SegmentedList(u64)` for efficient performance).
+You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using a dynamic array (specifically a `std.ArrayList(u64)`).
 
 **Why memoize and make the logic so complicated?**
 
@@ -284,9 +284,9 @@ path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
-    left_path: std.SegmentedList(u64, 4096),
+    left_path: std.ArrayList(u64),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: std.SegmentedList(u64, 4096),
+    top_path: std.ArrayList(u64),
 // ...
 ```
 

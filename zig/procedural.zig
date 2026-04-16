@@ -184,8 +184,8 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
     const fx_raw = @as(f32, @floatFromInt(x)) / scale;
     const fy_raw = @as(f32, @floatFromInt(y)) / scale;
 
-    const x0 = @as(u64, @intFromFloat(@floor(fx_raw)));
-    const y0 = @as(u64, @intFromFloat(@floor(fy_raw)));
+    const x0 = @as(u64, @floor(fx_raw));
+    const y0 = @as(u64, @floor(fy_raw));
     const tx = fx_raw - @floor(fx_raw);
     const ty = fy_raw - @floor(fy_raw);
 

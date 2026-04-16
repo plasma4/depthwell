@@ -124,19 +124,11 @@ pub inline fn test_logs(skipError: bool) void {
 
 /// Internal helper to format arguments into the logging buffer.
 fn quickFmt(args: anytype, prefix: []const u8) usize {
-    var stream = std.io.fixedBufferStream(&logging_buffer);
-    const writer = stream.writer();
+    var writer: std.Io.Writer = .fixed(&logging_buffer);
 
     writer.print("{s}", .{prefix}) catch {};
-    format_args(writer, args) catch {};
-    return stream.pos;
-
-    // Zig 0.16.0 impl
-    // var writer: std.Io.Writer = .fixed(&logging_buffer);
-
-    // writer.print("{s}", .{prefix}) catch {};
-    // format_args(&writer, args) catch {};
-    // return writer.pos();
+    format_args(&writer, args) catch {};
+    return writer.end;
 }
 
 /// Quickly logs a message for testing. Use .log() with proper arguments for non-temporary logging.
@@ -182,10 +174,9 @@ fn write_value(writer: anytype, val: anytype) void {
                 writer.writeAll("null") catch {};
             }
         },
-        .vector => |ptr_info| {
+        .vector => |vector_info| {
             writer.writeAll("(") catch {};
-            var i: usize = 0;
-            while (i < ptr_info.len) : (i += 1) {
+            inline for (0..vector_info.len) |i| {
                 if (i > 0) writer.writeAll(", ") catch {};
                 write_value(writer, val[i]);
             }
@@ -231,7 +222,7 @@ fn write_value(writer: anytype, val: anytype) void {
                 }
             }
 
-            // for SegmentedList
+            // for ArrayList
             if (@hasField(T, "prealloc_segment") and @hasField(T, "len")) {
                 writer.writeAll("[") catch {};
                 var i: usize = 0;
@@ -335,28 +326,26 @@ pub inline fn write(buffer_id: u2, args: anytype) void {
 
     const targets = [4][]u8{ text_1, text_2, text_3, text_4 };
     const buf = targets[buffer_id];
-    var stream = std.io.fixedBufferStream(buf);
-    // Zig 0.16.0 impl
-    // var stream: std.Io.Writer = .fixed(buf);
+    var writer: std.Io.Writer = .fixed(buf);
 
     // Resume from previous length
-    stream.pos = text_lengths[buffer_id];
+    writer.end = text_lengths[buffer_id];
 
     // Attempt to write. If it fails, clear and try again.
-    if (attempt_write(&stream, args)) {
-        text_lengths[buffer_id] = stream.pos;
+    if (attempt_write(&writer, args)) {
+        text_lengths[buffer_id] = writer.end;
     } else {
         // Overflow! Clear the buffer and write a single line.
-        stream.pos = 0;
-        _ = stream.writer().writeAll("[BUFFER CLEARED]\n") catch {};
+        writer.end = 0;
+        _ = writer.writeAll("[BUFFER CLEARED]\n") catch {};
 
-        if (attempt_write(&stream, args)) {
-            text_lengths[buffer_id] = stream.pos;
+        if (attempt_write(&writer, args)) {
+            text_lengths[buffer_id] = writer.end;
         } else {
             // Truncate to fit this extremely long line
-            stream.pos = 0;
-            _ = writer_truncate(&stream, args);
-            text_lengths[buffer_id] = stream.pos;
+            writer.end = 0;
+            _ = writer_truncate(&writer, args);
+            text_lengths[buffer_id] = writer.end;
         }
     }
 
@@ -371,17 +360,14 @@ pub inline fn write_once(buffer_id: u2, args: anytype) void {
     write(buffer_id, args);
 }
 
-fn attempt_write(stream: anytype, args: anytype) bool {
-    var writer = stream.writer();
+fn attempt_write(writer: *std.Io.Writer, args: anytype) bool {
     format_args(writer, args) catch return false;
     writer.writeByte('\n') catch return false;
     return true;
 }
 
 /// Fallback for large logs by truncating.
-fn writer_truncate(stream: anytype, args: anytype) bool {
-    var writer = stream.writer();
-    // Use a small local limit to prevent infinite recursion if format_args fails
+fn writer_truncate(writer: *std.Io.Writer, args: anytype) bool {
     format_args(writer, args) catch {};
     _ = writer.writeAll("... [remaining log truncated]\n") catch {};
     return true;

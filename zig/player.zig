@@ -107,7 +107,7 @@ pub fn move(logic_speed: f64) void {
 
     // Physics accumulation
     subpixel_accum += game.player_velocity * @as(v2f64, @splat(@floatFromInt(memory.SPAN)));
-    const total_move = @as(v2i64, @intFromFloat(@floor(subpixel_accum)));
+    const total_move = @as(v2i64, @floor(subpixel_accum));
     subpixel_accum -= @as(v2f64, @floatFromInt(total_move));
 
     game.last_player_pos = game.player_pos;

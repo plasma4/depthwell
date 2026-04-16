@@ -32,66 +32,36 @@ pub fn GenerateOffsets(comptime T: type) type {
                 "' uses 'usize'. Use 'u32' or 'u64' for cross-platform consistency.");
         }
     }
-
-    const Storage = struct {
-        const offsets = blk: {
-            var values: [info.fields.len]u64 = undefined;
-            for (info.fields, 0..) |field, i| {
-                values[i] = @offsetOf(T, field.name);
-            }
-            break :blk values;
-        };
-    };
-
-    var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
+    const field_count = info.fields.len;
+    var names: [field_count][]const u8 = undefined;
+    var field_types: [field_count]type = undefined;
+    var field_attrs: [field_count]std.builtin.Type.StructField.Attributes = undefined;
 
     inline for (info.fields, 0..) |field, i| {
-        fields[i] = .{
-            .name = field.name,
-            .type = u64,
-            .default_value_ptr = @ptrCast(&Storage.offsets[i]),
-            .is_comptime = false,
-            .alignment = @alignOf(u64),
+        names[i] = field.name;
+        field_types[i] = u64;
+        const offset_val: u64 = @offsetOf(T, field.name);
+        field_attrs[i] = .{
+            .@"align" = @alignOf(u64), // Changed from .alignment
+            .@"comptime" = false,
+            .default_value_ptr = @as(?*const anyopaque, @ptrCast(&offset_val)),
         };
     }
 
-    return @Type(.{
-        .@"struct" = .{
-            .layout = .auto,
-            .fields = &fields,
-            .decls = &[_]std.builtin.Type.Declaration{},
-            .is_tuple = false,
-        },
-    });
-
-    // Zig 0.16.0 impl
-    //     const field_count = info.fields.len;
-    // var names: [field_count][]const u8 = undefined;
-    // var field_types: [field_count]type = undefined;
-    // var field_attrs: [field_count]std.builtin.Type.StructField.Attributes = undefined;
-
-    // inline for (info.fields, 0..) |field, i| {
-    //     names[i] = field.name;
-    //     field_types[i] = u64;
-    //     field_attrs[i] = .{
-    //         .alignment = @alignOf(u64),
-    //         .is_comptime = false,
-    //     };
-    // }
-
-    // return @Struct(
-    //     .auto,
-    //     null,
-    //     &names,
-    //     &field_types,
-    //     &field_attrs,
-    // );
+    return @Struct(
+        .auto,
+        null,
+        &names,
+        &field_types,
+        &field_attrs,
+    );
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    var bw = std.io.Writer.Allocating.init(allocator);
+pub fn main(init: std.process.Init) !void {
+    var buffer: [100000]u8 = undefined;
+    var alloc: std.heap.FixedBufferAllocator = .init(&buffer);
+    const allocator = alloc.allocator();
+    var bw = std.Io.Writer.Allocating.init(allocator);
     defer bw.deinit();
     var writer = &bw.writer;
 
@@ -233,18 +203,20 @@ pub fn main() !void {
         // }
     }
 
-    const stdout = std.fs.File.stdout();
-    try stdout.writeAll(bw.written());
+    const stdout = std.Io.File.stdout();
+    try stdout.writeStreamingAll(init.io, bw.written());
 
-    const args = try std.process.argsAlloc(allocator);
+    const args = try init.minimal.args.toSlice(allocator);
     if (args.len < 4) {
         std.debug.panic("Missing cache arguments. Skipping cache write.", .{});
-        return; // Exit function without error
+        return;
     }
-    defer std.process.argsFree(allocator, args);
+
     const cache_root = args[1];
     const cache_path = args[2];
     const current_hash_hex = args[3];
-    std.fs.cwd().makePath(cache_root) catch {};
-    std.fs.cwd().writeFile(.{ .sub_path = cache_path, .data = current_hash_hex }) catch {};
+
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDirPath(init.io, cache_root) catch {};
+    cwd.writeFile(init.io, .{ .sub_path = cache_path, .data = current_hash_hex }) catch {};
 }

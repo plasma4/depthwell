@@ -49,7 +49,7 @@ pub const ColorRGBA = extern union {
 
     /// Interpolates two colors linearly.
     pub inline fn mix(self: *const @This(), other: ColorRGBA, t: f32) ColorRGBA {
-        const amt: u16 = @intFromFloat(@round(t * 256.0));
+        const amt: u16 = @round(t * 256.0);
         const rev: u16 = 256 - amt;
 
         // Perform math in vector space to prevent component-to-component bleed
