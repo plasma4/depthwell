@@ -55,6 +55,7 @@ struct UnpackedTile {
     hp: u32,
     seed: u32,
     seed2: u32,
+    seed3: u32,
     edge_flags: u32,
 };
 
@@ -67,19 +68,19 @@ struct UnpackedTile {
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
-
-    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
-    @location(1) @interpolate(flat) sprite_id: u32,
-    @location(2) @interpolate(flat) edge_flags: u32,
-    @location(3) @interpolate(flat) light: f32,
-    @location(4) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
-    @location(5) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
-
     // Local UV (0.0 to 1.0) across the surface of the specific tile.
-    @location(6) local_uv: vec2f,
+    @location(1) local_uv: vec2f,
     // Where on the chunk a tile is
-    @location(7) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
-    @location(8) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
+    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
+    @location(2) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
+    @location(3) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
+
+    @location(4) @interpolate(flat) sprite_id: u32,
+    @location(5) @interpolate(flat) edge_flags: u32,
+    @location(6) @interpolate(flat) light: f32,
+    @location(7) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
+    @location(8) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
+    @location(9) @interpolate(flat) seed3: u32, // murmurmix32'ed from seed2
 };
 
 // Extracts the specific bit ranges in the Block type (see zig/memory.zig).
@@ -97,6 +98,7 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.hp = extractBits(data.word1, 0u, 4u);
     out.seed = extractBits(data.word1, 4u, 28u); // 28-bit seed
     out.seed2 = murmurmix32(out.seed);
+    out.seed3 = murmurmix32(out.seed2);
     return out;
 }
 
@@ -145,6 +147,11 @@ fn vs_main(
     }
 
     let tile = unpack_tile(tiles[instance_index]);
+    if (tile.sprite_id == 0u && scene.wireframe_opacity == 0.0) {
+        out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
+        return out;
+    }
+
     let tile_x = instance_index % scene.map_size.x;
     let tile_y = instance_index / scene.map_size.x;
 
@@ -162,12 +169,6 @@ fn vs_main(
         if (random_mod == 0u) {
             id++;
         }
-    }
-
-    // Cull empty sprites
-    if (id == 0u && scene.wireframe_opacity == 0.0) {
-        out.position = vec4f(2.0, 2.0, 1.0, 1.0); // ideal outcode
-        return out;
     }
 
     let world_pixel_pos = vec2f(f32(tile_x), f32(tile_y)) * TILE_SIZE + local_pos * TILE_SIZE;
@@ -218,6 +219,7 @@ fn vs_main(
     out.light = tile.light;
     out.seed = tile.seed;
     out.seed2 = tile.seed2;
+    out.seed3 = tile.seed3;
     out.local_uv = local_pos;
     return out;
 }
@@ -226,11 +228,24 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
     let local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+
     if (in.edge_flags != 0xFFu) {
-        erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2);
+        erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2, in.seed3);
         if (scene.wireframe_opacity == 0.0 && erode_mask == 0u) {
             discard; // discard early
         }
+    }
+
+    // technically I could optimize this part
+    // but it doesn't really matter because its for procedural generation testing anyway
+    if (in.sprite_id >= 256u && in.sprite_id <= 512u) {
+        // Heatmap logic!
+        // if (in.sprite_id == 256) { discard; }
+        let color = (f32(in.sprite_id) - 256.0) / 256.0;
+        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
+        let lab = oklch_to_oklab(lch);
+        let final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
+        return vec4f(final_rgb, 1.0);
     }
 
     var final_uv = clamp(in.uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
@@ -252,6 +267,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let mask_variation = extractBits(in.seed, 16u, 2u); // 4 masks
         let mask_id = GEM_MASK_START + mask_variation;
 
+        var flipped_uv = in.local_uv;
+
+        // for bit 26 decide horizontal flip of the ore mask
+        if ((extractBits(in.seed, 26u, 1u) == 1u)) {
+            flipped_uv.x = 1.0 - flipped_uv.x;
+        }
+
+        // decide vertical for bit 27
+        if ((extractBits(in.seed, 27u, 1u) == 1u)) {
+            flipped_uv.y = 1.0 - flipped_uv.y;
+        }
+
         // Use 2x2 grid logic for the background stone's ID (similar to the id-determining part of vs_main)
         let bg_id = STONE_START + (in.tile_coords.y % 2u) * 2u + (in.tile_coords.x % 2u);
 
@@ -264,32 +291,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         // Calculate UVs for the mask (using the UNSHIFTED safe_uv)
         let mask_col = f32(mask_id % u32(TILES_PER_ROW));
         let mask_row = f32(mask_id / u32(TILES_PER_ROW));
-        let mask_uv = vec2f(mask_col * SPRITE_W, mask_row * SPRITE_H) + (safe_uv * vec2f(SPRITE_W, SPRITE_H));
-
+        let safe_flipped_uv = clamp(flipped_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+        let mask_uv = vec2f(mask_col * SPRITE_W, mask_row * SPRITE_H) + (safe_flipped_uv * vec2f(SPRITE_W, SPRITE_H));
         let tex_stone = textureSampleLevel(sprite_atlas, pixel_sampler, stone_uv, 0.0);
         let tex_mask = textureSampleLevel(sprite_atlas, pixel_sampler, mask_uv, 0.0);
 
         let u_dist = max(abs(in.local_uv.x - 0.5), abs(in.local_uv.y - 0.5));
 
-        // r component of mask determines mix amount, multiply stone brightness based on dist, u_dist some base color change also based on u_dist
+        // with linear RGB: r component of mask determines mix amount, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
             tex_stone.rgb * vec3f(0.4 + u_dist * 1.2),
-            tex_color.rgb,
-            tex_mask.r + 0.8 * (0.5 - u_dist)
+            tex_color.rgb * vec3f(1.0 + 0.06 * f32(extractBits(in.seed3, 29u, 3u))), // use last bits of seed3, otherwise unused
+            tex_mask.r + (0.5 - u_dist)
         );
         tex_color = vec4f(final_rgb_ore, tex_color.a);
-    }
-
-    // technically I could optimize this part
-    // but it doesn't really matter because its for procedural generation testing anyway
-    if (in.sprite_id >= 256u && in.sprite_id <= 512u) {
-        // Heatmap logic!
-        // if (in.sprite_id == 256) { discard; }
-        let color = (f32(in.sprite_id) - 256.0) / 256.0;
-        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
-        let lab = oklch_to_oklab(lch);
-        let final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
-        return vec4f(final_rgb, 1.0);
     }
 
     var wire_color = vec4f(0.0);
@@ -342,13 +357,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let a_nudge = extracted_a / 7.0;
     let b_nudge = f32(extractBits(in.seed, 7u, 3u)) / 4.0;
 
-    // DISABLED
-    lch.x += (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
+    lch.x = lch.x * in.light + (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
     lch.y *= 1.0 + a_nudge * 0.25; // shift chroma, which acts similar to saturation (0-1)
     lch.z += (b_nudge - 0.5) * 0.1; // shift hue (in RADIANS, red isn't exactly 0)
 
     var final_rgb = vec3f(0.0);
-    lch.x *= in.light;
     if (in.edge_flags != 0xFFu) {
         // add the edge darkening and base light value, with the function using bits 10-16
         let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
@@ -385,12 +398,9 @@ fn murmurmix32(number: u32) -> u32 {
 }
 
 // Complex logic that returns 0u if a pixel should be TRANSPARENT ("eroded"), NORMAL, or BORDER (darkened).
-fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
+fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { // uv of sprite, edge flags, and mixed seeds
     let px = u32(local_uv.x * TILE_SIZE);
     let py = u32(local_uv.y * TILE_SIZE);
-
-    let se = seed2;
-    let sc = murmurmix32(seed2);
 
     let has_top    = (edge_flags & EDGE_TOP) != 0u;
     let has_bottom = (edge_flags & EDGE_BOTTOM) != 0u;
@@ -402,10 +412,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     let has_br     = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 4u + extractBits(sc, 0u, 1u);
-    let r_tr = 4u + extractBits(sc, 2u, 1u);
-    let r_bl = 4u + extractBits(sc, 4u, 1u);
-    let r_br = 4u + extractBits(sc, 6u, 1u);
+    let r_tl = 4u + extractBits(seed3, 0u, 1u);
+    let r_tr = 4u + extractBits(seed3, 2u, 1u);
+    let r_bl = 4u + extractBits(seed3, 4u, 1u);
+    let r_br = 4u + extractBits(seed3, 6u, 1u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 
@@ -465,10 +475,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Top edge
     if (!has_top) {
-        let base_depth = 1u + extractBits(se, 0u, 1u); // 1 or 2 pixels inward for each edge
-        let notch_pos = extractBits(se, 1u, 4u);
-        let notch_dir = extractBits(se, 5u, 1u);
-        let notch_width = 2u + extractBits(se, 6u, 2u);
+        let base_depth = 1u + extractBits(seed2, 0u, 1u); // 1 or 2 pixels inward for each edge
+        let notch_pos = extractBits(seed2, 1u, 4u);
+        let notch_dir = extractBits(seed2, 5u, 1u);
+        let notch_width = 2u + extractBits(seed2, 6u, 2u);
 
         var depth = base_depth;
         if (px >= notch_pos && px < notch_pos + notch_width) {
@@ -487,10 +497,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Bottom edge
     if (!has_bottom) {
-        let base_depth = 1u + extractBits(se, 8u, 1u);
-        let notch_pos = extractBits(se, 9u, 4u);
-        let notch_dir = extractBits(se, 13u, 1u);
-        let notch_width = 2u + extractBits(se, 14u, 2u);
+        let base_depth = 1u + extractBits(seed2, 8u, 1u);
+        let notch_pos = extractBits(seed2, 9u, 4u);
+        let notch_dir = extractBits(seed2, 13u, 1u);
+        let notch_width = 2u + extractBits(seed2, 14u, 2u);
 
         var depth = base_depth;
         if (px >= notch_pos && px < notch_pos + notch_width) {
@@ -508,10 +518,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Left edge
     if (!has_left) {
-        let base_depth = 1u + extractBits(se, 16u, 1u);
-        let notch_pos = extractBits(se, 17u, 4u);
-        let notch_dir = extractBits(se, 21u, 1u);
-        let notch_width = 2u + extractBits(se, 22u, 2u);
+        let base_depth = 1u + extractBits(seed2, 16u, 1u);
+        let notch_pos = extractBits(seed2, 17u, 4u);
+        let notch_dir = extractBits(seed2, 21u, 1u);
+        let notch_width = 2u + extractBits(seed2, 22u, 2u);
 
         var depth = base_depth;
         if (py >= notch_pos && py < notch_pos + notch_width) {
@@ -529,10 +539,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Right edge
     if (!has_right) {
-        let base_depth = 1u + extractBits(se, 24u, 1u);
-        let notch_pos = extractBits(se, 25u, 4u);
-        let notch_dir = extractBits(se, 29u, 1u);
-        let notch_width = 2u + extractBits(se, 30u, 2u);
+        let base_depth = 1u + extractBits(seed2, 24u, 1u);
+        let notch_pos = extractBits(seed2, 25u, 4u);
+        let notch_dir = extractBits(seed2, 29u, 1u);
+        let notch_width = 2u + extractBits(seed2, 30u, 2u);
 
         var depth = base_depth;
         if (py >= notch_pos && py < notch_pos + notch_width) {
@@ -551,9 +561,9 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     // Inner corners (no diagonal neighbor)
 
     if (!has_tl && has_top && has_left) {
-        let r = 2u + extractBits(sc, 8u, 1u); // 2 or 3 pixel radius
+        let r = 2u + extractBits(seed3, 8u, 1u); // 2 or 3 pixel radius
         if (px < r && py < r) {
-            let dx = px + 1u; // +1 so the circle center is at (-0.5, -0.5) effectively
+            let dx = px + 1u; // +1, so the circle center is at (-0.5, -0.5) effectively
             let dy = py + 1u;
             let dist_sq = dx * dx + dy * dy;
             if (dist_sq <= r * r) { return 0u; }
@@ -562,7 +572,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_tr && has_top && has_right) {
-        let r = 2u + extractBits(sc, 10u, 1u);
+        let r = 2u + extractBits(seed3, 10u, 1u);
         let fpx = 15u - px;
         if (fpx < r && py < r) {
             let dx = fpx + 1u;
@@ -574,7 +584,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_bl && has_bottom && has_left) {
-        let r = 2u + extractBits(sc, 12u, 1u);
+        let r = 2u + extractBits(seed3, 12u, 1u);
         let fpy = 15u - py;
         if (px < r && fpy < r) {
             let dx = px + 1u;
@@ -586,7 +596,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_br && has_bottom && has_right) {
-        let r = 2u + extractBits(sc, 14u, 1u);
+        let r = 2u + extractBits(seed3, 14u, 1u);
         let fpx = 15u - px;
         let fpy = 15u - py;
         if (fpx < r && fpy < r) {
@@ -612,7 +622,7 @@ fn popcount8(v: u32) -> u32 {
 // Calculates edge darkening procedurally based on flags calculated in Zig.
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
     var darkening = 0.0;
-    let edge_width = 0.20 + f32(extractBits(seed, 10u, 3u)) / 32.0;
+    let edge_width = 0.30 + f32(extractBits(seed, 10u, 3u)) / 32.0;
     let edge_strength = 0.25 + f32(extractBits(seed, 13u, 3u)) / 64.0;
     let corner_width = 0.5;
 

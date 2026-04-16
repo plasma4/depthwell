@@ -278,30 +278,40 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
             .{ v2, 0.3, 0.4 },
         );
         if (sprite == .gold) return sprite;
-
-        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.54 else 0.3;
-        if (base_data.density <= 0.6 and v2 >= 0.1 and v2 <= gem_v2_bound) {
+    } else {
+        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.32 else 0.2;
+        if (base_data.density >= 0.3 and base_data.density <= 0.5 and v2 >= 0.1 and v2 <= gem_v2_bound) {
             const random_value = rng1.next();
-            sprite = select_sprite(
-                .{ sprite, .sapphire },
-                random_value < odds_num(0.35),
-                null,
-            );
-            if (sprite == .sapphire) return sprite;
+            const gem_base = 0.2;
+            if (random_value <= odds_num(gem_base)) {
+                sprite = select_sprite(
+                    .{ sprite, .amethyst },
+                    random_value <= odds_num(0.4 * gem_base),
+                    null,
+                );
+                if (sprite == .amethyst) return sprite;
 
-            sprite = select_sprite(
-                .{ sprite, .emerald },
-                random_value < odds_num(0.55),
-                null,
-            );
-            if (sprite == .emerald) return sprite;
+                sprite = select_sprite(
+                    .{ sprite, .sapphire },
+                    random_value <= odds_num(0.65 * gem_base),
+                    null,
+                );
+                if (sprite == .sapphire) return sprite;
 
-            sprite = select_sprite(
-                .{ sprite, .ruby },
-                random_value < odds_num(0.7),
-                null,
-            );
-            if (sprite == .ruby) return sprite;
+                sprite = select_sprite(
+                    .{ sprite, .emerald },
+                    random_value <= odds_num(0.86 * gem_base),
+                    null,
+                );
+                if (sprite == .emerald) return sprite;
+
+                sprite = select_sprite(
+                    .{ sprite, .ruby },
+                    random_value <= odds_num(1.0 * gem_base),
+                    null,
+                );
+                if (sprite == .ruby) return sprite;
+            }
         }
     }
 
@@ -356,7 +366,7 @@ pub fn add_decorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) voi
             if (!block.is_empty()) continue;
             if (block.is_adjacent_block_solid(EdgeFlags.BOTTOM)) {
                 const val = rng1.next();
-                if (val < odds_num(0.3)) {
+                if (val <= odds_num(0.3)) {
                     block.id = .mushroom;
                 }
             }
@@ -368,13 +378,13 @@ pub fn add_decorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) voi
             const id = block_x + block_y * SPAN;
             var block = &target_chunk.blocks[id];
             if (block.is_foundation() or target_chunk.blocks[id - 16].is_empty()) continue;
-            if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() < odds_num(0.7)) {
+            if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() <= odds_num(0.7)) {
                 block.id = .spiral_plant;
             } else if (target_chunk.blocks[id - 16].is_foundation() and block.is_empty()) {
                 const val = rng1.next();
-                if (val < odds_num(0.3)) {
+                if (val <= odds_num(0.3)) {
                     block.id = .ceiling_flower;
-                } else if (val < odds_num(0.35)) {
+                } else if (val <= odds_num(0.35)) {
                     block.id = .spiral_plant;
                 }
             }

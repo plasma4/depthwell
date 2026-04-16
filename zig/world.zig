@@ -40,6 +40,7 @@ pub const Sprite = enum(u16) {
     iron,
     silver,
     gold,
+    amethyst,
     sapphire,
     emerald,
     ruby,
