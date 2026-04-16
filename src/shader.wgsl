@@ -18,7 +18,7 @@ const ATLAS_WIDTH: f32 = TILE_SIZE * TILES_PER_ROW;
 const ATLAS_HEIGHT: f32 = TILE_SIZE * TILES_PER_COLUMN;
 const SPRITE_W = TILE_SIZE / ATLAS_WIDTH;
 const SPRITE_H = TILE_SIZE / ATLAS_HEIGHT;
-const TEXTURE_BLEEDING_EPSILON = 0.001 / TILE_SIZE;
+const TEXTURE_BLEEDING_EPSILON = 0.5 / TILE_SIZE;
 
 // See EdgeFlags in zig/types.zig.
 const EDGE_TOP: u32         = 0x02u;
@@ -67,20 +67,19 @@ struct UnpackedTile {
 // Data passed from the Vertex step (per-corner) to the Fragment step (per-pixel)
 struct VertexOutput {
     @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
     // Local UV (0.0 to 1.0) across the surface of the specific tile.
-    @location(1) local_uv: vec2f,
+    @location(0) local_uv: vec2f,
     // Where on the chunk a tile is
     // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
-    @location(2) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
-    @location(3) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
+    @location(1) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
+    @location(2) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
 
-    @location(4) @interpolate(flat) sprite_id: u32,
-    @location(5) @interpolate(flat) edge_flags: u32,
-    @location(6) @interpolate(flat) light: f32,
-    @location(7) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
-    @location(8) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
-    @location(9) @interpolate(flat) seed3: u32, // murmurmix32'ed from seed2
+    @location(3) @interpolate(flat) sprite_id: u32,
+    @location(4) @interpolate(flat) edge_flags: u32,
+    @location(5) @interpolate(flat) light: f32,
+    @location(6) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
+    @location(7) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
+    @location(8) @interpolate(flat) seed3: u32, // murmurmix32'ed from seed2
 };
 
 // Extracts the specific bit ranges in the Block type (see zig/memory.zig).
@@ -118,7 +117,8 @@ fn vs_main(
     // A bitmask where bits 2, 3, and 5 are set (0b101100 = 44)
     let y = f32((44u >> vertex_index) & 1u);
 
-    let local_pos = clamp(vec2f(x, y), vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+    let local_pos = vec2f(x, y);
+
     let total_tiles = scene.map_size.x * scene.map_size.y;
 
     var out: VertexOutput;
@@ -126,19 +126,18 @@ fn vs_main(
         // There's intentionally one more instance than the number of tiles to render the player!
         let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
         let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
+        let atlas_uv = vec2f(
+            (1 + local_pos.x) * SPRITE_W, // player sprite at (1, 0)
+            (0 + local_pos.y) * SPRITE_H
+        );
 
         let ndc = vec2f(
             (screen_pos.x / scene.viewport_size.x) * 2.0 - 1.0,
             1.0 - (screen_pos.y / scene.viewport_size.y) * 2.0
         );
 
-        let atlas_uv = vec2f(
-            (1 + local_pos.x) * SPRITE_W, // player sprite at (1, 0)
-            (0 + local_pos.y) * SPRITE_H
-        );
-
         out.position = vec4f(ndc, 0.0, 1.0);
-        out.uv = atlas_uv;
+        out.sprite_uv_origin = vec2f(1.0 * SPRITE_W, 0.0 * SPRITE_H);
         out.edge_flags = 255u;
         out.sprite_id = 1u;
         out.light = 1.0;
@@ -203,16 +202,10 @@ fn vs_main(
     // Calculate which sprite in the atlas to sample
     let sprite_col = f32(id % u32(TILES_PER_ROW));
     let sprite_row = f32(id / u32(TILES_PER_ROW));
-
-    let atlas_uv = vec2f(
-        (sprite_col + local_pos.x) * SPRITE_W,
-        (sprite_row + local_pos.y) * SPRITE_H
-    );
-
     let origin = vec2f(sprite_col * SPRITE_W, sprite_row * SPRITE_H);
-    out.sprite_uv_origin = origin;
+
     out.position = vec4f(ndc, 0.0, 1.0);
-    out.uv = atlas_uv;
+    out.sprite_uv_origin = origin;
     out.sprite_id = id;
     out.edge_flags = tile.edge_flags;
     out.tile_coords = vec2u(tile_x, tile_y);
@@ -227,7 +220,7 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
-    let local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+    let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
     if (in.edge_flags != 0xFFu) {
         erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2, in.seed3);
@@ -248,15 +241,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         return vec4f(final_rgb, 1.0);
     }
 
-    var final_uv = clamp(in.uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+    var final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
     if (in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START) {
         let shift_bits = extractBits(in.seed, 18u, 8u); // shift the gem sprite around 0-15 pixels using bits 18-26
         let shift = vec2f(
             f32(shift_bits & 0xFu) / 16.0,
             f32(shift_bits >> 4u) / 16.0
         );
-        let wrapped_local = fract(in.local_uv + shift);
-        final_uv = in.sprite_uv_origin + wrapped_local * vec2f(SPRITE_W, SPRITE_H);
+        let wrapped_local = fract(in.local_uv + shift); // there are 1 pixel boundaries so fract() being imprecise is okay
+        let safe_wrapped = clamp(wrapped_local, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+        final_uv = in.sprite_uv_origin + safe_wrapped * vec2f(SPRITE_W, SPRITE_H);
     }
 
     // Sample the primary color (the actual original sprite, gem or not)
@@ -285,10 +279,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         // Calculate UVs for the background stone
         let bg_col = f32(bg_id % u32(TILES_PER_ROW));
         let bg_row = f32(bg_id / u32(TILES_PER_ROW));
-        let safe_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
-        let stone_uv = vec2f(bg_col * SPRITE_W, bg_row * SPRITE_H) + (safe_uv * vec2f(SPRITE_W, SPRITE_H));
+        let stone_uv = vec2f(bg_col * SPRITE_W, bg_row * SPRITE_H) + (safe_local_uv * vec2f(SPRITE_W, SPRITE_H));
 
-        // Calculate UVs for the mask (using the UNSHIFTED safe_uv)
+        // Calculate UVs for the mask (using the UNSHIFTED uv)
         let mask_col = f32(mask_id % u32(TILES_PER_ROW));
         let mask_row = f32(mask_id / u32(TILES_PER_ROW));
         let safe_flipped_uv = clamp(flipped_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));

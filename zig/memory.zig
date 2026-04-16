@@ -28,7 +28,7 @@ pub const v2f64 = @Vector(2, f64);
 
 /// Non-pointer data (short known length) representing part of the game state.
 /// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
-/// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the --Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
+/// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the -Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
 pub const GameState = extern struct {
     /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095).
     player_pos: v2i64 align(MAIN_ALIGN_BYTES) = .{ 0, 0 },

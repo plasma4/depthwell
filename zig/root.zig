@@ -15,6 +15,13 @@ const KeyBits = @import("types.zig").KeyBits;
 pub export fn setup() void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
     memory.game = .{}; // initialize GameState
+    world.quad_cache = .{
+        .path_hashes = undefined,
+        .hash_cache_1 = undefined,
+        .left_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
+        .top_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
+        .ancestor_materials = .{.none} ** 4,
+    };
 }
 pub export fn init() void {
     main.init();
@@ -118,7 +125,7 @@ fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noretur
     @trap();
 }
 
-// Runs tests from other files. I have to remember to add more as necessary...
+// Runs tests from other files. I have to remember to add more as necessary when new files with tests appear...
 test "main_tests" {
     const modules = .{
         @import("png/png_to_binary.zig"),
