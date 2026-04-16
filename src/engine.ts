@@ -649,7 +649,7 @@ export class GameEngine {
     }
 
     /** Updates the game's logic state. */
-    public tick(logicSpeed: number) {
+    public tick(logicSpeed: number, iterations: number) {
         // Internally, key pressing data goes `keys_pressed_mask`, then `keys_held_mask`.
         const inputView = this.getGameView(
             WasmTypeCode.Uint32,
@@ -660,6 +660,6 @@ export class GameEngine {
         inputView[0] = this.inputState.keysPressed;
         inputView[1] = this.inputState.keysHeld;
         // console.log("Keys pressed down this frame: " + inputView[0] + "\nKeys held down: " + inputView[1]);
-        this.exports.tick(logicSpeed);
+        this.exports.tick(logicSpeed, iterations);
     }
 }

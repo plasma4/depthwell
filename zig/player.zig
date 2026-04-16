@@ -51,7 +51,7 @@ const CAMERA_DEADZONE_X = 10 * memory.SPAN_SQ; // memory.SPAN_SQ means 1 block, 
 const CAMERA_DEADZONE_Y = 4 * memory.SPAN_SQ;
 
 const pixel_mult: v2f64 = .{ @floatFromInt(SPAN), @floatFromInt(SPAN) };
-var subpixel_accum: v2f64 = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
+pub var subpixel_accum: v2f64 = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
 
 /// Determines if the player is on the ground.
 var is_grounded: bool = false;
@@ -162,14 +162,8 @@ pub fn move(logic_speed: f64) void {
         }
     }
 
-    // Finally sync the camera + tell SimBuffer to update.
+    // Finally, tell SimBuffer and the camera to update.
     world.SimBuffer.sync(game.get_player_coord(), total_chunk_shift);
-    world.SimBuffer.background_generation_tick(
-        game.get_player_coord(),
-        game.player_velocity,
-        2,
-        4,
-    );
     update_camera(logic_speed);
 }
 

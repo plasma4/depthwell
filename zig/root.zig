@@ -53,10 +53,10 @@ pub export fn get_decor_start() u32 {
     return @intCast(@intFromEnum(world.Sprite.spiral_plant));
 }
 
-pub export fn tick(speed: f64) void {
+pub export fn tick(speed: f64, iterations: u32) void {
+    // increase the depth (testing hotkey)
     if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
         // if (in_debug_mode) {
-        // increase depth (testing hotkey)
         world.push_layer(
             world.Sprite.none,
             memory.game.get_player_coord(),
@@ -64,10 +64,21 @@ pub export fn tick(speed: f64) void {
             memory.game.get_block_y_in_chunk(),
         );
         // }
+        return;
     }
 
-    player.move(speed);
-    memory.game.frame +%= 1;
+    for (0..iterations) |_| { // iterations is guaranteed to be positive
+        player.move(speed);
+        memory.game.frame +%= 1;
+    }
+
+    // Generate chunks around the SimBuffer in the background.
+    world.SimBuffer.background_generation_tick(
+        memory.game.get_player_coord(),
+        memory.game.player_velocity,
+        2,
+        4,
+    );
 }
 
 pub export fn mix_seed(number: u64) i64 {
