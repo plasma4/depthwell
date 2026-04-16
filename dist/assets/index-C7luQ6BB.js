@@ -1,4 +1,4 @@
-(function(){const t=document.createElement("link").relList;if(t&&t.supports&&t.supports("modulepreload"))return;for(const e of document.querySelectorAll('link[rel="modulepreload"]'))r(e);new MutationObserver(e=>{for(const s of e)if(s.type==="childList")for(const o of s.addedNodes)o.tagName==="LINK"&&o.rel==="modulepreload"&&r(o)}).observe(document,{childList:!0,subtree:!0});function n(e){const s={};return e.integrity&&(s.integrity=e.integrity),e.referrerPolicy&&(s.referrerPolicy=e.referrerPolicy),e.crossOrigin==="use-credentials"?s.credentials="include":e.crossOrigin==="anonymous"?s.credentials="omit":s.credentials="same-origin",s}function r(e){if(e.ep)return;e.ep=!0;const s=n(e);fetch(e.href,s)}})();const a={zoom:131072,drop:262144,minus:32768,plus:65536,up:2048,left:4096,down:8192,right:16384,k0:1,k1:2,k2:4,k3:8,k4:16,k5:32,k6:64,k7:128,k8:256,k9:512},S={player_pos:0,last_player_pos:16,player_chunk:32,player_velocity:48,camera_pos:64,last_camera_pos:80,camera_scale:96,camera_scale_change:104,depth:112,player_quadrant:120,frame:124,keys_pressed_mask:128,keys_held_mask:132,seed:144,seed2:208},N="abcdefghijklmnopqrstuvwxyz",v=26n;function F(i=100){if(i<=0)return"";const t=new Uint8Array(72);crypto.getRandomValues(t);let n=0n;const r=new DataView(t.buffer);for(let o=0;o<t.length;o+=8)n=n<<64n|r.getBigUint64(o);let e="",s=n%v**BigInt(i);for(;s>=0n&&(e+=N[Number(s%v)],s=s/v-1n,!(s<0n)););return e}function q(i){let t=0n;for(let n=0;n<i.length;n++){const r=BigInt(i.charCodeAt(n)-97);t=t*v+(r+1n)}return t}async function V(i,t){const n=q(i),r=new DataView(new ArrayBuffer(64));for(let l=0;l<8;l++)r.setBigUint64(l*8,n>>BigInt((7-l)*64)&0xffffffffffffffffn);let e=new Uint8Array(r.buffer,0,32),s=new Uint8Array(r.buffer,32,32);const o=await Promise.all([0,1,2,3].map(l=>crypto.subtle.importKey("raw",new Uint8Array([l]),{name:"HMAC",hash:"SHA-256"},!1,["sign"])));for(const l of o){const d=new Uint8Array(await crypto.subtle.sign("HMAC",l,s)),p=new Uint8Array(32);for(let f=0;f<32;f++)p[f]=e[f]^d[f];e=s,s=p}const u=new Uint8Array(64);return u.set(e,0),u.set(s,32),t.set(new BigUint64Array(u.buffer)),t}const P={Minus:a.minus,Equal:a.plus,KeyZ:a.zoom,KeyQ:a.drop,ArrowUp:a.up,KeyW:a.up,ArrowLeft:a.left,KeyA:a.left,ArrowDown:a.down,KeyS:a.down,ArrowRight:a.right,KeyD:a.right,Digit0:a.k0,Digit1:a.k1,Digit2:a.k2,Digit3:a.k3,Digit4:a.k4,Digit5:a.k5,Digit6:a.k6,Digit7:a.k7,Digit8:a.k8,Digit9:a.k9};function C(){let i={};const t={heldMask:0,keysHeld:0,keysPressed:0,currentlyHeld:0,horizontalPriority:0,verticalPriority:0,plusMinusPriority:0};function n(){i={},t.horizontalPriority=0,t.verticalPriority=0,t.plusMinusPriority=0,t.currentlyHeld=0,t.heldMask=0,t.keysPressed=0}return window.addEventListener("keydown",r=>{if(r.repeat||r.altKey||r.ctrlKey||r.metaKey||r.shiftKey)return;const e=P[r.code];e&&(t.heldMask|=e,i[e]=(i[e]||0)+1,e&(a.left|a.right)&&(t.horizontalPriority=e),e&(a.up|a.down)&&(t.verticalPriority=e),e&(a.plus|a.minus)&&(t.plusMinusPriority=e))}),window.addEventListener("keyup",r=>{const e=P[r.code];e&&(i[e]=Math.max(0,(i[e]||0)-1),i[e]===0&&(t.heldMask&=~e,e===t.horizontalPriority&&(t.horizontalPriority=t.heldMask&a.left||t.heldMask&a.right||0),e===t.verticalPriority&&(t.verticalPriority=t.heldMask&a.up||t.heldMask&a.down||0),e===t.plusMinusPriority&&(t.plusMinusPriority=t.heldMask&a.plus||t.heldMask&a.minus||0)))}),window.addEventListener("blur",n),document.addEventListener("visibilitychange",n),window.addEventListener("contextmenu",n),t}function H(i){const t=a.up|a.down|a.left|a.right;let n=i.heldMask&~t;n|=i.horizontalPriority,n|=i.verticalPriority,n|=i.plusMinusPriority,i.keysPressed=n&~i.keysHeld,i.currentlyHeld=n,i.keysHeld=n}const W=""+new URL("main-DI0pQmDX.wasm",import.meta.url).href,K=`/*
+(function(){const t=document.createElement("link").relList;if(t&&t.supports&&t.supports("modulepreload"))return;for(const e of document.querySelectorAll('link[rel="modulepreload"]'))r(e);new MutationObserver(e=>{for(const s of e)if(s.type==="childList")for(const o of s.addedNodes)o.tagName==="LINK"&&o.rel==="modulepreload"&&r(o)}).observe(document,{childList:!0,subtree:!0});function n(e){const s={};return e.integrity&&(s.integrity=e.integrity),e.referrerPolicy&&(s.referrerPolicy=e.referrerPolicy),e.crossOrigin==="use-credentials"?s.credentials="include":e.crossOrigin==="anonymous"?s.credentials="omit":s.credentials="same-origin",s}function r(e){if(e.ep)return;e.ep=!0;const s=n(e);fetch(e.href,s)}})();const a={zoom:131072,drop:262144,minus:32768,plus:65536,up:2048,left:4096,down:8192,right:16384,k0:1,k1:2,k2:4,k3:8,k4:16,k5:32,k6:64,k7:128,k8:256,k9:512},S={player_pos:0,last_player_pos:16,player_chunk:32,player_velocity:48,camera_pos:64,last_camera_pos:80,camera_scale:96,camera_scale_change:104,depth:112,player_quadrant:120,frame:124,keys_pressed_mask:128,keys_held_mask:132,seed:144,seed2:208},N="abcdefghijklmnopqrstuvwxyz",b=26n;function z(i=100){if(i<=0)return"";const t=new Uint8Array(72);crypto.getRandomValues(t);let n=0n;const r=new DataView(t.buffer);for(let o=0;o<t.length;o+=8)n=n<<64n|r.getBigUint64(o);let e="",s=n%b**BigInt(i);for(;s>=0n&&(e+=N[Number(s%b)],s=s/b-1n,!(s<0n)););return e}function V(i){let t=0n;for(let n=0;n<i.length;n++){const r=BigInt(i.charCodeAt(n)-97);t=t*b+(r+1n)}return t}async function q(i,t){const n=V(i),r=new DataView(new ArrayBuffer(64));for(let l=0;l<8;l++)r.setBigUint64(l*8,n>>BigInt((7-l)*64)&0xffffffffffffffffn);let e=new Uint8Array(r.buffer,0,32),s=new Uint8Array(r.buffer,32,32);const o=await Promise.all([0,1,2,3].map(l=>crypto.subtle.importKey("raw",new Uint8Array([l]),{name:"HMAC",hash:"SHA-256"},!1,["sign"])));for(const l of o){const _=new Uint8Array(await crypto.subtle.sign("HMAC",l,s)),p=new Uint8Array(32);for(let f=0;f<32;f++)p[f]=e[f]^_[f];e=s,s=p}const u=new Uint8Array(64);return u.set(e,0),u.set(s,32),t.set(new BigUint64Array(u.buffer)),t}const P={Minus:a.minus,Equal:a.plus,KeyZ:a.zoom,KeyQ:a.drop,ArrowUp:a.up,KeyW:a.up,ArrowLeft:a.left,KeyA:a.left,ArrowDown:a.down,KeyS:a.down,ArrowRight:a.right,KeyD:a.right,Digit0:a.k0,Digit1:a.k1,Digit2:a.k2,Digit3:a.k3,Digit4:a.k4,Digit5:a.k5,Digit6:a.k6,Digit7:a.k7,Digit8:a.k8,Digit9:a.k9};function C(){let i={};const t={heldMask:0,keysHeld:0,keysPressed:0,currentlyHeld:0,horizontalPriority:0,verticalPriority:0,plusMinusPriority:0};function n(){i={},t.horizontalPriority=0,t.verticalPriority=0,t.plusMinusPriority=0,t.currentlyHeld=0,t.heldMask=0,t.keysPressed=0}return window.addEventListener("keydown",r=>{if(r.repeat||r.altKey||r.ctrlKey||r.metaKey||r.shiftKey)return;const e=P[r.code];e&&(t.heldMask|=e,i[e]=(i[e]||0)+1,e&(a.left|a.right)&&(t.horizontalPriority=e),e&(a.up|a.down)&&(t.verticalPriority=e),e&(a.plus|a.minus)&&(t.plusMinusPriority=e))}),window.addEventListener("keyup",r=>{const e=P[r.code];e&&(i[e]=Math.max(0,(i[e]||0)-1),i[e]===0&&(t.heldMask&=~e,e===t.horizontalPriority&&(t.horizontalPriority=t.heldMask&a.left||t.heldMask&a.right||0),e===t.verticalPriority&&(t.verticalPriority=t.heldMask&a.up||t.heldMask&a.down||0),e===t.plusMinusPriority&&(t.plusMinusPriority=t.heldMask&a.plus||t.heldMask&a.minus||0)))}),window.addEventListener("blur",n),document.addEventListener("visibilitychange",n),window.addEventListener("contextmenu",n),t}function H(i){const t=a.up|a.down|a.left|a.right;let n=i.heldMask&~t;n|=i.horizontalPriority,n|=i.verticalPriority,n|=i.plusMinusPriority,i.keysPressed=n&~i.keysHeld,i.currentlyHeld=n,i.keysHeld=n}const W=""+new URL("main-Cjdo6NbP.wasm",import.meta.url).href,K=`/*
  * Main shader for Depthwell. ADD ?raw FOR DEBUGGING SHADER TO THE END OF engineMaker.ts's \`SHADER_SOURCE\` VARIABLE TO NOT COMPRESS.
  */
 
@@ -55,6 +55,7 @@ struct UnpackedTile {
     hp: u32,
     seed: u32,
     seed2: u32,
+    seed3: u32,
     edge_flags: u32,
 };
 
@@ -67,19 +68,19 @@ struct UnpackedTile {
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
-
-    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
-    @location(1) @interpolate(flat) sprite_id: u32,
-    @location(2) @interpolate(flat) edge_flags: u32,
-    @location(3) @interpolate(flat) light: f32,
-    @location(4) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
-    @location(5) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
-
     // Local UV (0.0 to 1.0) across the surface of the specific tile.
-    @location(6) local_uv: vec2f,
+    @location(1) local_uv: vec2f,
     // Where on the chunk a tile is
-    @location(7) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
-    @location(8) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
+    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
+    @location(2) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
+    @location(3) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
+
+    @location(4) @interpolate(flat) sprite_id: u32,
+    @location(5) @interpolate(flat) edge_flags: u32,
+    @location(6) @interpolate(flat) light: f32,
+    @location(7) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
+    @location(8) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
+    @location(9) @interpolate(flat) seed3: u32, // murmurmix32'ed from seed2
 };
 
 // Extracts the specific bit ranges in the Block type (see zig/memory.zig).
@@ -97,6 +98,7 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.hp = extractBits(data.word1, 0u, 4u);
     out.seed = extractBits(data.word1, 4u, 28u); // 28-bit seed
     out.seed2 = murmurmix32(out.seed);
+    out.seed3 = murmurmix32(out.seed2);
     return out;
 }
 
@@ -145,6 +147,11 @@ fn vs_main(
     }
 
     let tile = unpack_tile(tiles[instance_index]);
+    if (tile.sprite_id == 0u && scene.wireframe_opacity == 0.0) {
+        out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
+        return out;
+    }
+
     let tile_x = instance_index % scene.map_size.x;
     let tile_y = instance_index / scene.map_size.x;
 
@@ -162,12 +169,6 @@ fn vs_main(
         if (random_mod == 0u) {
             id++;
         }
-    }
-
-    // Cull empty sprites
-    if (id == 0u && scene.wireframe_opacity == 0.0) {
-        out.position = vec4f(2.0, 2.0, 1.0, 1.0); // ideal outcode
-        return out;
     }
 
     let world_pixel_pos = vec2f(f32(tile_x), f32(tile_y)) * TILE_SIZE + local_pos * TILE_SIZE;
@@ -218,6 +219,7 @@ fn vs_main(
     out.light = tile.light;
     out.seed = tile.seed;
     out.seed2 = tile.seed2;
+    out.seed3 = tile.seed3;
     out.local_uv = local_pos;
     return out;
 }
@@ -226,11 +228,24 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
     let local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+
     if (in.edge_flags != 0xFFu) {
-        erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2);
+        erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2, in.seed3);
         if (scene.wireframe_opacity == 0.0 && erode_mask == 0u) {
             discard; // discard early
         }
+    }
+
+    // technically I could optimize this part
+    // but it doesn't really matter because its for procedural generation testing anyway
+    if (in.sprite_id >= 256u && in.sprite_id <= 512u) {
+        // Heatmap logic!
+        // if (in.sprite_id == 256) { discard; }
+        let color = (f32(in.sprite_id) - 256.0) / 256.0;
+        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
+        let lab = oklch_to_oklab(lch);
+        let final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
+        return vec4f(final_rgb, 1.0);
     }
 
     var final_uv = clamp(in.uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
@@ -252,6 +267,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let mask_variation = extractBits(in.seed, 16u, 2u); // 4 masks
         let mask_id = GEM_MASK_START + mask_variation;
 
+        var flipped_uv = in.local_uv;
+
+        // for bit 26 decide horizontal flip of the ore mask
+        if ((extractBits(in.seed, 26u, 1u) == 1u)) {
+            flipped_uv.x = 1.0 - flipped_uv.x;
+        }
+
+        // decide vertical for bit 27
+        if ((extractBits(in.seed, 27u, 1u) == 1u)) {
+            flipped_uv.y = 1.0 - flipped_uv.y;
+        }
+
         // Use 2x2 grid logic for the background stone's ID (similar to the id-determining part of vs_main)
         let bg_id = STONE_START + (in.tile_coords.y % 2u) * 2u + (in.tile_coords.x % 2u);
 
@@ -264,32 +291,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         // Calculate UVs for the mask (using the UNSHIFTED safe_uv)
         let mask_col = f32(mask_id % u32(TILES_PER_ROW));
         let mask_row = f32(mask_id / u32(TILES_PER_ROW));
-        let mask_uv = vec2f(mask_col * SPRITE_W, mask_row * SPRITE_H) + (safe_uv * vec2f(SPRITE_W, SPRITE_H));
-
+        let safe_flipped_uv = clamp(flipped_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+        let mask_uv = vec2f(mask_col * SPRITE_W, mask_row * SPRITE_H) + (safe_flipped_uv * vec2f(SPRITE_W, SPRITE_H));
         let tex_stone = textureSampleLevel(sprite_atlas, pixel_sampler, stone_uv, 0.0);
         let tex_mask = textureSampleLevel(sprite_atlas, pixel_sampler, mask_uv, 0.0);
 
         let u_dist = max(abs(in.local_uv.x - 0.5), abs(in.local_uv.y - 0.5));
 
-        // r component of mask determines mix amount, multiply stone brightness based on dist, u_dist some base color change also based on u_dist
+        // with linear RGB: r component of mask determines mix amount, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
             tex_stone.rgb * vec3f(0.4 + u_dist * 1.2),
-            tex_color.rgb,
-            tex_mask.r + 0.8 * (0.5 - u_dist)
+            tex_color.rgb * vec3f(1.0 + 0.06 * f32(extractBits(in.seed3, 29u, 3u))), // use last bits of seed3, otherwise unused
+            tex_mask.r + (0.5 - u_dist)
         );
         tex_color = vec4f(final_rgb_ore, tex_color.a);
-    }
-
-    // technically I could optimize this part
-    // but it doesn't really matter because its for procedural generation testing anyway
-    if (in.sprite_id >= 256u && in.sprite_id <= 512u) {
-        // Heatmap logic!
-        // if (in.sprite_id == 256) { discard; }
-        let color = (f32(in.sprite_id) - 256.0) / 256.0;
-        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
-        let lab = oklch_to_oklab(lch);
-        let final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
-        return vec4f(final_rgb, 1.0);
     }
 
     var wire_color = vec4f(0.0);
@@ -342,13 +357,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let a_nudge = extracted_a / 7.0;
     let b_nudge = f32(extractBits(in.seed, 7u, 3u)) / 4.0;
 
-    // DISABLED
-    lch.x += (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
+    lch.x = lch.x * in.light + (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
     lch.y *= 1.0 + a_nudge * 0.25; // shift chroma, which acts similar to saturation (0-1)
     lch.z += (b_nudge - 0.5) * 0.1; // shift hue (in RADIANS, red isn't exactly 0)
 
     var final_rgb = vec3f(0.0);
-    lch.x *= in.light;
     if (in.edge_flags != 0xFFu) {
         // add the edge darkening and base light value, with the function using bits 10-16
         let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
@@ -385,12 +398,9 @@ fn murmurmix32(number: u32) -> u32 {
 }
 
 // Complex logic that returns 0u if a pixel should be TRANSPARENT ("eroded"), NORMAL, or BORDER (darkened).
-fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
+fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { // uv of sprite, edge flags, and mixed seeds
     let px = u32(local_uv.x * TILE_SIZE);
     let py = u32(local_uv.y * TILE_SIZE);
-
-    let se = seed2;
-    let sc = murmurmix32(seed2);
 
     let has_top    = (edge_flags & EDGE_TOP) != 0u;
     let has_bottom = (edge_flags & EDGE_BOTTOM) != 0u;
@@ -402,10 +412,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     let has_br     = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 4u + extractBits(sc, 0u, 1u);
-    let r_tr = 4u + extractBits(sc, 2u, 1u);
-    let r_bl = 4u + extractBits(sc, 4u, 1u);
-    let r_br = 4u + extractBits(sc, 6u, 1u);
+    let r_tl = 4u + extractBits(seed3, 0u, 1u);
+    let r_tr = 4u + extractBits(seed3, 2u, 1u);
+    let r_bl = 4u + extractBits(seed3, 4u, 1u);
+    let r_br = 4u + extractBits(seed3, 6u, 1u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 
@@ -465,10 +475,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Top edge
     if (!has_top) {
-        let base_depth = 1u + extractBits(se, 0u, 1u); // 1 or 2 pixels inward for each edge
-        let notch_pos = extractBits(se, 1u, 4u);
-        let notch_dir = extractBits(se, 5u, 1u);
-        let notch_width = 2u + extractBits(se, 6u, 2u);
+        let base_depth = 1u + extractBits(seed2, 0u, 1u); // 1 or 2 pixels inward for each edge
+        let notch_pos = extractBits(seed2, 1u, 4u);
+        let notch_dir = extractBits(seed2, 5u, 1u);
+        let notch_width = 2u + extractBits(seed2, 6u, 2u);
 
         var depth = base_depth;
         if (px >= notch_pos && px < notch_pos + notch_width) {
@@ -487,10 +497,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Bottom edge
     if (!has_bottom) {
-        let base_depth = 1u + extractBits(se, 8u, 1u);
-        let notch_pos = extractBits(se, 9u, 4u);
-        let notch_dir = extractBits(se, 13u, 1u);
-        let notch_width = 2u + extractBits(se, 14u, 2u);
+        let base_depth = 1u + extractBits(seed2, 8u, 1u);
+        let notch_pos = extractBits(seed2, 9u, 4u);
+        let notch_dir = extractBits(seed2, 13u, 1u);
+        let notch_width = 2u + extractBits(seed2, 14u, 2u);
 
         var depth = base_depth;
         if (px >= notch_pos && px < notch_pos + notch_width) {
@@ -508,10 +518,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Left edge
     if (!has_left) {
-        let base_depth = 1u + extractBits(se, 16u, 1u);
-        let notch_pos = extractBits(se, 17u, 4u);
-        let notch_dir = extractBits(se, 21u, 1u);
-        let notch_width = 2u + extractBits(se, 22u, 2u);
+        let base_depth = 1u + extractBits(seed2, 16u, 1u);
+        let notch_pos = extractBits(seed2, 17u, 4u);
+        let notch_dir = extractBits(seed2, 21u, 1u);
+        let notch_width = 2u + extractBits(seed2, 22u, 2u);
 
         var depth = base_depth;
         if (py >= notch_pos && py < notch_pos + notch_width) {
@@ -529,10 +539,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
 
     // Right edge
     if (!has_right) {
-        let base_depth = 1u + extractBits(se, 24u, 1u);
-        let notch_pos = extractBits(se, 25u, 4u);
-        let notch_dir = extractBits(se, 29u, 1u);
-        let notch_width = 2u + extractBits(se, 30u, 2u);
+        let base_depth = 1u + extractBits(seed2, 24u, 1u);
+        let notch_pos = extractBits(seed2, 25u, 4u);
+        let notch_dir = extractBits(seed2, 29u, 1u);
+        let notch_width = 2u + extractBits(seed2, 30u, 2u);
 
         var depth = base_depth;
         if (py >= notch_pos && py < notch_pos + notch_width) {
@@ -551,9 +561,9 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     // Inner corners (no diagonal neighbor)
 
     if (!has_tl && has_top && has_left) {
-        let r = 2u + extractBits(sc, 8u, 1u); // 2 or 3 pixel radius
+        let r = 2u + extractBits(seed3, 8u, 1u); // 2 or 3 pixel radius
         if (px < r && py < r) {
-            let dx = px + 1u; // +1 so the circle center is at (-0.5, -0.5) effectively
+            let dx = px + 1u; // +1, so the circle center is at (-0.5, -0.5) effectively
             let dy = py + 1u;
             let dist_sq = dx * dx + dy * dy;
             if (dist_sq <= r * r) { return 0u; }
@@ -562,7 +572,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_tr && has_top && has_right) {
-        let r = 2u + extractBits(sc, 10u, 1u);
+        let r = 2u + extractBits(seed3, 10u, 1u);
         let fpx = 15u - px;
         if (fpx < r && py < r) {
             let dx = fpx + 1u;
@@ -574,7 +584,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_bl && has_bottom && has_left) {
-        let r = 2u + extractBits(sc, 12u, 1u);
+        let r = 2u + extractBits(seed3, 12u, 1u);
         let fpy = 15u - py;
         if (px < r && fpy < r) {
             let dx = px + 1u;
@@ -586,7 +596,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32) -> u32 {
     }
 
     if (!has_br && has_bottom && has_right) {
-        let r = 2u + extractBits(sc, 14u, 1u);
+        let r = 2u + extractBits(seed3, 14u, 1u);
         let fpx = 15u - px;
         let fpy = 15u - py;
         if (fpx < r && fpy < r) {
@@ -612,7 +622,7 @@ fn popcount8(v: u32) -> u32 {
 // Calculates edge darkening procedurally based on flags calculated in Zig.
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
     var darkening = 0.0;
-    let edge_width = 0.20 + f32(extractBits(seed, 10u, 3u)) / 32.0;
+    let edge_width = 0.30 + f32(extractBits(seed, 10u, 3u)) / 32.0;
     let edge_strength = 0.25 + f32(extractBits(seed, 13u, 3u)) / 64.0;
     let corner_width = 0.5;
 
@@ -829,7 +839,7 @@ fn oklab_to_oklch(lab: vec3f) -> vec3f {
 fn oklch_to_oklab(lch: vec3f) -> vec3f {
     return vec3f(lch.x, lch.y * cos(lch.z), lch.y * sin(lch.z));
 }
-`,Z=""+new URL("main-B65Rrvuo.png",import.meta.url).href;async function X(i,t){const n=await navigator.gpu.requestAdapter({powerPreference:t&&t.highPerformance?"high-performance":"low-power"});if(!n)throw new DOMException("Couldn't request WebGPU adapter.","NotSupportedError");const r=await n.requestDevice();let e=null;if(r.addEventListener("uncapturederror",_=>{const g=_.error;if(e===null)if(globalThis.reportError)reportError(g);else throw g;else if(!e.destroyed){e.destroy("fatal WebGPU error",g);return}}),r.lost.then(_=>console.error(`WebGPU Device lost: ${_.message}`)),i===void 0){if(i=document.getElementsByTagName("canvas")[0],i===void 0)throw Error("No canvas element or ID string provided, and no canvas was not found in the HTML.")}else if(typeof i=="string"){const _=document.getElementById(i);if(!(_ instanceof HTMLCanvasElement))throw Error(`Element with ID "${i}" is not a canvas element.`);i=_}const s=i.getContext("webgpu");if(!s)throw Error("Could not get WebGPU context from canvas.");const o=r.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm";s.configure({device:r,format:o,alphaMode:"opaque"});const u=await WebAssembly.instantiateStreaming(fetch(W),{env:{js_message:(_,g,y)=>{let h=new TextDecoder().decode(new Uint8Array(d.buffer,Number(_),Number(g)));h.charAt(0)!=="]"?h="["+(e?.LOGGING_PREFIX||"")+h:h=h.slice(1),y===1?console.info("%c"+h,"font-weight: 600"):[console.log,console.info,console.warn,console.error][y](h)},js_write_text:(_,g,y)=>{const h=new Uint8Array(d.buffer,Number(g),Number(y)),U=new TextDecoder().decode(h),z=document.getElementById(`text${_+1}`);z.textContent=U},js_get_time:()=>performance.now(),js_handle_visible_chunks:_=>e?.handleVisibleChunks(_)}}),l=u.instance.exports,d=l.memory,p=r.createShaderModule({label:"Main shader",code:K.replace("/* TILES_PER_ROW */ 1 /* TILES_PER_ROW */",""+l.get_tiles_per_row()).replace("/* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */",""+l.get_tiles_per_column()).replace("/* STONE_START */ 1 /* STONE_START */",""+l.get_stone_start()).replace("/* GEM_START */ 1 /* GEM_START */",""+l.get_ore_start()).replace("/* GEM_MASK_START */ 1 /* GEM_MASK_START */",""+l.get_gem_mask_start()).replace("/* DECOR_START */ 1 /* DECOR_START */",""+l.get_decor_start())}),f=r.createBindGroupLayout({label:"Main bind group layout",entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform",hasDynamicOffset:!0}},{binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}},{binding:2,visibility:GPUShaderStage.FRAGMENT,texture:{}},{binding:3,visibility:GPUShaderStage.FRAGMENT,sampler:{}}]}),m=r.createPipelineLayout({label:"Shared Pipeline Layout",bindGroupLayouts:[f]}),B=r.createRenderPipeline({label:"Tilemap pipeline",layout:m,vertex:{module:p,entryPoint:"vs_main"},fragment:{module:p,entryPoint:"fs_main",targets:[{format:o,blend:{color:{srcFactor:"src-alpha",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},primitive:{topology:"triangle-list",cullMode:"none"}}),D=r.createRenderPipeline({label:"Background pipeline",layout:m,vertex:{module:p,entryPoint:"vs_background"},fragment:{module:p,entryPoint:"fs_background",targets:[{format:o}]},primitive:{topology:"triangle-list"}});e=new k(i,n,r,s,u,B,D),e.exports.setup(),await e.setSeed(F(100)),e.exports.init();const L=new ResizeObserver(e.onResize);e.resizeObserver=L,e.updateCanvasStyle();try{e.resizeObserver.observe(i,{box:"device-pixel-content-box"})}catch{console.log("ResizeObserver property device-pixel-content-box not supported, falling back to content-box."),e.resizeObserver.observe(i,{box:"content-box"})}e.onResize([{contentRect:{width:i.clientWidth,height:i.clientHeight}}]);const O=await k.loadTexture(r,Z),G=r.createSampler({magFilter:"nearest",minFilter:"nearest",addressModeU:"clamp-to-edge",addressModeV:"clamp-to-edge"});e.atlasTextureView=O.createView(),e.pixelSampler=G;const M=r.createBuffer({label:"SceneUniforms",size:256*R,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});return e.uniformBuffer=M,e}var A=(i=>(i[i.Uint8=8]="Uint8",i[i.Uint16=16]="Uint16",i[i.Uint32=32]="Uint32",i[i.Uint64=64]="Uint64",i[i.Int8=-8]="Int8",i[i.Int16=-16]="Int16",i[i.Int32=-32]="Int32",i[i.Int64=-64]="Int64",i[i.Uint8Clamped=-80]="Uint8Clamped",i[i.Float32=-320]="Float32",i[i.Float64=-640]="Float64",i))(A||{});globalThis.WasmTypeCode=A;const I={8:Uint8Array,16:Uint16Array,32:Uint32Array,64:BigUint64Array,[-8]:Int8Array,[-16]:Int16Array,[-32]:Int32Array,[-64]:BigInt64Array,[-80]:Uint8ClampedArray,[-320]:Float32Array,[-640]:Float64Array},R=4;class k{engineModule;exports;memory;LAYOUT_PTR;GAME_STATE_PTR;canvas;adapter;device;context;bindGroups=Array(R);uniformBuffer;tileBuffers=Array(R);tileBufferDirty=!1;atlasTextureView;pixelSampler;renderPipeline;bgPipeline;renderPass=null;currentEncoder=null;currentTextureView=null;renderCallId=0;sceneDataBuffer=new ArrayBuffer(256);sceneDataF32=new Float32Array(this.sceneDataBuffer);sceneDataU32=new Uint32Array(this.sceneDataBuffer);inputState;resizeObserver;forceAspectRatio=!0;previousForceAspectRatio=null;tileMapWidth;tileMapHeight;prepare_visible_chunks_time=0;isVisibleDataNew=!0;wireframeOpacity=0;startTime=performance.now();seed="";destroyed=!1;destroyedError=null;encoder=new TextEncoder;decoder=new TextDecoder;LOGGING_PREFIX="";constructor(t,n,r,e,s,o,u){this.canvas=t,this.adapter=n,this.device=r,this.context=e,this.engineModule=s,this.renderPipeline=o,this.bgPipeline=u,this.exports=s.instance.exports,this.memory=s.instance.exports.memory,this.LAYOUT_PTR=Number(this.exports.get_memory_layout_ptr()),this.GAME_STATE_PTR=Number(this.getScratchView()[3]),this.inputState=C()}static async create(t,n){return await X(t,n)}destroy(t="unknown reason",n=null){this.resizeObserver.disconnect(),this.destroyed=t,this.destroyedError=n}static async loadTexture(t,n){const e=await(await fetch(n)).blob(),s=await createImageBitmap(e),o=t.createTexture({label:`Texture from  ${n}`,size:[s.width,s.height],format:t.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm",usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});return t.queue.copyExternalImageToTexture({source:s},{texture:o},[s.width,s.height]),o}uploadVisibleChunks(t=1){const n=performance.now();this.exports.prepare_visible_chunks(t,this.canvas.width,this.canvas.height),this.prepare_visible_chunks_time=performance.now()-n}handleVisibleChunks(t){if(!this.currentEncoder||!this.currentTextureView||!this.renderPass)return;const n=this.getScratchPtr();if(this.getScratchLen()===0)return;const e=Number(this.getScratchProperty(0)),s=Number(this.getScratchProperty(1)),o=e*s*2;this.tileMapWidth=e,this.tileMapHeight=s;const u=new Uint32Array(this.memory.buffer,n,o),l=o*4;this.recreateBufferAndBindGroup(l),this.renderPass.setPipeline(this.renderPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId*256]),this.renderPass.setViewport(0,0,this.canvas.width,this.canvas.height,0,1),this.setSceneData(t,e,s),this.device.queue.writeBuffer(this.tileBuffers[this.renderCallId],0,u);const d=e*s+1;this.renderPass.draw(6,d),this.isVisibleDataNew=!1,this.renderCallId++}setSceneData(t,n,r){const e=this.getScratchProperty(2,-640),s=this.getScratchProperty(3,-640),o=this.getScratchProperty(4,-640),u=this.getScratchProperty(5,-640),l=this.getScratchProperty(6,-640);this.sceneDataF32[0]=e,this.sceneDataF32[1]=s,this.sceneDataF32[2]=this.canvas.width,this.sceneDataF32[3]=this.canvas.height;const d=6e4,f=(performance.now()-this.startTime)%(d*2);let m;f<d?m=f/1e3:m=(d-(f-d))/1e3,this.sceneDataF32[4]=m,this.sceneDataF32[5]=o,this.sceneDataF32[6]=o<.25?0:this.wireframeOpacity,this.sceneDataF32[7]=t,this.sceneDataF32[8]=u,this.sceneDataF32[9]=l,this.sceneDataU32[10]=n,this.sceneDataU32[11]=r,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32)}recreateBufferAndBindGroup(t){const n=this.renderCallId;(!this.tileBuffers[n]||this.tileBuffers[n].size<t)&&(this.tileBuffers[n]=this.device.createBuffer({label:`Tile grid slot ${n}`,size:t,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),this.bindGroups[n]=this.device.createBindGroup({label:`Bind group slot ${n}`,layout:this.renderPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniformBuffer,offset:0,size:256}},{binding:1,resource:{buffer:this.tileBuffers[n]}},{binding:2,resource:this.atlasTextureView},{binding:3,resource:this.pixelSampler}]}))}getWASMMemoryMB(){return this.memory.buffer.byteLength/1024/1024}getGameView(t,n=0,r){return new I[t](this.memory.buffer,this.GAME_STATE_PTR+n,r)}getRawView(t,n,r){return new I[t](this.memory.buffer,n,r)}_tempScratchView=null;getScratchView(){return(this._tempScratchView===null||this._tempScratchView.buffer!==this.memory.buffer)&&(this._tempScratchView=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24)),this._tempScratchView}getScratchPtr(){return Number(this.getScratchView()[0])}getScratchLen(){return Number(this.getScratchView()[1])}setScratchLen(t){this.getScratchView()[1]=BigInt(t)}getScratchCapacity(){return Number(this.getScratchView()[2])}getScratchProperty(t,n=64){(this._tempScratchView===null||this._tempScratchView.buffer!==this.memory.buffer)&&(this._tempScratchView=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24));let r=this._tempScratchView;return n==-640&&(r=new Float64Array(r.buffer,r.byteOffset,r.length)),Number(r[t+4])}readStr(t=this.getScratchPtr(),n=this.getScratchLen()){const r=new Uint8Array(this.memory.buffer,t,n);return this.decoder.decode(r)}writeStr(t,n=!0){const r=t.length;if(r===0)return null;n&&this.setScratchLen(0);const e=this.exports.scratch_alloc(r);if(e===0n)return null;const s=new Uint8Array(this.memory.buffer,Number(e),r);if(this.encoder.encodeInto(t,s).read<r)throw new RangeError("String truncated with non-ASCII characters detected.");return Number(e)}async setSeed(t){this.seed=t,await V(t,this.getGameView(64,S.seed,8))}updateCanvasStyle(){this.forceAspectRatio!==this.previousForceAspectRatio&&(this.previousForceAspectRatio=this.forceAspectRatio,this.forceAspectRatio?(this.canvas.style.maxWidth=`calc(100vh*${16/9})`,this.canvas.style.maxHeight=`calc(100vw*${9/16})`):(this.canvas.style.maxWidth="none",this.canvas.style.maxHeight="none"))}onResize=t=>{const n=t[0];let r,e;if(n.devicePixelContentBoxSize)r=n.devicePixelContentBoxSize[0].inlineSize,e=n.devicePixelContentBoxSize[0].blockSize;else if(n.contentBoxSize){const s=n.contentBoxSize[0].inlineSize,o=n.contentBoxSize[0].blockSize;r=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}else{const s=n.contentRect.width,o=n.contentRect.height;r=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}(this.canvas.width!==r||this.canvas.height!==e)&&(this.canvas.width=r,this.canvas.height=e)};renderFrame(t,n){if(this.renderCallId=0,this.destroyed!==!1)return;this.updateCanvasStyle(),this.currentEncoder=this.device.createCommandEncoder(),this.currentTextureView=this.context.getCurrentTexture().createView();const e=this.currentEncoder.beginRenderPass({colorAttachments:[{view:this.currentTextureView,loadOp:"load",clearValue:{r:0,g:0,b:0,a:1},storeOp:"store"}]});this.renderPass=e,this.recreateBufferAndBindGroup(1024),this.sceneDataF32[7]=1,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32),this.renderPass.setPipeline(this.bgPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId++*256]),this.renderPass.draw(3),this.uploadVisibleChunks(t),this.renderPass.end(),this.device.queue.submit([this.currentEncoder.finish()]),this.currentEncoder=null,this.currentTextureView=null}tick(t){const n=this.getGameView(32,S.keys_pressed_mask,2);H(this.inputState),n[0]=this.inputState.keysPressed,n[1]=this.inputState.keysHeld,this.exports.tick(t)}}location.protocol==="file:"&&alert("This game cannot run from a local file:// context; use an online version or test from localhost instead.");isSecureContext||alert("This game cannot run in a non-secure context.");navigator.gpu||alert("WebGPU is not supported by your browser; try playing this on an alternate or more modern browser.");const $=await navigator.gpu.requestAdapter();$||alert("WebGPU is supported, but no compatible GPU was found.");const Y=["text1","text2","text3","text4","logicText","renderText"];document.addEventListener("wheel",function(i){i.ctrlKey},{passive:!1});let c=await k.create();c.getTimeoutLength=function(){return++j%3==2?16:17};c.getFrameRate=function(){return 60};c.baseSpeed=1;let x=performance.now(),b=0,j=0;globalThis.engine=c;console.log("Engine initialized successfully:",c),console.log("Exported functions and memory:",c.exports);window.addEventListener("blur",()=>x=1/0);const E=Array(60).fill(0),w=Array(60).fill(0),T=Array(60).fill(0);c.isDebug=!!c.exports.isDebug();c.renderLoop=function(i){let t=performance.now(),n=x===1/0?0:t-x,r=Math.min(n*c.getFrameRate()/1e3,c.getFrameRate());if(c.logicLoop(Math.floor(b+r)),b=(b+r)%1,c.isDebug){w.shift(),w.push(n),T.shift(),T.push(c.prepare_visible_chunks_time);const s=Math.max.apply(null,w),o=Math.max.apply(null,T);let u="#cccccc";s>55?u="#e83769":s>30?u="#f39c19":s>20&&(u="#f7ce1a");const l=document.getElementById("renderText");l.textContent=`Time since last render/prepare_visible_chunks time: ${n.toFixed(1)}ms, ${c.prepare_visible_chunks_time.toFixed(1)}ms
-Worst (past 60 frames): ${s.toFixed(1)}ms, ${o.toFixed(1)}ms`,l.style.fontWeight=s>40?s>55?700:600:500,l.style.color=u}let e=Math.min(b-1,0);c.renderFrame(e,x),requestAnimationFrame(c.renderLoop)};c.logicLoop=function(i){const t=performance.now();for(let r=0;r<i;r++)c.tick(60/c.getFrameRate()*c.baseSpeed);x=performance.now();let n=x-t;if(c.isDebug){E.shift(),E.push(n);const r=Math.max.apply(null,E);let e="#cccccc";r>30?e="#e83769":r>15?e="#f39c19":r>10&&(e="#f7ce1a");const s=document.getElementById("logicText");s.textContent=`Logic diff: ${n.toFixed(1)}ms for ${i} tick${i==1?"":"s"}
+`,Z=""+new URL("main-BOvwKVLs.png",import.meta.url).href;async function X(i,t){const n=await navigator.gpu.requestAdapter({powerPreference:t&&t.highPerformance?"high-performance":"low-power"});if(!n)throw new DOMException("Couldn't request WebGPU adapter.","NotSupportedError");const r=await n.requestDevice();let e=null;if(r.addEventListener("uncapturederror",d=>{const g=d.error;if(e===null)if(globalThis.reportError)reportError(g);else throw g;else if(!e.destroyed){e.destroy("fatal WebGPU error",g);return}}),r.lost.then(d=>console.error(`WebGPU Device lost: ${d.message}`)),i===void 0){if(i=document.getElementsByTagName("canvas")[0],i===void 0)throw Error("No canvas element or ID string provided, and no canvas was not found in the HTML.")}else if(typeof i=="string"){const d=document.getElementById(i);if(!(d instanceof HTMLCanvasElement))throw Error(`Element with ID "${i}" is not a canvas element.`);i=d}const s=i.getContext("webgpu");if(!s)throw Error("Could not get WebGPU context from canvas.");const o=r.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm";s.configure({device:r,format:o,alphaMode:"opaque"});const u=await WebAssembly.instantiateStreaming(fetch(W),{env:{js_message:(d,g,y)=>{let h=new TextDecoder().decode(new Uint8Array(_.buffer,Number(d),Number(g)));h.charAt(0)!=="]"?h="["+(e?.LOGGING_PREFIX||"")+h:h=h.slice(1),y===1?console.info("%c"+h,"font-weight: 600"):[console.log,console.info,console.warn,console.error][y](h)},js_write_text:(d,g,y)=>{const h=new Uint8Array(_.buffer,Number(g),Number(y)),M=new TextDecoder().decode(h),F=document.getElementById(`text${d+1}`);F.textContent=M},js_get_time:()=>performance.now(),js_handle_visible_chunks:d=>e?.handleVisibleChunks(d)}}),l=u.instance.exports,_=l.memory,p=r.createShaderModule({label:"Main shader",code:K.replace("/* TILES_PER_ROW */ 1 /* TILES_PER_ROW */",""+l.get_tiles_per_row()).replace("/* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */",""+l.get_tiles_per_column()).replace("/* STONE_START */ 1 /* STONE_START */",""+l.get_stone_start()).replace("/* GEM_START */ 1 /* GEM_START */",""+l.get_ore_start()).replace("/* GEM_MASK_START */ 1 /* GEM_MASK_START */",""+l.get_gem_mask_start()).replace("/* DECOR_START */ 1 /* DECOR_START */",""+l.get_decor_start())}),f=r.createBindGroupLayout({label:"Main bind group layout",entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform",hasDynamicOffset:!0}},{binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}},{binding:2,visibility:GPUShaderStage.FRAGMENT,texture:{}},{binding:3,visibility:GPUShaderStage.FRAGMENT,sampler:{}}]}),m=r.createPipelineLayout({label:"Shared Pipeline Layout",bindGroupLayouts:[f]}),B=r.createRenderPipeline({label:"Tilemap pipeline",layout:m,vertex:{module:p,entryPoint:"vs_main"},fragment:{module:p,entryPoint:"fs_main",targets:[{format:o,blend:{color:{srcFactor:"src-alpha",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},primitive:{topology:"triangle-list",cullMode:"none"}}),L=r.createRenderPipeline({label:"Background pipeline",layout:m,vertex:{module:p,entryPoint:"vs_background"},fragment:{module:p,entryPoint:"fs_background",targets:[{format:o}]},primitive:{topology:"triangle-list"}});e=new k(i,n,r,s,u,B,L),e.exports.setup(),await e.setSeed(z(100)),e.exports.init();const D=new ResizeObserver(e.onResize);e.resizeObserver=D,e.updateCanvasStyle();try{e.resizeObserver.observe(i,{box:"device-pixel-content-box"})}catch{console.log("ResizeObserver property device-pixel-content-box not supported, falling back to content-box."),e.resizeObserver.observe(i,{box:"content-box"})}e.onResize([{contentRect:{width:i.clientWidth,height:i.clientHeight}}]);const O=await k.loadTexture(r,Z),G=r.createSampler({magFilter:"nearest",minFilter:"nearest",addressModeU:"clamp-to-edge",addressModeV:"clamp-to-edge"});e.atlasTextureView=O.createView(),e.pixelSampler=G;const U=r.createBuffer({label:"SceneUniforms",size:256*R,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});return e.uniformBuffer=U,e}var A=(i=>(i[i.Uint8=8]="Uint8",i[i.Uint16=16]="Uint16",i[i.Uint32=32]="Uint32",i[i.Uint64=64]="Uint64",i[i.Int8=-8]="Int8",i[i.Int16=-16]="Int16",i[i.Int32=-32]="Int32",i[i.Int64=-64]="Int64",i[i.Uint8Clamped=-80]="Uint8Clamped",i[i.Float32=-320]="Float32",i[i.Float64=-640]="Float64",i))(A||{});globalThis.WasmTypeCode=A;const I={8:Uint8Array,16:Uint16Array,32:Uint32Array,64:BigUint64Array,[-8]:Int8Array,[-16]:Int16Array,[-32]:Int32Array,[-64]:BigInt64Array,[-80]:Uint8ClampedArray,[-320]:Float32Array,[-640]:Float64Array},R=4;class k{engineModule;exports;memory;LAYOUT_PTR;GAME_STATE_PTR;canvas;adapter;device;context;bindGroups=Array(R);uniformBuffer;tileBuffers=Array(R);tileBufferDirty=!1;atlasTextureView;pixelSampler;renderPipeline;bgPipeline;renderPass=null;currentEncoder=null;currentTextureView=null;renderCallId=0;sceneDataBuffer=new ArrayBuffer(256);sceneDataF32=new Float32Array(this.sceneDataBuffer);sceneDataU32=new Uint32Array(this.sceneDataBuffer);inputState;resizeObserver;forceAspectRatio=!0;previousForceAspectRatio=null;tileMapWidth;tileMapHeight;prepare_visible_chunks_time=0;isVisibleDataNew=!0;wireframeOpacity=0;startTime=performance.now();seed="";destroyed=!1;destroyedError=null;encoder=new TextEncoder;decoder=new TextDecoder;LOGGING_PREFIX="";constructor(t,n,r,e,s,o,u){this.canvas=t,this.adapter=n,this.device=r,this.context=e,this.engineModule=s,this.renderPipeline=o,this.bgPipeline=u,this.exports=s.instance.exports,this.memory=s.instance.exports.memory,this.LAYOUT_PTR=Number(this.exports.get_memory_layout_ptr()),this.GAME_STATE_PTR=Number(this.getScratchView()[3]),this.inputState=C()}static async create(t,n){return await X(t,n)}destroy(t="unknown reason",n=null){this.resizeObserver.disconnect(),this.destroyed=t,this.destroyedError=n}static async loadTexture(t,n){const e=await(await fetch(n)).blob(),s=await createImageBitmap(e),o=t.createTexture({label:`Texture from  ${n}`,size:[s.width,s.height],format:t.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm",usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});return t.queue.copyExternalImageToTexture({source:s},{texture:o},[s.width,s.height]),o}uploadVisibleChunks(t=1){const n=performance.now();this.exports.prepare_visible_chunks(t,this.canvas.width,this.canvas.height),this.prepare_visible_chunks_time=performance.now()-n}handleVisibleChunks(t){if(!this.currentEncoder||!this.currentTextureView||!this.renderPass)return;const n=this.getScratchPtr();if(this.getScratchLen()===0)return;const e=Number(this.getScratchProperty(0)),s=Number(this.getScratchProperty(1)),o=e*s*2;this.tileMapWidth=e,this.tileMapHeight=s;const u=new Uint32Array(this.memory.buffer,n,o),l=o*4;this.recreateBufferAndBindGroup(l),this.renderPass.setPipeline(this.renderPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId*256]),this.renderPass.setViewport(0,0,this.canvas.width,this.canvas.height,0,1),this.setSceneData(t,e,s),this.device.queue.writeBuffer(this.tileBuffers[this.renderCallId],0,u);const _=e*s+1;this.renderPass.draw(6,_),this.renderCallId++}setSceneData(t,n,r){const e=this.getScratchProperty(2,-640),s=this.getScratchProperty(3,-640),o=this.getScratchProperty(4,-640),u=this.getScratchProperty(5,-640),l=this.getScratchProperty(6,-640);this.sceneDataF32[0]=e,this.sceneDataF32[1]=s,this.sceneDataF32[2]=this.canvas.width,this.sceneDataF32[3]=this.canvas.height;const _=6e4,f=(performance.now()-this.startTime)%(_*2);let m;f<_?m=f/1e3:m=(_-(f-_))/1e3,this.sceneDataF32[4]=m,this.sceneDataF32[5]=o,this.sceneDataF32[6]=o<.25?0:this.wireframeOpacity,this.sceneDataF32[7]=t,this.sceneDataF32[8]=u,this.sceneDataF32[9]=l,this.sceneDataU32[10]=n,this.sceneDataU32[11]=r,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32)}recreateBufferAndBindGroup(t){const n=this.renderCallId;(!this.tileBuffers[n]||this.tileBuffers[n].size<t)&&(this.tileBuffers[n]=this.device.createBuffer({label:`Tile grid slot ${n}`,size:t,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),this.bindGroups[n]=this.device.createBindGroup({label:`Bind group slot ${n}`,layout:this.renderPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniformBuffer,offset:0,size:256}},{binding:1,resource:{buffer:this.tileBuffers[n]}},{binding:2,resource:this.atlasTextureView},{binding:3,resource:this.pixelSampler}]}))}getWASMMemoryMB(){return this.memory.buffer.byteLength/1024/1024}getGameView(t,n=0,r){return new I[t](this.memory.buffer,this.GAME_STATE_PTR+n,r)}getRawView(t,n,r){return new I[t](this.memory.buffer,n,r)}_tempScratchViewU64=null;_tempScratchViewF64=null;getScratchView(){return(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24)),this._tempScratchViewU64}getScratchPtr(){return Number(this.getScratchView()[0])}getScratchLen(){return Number(this.getScratchView()[1])}setScratchLen(t){this.getScratchView()[1]=BigInt(t)}getScratchCapacity(){return Number(this.getScratchView()[2])}getScratchProperty(t,n=64){(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24));let r=this._tempScratchViewU64;return n==-640&&((this._tempScratchViewF64===null||this._tempScratchViewF64.buffer!==this.memory.buffer)&&(this._tempScratchViewF64=new Float64Array(r.buffer,r.byteOffset,r.length)),r=this._tempScratchViewF64),Number(r[t+4])}readStr(t=this.getScratchPtr(),n=this.getScratchLen()){const r=new Uint8Array(this.memory.buffer,t,n);return this.decoder.decode(r)}writeStr(t,n=!0){const r=t.length;if(r===0)return null;n&&this.setScratchLen(0);const e=this.exports.scratch_alloc(r);if(e===0n)return null;const s=new Uint8Array(this.memory.buffer,Number(e),r);if(this.encoder.encodeInto(t,s).read<r)throw new RangeError("String truncated with non-ASCII characters detected.");return Number(e)}async setSeed(t){this.seed=t,await q(t,this.getGameView(64,S.seed,8))}updateCanvasStyle(){this.forceAspectRatio!==this.previousForceAspectRatio&&(this.previousForceAspectRatio=this.forceAspectRatio,this.forceAspectRatio?(this.canvas.style.maxWidth=`calc(100vh*${16/9})`,this.canvas.style.maxHeight=`calc(100vw*${9/16})`):(this.canvas.style.maxWidth="none",this.canvas.style.maxHeight="none"))}onResize=t=>{const n=t[0];let r,e;if(n.devicePixelContentBoxSize)r=n.devicePixelContentBoxSize[0].inlineSize,e=n.devicePixelContentBoxSize[0].blockSize;else if(n.contentBoxSize){const s=n.contentBoxSize[0].inlineSize,o=n.contentBoxSize[0].blockSize;r=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}else{const s=n.contentRect.width,o=n.contentRect.height;r=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}(this.canvas.width!==r||this.canvas.height!==e)&&(this.canvas.width=r,this.canvas.height=e)};renderFrame(t,n){if(this.renderCallId=0,this.destroyed!==!1)return;this.updateCanvasStyle(),this.currentEncoder=this.device.createCommandEncoder(),this.currentTextureView=this.context.getCurrentTexture().createView();const r=this.currentEncoder.beginRenderPass({colorAttachments:[{view:this.currentTextureView,loadOp:"clear",clearValue:{r:0,g:0,b:0,a:1},storeOp:"store"}]});this.renderPass=r,this.recreateBufferAndBindGroup(1024),this.sceneDataF32[7]=1,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32),this.renderPass.setPipeline(this.bgPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId++*256]),this.renderPass.draw(3),this.uploadVisibleChunks(t),this.renderPass.end(),this.device.queue.submit([this.currentEncoder.finish()]),this.currentEncoder=null,this.currentTextureView=null}tick(t){const n=this.getGameView(32,S.keys_pressed_mask,2);H(this.inputState),n[0]=this.inputState.keysPressed,n[1]=this.inputState.keysHeld,this.exports.tick(t)}}location.protocol==="file:"&&alert("This game cannot run from a local file:// context; use an online version or test from localhost instead.");isSecureContext||alert("This game cannot run in a non-secure context.");navigator.gpu||alert("WebGPU is not supported by your browser; try playing this on an alternate or more modern browser.");const $=await navigator.gpu.requestAdapter();$||alert("WebGPU is supported, but no compatible GPU was found.");const j=["text1","text2","text3","text4","logicText","renderText"];document.addEventListener("wheel",function(i){i.ctrlKey},{passive:!1});let c=await k.create();c.getTimeoutLength=function(){return++Y%3==2?16:17};c.getFrameRate=function(){return 60};c.baseSpeed=1;let x=performance.now(),v=0,Y=0;globalThis.engine=c;console.log("Engine initialized successfully:",c),console.log("Exported functions and memory:",c.exports);window.addEventListener("blur",()=>x=1/0);const E=Array(60).fill(0),w=Array(60).fill(0),T=Array(60).fill(0);c.isDebug=!!c.exports.isDebug();c.renderLoop=function(i){let t=performance.now(),n=x===1/0?0:t-x,r=Math.min(n*c.getFrameRate()/1e3,c.getFrameRate());if(c.logicLoop(Math.floor(v+r)),v=(v+r)%1,c.isDebug){w.shift(),w.push(n),T.shift(),T.push(c.prepare_visible_chunks_time);const s=Math.max.apply(null,w),o=Math.max.apply(null,T);let u="#cccccc";s>55?u="#e83769":s>30?u="#f39c19":s>20&&(u="#f7ce1a");const l=document.getElementById("renderText");l.textContent=`Time since last render/prepare_visible_chunks time: ${n.toFixed(1)}ms, ${c.prepare_visible_chunks_time.toFixed(1)}ms
+Worst (past 60 frames): ${s.toFixed(1)}ms, ${o.toFixed(1)}ms`,l.style.fontWeight=s>40?s>55?700:600:500,l.style.color=u}let e=Math.min(v-1,0);c.renderFrame(e,x),requestAnimationFrame(c.renderLoop)};c.logicLoop=function(i){const t=performance.now();for(let r=0;r<i;r++)c.tick(60/c.getFrameRate()*c.baseSpeed);x=performance.now();let n=x-t;if(c.isDebug){E.shift(),E.push(n);const r=Math.max.apply(null,E);let e="#cccccc";r>30?e="#e83769":r>15?e="#f39c19":r>10&&(e="#f7ce1a");const s=document.getElementById("logicText");s.textContent=`Logic diff: ${n.toFixed(1)}ms for ${i} tick${i==1?"":"s"}
 Worst (past 60 frames): ${r.toFixed(1)}ms
-`,s.style.fontWeight=r>20?r>40?700:600:500,s.style.color=e}};globalThis.Zig={KeyBits:a,game_state_offsets:S};c.isDebug?(console.log("Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs."),Y.forEach(i=>{document.getElementById(i).style.display="inline"})):console.log('Note: engine is in verbose mode, but Zig code is not in -Doptimize=Debug; run just "zig build" to enable additional testing features and safety checks if possible.');setTimeout(function(){c.renderLoop(0)},17);
+`,s.style.fontWeight=r>20?r>40?700:600:500,s.style.color=e}};globalThis.Zig={KeyBits:a,game_state_offsets:S};c.isDebug?(console.log("Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs."),j.forEach(i=>{document.getElementById(i).style.display="inline"})):console.log('Note: engine is in verbose mode, but Zig code is not in -Doptimize=Debug; run just "zig build" to enable additional testing features and safety checks if possible.');setTimeout(function(){c.renderLoop(0)},17);

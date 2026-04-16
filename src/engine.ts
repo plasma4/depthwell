@@ -275,7 +275,6 @@ export class GameEngine {
         // Draw all tiles as instances. Draws tiles as quads so we have vertexCount as 6.
         const instanceCount = tileDataWidth * tileDataHeight + 1; // 1 extra instance to draw the player
         this.renderPass.draw(6, instanceCount);
-        this.isVisibleDataNew = false;
         this.renderCallId++;
     }
 
@@ -401,22 +400,24 @@ export class GameEngine {
         return new WasmTypeMap[typeCode](this.memory.buffer, ptr, size) as any;
     }
 
-    /** Internal property for a temporary access of the scratch view. Value 0 is the pointer, value 1 is the length, value 2 is the max capacity, value 3 is pointer to the GameState, and values 4-7 are custom properties (as WASM can only return 1 value, this provides 4 extra temporary "slots" to return things). */
-    private _tempScratchView: BigUint64Array | null = null;
+    /** Internal property for a temporary access of the scratch view (unsigned ints). Value 0 is the pointer, value 1 is the length, value 2 is the max capacity, value 3 is pointer to the GameState, and values 4-7 are custom properties (as WASM can only return 1 value, this provides 4 extra temporary "slots" to return things). */
+    private _tempScratchViewU64: BigUint64Array | null = null;
+    /** Internal property for a temporary access of the scratch view (floats). Value 0 is the pointer, value 1 is the length, value 2 is the max capacity, value 3 is pointer to the GameState, and values 4-7 are custom properties (as WASM can only return 1 value, this provides 4 extra temporary "slots" to return things). */
+    private _tempScratchViewF64: Float64Array | null = null;
     /** Returns 8 values in the scratch buffer; (zero-indexed) value 0 is the pointer, value 1 is the length, value 2 is the max capacity, and values 3-7 are custom properties when necessary. */
     public getScratchView(): BigUint64Array {
         // Check if we need to (re)create the view
         if (
-            this._tempScratchView === null ||
-            this._tempScratchView.buffer !== this.memory.buffer // old view due to memory growth
+            this._tempScratchViewU64 === null ||
+            this._tempScratchViewU64.buffer !== this.memory.buffer // old view due to memory growth
         ) {
-            this._tempScratchView = new BigUint64Array(
+            this._tempScratchViewU64 = new BigUint64Array(
                 this.memory.buffer,
                 this.LAYOUT_PTR,
                 24,
             );
         }
-        return this._tempScratchView;
+        return this._tempScratchViewU64;
     }
 
     /**
@@ -457,19 +458,29 @@ export class GameEngine {
             | WasmTypeCode.Float64 = WasmTypeCode.Uint64,
     ): number {
         if (
-            this._tempScratchView === null ||
-            this._tempScratchView.buffer !== this.memory.buffer // old view due to memory growth
+            this._tempScratchViewU64 === null ||
+            this._tempScratchViewU64.buffer !== this.memory.buffer // old view due to memory growth
         ) {
-            this._tempScratchView = new BigUint64Array(
+            this._tempScratchViewU64 = new BigUint64Array(
                 this.memory.buffer,
                 this.LAYOUT_PTR,
                 24,
             );
         }
 
-        let view: BigUint64Array | Float64Array = this._tempScratchView;
+        let view: BigUint64Array | Float64Array = this._tempScratchViewU64;
         if (asType == WasmTypeCode.Float64) {
-            view = new Float64Array(view.buffer, view.byteOffset, view.length);
+            if (
+                this._tempScratchViewF64 === null ||
+                this._tempScratchViewF64.buffer !== this.memory.buffer // old view due to memory growth
+            ) {
+                this._tempScratchViewF64 = new Float64Array(
+                    view.buffer,
+                    view.byteOffset,
+                    view.length,
+                );
+            }
+            view = this._tempScratchViewF64;
         }
         return Number(view[index + 4]);
     }
@@ -581,12 +592,6 @@ export class GameEngine {
         if (this.canvas.width !== w || this.canvas.height !== h) {
             this.canvas.width = w;
             this.canvas.height = h;
-            // if (this.depthTexture) this.depthTexture.destroy();
-            // this.depthTexture = this.device.createTexture({
-            //     size: [w, h],
-            //     format: "depth24plus",
-            //     usage: GPUTextureUsage.RENDER_ATTACHMENT,
-            // });
         }
     };
 
@@ -600,27 +605,16 @@ export class GameEngine {
         // Initialize the encoder and view for this specific frame
         this.currentEncoder = this.device.createCommandEncoder();
         this.currentTextureView = this.context.getCurrentTexture().createView();
-        // this.depthTextureView = this.depthTexture.createView(); // Create view for this frame
-
-        // Clear if this is the FIRST time data is being rendered this frame. Otherwise, keep.
-        // const loadOp: GPULoadOp = this.isVisibleDataNew ? "clear" : "load";
-        const loadOp: GPULoadOp = "load";
 
         const renderPass = this.currentEncoder.beginRenderPass({
             colorAttachments: [
                 {
                     view: this.currentTextureView,
-                    loadOp: loadOp,
+                    loadOp: "clear",
                     clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
                     storeOp: "store",
                 },
             ],
-            // depthStencilAttachment: {
-            //     view: this.depthTextureView!,
-            //     depthClearValue: 1.0,
-            //     depthLoadOp: "clear",
-            //     depthStoreOp: "store",
-            // },
         });
         this.renderPass = renderPass;
 
