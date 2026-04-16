@@ -329,7 +329,7 @@ That's why the code tries as hard as possible to only generate 2 chunks per fram
 
 The algorithm does this each frame (with a budget of 2, meaning 2 chunks):
 
-1. The player's current velocity creates a "leading edge." Smart chunk loading here prioritizes generating chunks in the direction the player is currently heading.
+1. The player's current velocity creates a "leading edge." Smart chunk loading here prioritizes generating chunks in the direction the player is currently heading. This is done by not considering diagonals, and only considering cardinal directions.
 2. Budget is spent on a 68-chunk ring outside the simulation window (based on the leading edge from the first part), using a persistent cursor.
 3. Finally, the `ChunkCache` provides a "second chance." Using a clock algorithm, the cache differentiates between chunks the player is moving toward and chunks the player has left behind, evicting the latter to keep the memory footprint stable.
 

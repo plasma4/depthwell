@@ -200,7 +200,7 @@ engine.renderLoop = function (_t: number) {
         engine.getFrameRate(),
     );
 
-    engine.logicLoop(Math.floor(accumulator + newTicks));
+    engine.logicLoop(Math.max(Math.floor(accumulator + newTicks), 1));
     accumulator = (accumulator + newTicks) % 1; // calculate new fractional accumulation of ticks
 
     if (engine.isDebug) {
@@ -242,11 +242,9 @@ Worst (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixe
 };
 
 engine.logicLoop = function (ticks: number) {
-    // Interestingly enough, as ticks becomes large enough, the "imprecision" of the camera (16 possible subpixel positions) results in the player panning being all weird! This only happens past 1000 logical FPS though.
+    // Interestingly enough, as ticks becomes large enough, the "imprecision" of the camera (16 possible subpixel positions) results in the player panning being all weird! This only happens past 1000 logical FPS though so it's fine.
     const startTime = performance.now();
-    for (let i = 0; i < ticks; i++)
-        engine.tick((60 / engine.getFrameRate()) * engine.baseSpeed);
-
+    engine.tick((60 / engine.getFrameRate()) * engine.baseSpeed, ticks); // ticks already capped in renderLoop
     time = performance.now();
     let delta = time - startTime;
 

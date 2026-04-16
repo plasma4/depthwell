@@ -1,11 +1,12 @@
 //! Defines the architecture of the fractal world, which is a segmented fractal coordinate system that uses a quad-cache for coordinates and corresponding seeds.
 const std = @import("std");
 const utils = @import("utils.zig");
+const types = @import("types.zig");
 const memory = @import("memory.zig");
 const logger = @import("logger.zig");
-const types = @import("types.zig");
 const seeding = @import("seeding.zig");
 const procedural = @import("procedural.zig");
+const player = @import("player.zig");
 
 const v2i64 = memory.v2i64;
 const v2u64 = memory.v2u64;
@@ -175,6 +176,7 @@ pub const ModKey = extern struct {
         // XORing spatial data preserves entropy!
         key.seed[0] ^= cx;
         key.seed[1] ^= cy;
+        key.seed[2] ^= memory.game.depth;
         return key;
     }
 };
@@ -815,9 +817,10 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     memory.game.depth += 1;
     const depth = memory.game.depth;
 
-    // Mask the last 12 bits (0-4095)
     memory.game.player_velocity = .{ 0, 0 };
+    player.subpixel_accum = .{ 0.0, 0.0 };
 
+    // Mask the last 12 bits (0-4095)
     const player_mask: i64 = SPAN * SPAN * SPAN - 1;
     const new_pos: memory.v2i64 = .{
         (memory.game.player_pos[0] << SPAN_LOG2) & player_mask,
@@ -906,7 +909,7 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         );
     }
 
-    // update the prefix path (which is a ArrayList)
+    // update the prefix path (which is an ArrayList)
     if ((depth - (SPAN + 1)) % SPAN == 0) {
         quad_cache.left_path.append(world_arena.allocator(), left_cell_x) catch @panic("quad-cache append failed");
         quad_cache.top_path.append(world_arena.allocator(), top_cell_y) catch @panic("quad-cache append failed");
