@@ -17,6 +17,7 @@ const keyMap: Record<string, number> = {
     Equal: Zig.KeyBits.plus,
     KeyZ: Zig.KeyBits.zoom,
     KeyQ: Zig.KeyBits.drop,
+    Space: Zig.KeyBits.up,
     ArrowUp: Zig.KeyBits.up,
     KeyW: Zig.KeyBits.up,
     ArrowLeft: Zig.KeyBits.left,

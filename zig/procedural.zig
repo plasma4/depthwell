@@ -44,6 +44,9 @@ const BaseTerrainData = struct {
 pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
     if (USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
+    // uncomment out for testing small islands:
+    // if (density < 0.85) return .none;
+
     if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
         return .strange_stone;
     } else if (density <= 0.32 or density >= 0.9) {

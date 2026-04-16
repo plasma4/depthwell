@@ -87,8 +87,8 @@ pub const ColorRGBA = extern union {
         const r: i32 = self.channels.r;
         const g: i32 = self.channels.g;
         const b: i32 = self.channels.b;
-        const max_c = @max(r, @max(g, b));
-        const min_c = @min(r, @min(g, b));
+        const max_c = @max(r, g, b);
+        const min_c = @min(r, g, b);
         const delta = max_c - min_c;
         if (delta == 0) return 0;
 

@@ -5,6 +5,7 @@ const memory = @import("memory.zig");
 const logger = @import("logger.zig");
 const seeding = @import("seeding.zig");
 const world = @import("world.zig");
+const player = @import("player.zig");
 
 const SPAN = memory.SPAN;
 const SPAN_SQ = memory.SPAN_SQ;
@@ -64,10 +65,92 @@ pub fn init() void {
         );
     }
 
+    if (SET_PLAYER_SPAWN_RANDOMLY) {
+        find_safe_spawn();
+        // world.SimBuffer.sync(memory.game.get_player_coord(), .{ 16, 16 });
+    }
+
     if (!alreadyStarted) {
         logger.log(@src(), "Hello from Zig!", .{});
         alreadyStarted = true;
     }
+}
+
+/// Searches for a safe grounded spawn point using a spiral pattern.
+fn find_safe_spawn() void {
+    const game = &memory.game;
+    var current_coord = game.get_player_coord();
+
+    // Cache the current chunk pointers to avoid thousands of linear scans
+    var cached_chunk = world.get_chunk(current_coord);
+    var cached_coord = current_coord;
+
+    var bx: i16 = @intCast(game.get_block_x_in_chunk());
+    var by: i16 = @intCast(game.get_block_y_in_chunk());
+
+    var side_len: i32 = 1;
+    var dx: i32 = 1;
+    var dy: i32 = 0;
+    var segment_passed: i32 = 0;
+
+    // up to 1 MILLION checks, in case there's some really odd issue
+    for (0..1000000) |_| {
+        // Only update chunk pointer if coordinates actually changed
+        if (!current_coord.eql(cached_coord)) {
+            cached_chunk = world.get_chunk(current_coord);
+            cached_coord = current_coord;
+        }
+
+        const block = cached_chunk.blocks[@as(usize, @intCast(by)) * SPAN + @as(usize, @intCast(bx))];
+
+        if (block.is_empty()) {
+            // Resolve block below. Most likely same chunk, check bx/by first.
+            var b_chunk = cached_chunk;
+            var bby = by + 1;
+
+            if (bby >= SPAN) {
+                if (current_coord.move_y(1)) |nc| {
+                    // Check if the below-chunk is different from our current cached one
+                    b_chunk = world.get_chunk(nc);
+                    bby = 0;
+                }
+            }
+
+            if (b_chunk.blocks[@as(usize, @intCast(bby)) * SPAN + @as(usize, @intCast(bx))].is_solid()) {
+                game.player_quadrant = current_coord.quadrant;
+                game.player_chunk = current_coord.suffix;
+                game.set_player_pos(.{ @as(i64, bx) * SPAN_SQ + 128, @as(i64, by) * SPAN_SQ + 96 });
+                game.set_camera_pos(game.player_pos);
+                return;
+            }
+        }
+
+        bx += @intCast(dx);
+        by += @intCast(dy);
+
+        // Chunk-wrapping logic
+        if (bx < 0 or bx >= SPAN or by < 0 or by >= SPAN) {
+            const shift_x = @divFloor(@as(i32, bx), SPAN);
+            const shift_y = @divFloor(@as(i32, by), SPAN);
+            if (current_coord.move(.{ shift_x, shift_y })) |nc| {
+                current_coord = nc;
+                bx = @intCast(@mod(bx, SPAN));
+                by = @intCast(@mod(by, SPAN));
+            } else segment_passed = side_len;
+        }
+
+        segment_passed += 1;
+        if (segment_passed >= side_len) {
+            segment_passed = 0;
+            const temp = dx;
+            dx = -dy;
+            dy = temp;
+            if (dy == 0) side_len += 1;
+        }
+    }
+
+    // fallback
+    game.set_player_pos(.{ 2048, 2048 });
 }
 
 /// Processes data for renderFrame in TypeScript.
@@ -117,7 +200,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
     const wb = cw * SPAN;
     const hb = ch * SPAN;
 
-    memory.scratch_reset();
+    memory.scratch_reset(); // scratch allocator always needs to be reset!
     const out = memory.scratch_alloc_slice(memory.Block, wb * hb) orelse return;
 
     const world_limit: u64 = world.max_possible_suffix;
@@ -207,8 +290,18 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
             //     suffix_array_x,
             //     suffix_array_y,
             // });
-            logger.write_once(2, .{ "{mh}Left quadrant path", qc.left_path, "{mh}X suffix array", suffix_array_x });
-            logger.write_once(3, .{ "{mh}Top quadrant path", qc.top_path, "{mh}Y suffix array", suffix_array_y });
+            logger.write_once(2, .{
+                "{mh}Left quadrant path",
+                qc.left_path,
+                "{mh}X suffix array",
+                suffix_array_x,
+            });
+            logger.write_once(3, .{
+                "{mh}Top quadrant path",
+                qc.top_path,
+                "{mh}Y suffix array",
+                suffix_array_y,
+            });
 
             const quadrant_name = ([_][]const u8{
                 "top left quadrant (0)",
@@ -216,7 +309,12 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
                 "bottom left quadrant (2)",
                 "bottom right quadrant (3)",
             })[game.player_quadrant];
-            logger.write_once(0, .{ "{mh}Quadrant name", quadrant_name, "{mh}Number of digits in the current (hypothetical) width of the game world", @as(u64, @intFromFloat(@floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1))))) + 1 });
+            logger.write_once(0, .{
+                "{mh}Quadrant name",
+                quadrant_name,
+                "{mh}Number of digits in the current (hypothetical) width of the game world",
+                @as(u64, @intFromFloat(@floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1))))) + 1,
+            });
         } else {
             logger.write_once(0, .{
                 "{h}Chunk active suffix X/Y",
@@ -226,9 +324,10 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
         }
 
         logger.write_once(1, .{
-            "{h}Depth and position in chunk",
-            game.depth,
-            @as(memory.v2f64, @floatFromInt(game.player_pos)) / memory.v2f64{ SPAN_SQ, SPAN_SQ },
+            "{mh}Velocity",
+            game.player_velocity,
+            "{mh}Depth/position",
+            .{ game.depth, @as(memory.v2f64, @floatFromInt(game.player_pos)) / memory.v2f64{ SPAN_SQ, SPAN_SQ } },
         });
 
         // logger.clear(1);

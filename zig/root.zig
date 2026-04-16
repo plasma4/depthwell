@@ -1,4 +1,6 @@
-//! Root file. Imports main.zig and handles exporting functions to WASM. All functions here (excluding internal ones like panic) should be pub export to expose functions to generate_types.zig and WASM (with no other exports within other Zig files).
+//! Root file. Imports main.zig and handles exporting functions to WASM.
+//! All functions here (excluding internal ones like panic) should be `pub` to expose functions to `generate_types.zig`,
+//! and `extern` for WASM (with no other exported functions within other Zig files).
 const std = @import("std");
 const builtin = @import("builtin");
 const main = @import("main.zig");
@@ -25,10 +27,11 @@ pub export fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canv
 }
 
 pub export fn get_tiles_per_row() u32 {
-    return world.max_sprite_value + 1; // the length is the highest value + 1
+    // return world.max_sprite_value + 1; // the length is the highest value + 1
+    return 10;
 }
 pub export fn get_tiles_per_column() u32 {
-    return 1;
+    return (world.max_sprite_value + 1 + 9) / 10; // act as a ceil
 }
 pub export fn get_stone_start() u32 {
     return @intCast(@intFromEnum(world.Sprite.stone));
@@ -60,6 +63,10 @@ pub export fn tick(speed: f64) void {
     memory.game.frame +%= 1;
 }
 
+pub export fn mix_seed(number: u64) u64 {
+    return seeding.mix_base_seed(&memory.game.seed, number)[0];
+}
+
 pub export fn wasm_seed_from_string() void {
     seeding.wasm_seed_from_string(memory.scratch_buffer.ptr, memory.mem.scratch_len, &memory.game.seed);
 }
@@ -89,16 +96,16 @@ pub export fn isDebug() bool {
 // Import debugging API if optimization level is Debug.
 comptime {
     _ = if (in_debug_mode) struct {
-        export fn test_logs() void {
+        pub export fn test_logs() void {
             logger.test_logs(true);
         }
 
-        export fn test_scratch_allocation() void {
+        pub export fn test_scratch_allocation() void {
             memory.run_scratch_allocation_tests();
         }
 
         // Comment this test out if you lack access to internal files.
-        export fn test_procedural() void {
+        pub export fn test_procedural() void {
             procedural.run_tests();
         }
     };

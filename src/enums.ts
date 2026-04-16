@@ -42,6 +42,7 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly get_gem_mask_start: () => number;
     readonly get_decor_start: () => number;
     readonly tick: (arg0: number) => void;
+    readonly mix_seed: (arg0: bigint) => bigint;
     readonly wasm_seed_from_string: () => void;
     readonly get_memory_layout_ptr: () => bigint;
     readonly scratch_alloc: (arg0: number) => bigint;
