@@ -121,20 +121,20 @@ pub const GameState = extern struct {
 /// The state of the current game, containing pre-allocated properties.
 pub var game: GameState = undefined;
 
-/// Only create a GPA instance if building for native or testing. WASM does not support this.
-var gpa = if (!is_wasm and !builtin.is_test)
-    std.heap.GeneralPurposeAllocator(.{
-        .thread_safe = false,
-    }){}
-else
-    struct {};
+/// Only create an SMP instance if building for native or testing. TODO evaluate if this is a good idea
+// var smp = if (!is_wasm and !builtin.is_test) struct {}
+//     // std.heap.SmpAllocator(.{
+//     //     .thread_safe = false,
+//     // }){}
+//     else struct {};
+var smp = .{};
 
 /// System-level allocator for pages. On WASM, this grows the linear heap. On native, this
 /// requests pages from the OS. Use as a backing for other allocators.
 pub const page_allocator = if (is_wasm) std.heap.wasm_allocator else std.heap.page_allocator;
 
 /// An instance of the general-purpose allocator (or testing allocator when running tests). Use `make_arena()` to create an `ArenaAllocator` around this.
-const allocator = if (is_wasm) std.heap.wasm_allocator else if (builtin.is_test) std.testing.allocator else gpa.allocator();
+const allocator = if (is_wasm) std.heap.wasm_allocator else if (builtin.is_test) std.testing.allocator else std.heap.smp_allocator; //.allocator();
 
 /// Creates an `ArenaAllocator` around either the WASM allocator, testing allocator, or GPA, as necessary. It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
 ///

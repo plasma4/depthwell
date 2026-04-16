@@ -37,6 +37,17 @@ var alreadyStarted = false;
 
 /// Initializes the game.
 pub fn init() void {
+    if (!alreadyStarted) {
+        alreadyStarted = true;
+        logger.log(@src(), "Hello from Zig!", .{});
+        world.quad_cache = .{
+            .path_hashes = undefined,
+            .hash_cache_1 = undefined,
+            .left_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
+            .top_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
+            .ancestor_materials = .{.none} ** 4,
+        };
+    }
     var temp_seed = seeding.ChaCha12.init(seeding.mix_base_seed(&memory.game.seed, 1));
     memory.game.seed2 = .{
         temp_seed.next(),
@@ -68,11 +79,6 @@ pub fn init() void {
     if (SET_PLAYER_SPAWN_RANDOMLY) {
         find_safe_spawn();
         // world.SimBuffer.sync(memory.game.get_player_coord(), .{ 16, 16 });
-    }
-
-    if (!alreadyStarted) {
-        logger.log(@src(), "Hello from Zig!", .{});
-        alreadyStarted = true;
     }
 }
 
@@ -187,10 +193,10 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
     const edge_bottom = interp_cam_y + half_h_sp;
 
     // find the chunk indices that end up covering the screen, with just enough buffer
-    const min_cx: i32 = @intFromFloat(@floor(edge_left / subpixels_per_chunk));
-    const min_cy: i32 = @intFromFloat(@floor(edge_top / subpixels_per_chunk));
-    const max_cx: i32 = @as(i32, @intFromFloat(@floor(edge_right / subpixels_per_chunk))) + 1;
-    const max_cy: i32 = @as(i32, @intFromFloat(@floor(edge_bottom / subpixels_per_chunk))) + 1;
+    const min_cx: i32 = @floor(edge_left / subpixels_per_chunk);
+    const min_cy: i32 = @floor(edge_top / subpixels_per_chunk);
+    const max_cx: i32 = @as(i32, @floor(edge_right / subpixels_per_chunk)) + 1;
+    const max_cy: i32 = @as(i32, @floor(edge_bottom / subpixels_per_chunk)) + 1;
 
     // determine the dimensions of the grid to render (cw/ch is how many chunks wide/high the current render-window is)
     const cw: u32 = @intCast(max_cx - min_cx + 1);
@@ -313,7 +319,7 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
                 "{mh}Quadrant name",
                 quadrant_name,
                 "{mh}Number of digits in the current (hypothetical) width of the game world",
-                @as(u64, @intFromFloat(@floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1))))) + 1,
+                @as(u64, @floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1)))) + 1,
             });
         } else {
             logger.write_once(0, .{

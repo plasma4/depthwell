@@ -483,8 +483,8 @@ pub const ChunkCache = struct {
     }
 };
 
-/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `SegmentedList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `world_arena`.
-fn carry_path(path: *const std.SegmentedList(u64)) std.SegmentedList(u64) {
+/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `ArrayList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `world_arena`.
+fn carry_path(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
     const new_path = path.clone(world_arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
     world_arena.reset(.retain_capacity); // TODO decide
     var carry: u1 = 1;
@@ -522,9 +522,9 @@ pub const QuadCache = struct {
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
-    left_path: std.SegmentedList(u64, 4096),
+    left_path: std.ArrayList(u64),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: std.SegmentedList(u64, 4096),
+    top_path: std.ArrayList(u64),
 
     // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen/zooming in
     most_top: bool = true,
@@ -533,17 +533,17 @@ pub const QuadCache = struct {
     most_right: bool = true,
 
     // /// Returns the X-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16). Call `cleanup_path` afterward.
-    // pub inline fn get_quadrant_path_x(self: *const @This(), quadrant: u2) std.SegmentedList(u64) {
+    // pub inline fn get_quadrant_path_x(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
     //     return if (quadrant % 2 == 0) self.left_path else carry_path(&self.left_path);
     // }
 
     // /// Returns the Y-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16). Call `cleanup_path` afterward.
-    // pub inline fn get_quadrant_path_y(self: *const @This(), quadrant: u2) std.SegmentedList(u64) {
+    // pub inline fn get_quadrant_path_y(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
     //     return if (quadrant < 2) self.top_path else carry_path(&self.top_path);
     // }
 
     // /// Deallocates a temporary instance of a QuadCache path. (THIS DOESN'T WORK WITH ARENA)
-    // pub inline fn cleanup_path(self: *const @This(), path: std.SegmentedList(u64)) void {
+    // pub inline fn cleanup_path(self: *const @This(), path: std.ArrayList(u64)) void {
     //     // Memory comparison is safe because QuadCache will never be de-initialized, top_left_path is always non-empty (so nothing weird), and there's no multicore/async shenanigans here.
     //     if (self.left_path.items.ptr != path.items.ptr and self.top_path.items.ptr != path.items.ptr) {
     //         path.deinit(world_arena);
@@ -582,21 +582,15 @@ pub const QuadCache = struct {
 };
 
 /// The QuadCache that stores information about the 4 quadrants and their seeds.
-pub var quad_cache: QuadCache = .{
-    .path_hashes = undefined,
-    .hash_cache_1 = undefined,
-    .left_path = std.SegmentedList(u64, 4096){},
-    .top_path = std.SegmentedList(u64, 4096){},
-    .ancestor_materials = .{Sprite.none} ** 4,
-};
+pub var quad_cache: QuadCache = undefined;
 
 /// Represents the answer to the question "what is the largest possible suffix value"? 15 at depth 1, 255 at depth 2, capped at 2**64-1 at depth 16 and beyond.
 pub var max_possible_suffix: u64 = 0;
 
-// /// Temporary storage data for calculations. (In order: chunk above, to the left, to the right, below)
-// var edge_flags_data: [9]Chunk = undefined;
+/// `ArenaAllocator` instance used for the world.
+pub var arena = memory.make_arena();
 /// Allocator used for the world.
-var alloc = std.mem.Allocator;
+pub var alloc = arena.allocator();
 
 /// Creates a new instance of a `Chunk` where specified, given a coordinate. Copies over from cache if possible. Does not update edge flags.
 pub fn write_chunk(chunk: *Chunk, coord: Coordinate) void {
@@ -864,7 +858,7 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     // This ensures the player always has at least 1 cell of padding in all directions before hitting the edge of the 2x2 QuadCache.
     // We also clamp both axes for the new cell's coordinates to be between 0 and 30, so the 2x2 window doesn't exceed the parent's 32x32 bounds.
 
-    // The actual implementation applies all this logic by doing a bunch of management work between the "prefix" (big SegmentedList) and "suffix" (coordinate of the player), and updates the quadrant of where the player is as necessary. We want to select the right prefix, and move the player to the correct quadrant and position.
+    // The actual implementation applies all this logic by doing a bunch of management work between the "prefix" (big ArrayList) and "suffix" (coordinate of the player), and updates the quadrant of where the player is as necessary. We want to select the right prefix, and move the player to the correct quadrant and position.
 
     // identify the bits falling off the top (the "oldest" part of the suffix that will get merged into the QC path)
     const shift = 64 - SPAN_LOG2; // 60
@@ -912,15 +906,15 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         );
     }
 
-    // update the prefix path (which is a SegmentedList)
+    // update the prefix path (which is a ArrayList)
     if ((depth - (SPAN + 1)) % SPAN == 0) {
         quad_cache.left_path.append(world_arena.allocator(), left_cell_x) catch @panic("quad-cache append failed");
         quad_cache.top_path.append(world_arena.allocator(), top_cell_y) catch @panic("quad-cache append failed");
     } else {
         // quad_cache.left_path.len - 1 = (depth - 1) / 16 - 1
         const last_path_index: usize = @intCast((depth - 1) / 16 - 1);
-        const l_ptr: *u64 = quad_cache.left_path.at(last_path_index);
-        const t_ptr: *u64 = quad_cache.top_path.at(last_path_index);
+        const l_ptr: *u64 = &quad_cache.left_path.items[last_path_index];
+        const t_ptr: *u64 = &quad_cache.top_path.items[last_path_index];
 
         l_ptr.* = (l_ptr.* << SPAN_LOG2) + left_cell_x;
         t_ptr.* = (t_ptr.* << SPAN_LOG2) + top_cell_y;

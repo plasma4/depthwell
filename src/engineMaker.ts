@@ -256,7 +256,7 @@ export async function create(
     );
     engine.exports.setup();
     await engine.setSeed(Seeding.makeSeed(100));
-    engine.startDelta = Number(exports.mix_seed(60n) % 120000n); // use some random seed mixing value here
+    engine.startDelta = Number(exports.mix_seed(60n) % 120000n); // use a random seed mixing value here
     engine.exports.init();
 
     const resizeObserver = new ResizeObserver(engine.onResize);

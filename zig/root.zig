@@ -63,8 +63,13 @@ pub export fn tick(speed: f64) void {
     memory.game.frame +%= 1;
 }
 
-pub export fn mix_seed(number: u64) u64 {
-    return seeding.mix_base_seed(&memory.game.seed, number)[0];
+pub export fn mix_seed(number: u64) i64 {
+    // IMPORTANT! For some reason, it appears that this returns an `i64` even with `u64` return type.
+    // Therefore, that's the type we return.
+    return @intCast(seeding.mix_base_seed(&memory.game.seed, number)[0] >> 1);
+}
+pub export fn mix_seed_f64(number: u64) f64 { // same thing as mix_seed but f64
+    return @as(f64, @floatFromInt(seeding.mix_base_seed(&memory.game.seed, number)[0] >> 1)) / seeding.POW_2_64;
 }
 
 pub export fn wasm_seed_from_string() void {
