@@ -121,14 +121,6 @@ pub const GameState = extern struct {
 /// The state of the current game, containing pre-allocated properties.
 pub var game: GameState = undefined;
 
-/// Only create an SMP instance if building for native or testing. TODO evaluate if this is a good idea
-// var smp = if (!is_wasm and !builtin.is_test) struct {}
-//     // std.heap.SmpAllocator(.{
-//     //     .thread_safe = false,
-//     // }){}
-//     else struct {};
-var smp = .{};
-
 /// System-level allocator for pages. On WASM, this grows the linear heap. On native, this
 /// requests pages from the OS. Use as a backing for other allocators.
 pub const page_allocator = if (is_wasm) std.heap.wasm_allocator else std.heap.page_allocator;

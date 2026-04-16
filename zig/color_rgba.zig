@@ -14,7 +14,7 @@ pub const ColorRGBA = extern union {
     /// SIMD-ready vector access. Subject to different values based on endianness.
     v: @Vector(4, u8),
     /// Individual RGBA components through color channels.
-    channels: packed struct {
+    channels: packed struct(u32) {
         /// Red component of color (0-255).
         r: u8 = 0,
         /// Green component of color (0-255).

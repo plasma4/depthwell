@@ -108,35 +108,20 @@ comptime {
         pub export fn test_scratch_allocation() void {
             memory.run_scratch_allocation_tests();
         }
-
-        // Comment this test out if you lack access to internal files.
-        pub export fn test_procedural() void {
-            procedural.run_tests();
-        }
     };
 }
 
 /// Custom panic function. Note that you can press the arrow for any warnings/errors to see more detailed information (so you might be able to see details such as $debug.FullPanic((function 'panic')).integerOverflow)
-pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
+fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     const addr = ret_addr orelse 0;
     logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });
     @trap();
 }
 
-// Comment this test out if you lack access to internal files.
-test "internal imports" {
-    const modules = .{
-        @import("internal/png/png_to_binary.zig"),
-    };
-
-    inline for (modules) |mod| {
-        std.testing.refAllDecls(mod);
-    }
-}
-
 // Runs tests from other files. I have to remember to add more as necessary...
 test "main_tests" {
     const modules = .{
+        @import("png/png_to_binary.zig"),
         @import("color_rgba.zig"),
         @import("seeding.zig"),
         @import("logger.zig"),

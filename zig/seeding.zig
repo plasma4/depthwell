@@ -510,14 +510,18 @@ pub const Xoshiro512 = struct {
 
     /// Creates a new instance with seed data.
     pub fn init(seed_data: *const Seed) Xoshiro512 {
-        var state = seed_data;
         var check: u64 = 0;
-        for (state) |s| check |= s;
-        if (check == 0) {
+        if (seed_data[0] == 0) {
             @branchHint(.unlikely);
-            state[0] = 0xbf58476d1ce4e5b9; // fill with some random constant (technically not needed with seeding.ts logic being sound)
+            for (seed_data[1..8]) |s| check |= s;
+            var state = seed_data.*;
+            if (check == 0) {
+                @branchHint(.unlikely);
+                state[0] = 0xbf58476d1ce4e5b9; // fill with some random constant (technically not needed with seeding.ts logic being sound)
+            }
+            return .{ .state = state };
         }
-        return .{ .state = state };
+        return .{ .state = seed_data.* };
     }
 
     /// Returns the next 64 bits of psuedo-random data.
@@ -610,8 +614,8 @@ test "bijective seeding uniqueness" {
 test "Xoshiro512** initialization/consistency" {
     var seed: Seed = undefined;
     seed_from_bytes("test_seed", &seed);
-    var rng1 = Xoshiro512.init(seed);
-    var rng2 = Xoshiro512.init(seed);
+    var rng1 = Xoshiro512.init(&seed);
+    var rng2 = Xoshiro512.init(&seed);
 
     // Both generators should produce identical output
     try testing.expectEqual(rng1.next(), rng2.next());
@@ -622,7 +626,7 @@ test "Xoshiro512** initialization/consistency" {
 test "branching check" {
     var seed: Seed = undefined;
     seed_from_bytes("test", &seed);
-    const rng_main = Xoshiro512.init(seed);
+    const rng_main = Xoshiro512.init(&seed);
 
     // Make value copies of the state
     var branch_a: Xoshiro512 = rng_main;
