@@ -74,75 +74,58 @@ pub fn init() void {
     }
 }
 
-/// Searches for a safe grounded spawn point using a spiral pattern.
+/// Searches for a safe grounded spawn point by spiraling through CHUNKS
+/// and scanning all blocks within those chunks.
 pub fn find_safe_spawn() void {
     const game = &memory.game;
     const start_coord = game.get_player_coord();
-    const start_bx: i16 = @intCast(game.get_block_x_in_chunk());
-    const start_by: i16 = @intCast(game.get_block_y_in_chunk());
 
-    // Cache the current chunk pointers to avoid thousands of linear scans
-    var cached_chunk = world.get_chunk(start_coord);
-    var cached_coord = start_coord;
+    var chunk: memory.Chunk = undefined; // temp buffer for performance
 
+    // Spiral parameters (on increments of chunks)
     var side_len: i64 = 1;
     var dx: i64 = 1;
     var dy: i64 = 0;
     var segment_passed: i64 = 0;
+    var cx: i64 = 0;
+    var cy: i64 = 0;
 
-    // Use i64 for virtual offsets to prevent overflow and match requested precision
-    var virtual_x: i64 = 0;
-    var virtual_y: i64 = 0;
+    // check up to 1,000 chunks, in case there's some weird issues
+    for (0..1000) |_| {
+        if (start_coord.move(.{ cx, cy })) |nc| {
+            world.write_chunk(&chunk, nc);
 
-    // up to 1 MILLION checks, in case there's some really odd issue
-    for (0..1000000) |_| {
-        // Attempt to resolve the coordinate for the current virtual offset
-        if (start_coord.move(.{ virtual_x, virtual_y })) |nc| {
+            // Scan the chunk for a "safe" spot!
+            var y: usize = 0;
+            while (y < SPAN - 1) : (y += 1) {
+                const row_idx = y * SPAN;
+                const below_idx = (y + 1) * SPAN;
 
-            // Only update chunk pointer if coordinates actually changed
-            if (!nc.eql(cached_coord)) {
-                cached_chunk = world.get_chunk(nc);
-                cached_coord = nc;
-            }
+                for (0..SPAN) |x| {
+                    const block = chunk.blocks[row_idx + x];
+                    const block_below = chunk.blocks[below_idx + x];
 
-            // Calculate local block indices within the target chunk
-            // We use @mod to handle the wrapping of the block grid relative to the start
-            const bx = @as(i16, @intCast(@mod(@as(i64, start_bx) + virtual_x, SPAN)));
-            const by = @as(i16, @intCast(@mod(@as(i64, start_by) + virtual_y, SPAN)));
+                    if (block.is_empty() and block_below.is_solid()) {
+                        // Found a valid floor!
+                        game.player_quadrant = nc.quadrant;
+                        game.player_chunk = nc.suffix;
 
-            const block = cached_chunk.blocks[@as(usize, @intCast(by)) * SPAN + @as(usize, @intCast(bx))];
+                        game.set_player_pos(.{
+                            @as(i64, @intCast(x)) * SPAN_SQ + (SPAN_SQ / 2),
+                            @as(i64, @intCast(y)) * SPAN_SQ + (SPAN_SQ / 2) - 1,
+                        });
 
-            if (block.is_empty()) {
-                // Resolve block below. Most likely same chunk, check bx/by first.
-                var b_chunk = cached_chunk;
-                var bby = by + 1;
-
-                if (bby >= SPAN) {
-                    if (nc.move_y(1)) |below_nc| {
-                        // Check if the below-chunk is different from our current cached one
-                        world.write_chunk(&b_chunk, below_nc);
-                        bby = 0;
+                        game.set_camera_pos(game.player_pos);
+                        return;
                     }
-                }
-
-                if (b_chunk.blocks[@as(usize, @intCast(bby)) * SPAN + @as(usize, @intCast(bx))].is_solid()) {
-                    game.player_quadrant = nc.quadrant;
-                    game.player_chunk = nc.suffix;
-                    game.set_player_pos(.{ // center the X and Y
-                        @as(i64, bx) * SPAN_SQ + SPAN_SQ / 2,
-                        @as(i64, by) * SPAN_SQ + (SPAN_SQ / 2) - 1, // otherwise the player is stuck inside the block without the - 1
-                    });
-                    game.set_camera_pos(game.player_pos);
-                    return;
                 }
             }
         }
 
-        // Update virtual position and spiral state (always runs, even if OOB)
-        virtual_x += dx;
-        virtual_y += dy;
+        // Update spiral to next CHUNK
+        cx += dx;
+        cy += dy;
         segment_passed += 1;
-
         if (segment_passed >= side_len) {
             segment_passed = 0;
             const temp = dx;
@@ -152,7 +135,7 @@ pub fn find_safe_spawn() void {
         }
     }
 
-    // fallback
+    // Fallback: If no ground found in nearby chunks, center in current chunk
     game.set_player_pos(.{ 2048, 2048 });
 }
 

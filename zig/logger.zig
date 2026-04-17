@@ -10,16 +10,20 @@ const LogCategory = enum(i32) {
     err = 3,
 };
 
-/// Static logging buffer for messaging JS.
+/// Static logging buffer for messaging JS (4KiB).
 var logging_buffer: [4096]u8 align(memory.MAIN_ALIGN_BYTES) = undefined;
 
-/// Logging buffer for HTML text elements; split into four parts.
+/// Logging buffer for HTML text elements; split into four parts (total of 4KiB).
 var text_buffer: [4096]u8 align(memory.MAIN_ALIGN_BYTES) = undefined;
+/// 1KiB text buffer from the `text_buffer`.
 const text_1 = text_buffer[0..1024];
+/// 1KiB text buffer from the `text_buffer`.
 const text_2 = text_buffer[1024..2048];
+/// 1KiB text buffer from the `text_buffer`.
 const text_3 = text_buffer[2048..3072];
+/// 1KiB text buffer from the `text_buffer`.
 const text_4 = text_buffer[3072..4096];
-/// Represents the lengths of the strings in each text buffer (rendered to HTML elements).
+/// Represents the lengths of the current strings in each text buffer (rendered to HTML elements).
 var text_lengths: [4]usize = .{ 0, 0, 0, 0 };
 
 /// Logging bridge between JS and WASM.
@@ -28,7 +32,7 @@ extern "env" fn js_message(ptr: [*]const u8, len: usize, message_type: LogCatego
 /// Logging bridge between JS and WASM for writing to specific text elements.
 extern "env" fn js_write_text(id: u8, ptr: [*]const u8, len: usize) void;
 
-/// Returns the current time (calling `performance.now()` in TS)
+/// Returns the current time (calling `performance.now()` in JS)
 extern "env" fn js_get_time() f64;
 
 /// Gets a time in milliseconds. Time is not guaranteed to start from 0 or standard UNIX timestamp when program execution begins.

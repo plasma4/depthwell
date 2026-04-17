@@ -1,3 +1,4 @@
+//! Handles debug options for sliders and buttons, and contains functions to pass these to JS.
 const std = @import("std");
 const main = @import("main.zig");
 const logger = @import("logger.zig");
