@@ -190,10 +190,18 @@ fn write_value(writer: anytype, val: anytype) void {
             }
             writer.writeAll("]") catch {};
         },
+        .@"fn" => {
+            writer.print("{s}", .{@typeName(T)}) catch {};
+        },
 
         .pointer => |ptr_info| {
             if (ptr_info.size == .one) {
                 // De-reference single pointers and try again
+                if (@typeInfo(ptr_info.child) == .@"fn") {
+                    writer.print("fn {s}@0x{x}", .{ @typeName(ptr_info.child), @intFromPtr(val) }) catch {};
+                    return;
+                }
+
                 write_value(writer, val.*);
             } else if (ptr_info.size == .slice) {
                 // This handles your resultX[0..d] slices!

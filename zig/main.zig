@@ -1,5 +1,4 @@
 //! Contains initialization and render update functions. See root.zig for exporting these functions (and others) to WASM.
-const builtin = @import("builtin");
 const std = @import("std");
 const memory = @import("memory.zig");
 const logger = @import("logger.zig");
@@ -76,69 +75,74 @@ pub fn init() void {
 }
 
 /// Searches for a safe grounded spawn point using a spiral pattern.
-fn find_safe_spawn() void {
+pub fn find_safe_spawn() void {
     const game = &memory.game;
-    var current_coord = game.get_player_coord();
+    const start_coord = game.get_player_coord();
+    const start_bx: i16 = @intCast(game.get_block_x_in_chunk());
+    const start_by: i16 = @intCast(game.get_block_y_in_chunk());
 
     // Cache the current chunk pointers to avoid thousands of linear scans
-    var cached_chunk = world.get_chunk(current_coord);
-    var cached_coord = current_coord;
+    var cached_chunk = world.get_chunk(start_coord);
+    var cached_coord = start_coord;
 
-    var bx: i16 = @intCast(game.get_block_x_in_chunk());
-    var by: i16 = @intCast(game.get_block_y_in_chunk());
+    var side_len: i64 = 1;
+    var dx: i64 = 1;
+    var dy: i64 = 0;
+    var segment_passed: i64 = 0;
 
-    var side_len: i32 = 1;
-    var dx: i32 = 1;
-    var dy: i32 = 0;
-    var segment_passed: i32 = 0;
+    // Use i64 for virtual offsets to prevent overflow and match requested precision
+    var virtual_x: i64 = 0;
+    var virtual_y: i64 = 0;
 
     // up to 1 MILLION checks, in case there's some really odd issue
     for (0..1000000) |_| {
-        // Only update chunk pointer if coordinates actually changed
-        if (!current_coord.eql(cached_coord)) {
-            cached_chunk = world.get_chunk(current_coord);
-            cached_coord = current_coord;
-        }
+        // Attempt to resolve the coordinate for the current virtual offset
+        if (start_coord.move(.{ virtual_x, virtual_y })) |nc| {
 
-        const block = cached_chunk.blocks[@as(usize, @intCast(by)) * SPAN + @as(usize, @intCast(bx))];
+            // Only update chunk pointer if coordinates actually changed
+            if (!nc.eql(cached_coord)) {
+                cached_chunk = world.get_chunk(nc);
+                cached_coord = nc;
+            }
 
-        if (block.is_empty()) {
-            // Resolve block below. Most likely same chunk, check bx/by first.
-            var b_chunk = cached_chunk;
-            var bby = by + 1;
+            // Calculate local block indices within the target chunk
+            // We use @mod to handle the wrapping of the block grid relative to the start
+            const bx = @as(i16, @intCast(@mod(@as(i64, start_bx) + virtual_x, SPAN)));
+            const by = @as(i16, @intCast(@mod(@as(i64, start_by) + virtual_y, SPAN)));
 
-            if (bby >= SPAN) {
-                if (current_coord.move_y(1)) |nc| {
-                    // Check if the below-chunk is different from our current cached one
-                    b_chunk = world.get_chunk(nc);
-                    bby = 0;
+            const block = cached_chunk.blocks[@as(usize, @intCast(by)) * SPAN + @as(usize, @intCast(bx))];
+
+            if (block.is_empty()) {
+                // Resolve block below. Most likely same chunk, check bx/by first.
+                var b_chunk = cached_chunk;
+                var bby = by + 1;
+
+                if (bby >= SPAN) {
+                    if (nc.move_y(1)) |below_nc| {
+                        // Check if the below-chunk is different from our current cached one
+                        world.write_chunk(&b_chunk, below_nc);
+                        bby = 0;
+                    }
+                }
+
+                if (b_chunk.blocks[@as(usize, @intCast(bby)) * SPAN + @as(usize, @intCast(bx))].is_solid()) {
+                    game.player_quadrant = nc.quadrant;
+                    game.player_chunk = nc.suffix;
+                    game.set_player_pos(.{ // center the X and Y
+                        @as(i64, bx) * SPAN_SQ + SPAN_SQ / 2,
+                        @as(i64, by) * SPAN_SQ + (SPAN_SQ / 2) - 1, // otherwise the player is stuck inside the block without the - 1
+                    });
+                    game.set_camera_pos(game.player_pos);
+                    return;
                 }
             }
-
-            if (b_chunk.blocks[@as(usize, @intCast(bby)) * SPAN + @as(usize, @intCast(bx))].is_solid()) {
-                game.player_quadrant = current_coord.quadrant;
-                game.player_chunk = current_coord.suffix;
-                game.set_player_pos(.{ @as(i64, bx) * SPAN_SQ + 128, @as(i64, by) * SPAN_SQ + 96 });
-                game.set_camera_pos(game.player_pos);
-                return;
-            }
         }
 
-        bx += @intCast(dx);
-        by += @intCast(dy);
-
-        // Chunk-wrapping logic
-        if (bx < 0 or bx >= SPAN or by < 0 or by >= SPAN) {
-            const shift_x = @divFloor(@as(i32, bx), SPAN);
-            const shift_y = @divFloor(@as(i32, by), SPAN);
-            if (current_coord.move(.{ shift_x, shift_y })) |nc| {
-                current_coord = nc;
-                bx = @intCast(@mod(bx, SPAN));
-                by = @intCast(@mod(by, SPAN));
-            } else segment_passed = side_len;
-        }
-
+        // Update virtual position and spiral state (always runs, even if OOB)
+        virtual_x += dx;
+        virtual_y += dy;
         segment_passed += 1;
+
         if (segment_passed >= side_len) {
             segment_passed = 0;
             const temp = dx;
@@ -269,7 +273,7 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
     memory.set_scratch_prop(5, player_render_x);
     memory.set_scratch_prop(6, player_render_y);
 
-    if (builtin.mode == .Debug) {
+    if (@import("builtin").mode == .Debug) {
         const qc = world.quad_cache;
         const d = @min(memory.game.depth, 16);
         var suffix_array_x = std.mem.zeroes([16]u4); // or [_]u4{0} ** 16 :)
@@ -322,11 +326,14 @@ inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, i
             });
         }
 
+        logger.write(0, .{
+            "{h}Depth/position",
+            .{ game.depth, game.player_pos },
+        });
+
         logger.write_once(1, .{
-            "{mh}Velocity",
+            "{h}Velocity",
             game.player_velocity,
-            "{mh}Depth/position",
-            .{ game.depth, @as(memory.v2f64, @floatFromInt(game.player_pos)) / memory.v2f64{ SPAN_SQ, SPAN_SQ } },
         });
 
         // logger.clear(1);
@@ -344,6 +351,3 @@ pub fn portal_zoom_in(bx: u4, by: u4) void {
     _ = by;
     // TODO complete, utilizing `push_layer`
 }
-
-/// Resets the game state.
-pub fn reset() void {}
