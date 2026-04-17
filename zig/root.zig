@@ -11,6 +11,7 @@ const logger = @import("logger.zig");
 const player = @import("player.zig");
 const world = @import("world.zig");
 const KeyBits = @import("types.zig").KeyBits;
+const debug_ui = @import("debug_ui.zig");
 
 pub export fn setup() void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
@@ -25,9 +26,6 @@ pub export fn setup() void {
 }
 pub export fn init() void {
     main.init();
-}
-pub export fn reset() void {
-    main.reset();
 }
 pub export fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
     main.prepare_visible_chunks(time_interpolated, canvas_w, canvas_h);
@@ -64,7 +62,6 @@ pub export fn tick(speed: f64, iterations: u32) void {
             memory.game.get_block_y_in_chunk(),
         );
         // }
-        return;
     }
 
     for (0..iterations) |_| { // iterations is guaranteed to be positive
@@ -110,6 +107,16 @@ pub export fn wasm_free(ptr: u64, len: usize) void {
 
 // Debug/testing logic
 pub const in_debug_mode = builtin.mode == .Debug;
+
+pub export fn debug_build_ui_metadata() void {
+    if (in_debug_mode) debug_ui.build_metadata();
+}
+pub export fn debug_ui_slider_change(id: u32, val: f32) void {
+    if (in_debug_mode) debug_ui.slider_change(id, val);
+}
+pub export fn debug_ui_button_click(id: u32) void {
+    if (in_debug_mode) debug_ui.button_click(id);
+}
 
 /// Returns if code is in debugging mode for JS to see.
 pub export fn isDebug() bool {

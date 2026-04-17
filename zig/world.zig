@@ -1,5 +1,6 @@
 //! Defines the architecture of the fractal world, which is a segmented fractal coordinate system that uses a quad-cache for coordinates and corresponding seeds.
 const std = @import("std");
+const is_debug = @import("builtin").mode == .Debug;
 const utils = @import("utils.zig");
 const types = @import("types.zig");
 const memory = @import("memory.zig");
@@ -119,7 +120,7 @@ pub const Sprite = enum(u16) {
 
     /// Determines if the sprite is a heatmap (types 256-512).
     pub inline fn is_heatmap(self: @This()) bool {
-        return procedural.USE_BASE_HEATMAP and @intFromEnum(self) >= 256 and @intFromEnum(self) <= 512;
+        return is_debug and procedural.USE_BASE_HEATMAP and @intFromEnum(self) >= 256 and @intFromEnum(self) <= 512;
     }
 };
 
@@ -297,13 +298,25 @@ pub const SimBuffer = struct {
     /// Synchronizes the buffer to center on the provided coordinate/position.
     /// Safely handles shifts exceeding 1 chunk per frame via `shift`.
     pub fn sync(coord: Coordinate, shift: v2i64) void {
-        if (origin == null) {
+        const og = origin orelse {
+            const target_origin = get_clamped_move(coord, -8, -8);
+            full_refresh(target_origin);
+            return;
+        };
+
+        // Calculate distance from the CURRENT center of the buffer window
+        const center_x = @as(i64, @intCast(og.suffix[0])) + 8;
+        const center_y = @as(i64, @intCast(og.suffix[1])) + 8;
+        const dist_x = @as(i64, @intCast(coord.suffix[0])) - center_x;
+        const dist_y = @as(i64, @intCast(coord.suffix[1])) - center_y;
+
+        // Force a full refresh if we teleported or shifted too far for incremental updates
+        if (og.quadrant != coord.quadrant or @abs(dist_x) > 8 or @abs(dist_y) > 8) {
             const target_origin = get_clamped_move(coord, -8, -8);
             full_refresh(target_origin);
             return;
         }
 
-        // logger.quick(.{ coord, shift });
         if (shift[0] != 0 or shift[1] != 0) {
             if (@abs(shift[0]) >= SIM_BUFFER_WIDTH or @abs(shift[1]) >= SIM_BUFFER_WIDTH) {
                 const target_origin = get_clamped_move(coord, -8, -8);
@@ -810,6 +823,11 @@ inline fn should_have_edge_flags(sprite: Sprite, current_sprite: Sprite) bool {
 //     return null;
 // }
 
+pub fn clear_caches() void {
+    SimBuffer.clear();
+    ChunkCache.clear();
+}
+
 /// Handles increasing the depth.
 /// `coord` is the chunk the portal is in. `bx` and `by` represent the specific block within a chunk the zoom should be in.
 pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
@@ -818,7 +836,6 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     const depth = memory.game.depth;
 
     memory.game.player_velocity = .{ 0, 0 };
-    player.subpixel_accum = .{ 0.0, 0.0 };
 
     // Mask the last 12 bits (0-4095)
     const player_mask: i64 = SPAN * SPAN * SPAN - 1;
@@ -826,14 +843,11 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         (memory.game.player_pos[0] << SPAN_LOG2) & player_mask,
         (memory.game.player_pos[1] << SPAN_LOG2) & player_mask,
     };
-    memory.game.set_player_pos(new_pos);
-    memory.game.set_camera_pos(new_pos);
+
+    memory.game.teleport(null, new_pos);
     // TODO migrate to this logic when implementing portals instead
     // memory.game.set_player_pos(.{ 2048, 2048 });
     // memory.game.set_camera_pos(.{ 2048, 2048 });
-
-    SimBuffer.clear();
-    ChunkCache.clear();
 
     if (depth <= 16) {
         // Just filling up the 64-bit suffix. No rebasing needed yet.

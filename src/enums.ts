@@ -33,7 +33,6 @@ export interface EngineExports extends WebAssembly.Exports {
 
     readonly setup: () => void;
     readonly init: () => void;
-    readonly reset: () => void;
     readonly prepare_visible_chunks: (arg0: number, arg1: number, arg2: number) => void;
     readonly get_tiles_per_row: () => number;
     readonly get_tiles_per_column: () => number;
@@ -41,7 +40,7 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly get_ore_start: () => number;
     readonly get_gem_mask_start: () => number;
     readonly get_decor_start: () => number;
-    readonly tick: (arg0: number) => void;
+    readonly tick: (arg0: number, arg1: number) => void;
     readonly mix_seed: (arg0: bigint) => bigint;
     readonly mix_seed_f64: (arg0: bigint) => number;
     readonly wasm_seed_from_string: () => void;
@@ -49,6 +48,9 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly scratch_alloc: (arg0: number) => bigint;
     readonly wasm_alloc: (arg0: number) => bigint;
     readonly wasm_free: (arg0: bigint, arg1: number) => void;
+    readonly debug_build_ui_metadata: () => void;
+    readonly debug_ui_slider_change: (arg0: number, arg1: number) => void;
+    readonly debug_ui_button_click: (arg0: number) => void;
     readonly isDebug: () => boolean;
 }
 

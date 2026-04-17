@@ -7,6 +7,7 @@
     <style>
         html {
             background-color: black;
+            font-family: monospace;
             color: white;
             user-select: none;
         }
@@ -24,6 +25,36 @@
             right: 0;
             width: 100%;
             height: 100%;
+        }
+
+        button {
+            font-family: monospace;
+            cursor: pointer;
+            padding: 4px;
+            margin: 2px;
+            border: 2px solid #333;
+            border-radius: 5px;
+            background-color: #ead598;
+        }
+
+        input[type="range"] {
+            accent-color: #2be77c;
+        }
+
+        #debug-container {
+            position: fixed;
+            display: none;
+            bottom: 40px;
+            left: 10px;
+            z-index: 9999;
+            background-color: #0003;
+            color: white;
+            padding: 15px;
+            font-family: monospace;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            border-radius: 5px;
         }
 
         ::selection {
@@ -113,7 +144,7 @@
             font-size: 12px;
         }
     </style>
-  <script type="module" crossorigin src="./assets/index-CHs_-tSw.js"></script>
+  <script type="module" crossorigin src="./assets/index-CH5zB-BA.js"></script>
 </head>
 
 <body>
@@ -128,6 +159,7 @@
     </div>
     <div id="logicText"></div>
     <div id="renderText"></div>
+    <div id="debug-container"></div>
 </body>
 
 </html>

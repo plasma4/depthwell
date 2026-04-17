@@ -1,5 +1,6 @@
 //! Handles procedural generation logic for the game.
 const std = @import("std");
+const is_debug = @import("builtin").mode == .Debug;
 const types = @import("types.zig");
 const logger = @import("logger.zig");
 const memory = @import("memory.zig");
@@ -19,10 +20,13 @@ const Sprite = world.Sprite;
 const v2f64 = memory.v2f64;
 const v2u64 = memory.v2u64;
 
-/// Determines whether to use a heatmap or not for base terrain.
-pub const USE_BASE_HEATMAP = false;
-/// Determines whether to use a heatmap or not for ore generation.
-pub const USE_ORE_HEATMAP = false;
+pub var procedural_cell_size: f64 = 1.0;
+pub var density_min: f64 = 0.32;
+pub var density_max: f64 = 0.9;
+/// Determines whether to use a heatmap or not for base terrain. Ignored if `is_debug` is false.
+pub var USE_BASE_HEATMAP = false;
+/// Determines whether to use a heatmap or not for ore generation. Ignored if `is_debug` is false.
+pub var USE_ORE_HEATMAP = false;
 
 /// Options for the FBM+Worley implementation.
 const TerrainOptions = struct {
@@ -42,14 +46,11 @@ const BaseTerrainData = struct {
 /// Generates a block for seeding (based on previous procedural generation logic).
 /// The terms moisture/density are used extremely loosely here.
 pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
-    if (USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
-
-    // uncomment out for testing small islands:
-    // if (density < 0.85) return .none;
+    if (is_debug and USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
     if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
         return .strange_stone;
-    } else if (density <= 0.32 or density >= 0.9) {
+    } else if (density <= density_min or density >= density_max) {
         return if (moisture >= 0.93 and moisture <= 0.99) .strange_stone_other else .none;
     }
 
@@ -132,12 +133,13 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
         freq *%= 2;
     }
 
+    const cell_size = options.cell_size * @as(f32, @floatCast(procedural_cell_size));
     const wx = fx + warp_x;
     const wy = fy + warp_y;
-    const cell_w = options.cell_size * h_stretch;
+    const cell_w = cell_size * h_stretch;
 
     const cx_f = @floor(wx / cell_w);
-    const cy_f = @floor(wy / options.cell_size);
+    const cy_f = @floor(wy / cell_size);
     const cx_i = @as(i64, @intFromFloat(cx_f));
     const cy_i = @as(i64, @intFromFloat(cy_f));
 
@@ -156,7 +158,7 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
             const off_y = @as(f32, @floatFromInt(h / POW_2_32)) / POW_2_32;
 
             const px = (@as(f32, @floatFromInt(cx_i + ox)) + off_x) * cell_w;
-            const py = (@as(f32, @floatFromInt(cy_i + oy)) + off_y) * options.cell_size;
+            const py = (@as(f32, @floatFromInt(cy_i + oy)) + off_y) * cell_size;
 
             const dx = wx - px;
             const dy = wy - py;
@@ -172,9 +174,9 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
     }
 
     if (options.use_f2_f1) {
-        return @min((@sqrt(d2_sq) - @sqrt(d1_sq)) / options.cell_size, 1.0);
+        return @min((@sqrt(d2_sq) - @sqrt(d1_sq)) / cell_size, 1.0);
     } else {
-        return @min(@sqrt(d1_sq) / options.cell_size, 1.0);
+        return @min(@sqrt(d1_sq) / cell_size, 1.0);
     }
 }
 
@@ -245,7 +247,7 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
     );
 
     // sprite IDs from 256-512 create a neat little heatmap (using only the first value), overriding normal ore logic
-    if (USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v1 * 256.0)));
+    if (is_debug and USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v1 * 256.0)));
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
         // Change the sprite to various ore types:

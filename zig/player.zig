@@ -13,17 +13,15 @@ const v2i64 = memory.v2i64;
 const v2f64 = memory.v2f64;
 
 /// The base speed of the player.
-const PLAYER_BASE_SPEED = 3.5;
+pub var PLAYER_BASE_SPEED: f64 = 1.0;
 /// How strong the gravity is.
-const GRAVITY: f64 = 0.3;
+pub var GRAVITY: f64 = 0.3;
 /// How high the player jumps.
-const JUMP_FORCE: f64 = -7.0;
+pub var JUMP_FORCE: f64 = -7.0;
 /// Friction of player movement (horizontal).
-const FRICTION_X: f64 = 0.2;
+pub var FRICTION_X: f64 = 0.2;
 /// Friction of player movement (vertical).
-const FRICTION_Y: f64 = 0.01;
-/// The accelaration multiplier when moving.
-const ACCEL_X: f64 = 0.8;
+pub var FRICTION_Y: f64 = 0.01;
 
 /// The size of the player's width. The player is assumed to be centered at the bottom as a rectangle.
 pub const PLAYER_HITBOX_WIDTH = 64;
@@ -56,25 +54,25 @@ pub var subpixel_accum: v2f64 = .{ 0.0, 0.0 }; // note that vectors are smartly 
 /// Determines if the player is on the ground.
 var is_grounded: bool = false;
 
-/// Cache for collision lookups to avoid redundant buffer/cache scans.
-const CollisionContext = struct {
-    coord: ?memory.Coordinate = null,
-    chunk: ?*memory.Chunk = null,
+// /// Cache for collision lookups to avoid redundant buffer/cache scans.
+// const CollisionContext = struct {
+//     coord: ?memory.Coordinate = null,
+//     chunk: ?*memory.Chunk = null,
 
-    pub fn get_chunk(self: *@This(), target: memory.Coordinate) *memory.Chunk {
-        if (self.coord) |c| {
-            if (c.eql(target)) return self.chunk.?;
-        }
-        const ptr = world.SimBuffer.get(target) orelse world.ChunkCache.get(target) orelse blk: {
-            const slot = world.ChunkCache.allocate_slot(target);
-            world.write_chunk(slot, target);
-            break :blk slot;
-        };
-        self.coord = target;
-        self.chunk = ptr;
-        return ptr;
-    }
-};
+//     pub fn get_chunk(self: *@This(), target: memory.Coordinate) *memory.Chunk {
+//         if (self.coord) |c| {
+//             if (c.eql(target)) return self.chunk.?;
+//         }
+//         const ptr = world.SimBuffer.get(target) orelse world.ChunkCache.get(target) orelse blk: {
+//             const slot = world.ChunkCache.allocate_slot(target);
+//             world.write_chunk(slot, target);
+//             break :blk slot;
+//         };
+//         self.coord = target;
+//         self.chunk = ptr;
+//         return ptr;
+//     }
+// };
 
 /// Moves the player, handling camera changes.
 pub fn move(logic_speed: f64) void {
@@ -91,11 +89,11 @@ pub fn move(logic_speed: f64) void {
 
     // Manage horizontal physics.
     var move_input: f64 = 0;
-    if (KeyBits.isSet(KeyBits.left, game.keys_held_mask)) move_input -= 1.0;
-    if (KeyBits.isSet(KeyBits.right, game.keys_held_mask)) move_input += 1.0;
+    if (KeyBits.isSet(KeyBits.left, game.keys_held_mask)) move_input -= PLAYER_BASE_SPEED;
+    if (KeyBits.isSet(KeyBits.right, game.keys_held_mask)) move_input += PLAYER_BASE_SPEED;
 
     if (move_input != 0) {
-        game.player_velocity[0] += move_input * ACCEL_X * logic_speed;
+        game.player_velocity[0] += move_input * logic_speed;
     }
     game.player_velocity[0] *= (1.0 - FRICTION_X);
 
@@ -112,21 +110,20 @@ pub fn move(logic_speed: f64) void {
 
     game.last_player_pos = game.player_pos;
     var total_chunk_shift: v2i64 = .{ 0, 0 };
-    var ctx = CollisionContext{};
 
     // Horizontal CCD
     var rem_x = @abs(total_move[0]);
     const step_x = if (total_move[0] > 0) @as(i64, 1) else -1;
     while (rem_x > 0) {
         const move_now = @min(rem_x, CCD_STEP_SIZE);
-        if (!is_colliding(game.player_pos[0] + (step_x * move_now), game.player_pos[1], &ctx)) {
+        if (!is_colliding(game.player_pos[0] + (step_x * move_now), game.player_pos[1])) {
             game.player_pos[0] += step_x * move_now;
             total_chunk_shift[0] += handle_local_wrap(0);
             rem_x -= move_now;
         } else {
             // Perfect Snap: Move 1 pixel at a time for the final fraction to hit the edge exactly
             while (move_now > 0) {
-                if (!is_colliding(game.player_pos[0] + step_x, game.player_pos[1], &ctx)) {
+                if (!is_colliding(game.player_pos[0] + step_x, game.player_pos[1])) {
                     game.player_pos[0] += step_x;
                     total_chunk_shift[0] += handle_local_wrap(0);
                 } else break;
@@ -143,14 +140,14 @@ pub fn move(logic_speed: f64) void {
     const step_y = if (total_move[1] > 0) @as(i64, 1) else -1;
     while (rem_y > 0) {
         const move_now = @min(rem_y, CCD_STEP_SIZE);
-        if (!is_colliding(game.player_pos[0], game.player_pos[1] + (step_y * move_now), &ctx)) {
+        if (!is_colliding(game.player_pos[0], game.player_pos[1] + (step_y * move_now))) {
             game.player_pos[1] += step_y * move_now;
             total_chunk_shift[1] += handle_local_wrap(1);
             rem_y -= move_now;
         } else {
             // Perfect Snap
             while (move_now > 0) {
-                if (!is_colliding(game.player_pos[0], game.player_pos[1] + step_y, &ctx)) {
+                if (!is_colliding(game.player_pos[0], game.player_pos[1] + step_y)) {
                     game.player_pos[1] += step_y;
                     total_chunk_shift[1] += handle_local_wrap(1);
                 } else break;
@@ -200,13 +197,13 @@ fn handle_local_wrap(comptime axis: u1) i64 {
 }
 
 /// Performs an AABB check (for the player's position) against the world grid.
-pub fn is_colliding(px: i64, py: i64, ctx: *CollisionContext) bool {
+pub fn is_colliding(px: i64, py: i64) bool {
     const game = &memory.game;
     const corners = [_][2]i64{
-        .{ px - PLAYER_HITBOX_WIDTH / 2, py + 128 - PLAYER_HITBOX_HEIGHT },
-        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + 128 - PLAYER_HITBOX_HEIGHT },
-        .{ px - PLAYER_HITBOX_WIDTH / 2, py + 112 },
-        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + 112 },
+        .{ px - PLAYER_HITBOX_WIDTH / 2, py + SPAN_SQ / 2 - PLAYER_HITBOX_HEIGHT },
+        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + SPAN_SQ / 2 - PLAYER_HITBOX_HEIGHT },
+        .{ px - PLAYER_HITBOX_WIDTH / 2, py + SPAN_SQ / 2 },
+        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + SPAN_SQ / 2 },
     };
 
     const player_coord = game.get_player_coord();
@@ -216,7 +213,7 @@ pub fn is_colliding(px: i64, py: i64, ctx: *CollisionContext) bool {
         const cy_shift = @divFloor(c[1], SUBPIXELS_IN_CHUNK);
 
         const coord = player_coord.move(.{ cx_shift, cy_shift }) orelse return true;
-        const chunk = ctx.get_chunk(coord);
+        const chunk = world.get_chunk(coord);
 
         const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[0], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));
         const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[1], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));

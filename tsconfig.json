@@ -1,22 +1,22 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "lib": ["ESNext", "DOM"],
-    "typeRoots": ["./node_modules/@types", "./node_modules/@webgpu/types"],
-    "moduleResolution": "node",
-    "strict": true,
-    "sourceMap": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "outDir": "dist",
-    "rootDir": "src",
-    "baseUrl": ".",
-    "paths": {
-      "@generated/*": ["src/generated/*"]
-    }
-  },
-  "include": ["src/**/*"],
-  "emitDeclarationOnly": true
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "lib": ["ESNext", "DOM"],
+        "typeRoots": ["./node_modules/@types", "./node_modules/@webgpu/types"],
+        "moduleResolution": "node",
+        "strict": true,
+        "sourceMap": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "outDir": "dist",
+        "rootDir": "src",
+        "baseUrl": ".",
+        "paths": {
+            "@generated/*": ["src/generated/*"]
+        }
+    },
+    "include": ["src/**/*"],
+    "emitDeclarationOnly": true
 }

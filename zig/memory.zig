@@ -105,14 +105,41 @@ pub const GameState = extern struct {
         return @intCast(@divTrunc(self.player_pos[1], SPAN_SQ));
     }
 
-    /// Sets the player position, teleporting the previous position as well. Do not use for movement, as this neither does frame interpolation nor takes `Coordinate` input for correct quadrant changes.
+    /// Teleports the player, resetting the player position and camera position, as well as movement constants such as gravity.
+    ///
+    /// Also fully clears caches.
+    pub inline fn teleport(self: *@This(), coord: ?Coordinate, new_position: v2i64) void {
+        player.subpixel_accum = .{ 0.0, 0.0 };
+        self.player_velocity = .{ 0.0, 0.0 };
+        if (coord) |c| {
+            self.player_quadrant = c.quadrant;
+            self.player_chunk = c.suffix;
+        }
+        self.player_pos = new_position;
+        self.last_player_pos = new_position;
+        self.camera_pos = .{ 0.0, 0.0 };
+        world.clear_caches();
+    }
+
+    /// Sets the player position within a chunk, teleporting the previous position as well. Also clears subpixel accumulation/velocity.
+    /// Do not use for movement, as this neither does frame interpolation nor takes `Coordinate` input for correct quadrant changes.
+    ///
+    /// It is probably better to use `teleport()`, unless you need the player position to change but not the camera.
+    /// This function also fails to handle caches properly.
     pub inline fn set_player_pos(self: *@This(), new_position: v2i64) void {
+        player.subpixel_accum = .{ 0.0, 0.0 };
+        self.player_velocity = .{ 0.0, 0.0 };
         self.player_pos = new_position;
         self.last_player_pos = new_position;
     }
 
-    /// Sets the camera position, teleporting the previous position as well. Do not use for movement.
+    /// Sets the camera position within a chunk, teleporting the previous position as well.
+    /// Do not use for movement. Also clears subpixel accumulation.
+    ///
+    /// It is probably better to use `teleport()`, unless you need the camera position to change but not the player.
+    /// This function also fails to handle caches properly.
     pub inline fn set_camera_pos(self: *@This(), new_position: v2i64) void {
+        player.subpixel_accum = .{ 0.0, 0.0 };
         self.camera_pos = new_position;
         self.last_camera_pos = new_position;
     }

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 "use strict";
 if ("file:" === location.protocol) {
     alert(
@@ -203,7 +204,7 @@ engine.renderLoop = function (_t: number) {
     engine.logicLoop(Math.max(Math.floor(accumulator + newTicks), 1));
     accumulator = (accumulator + newTicks) % 1; // calculate new fractional accumulation of ticks
 
-    if (engine.isDebug) {
+    if (import.meta.env.DEV) {
         past60SlowestRenders.shift();
         past60SlowestRenders.push(delta);
         past60SlowestZigRenders.shift();
@@ -248,7 +249,7 @@ engine.logicLoop = function (ticks: number) {
     time = performance.now();
     let delta = time - startTime;
 
-    if (engine.isDebug) {
+    if (import.meta.env.DEV) {
         past60SlowestLogicLoops.shift();
         past60SlowestLogicLoops.push(delta);
 
@@ -277,9 +278,61 @@ engine.logicLoop = function (ticks: number) {
     }
 };
 
+function initDebugUI() {
+    const exports = engine.exports as any;
+    if (!exports.debug_build_ui_metadata) return;
+
+    // Populate scratch buffer with JSON data and parse it
+    exports.debug_build_ui_metadata();
+    const jsonStr = engine.readStr();
+    if (!jsonStr) return;
+
+    const meta = JSON.parse(jsonStr);
+
+    const container = document.getElementById(
+        "debug-container",
+    ) as HTMLDivElement;
+    container.style.display = "inline";
+    meta.buttons.forEach((b: any) => {
+        const btn = document.createElement("button");
+        btn.textContent = b.name;
+        btn.onclick = () => exports.debug_ui_button_click(b.id);
+        container.appendChild(btn);
+    });
+
+    meta.sliders.forEach((s: any) => {
+        const wrapper = document.createElement("div");
+        wrapper.style.display = "flex";
+        wrapper.style.flexDirection = "column";
+
+        const label = document.createElement("label");
+        label.textContent = `${s.name}: ${s.val.toFixed(2)}`;
+        label.style.fontSize = "12px";
+
+        const input = document.createElement("input");
+        input.type = "range";
+        input.min = s.min;
+        input.max = s.max;
+        input.step = ((s.max - s.min) / 1000).toString();
+        input.value = s.val;
+
+        input.oninput = (e) => {
+            const val = parseFloat((e.target as HTMLInputElement).value);
+            label.textContent = `${s.name}: ${val.toFixed(2)}`;
+            exports.debug_ui_slider_change(s.id, val);
+        };
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(input);
+        container.appendChild(wrapper);
+    });
+
+    document.body.appendChild(container);
+}
+
 import { KeyBits, game_state_offsets } from "./enums";
 globalThis.Zig = { KeyBits, game_state_offsets };
-if (engine.isDebug) {
+if (import.meta.env.DEV) {
     console.log(
         "Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs.",
     );
@@ -289,6 +342,8 @@ if (engine.isDebug) {
         (document.getElementById(id) as HTMLDivElement).style.display =
             "inline";
     });
+
+    initDebugUI();
 } else {
     // Zig is not in debug mode!
     if (CONFIG.verbose) {
