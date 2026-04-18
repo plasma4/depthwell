@@ -17,7 +17,7 @@ pub var PLAYER_BASE_SPEED: f64 = 1.0;
 /// How strong the gravity is.
 pub var GRAVITY: f64 = 0.3;
 /// How high the player jumps.
-pub var JUMP_FORCE: f64 = -7.0;
+pub var JUMP_FORCE: f64 = 7.0;
 /// Friction of player movement (horizontal).
 pub var FRICTION_X: f64 = 0.2;
 /// Friction of player movement (vertical).
@@ -31,7 +31,7 @@ pub const PLAYER_HITBOX_HEIGHT = 160;
 const CCD_STEP_SIZE = SPAN_SQ;
 
 /// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
-/// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache.
+/// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
 pub const CAMERA_MIN_ZOOM = 1.0 / 3.0;
 
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
@@ -99,7 +99,7 @@ pub fn move(logic_speed: f64) void {
 
     game.player_velocity[1] = (game.player_velocity[1] + GRAVITY * logic_speed) * (1.0 - FRICTION_Y); // vertical jump!
     if (is_grounded and KeyBits.isSet(KeyBits.up, game.keys_held_mask)) {
-        game.player_velocity[1] = JUMP_FORCE;
+        game.player_velocity[1] = -JUMP_FORCE;
         is_grounded = false;
     }
 

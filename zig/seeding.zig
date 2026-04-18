@@ -120,10 +120,10 @@ pub const FastHash = struct {
         return mix(v[0] ^ secret[2], v[1] ^ secret[3]); // combine lanes and mix
     }
 
-    /// Returns a float value (32-bit), assuming `seed_vector` is securely generated from BLAKE3 already.
-    pub inline fn float_2d(seed_vector: v2u64, x: u64, y: u64) f32 {
-        const h = hash_2d(x, y, seed_vector);
-        return @as(f32, @floatFromInt(h)) / POW_2_64;
+    /// Returns a float value (64-bit), assuming `seed_vector` is securely generated from BLAKE3 already.
+    pub inline fn float_2d(seed_vector: v2u64, x: u64, y: u64) f64 {
+        const h = hash_2d(seed_vector, x, y);
+        return @as(f64, @floatFromInt(h)) / POW_2_64;
     }
 };
 

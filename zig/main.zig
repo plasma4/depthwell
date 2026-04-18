@@ -50,6 +50,14 @@ pub fn init() void {
         temp_seed.next(),
         temp_seed.next(),
         temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
+        temp_seed.next(),
     };
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(seeding.mix_base_seed(&memory.game.seed, 2));
@@ -90,8 +98,9 @@ pub fn find_safe_spawn() void {
     var cx: i64 = 0;
     var cy: i64 = 0;
 
-    // check up to 1,000 chunks, in case there's some weird issues
-    for (0..1000) |_| {
+    // check up to 500 chunks, in case there's some weird issues
+    var i: u32 = 0;
+    while (i < 500) {
         if (start_coord.move(.{ cx, cy })) |nc| {
             world.write_chunk(&chunk, nc);
 
@@ -120,6 +129,8 @@ pub fn find_safe_spawn() void {
                     }
                 }
             }
+
+            i += 1; // increment i for next loop iter
         }
 
         // Update spiral to next CHUNK

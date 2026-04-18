@@ -258,18 +258,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     // ore sampling pixel logic
     if (in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START) {
-        let mask_variation = extractBits(in.seed, 16u, 2u); // 4 masks
+        let mask_variation = extractBits(in.seed, 15u, 3u); // 8 masks
         let mask_id = GEM_MASK_START + mask_variation;
 
         var flipped_uv = in.local_uv;
 
         // for bit 26 decide horizontal flip of the ore mask
-        if ((extractBits(in.seed, 26u, 1u) == 1u)) {
+        if ((extractBits(in.seed, 25u, 1u) == 1u)) {
             flipped_uv.x = 1.0 - flipped_uv.x;
         }
 
         // decide vertical for bit 27
-        if ((extractBits(in.seed, 27u, 1u) == 1u)) {
+        if ((extractBits(in.seed, 26u, 1u) == 1u)) {
             flipped_uv.y = 1.0 - flipped_uv.y;
         }
 
@@ -294,7 +294,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         // with linear RGB: r component of mask determines mix amount, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
             tex_stone.rgb * vec3f(0.4 + u_dist * 1.2),
-            tex_color.rgb * vec3f(1.0 + 0.06 * f32(extractBits(in.seed3, 29u, 3u))), // use last bits of seed3, otherwise unused
+            tex_color.rgb,
             tex_mask.r + (0.5 - u_dist)
         );
         tex_color = vec4f(final_rgb_ore, tex_color.a);
@@ -343,16 +343,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var lab = linear_srgb_to_oklab(tex_color.rgb);
     var lch = oklab_to_oklch(lab);
 
-    // we use 10 out of the 24 seed bits here
-    let extracted_l = f32(extractBits(in.seed, 0u, 4u));
-    let extracted_a = f32(extractBits(in.seed, 4u, 3u));
-    let l_nudge = extracted_l / 15.0;
+    // we use 9 out of the 28 seed bits here
+    let extracted_l = f32(extractBits(in.seed, 0u, 3u));
+    let extracted_a = f32(extractBits(in.seed, 3u, 3u));
+    let l_nudge = extracted_l / 7.0;
     let a_nudge = extracted_a / 7.0;
-    let b_nudge = f32(extractBits(in.seed, 7u, 3u)) / 4.0;
+    let b_nudge = f32(extractBits(in.seed, 6u, 3u)) / 7.0;
 
-    lch.x = lch.x * in.light + (l_nudge - 0.5) * 0.02; // shift lightness (0-1)
-    lch.y *= 1.0 + a_nudge * 0.25; // shift chroma, which acts similar to saturation (0-1)
-    lch.z += (b_nudge - 0.5) * 0.1; // shift hue (in RADIANS, red isn't exactly 0)
+    lch.x = lch.x * in.light + l_nudge * 0.02; // shift lightness (0-1)
+    lch.y *= 1.0 + a_nudge * 0.2; // shift chroma, which acts similar to saturation (0-1)
+    lch.z += b_nudge * 0.1; // shift hue (in RADIANS, red isn't exactly 0)
 
     var final_rgb = vec3f(0.0);
     if (in.edge_flags != 0xFFu) {
@@ -615,8 +615,8 @@ fn popcount8(v: u32) -> u32 {
 // Calculates edge darkening procedurally based on flags calculated in Zig.
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
     var darkening = 0.0;
-    let edge_width = 0.30 + f32(extractBits(seed, 10u, 3u)) / 32.0;
-    let edge_strength = 0.25 + f32(extractBits(seed, 13u, 3u)) / 64.0;
+    let edge_width = 0.30 + f32(extractBits(seed, 9u, 3u)) / 32.0;
+    let edge_strength = 0.25 + f32(extractBits(seed, 12u, 3u)) / 64.0;
     let corner_width = 0.5;
 
     // Curvy shadow gradient

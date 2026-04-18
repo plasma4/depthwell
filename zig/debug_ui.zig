@@ -27,10 +27,17 @@ pub const ButtonDef = struct {
 /// List of sliders (with a range that modifies a numeric variable)
 pub const sliders = [_]SliderDef{
     .{
-        .name = "Procedural cell size",
-        .min = 0.1,
-        .max = 10.0,
+        .name = "Procedural scale",
+        .min = 0.2,
+        .max = 5.0,
         .val = &procedural.procedural_cell_size,
+        .regen = true,
+    },
+    .{
+        .name = "FBM power",
+        .min = 0.0,
+        .max = 5.0,
+        .val = &procedural.fbm_power,
         .regen = true,
     },
     .{
@@ -55,14 +62,14 @@ pub const sliders = [_]SliderDef{
     },
     .{
         .name = "Gravity",
-        .min = 0.0,
+        .min = 0.01,
         .max = 2.0,
         .val = &player.GRAVITY,
     },
     .{
         .name = "Jump force",
-        .min = -15.0,
-        .max = -1.0,
+        .min = 1.0,
+        .max = 50.0,
         .val = &player.JUMP_FORCE,
     },
     .{

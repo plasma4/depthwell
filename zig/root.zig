@@ -10,6 +10,7 @@ const procedural = @import("internal/procedural.zig");
 const logger = @import("logger.zig");
 const player = @import("player.zig");
 const world = @import("world.zig");
+const mouse = @import("mouse.zig");
 const KeyBits = @import("types.zig").KeyBits;
 const debug_ui = @import("debug_ui.zig");
 
@@ -49,6 +50,10 @@ pub export fn get_gem_mask_start() u32 {
 }
 pub export fn get_decor_start() u32 {
     return @intCast(@intFromEnum(world.Sprite.spiral_plant));
+}
+
+pub export fn handle_mouse(mouse_x: f64, mouse_y: f64, action: u32) void {
+    mouse.handle_mouse(mouse_x, mouse_y, action);
 }
 
 pub export fn tick(speed: f64, iterations: u32) void {

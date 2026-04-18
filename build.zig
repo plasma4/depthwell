@@ -110,6 +110,7 @@ pub fn build(b: *std.Build) void {
 
         if (memory64) {
             optimize_wasm.addArg("--enable-memory64");
+            optimize_wasm.addArg("--enable-relaxed-simd");
         }
 
         // This ensures wasm-opt runs AFTER the file is installed to src/main.wasm

@@ -50,6 +50,10 @@ pub const Sprite = enum(u16) {
     _gem_mask,
     __gem_mask,
     ___gem_mask,
+    geode_mask,
+    _geode_mask,
+    __geode_mask,
+    ___geode_mask,
     spiral_plant,
     ceiling_flower,
     mushroom, // there is another variant of mushrooms
@@ -161,34 +165,17 @@ pub const BlockMod = packed struct(u32) {
 /// A full 256-block (chunk) of modifications.
 pub const ChunkMod = [SPAN_SQ]BlockMod;
 
+/// Stores where a modification is, as well as its depth to easily identify it.
+pub const ModKey = extern struct {
+    /// The coordinate of the modification.
+    coord: Coordinate,
+    /// The depth of the modification.
+    depth: u64,
+};
+
 /// Arena for long-lasting data.
 pub var world_arena = memory.make_arena();
 const allocator = world_arena.allocator();
-
-/// A 512-bit key for the ModificationStore.
-/// Fits exactly into one 64-byte cache line.
-pub const ModKey = extern struct {
-    /// Represents 512 bits of data.
-    seed: seeding.Seed, // aligned for cache size optimization
-
-    pub fn init(base_seed: seeding.Seed, cx: u64, cy: u64) ModKey {
-        var key = ModKey{ .seed = base_seed };
-        // Safe bijection as Blake3 output is uniformly distributed.
-        // XORing spatial data preserves entropy!
-        key.seed[0] ^= cx;
-        key.seed[1] ^= cy;
-        key.seed[2] ^= memory.game.depth;
-        return key;
-    }
-};
-
-pub const ModKeyContext = struct {
-    pub fn eql(self: @This(), a: ModKey, b: ModKey) bool {
-        _ = self;
-        // Zig optimizes this to SIMD if the target supports it.
-        return std.mem.eql(u64, &a.seed, &b.seed);
-    }
-};
 
 /// Width of the simulation buffer.
 const SIM_BUFFER_WIDTH = 16;
@@ -411,7 +398,7 @@ pub const SimBuffer = struct {
             if (generated_count >= budget) break;
             if (player_coord.move(off)) |c| {
                 if (get(c) == null and ChunkCache.get(c) == null) {
-                    generate_chunk(ChunkCache.allocate_slot(c), c);
+                    write_chunk(ChunkCache.allocate_slot(c), c);
                     generated_count += 1;
                 }
             }
@@ -424,7 +411,7 @@ pub const SimBuffer = struct {
             bg_scan_id = (bg_scan_id + 1) % RING_SIZE;
             if (player_coord.move(off)) |c| {
                 if (get(c) == null and ChunkCache.get(c) == null) {
-                    generate_chunk(ChunkCache.allocate_slot(c), c);
+                    write_chunk(ChunkCache.allocate_slot(c), c);
                     generated_count += 1;
                 }
             }
@@ -642,6 +629,8 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
     const seed_vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
     const seed_vec3: v2u64 = .{ memory.game.seed2[4], memory.game.seed2[5] };
     const seed_vec4: v2u64 = .{ memory.game.seed2[6], memory.game.seed2[6] };
+    const seed_vec5: v2u64 = .{ memory.game.seed2[7], memory.game.seed2[8] };
+    const seed_vec6: v2u64 = .{ memory.game.seed2[9], memory.game.seed2[10] };
 
     var rng1 = seeding.ChaCha12.init(chunk_seeds[0]); // Block generation.
     var rng4 = seeding.ChaCha12.init(chunk_seeds[3]); // Visual touches only.
@@ -684,7 +673,8 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
                 base_data,
                 seed_vec3,
                 seed_vec4,
-                &rng1,
+                seed_vec5,
+                seed_vec6,
                 @intCast(cx * 16 + block_x),
                 @intCast(cy * 16 + block_y),
             );

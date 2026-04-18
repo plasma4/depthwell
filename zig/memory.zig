@@ -30,7 +30,7 @@ pub const v2f64 = @Vector(2, f64);
 /// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
 /// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the -Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
 pub const GameState = extern struct {
-    /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095).
+    /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095), from the CENTER of the sprite.
     player_pos: v2i64 align(MAIN_ALIGN_BYTES) = .{ 0, 0 },
     /// Represents the player's previous subpixel position.
     /// Importantly, this is not necessarily equal to the player's velocity, as this handles teleports!
@@ -89,7 +89,7 @@ pub const GameState = extern struct {
     seed: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
 
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
-    seed2: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
+    seed2: [16]u64 align(16) = std.mem.zeroes([16]u64),
 
     /// Gets the player's current chunk location as a `Coordinate`.
     pub inline fn get_player_coord(self: *const @This()) Coordinate {
