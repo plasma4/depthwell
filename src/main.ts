@@ -278,6 +278,29 @@ engine.logicLoop = function (ticks: number) {
     }
 };
 
+// TODO touch equivalents
+engine.canvas.addEventListener("mousemove", (e) =>
+    engine.exports.handle_mouse(
+        e.clientX / engine.canvas.width,
+        e.clientY / engine.canvas.height,
+        0,
+    ),
+);
+engine.canvas.addEventListener("mousedown", (e) =>
+    engine.exports.handle_mouse(
+        e.clientX / engine.canvas.width,
+        e.clientY / engine.canvas.height,
+        1,
+    ),
+);
+engine.canvas.addEventListener("mouseup", (e) =>
+    engine.exports.handle_mouse(
+        e.clientX / engine.canvas.width,
+        e.clientY / engine.canvas.height,
+        2,
+    ),
+);
+
 function initDebugUI() {
     const exports = engine.exports as any;
     if (!exports.debug_build_ui_metadata) return;

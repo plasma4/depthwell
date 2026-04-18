@@ -21,6 +21,7 @@ const v2f64 = memory.v2f64;
 const v2u64 = memory.v2u64;
 
 pub var procedural_cell_size: f64 = 1.0;
+pub var fbm_power: f64 = 1.0;
 pub var density_min: f64 = 0.32;
 pub var density_max: f64 = 0.9;
 /// Determines whether to use a heatmap or not for base terrain. Ignored if `is_debug` is false.
@@ -66,9 +67,9 @@ pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
 ///
 /// 1. Generate an initial terrain density+moisture value using the seed vectors.
 /// 2. Generate a block from those values.
-/// 3. Generates structures (TODO)
+/// 3. Generates larger structures with FBM Worley and valid placement checks.
 pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) BaseTerrainData {
-    const moisture = get_fbm_worley_value(
+    const moisture = get_fbm_worley_value( // acts as a biome
         vec2,
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
@@ -122,15 +123,17 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
     var warp_x: f32 = 0; // 32-bit means possible performance gains from SIMD and stuff, possibly
     var warp_y: f32 = 0;
 
-    comptime var freq: u64 = 1;
-    comptime var amp = options.fbm_shift_size;
-    // FBM warping
-    inline for (0..fbm_octaves) |_| {
-        const noise = get_dual_value_noise(seed_vector, x * freq, y * freq); // make shifting smooth!
-        warp_x += noise[0] * amp;
-        warp_y += noise[1] * amp;
-        amp *= 0.5;
-        freq *%= 2;
+    var freq: u64 = 1;
+    var amp = options.fbm_shift_size * @as(f32, @floatCast(fbm_power));
+    if (amp > 0) {
+        // FBM warping
+        inline for (0..fbm_octaves) |_| {
+            const noise = get_dual_value_noise(seed_vector, x * freq, y * freq); // make shifting smooth!
+            warp_x += noise[0] * amp;
+            warp_y += noise[1] * amp;
+            amp *= 0.5;
+            freq *%= 2;
+        }
     }
 
     const cell_size = options.cell_size * @as(f32, @floatCast(procedural_cell_size));
@@ -219,7 +222,15 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
 /// Continues from steps 1-3 in `get_base_sprite_type()`.
 ///
 /// 4. Disperses ores using Worley noise. Assumes that `is_stone()` was checked before calling.
-pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2: v2u64, rng1: *seeding.ChaCha12, x: u32, y: u32) Sprite {
+pub fn add_ores(
+    base_data: BaseTerrainData,
+    seed_vector_1: v2u64,
+    seed_vector_2: v2u64,
+    seed_vector_3: v2u64,
+    seed_vector_4: v2u64,
+    x: u32,
+    y: u32,
+) Sprite {
     var sprite = base_data.sprite;
 
     // Generate new density for ores: the seed vector should be different from the `get_fbm_worley_density()` vector.
@@ -250,7 +261,7 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
     if (is_debug and USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v1 * 256.0)));
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
-        // Change the sprite to various ore types:
+        // Generate various ore types
         sprite = select_sprite(
             .{ sprite, .copper },
             true,
@@ -284,35 +295,49 @@ pub fn add_ores(base_data: BaseTerrainData, seed_vector_1: v2u64, seed_vector_2:
         );
         if (sprite == .gold) return sprite;
     } else {
-        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.32 else 0.2;
+        // Logic for generating gems
+        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.35 else 0.25;
         if (base_data.density >= 0.3 and base_data.density <= 0.5 and v2 >= 0.1 and v2 <= gem_v2_bound) {
-            const random_value = rng1.next();
-            const gem_base = 0.2;
-            if (random_value <= odds_num(gem_base)) {
+            const random_value = FastHash.hash_2d(seed_vector_3, @intCast(x), @intCast(y));
+
+            const base_odds = 0.1;
+            if (random_value <= odds_num(base_odds)) {
+                const v3 = get_fbm_worley_value(
+                    seed_vector_4,
+                    y,
+                    x,
+                    .{
+                        .cell_size = 35.0,
+                        .fbm_shift_size = 0.0,
+                        .horizontally_wide = false,
+                        .use_f2_f1 = false,
+                    },
+                );
+
                 sprite = select_sprite(
                     .{ sprite, .amethyst },
-                    random_value <= odds_num(0.4 * gem_base),
+                    v3 <= 0.4 and random_value <= odds_num(0.4 * base_odds),
                     null,
                 );
                 if (sprite == .amethyst) return sprite;
 
                 sprite = select_sprite(
                     .{ sprite, .sapphire },
-                    random_value <= odds_num(0.65 * gem_base),
+                    v3 >= 0.75 and random_value <= odds_num(0.65 * base_odds),
                     null,
                 );
                 if (sprite == .sapphire) return sprite;
 
                 sprite = select_sprite(
                     .{ sprite, .emerald },
-                    random_value <= odds_num(0.86 * gem_base),
+                    v3 >= 0.45 and v3 >= 0.65 and random_value <= odds_num(0.86 * base_odds),
                     null,
                 );
                 if (sprite == .emerald) return sprite;
 
                 sprite = select_sprite(
                     .{ sprite, .ruby },
-                    random_value <= odds_num(1.0 * gem_base),
+                    v3 >= 0.22 and v3 >= 0.3 and random_value <= odds_num(1.0 * base_odds),
                     null,
                 );
                 if (sprite == .ruby) return sprite;
