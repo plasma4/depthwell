@@ -1,6 +1,7 @@
 //! Contains initialization and render update functions. See root.zig for exporting these functions (and others) to WASM.
 const std = @import("std");
 const memory = @import("memory.zig");
+const sprite = @import("sprite.zig");
 const logger = @import("logger.zig");
 const seeding = @import("seeding.zig");
 const world = @import("world.zig");
@@ -10,13 +11,13 @@ const SPAN = memory.SPAN;
 const SPAN_SQ = memory.SPAN_SQ;
 const SPAN_FLOAT = memory.SPAN_FLOAT;
 const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
-const SCREEN_WIDTH = 480;
-const SCREEN_HEIGHT = 270;
-const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
-const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
+pub const SCREEN_WIDTH = 480;
+pub const SCREEN_HEIGHT = 270;
+pub const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
+pub const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
 /// Sets the number of times the push_layer function is called at the start. (If set to 3 (default), the game will start off by being 4096x4096 chunks. If set to 1, for example, it will be 1 chunk with 16x16 blocks instead.)
-const STARTING_ZOOM_TIMES = 3;
+pub const STARTING_ZOOM_TIMES = 3;
 /// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` > 0).
 const SET_PLAYER_SPAWN_RANDOMLY = true;
 
@@ -214,7 +215,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
                     if (target_coord.suffix[0] > world_limit or target_coord.suffix[1] > world_limit) {
                         for (0..SPAN) |ly| {
                             const row_start = (gy * SPAN + ly) * wb + gx * SPAN;
-                            @memset(out[row_start .. row_start + SPAN], world.AIR_BLOCK);
+                            @memset(out[row_start .. row_start + SPAN], sprite.AIR_BLOCK);
                         }
                         continue;
                     }
@@ -227,7 +228,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
             } else {
                 for (0..SPAN) |ly| {
                     const row_start = (gy * SPAN + ly) * wb + gx * SPAN;
-                    @memset(out[row_start .. row_start + SPAN], world.AIR_BLOCK);
+                    @memset(out[row_start .. row_start + SPAN], sprite.AIR_BLOCK);
                 }
             }
         }

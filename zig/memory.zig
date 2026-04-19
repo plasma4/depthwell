@@ -1,6 +1,7 @@
 //! Contains important datatypes, some of which bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
 const std = @import("std");
 const builtin = @import("builtin");
+const Sprite = @import("sprite.zig").Sprite;
 const types = @import("types.zig");
 const logger = @import("logger.zig");
 const player = @import("player.zig");
@@ -154,7 +155,7 @@ pub const page_allocator = if (builtin.is_test) std.testing.allocator else std.h
 
 /// An instance of the general-purpose allocator (or testing allocator when running tests).
 /// Use `make_arena()` to create an `ArenaAllocator` around this (WASM has no SMP allocator support).
-const main_allocator = if (builtin.is_test) std.testing.allocator else std.heap.brk_allocator; // use .allocator() for instance
+const main_allocator = if (builtin.is_test) std.testing.allocator else if (builtin.single_threaded) std.heap.brk_allocator else std.heap.smp_allocator; // use .allocator() for instance
 
 /// Creates an `ArenaAllocator` around either the WASM allocator, testing allocator, or GPA, as necessary. It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
 ///
@@ -198,7 +199,7 @@ pub const MemorySizes = struct {
 /// A single block within a chunk. Each block uses 8 bytes.
 pub const Block = packed struct(u64) {
     /// Internal sprite ID.
-    id: world.Sprite,
+    id: Sprite,
     /// Edge flags: which neighbors are air (for edge-darkening and culling).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
     edge_flags: u8,
@@ -212,16 +213,14 @@ pub const Block = packed struct(u64) {
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
     /// Using the BOTTOM 32 bits from `seed_bits`, (up to, but not necessarily) 8 bits of `light` and (guaranteed) 24 bits of `seed`.
-    pub inline fn make_basic_block(sprite_type: world.Sprite, seed_bits: u64) Block {
+    pub inline fn make_basic_block(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
             .hp = 0,
             .edge_flags = 0,
 
-            // TODO decide if shining ores is the right approach
+            // light only applies to ores in WGSL
             .light = if (sprite_type.is_ore()) (@as(u8, @intCast((seed_bits >> 24) % 64))) + 64 else 0,
-            // .light = @truncate(seed_bits >> 24),
-
             .seed = @truncate(seed_bits),
         };
     }
@@ -282,62 +281,53 @@ pub const Coordinate = struct {
         return @reduce(.And, self.suffix == other.suffix) and self.quadrant == other.quadrant;
     }
 
-    /// Adds a certain X value, creating a new Coordinate and handling quadrants. Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub fn move_x(self: @This(), x_shift: i64) ?Coordinate {
+    /// Adds both an X and Y value, creating a new Coordinate and handling quadrants.
+    /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    pub fn move(self: @This(), shift: v2i64) ?Coordinate {
+        const dx = shift[0];
+        const dy = shift[1];
+        if (dx == 0 and dy == 0) return self;
+        const depth = game.depth;
         var res = self;
-        if (x_shift >= 0) {
-            const ov = @addWithOverflow(res.suffix[0], @as(u64, @intCast(x_shift)));
-            res.suffix[0] = ov[0];
+
+        // X Axis
+        if (dx != 0) {
+            const is_pos = dx > 0;
+            const delta: u64 = if (is_pos) @intCast(dx) else @intCast(-%dx);
+            const ov = if (is_pos) @addWithOverflow(res.suffix[0], delta) else @subWithOverflow(res.suffix[0], delta);
             if (ov[1] != 0) {
-                if (game.depth <= 16) return null;
-                // Positive overflow: must be in a western quadrant (0 or 2) to move east (to 1 or 3)
-                if (res.quadrant & 1 != 0) return null; // Already east, can't move further east
-                res.quadrant |= 1;
+                if (depth <= 16) return null;
+                if (is_pos == ((res.quadrant & 1) != 0)) return null;
+                res.quadrant ^= 1;
             }
-        } else {
-            const abs_shift = @as(u64, @intCast(-%x_shift));
-            const ov = @subWithOverflow(res.suffix[0], abs_shift);
             res.suffix[0] = ov[0];
+        }
+
+        // Y Axis
+        if (dy != 0) {
+            const is_pos = dy > 0;
+            const delta: u64 = if (is_pos) @intCast(dy) else @intCast(-%dy);
+            const ov = if (is_pos) @addWithOverflow(res.suffix[1], delta) else @subWithOverflow(res.suffix[1], delta);
             if (ov[1] != 0) {
-                if (game.depth <= 16) return null;
-                // Negative overflow: must be in an eastern quadrant (1 or 3) to move west (to 0 or 2)
-                if (res.quadrant & 1 == 0) return null; // Already west
-                res.quadrant &= ~@as(u2, 1);
+                if (depth <= 16) return null;
+                if (is_pos == ((res.quadrant & 2) != 0)) return null;
+                res.quadrant ^= 2;
             }
+            res.suffix[1] = ov[0];
         }
         return res;
     }
 
-    /// Adds a certain Y value, creating a new Coordinate and handling quadrants. Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub fn move_y(self: @This(), y_shift: i64) ?Coordinate {
-        var res = self;
-        if (y_shift >= 0) {
-            const ov = @addWithOverflow(res.suffix[1], @as(u64, @intCast(y_shift)));
-            res.suffix[1] = ov[0];
-            if (ov[1] != 0) {
-                if (game.depth <= 16) return null;
-                // Positive overflow (south): must be in a northern quadrant (0 or 1) to move south (to 2 or 3)
-                if (res.quadrant & 2 != 0) return null; // Already south
-                res.quadrant |= 2;
-            }
-        } else {
-            const abs_shift = @as(u64, @intCast(-%y_shift));
-            const ov = @subWithOverflow(res.suffix[1], abs_shift);
-            res.suffix[1] = ov[0];
-            if (ov[1] != 0) {
-                if (game.depth <= 16) return null;
-                // Negative overflow (north): must be in a southern quadrant (2 or 3) to move north (to 0 or 1)
-                if (res.quadrant & 2 == 0) return null; // Already north
-                res.quadrant &= ~@as(u2, 2);
-            }
-        }
-        return res;
+    /// Adds a certain X value, creating a new Coordinate and handling quadrants.
+    /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    pub inline fn move_x(self: @This(), x: i64) ?Coordinate {
+        return self.move(.{ x, 0 });
     }
 
-    /// Adds both an X and Y value, creating a new Coordinate and handling quadrants. Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub fn move(self: @This(), suffix_change_vector: v2i64) ?Coordinate {
-        const moved_x = self.move_x(suffix_change_vector[0]) orelse return null;
-        return moved_x.move_y(suffix_change_vector[1]);
+    /// Adds a certain Y value, creating a new Coordinate and handling quadrants.
+    /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    pub inline fn move_y(self: @This(), y: i64) ?Coordinate {
+        return self.move(.{ 0, y });
     }
 };
 
@@ -347,7 +337,7 @@ pub const ModifiedChunk = struct {
     /// Bit index corresponds to (y * 16 + x).
     modified_mask: [4]u64,
     /// The specific modified block IDs. Only indices with a 1 in `modified_mask` are valid.
-    blocks: [SPAN_SQ]world.Sprite,
+    blocks: [SPAN_SQ]Sprite,
 
     /// Helper to check if a specific local block is modified
     pub inline fn is_modified(self: *const @This(), lx: u4, ly: u4) bool {

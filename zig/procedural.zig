@@ -12,11 +12,11 @@ const POW_2_32 = 4294967296;
 const POW_2_64 = seeding.POW_2_64;
 const SPAN = memory.SPAN;
 
+const Sprite = @import("sprite.zig").Sprite;
 const EdgeFlags = types.EdgeFlags;
 const odds_num = seeding.odds_num;
 const FastHash = seeding.FastHash;
 const Seed = seeding.Seed;
-const Sprite = world.Sprite;
 const v2f64 = memory.v2f64;
 const v2u64 = memory.v2u64;
 
