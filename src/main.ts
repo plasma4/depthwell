@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 "use strict";
 
+// const is_dev = import.meta.env.DEV;
+const is_dev = true;
+
 /**
  * Debug/testing options. Set all values to false in production.
  * TODO set to false for prod :P
@@ -38,7 +41,7 @@ import { GameEngine } from "./engine";
 import { KeyBits, game_state_offsets } from "./enums";
 
 globalThis.Zig = { KeyBits, game_state_offsets };
-if (import.meta.env.DEV) {
+if (is_dev) {
     console.log(
         "Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs.",
     );
@@ -223,7 +226,7 @@ engine.renderLoop = function (_t: number) {
     engine.logicLoop(Math.max(Math.floor(accumulator + newTicks), 1));
     accumulator = (accumulator + newTicks) % 1; // calculate new fractional accumulation of ticks
 
-    if (import.meta.env.DEV) {
+    if (is_dev) {
         past60SlowestRenders.shift();
         past60SlowestRenders.push(delta);
         past60SlowestZigRenders.shift();
@@ -268,7 +271,7 @@ engine.logicLoop = function (ticks: number) {
     time = performance.now();
     let delta = time - startTime;
 
-    if (import.meta.env.DEV) {
+    if (is_dev) {
         past60SlowestLogicLoops.shift();
         past60SlowestLogicLoops.push(delta);
 
@@ -331,7 +334,7 @@ engine.canvas.style.touchAction = "none"; // prevent touch gesture interception
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Build the fancy debug UI in the corner!
-if (import.meta.env.DEV) {
+if (is_dev) {
     const exports = engine.exports as any;
 
     // Populate scratch buffer with JSON data and parse it
