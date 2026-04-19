@@ -430,3 +430,7 @@ Ores and gems are rendered using a multi-texture "masking" trick to save atlas s
 #### Parallax background
 
 The background isn't a static image; it's a multi-octave Fractal Brownian Motion (FBM) simulation. It uses a 2D noise function that is "panned" by the camera position at a scale of 0.02, creating a deep parallax effect. This still needs improvement to not constantly reset between chunks (which can be done by intermixing two backgrounds, but that's something in the future to do).
+
+### Copyright
+
+Copyright (c) 2026 Leo Zhang. All rights reserved. Distribution of any portions of code without permission is strictly prohibited.
