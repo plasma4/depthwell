@@ -153,7 +153,6 @@ pub fn find_safe_spawn() void {
 /// Processes data for renderFrame in TypeScript.
 pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
-    const w = world;
     const game = &memory.game;
 
     // this variable allows for super smooth frame interpolation :)
@@ -221,7 +220,7 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
                     }
                 }
 
-                w.write_chunk(&chunk, target_coord);
+                world.write_chunk(&chunk, target_coord);
                 for (0..SPAN) |ly| {
                     @memcpy(out[(gy * SPAN + ly) * wb + gx * SPAN ..][0..SPAN], chunk.blocks[ly * SPAN ..][0..SPAN]);
                 }
@@ -239,7 +238,17 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
 }
 
 /// Sets scratch properties containing information to TypeScript for renderFrame.
-inline fn update_render_properties(game: *memory.GameState, interp_cam_x: f64, interp_cam_y: f64, wb: u32, hb: u32, min_cx: i32, min_cy: i32, dt: f64, effective_zoom: f64) void {
+inline fn update_render_properties(
+    game: *memory.GameState,
+    interp_cam_x: f64,
+    interp_cam_y: f64,
+    wb: u32,
+    hb: u32,
+    min_cx: i32,
+    min_cy: i32,
+    dt: f64,
+    effective_zoom: f64,
+) void {
     // Calculate the camera position relative to the tile grid origin
     const grid_origin_sub_x = @as(f64, @floatFromInt(min_cx)) * @as(f64, @floatFromInt(memory.SUBPIXELS_IN_CHUNK));
     const grid_origin_sub_y = @as(f64, @floatFromInt(min_cy)) * @as(f64, @floatFromInt(memory.SUBPIXELS_IN_CHUNK));

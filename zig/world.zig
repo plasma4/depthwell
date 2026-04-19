@@ -1,5 +1,6 @@
 //! Defines the architecture of the fractal world, which is a segmented fractal coordinate system that uses a quad-cache for coordinates and corresponding seeds.
 const std = @import("std");
+const SegmentedList = @import("SegmentedList.zig").SegmentedList;
 const is_debug = @import("builtin").mode == .Debug;
 const utils = @import("utils.zig");
 const types = @import("types.zig");
@@ -173,10 +174,6 @@ pub const ModKey = extern struct {
     depth: u64,
 };
 
-/// Arena for long-lasting data.
-pub var world_arena = memory.make_arena();
-const allocator = world_arena.allocator();
-
 /// Width of the simulation buffer.
 const SIM_BUFFER_WIDTH = 16;
 /// Size of the simulation buffer (`SIM_BUFFER_WIDTH` squared).
@@ -188,6 +185,40 @@ const CHUNK_POOL_SIZE = SIM_BUFFER_SIZE + CHUNK_CACHE_SIZE;
 
 /// A combined pool of SimBuffer and chunk cache data.
 var chunk_pool: [CHUNK_POOL_SIZE]Chunk = undefined;
+
+pub const ModificationStore = struct {
+    index: std.AutoHashMap(memory.ModKey, usize),
+    history: std.ArrayList(memory.ChunkMod),
+
+    pub fn init(allocator: std.mem.Allocator) ModificationStore {
+        return .{
+            .index = std.AutoHashMap(memory.ModKey, usize).init(allocator),
+            .history = std.ArrayList(memory.ChunkMod).init(allocator),
+        };
+    }
+
+    /// Gets an existing modification, or allocates a new blank one.
+    pub fn get_or_create(self: *@This(), key: memory.ModKey) *memory.ChunkMod {
+        const result = self.index.getOrPut(key) catch @panic("OOM in ModStore");
+        if (!result.found_existing) {
+            result.value_ptr.* = self.history.items.len;
+
+            // Initialize with default unchanged blocks
+            var blank_mod: memory.ChunkMod = undefined;
+            @memset(&blank_mod, .{ .id = Sprite.unchanged });
+            self.history.append(blank_mod) catch @panic("OOM in ModStore");
+        }
+        return &self.history.items[result.value_ptr.*];
+    }
+
+    /// Gets an existing modification for reading.
+    pub fn get(self: *const @This(), key: memory.ModKey) ?*const memory.ChunkMod {
+        const idx = self.index.get(key) orelse return null;
+        return &self.history.items[idx];
+    }
+};
+
+pub var mod_store: ModificationStore = undefined;
 
 /// The simulation buffer containing 16x16 chunks, centered around the player.
 pub const SimBuffer = struct {
@@ -224,12 +255,41 @@ pub const SimBuffer = struct {
     var ring_x: u4 = 0;
     var ring_y: u4 = 0;
 
-    /// Returns the internal index into the 256-chunk array.
-    pub inline fn get_index(cx: u4, cy: u4) usize {
-        const rx: u4 = @intCast((@as(u32, ring_x) + cx) % SIM_BUFFER_WIDTH);
-        const ry: u4 = @intCast((@as(u32, ring_y) + cy) % SIM_BUFFER_WIDTH);
-        return @as(u32, ry) * SIM_BUFFER_WIDTH + rx;
+    /// Mask for the 16x16 buffer.
+    const SIM_MASK = SIM_BUFFER_WIDTH - 1;
+    const _ = {
+        if (!std.math.isPowerOfTwo(SIM_BUFFER_WIDTH)) @compileError("Sim buffer width must be a positive power of 2.");
+    };
+
+    /// Represents log2(SIM_BUFFER_WIDTH).
+    const LOG_2_MASK = std.math.log2(SIM_BUFFER_WIDTH);
+
+    /// Attempts to retrieve a chunk from the buffer, returning `null` if non-existent.
+    pub fn get(coord: Coordinate) ?*Chunk {
+        const og = origin orelse return null;
+        if (coord.quadrant != og.quadrant) {
+            return null;
+        }
+
+        const dx = coord.suffix[0] -% og.suffix[0];
+        const dy = coord.suffix[1] -% og.suffix[1];
+
+        if (dx < SIM_BUFFER_WIDTH and dy < SIM_BUFFER_WIDTH) {
+            const id = get_index(@intCast(dx), @intCast(dy));
+            if (keys[id]) |k| {
+                if (k.eql(coord)) return &sim_buffer_ptr[id];
+            }
+        }
+        return null;
     }
+
+    /// Returns the internal index into the chunk array.
+    pub inline fn get_index(cx: u4, cy: u4) usize {
+        const rx = (ring_x +% cx) & SIM_MASK;
+        const ry = (ring_y +% cy) & SIM_MASK;
+        return (@as(usize, ry) << LOG_2_MASK) | rx;
+    }
+
     /// Clears the whole `SimBuffer`, invalidating previous data.
     pub inline fn clear() void {
         @memset(sim_buffer_ptr, std.mem.zeroes(Chunk));
@@ -239,45 +299,24 @@ pub const SimBuffer = struct {
         ring_y = 0;
     }
 
-    /// Attempts to retrieve a chunk from the buffer using O(1) spatial mapping.
-    pub fn get(coord: Coordinate) ?*Chunk {
-        const og = origin orelse return null;
-
-        // Check if coordinate is in the same quadrant/macro-region
-        if (coord.quadrant != og.quadrant) return null;
-
-        const dx = @as(i64, @intCast(coord.suffix[0])) - @as(i64, @intCast(og.suffix[0]));
-        const dy = @as(i64, @intCast(coord.suffix[1])) - @as(i64, @intCast(og.suffix[1]));
-
-        if (dx >= 0 and dx < SIM_BUFFER_WIDTH and dy >= 0 and dy < SIM_BUFFER_WIDTH) {
-            const id = get_index(@intCast(dx), @intCast(dy));
-            // Verification check: ensure the key actually matches (handles edge cases in wrapping)
-            if (keys[id]) |k| {
-                if (k.eql(coord)) return &sim_buffer_ptr[id];
-            }
-        }
-        return null;
-    }
-
     /// Helper to safely step an origin coordinate, returning the furthest possible coordinate
     /// if a game boundary is hit (when Coordinate.move returns null).
     fn get_clamped_move(coord: Coordinate, dx: i64, dy: i64) Coordinate {
+        // Fast path: attempt direct move
+        if (coord.move(.{ dx, dy })) |target| return target;
+
+        // Slow path: step-clamping (only for hard world boundaries)
         var curr = coord;
-        var step_x = dx;
-        while (step_x != 0) {
-            const dir: i64 = if (step_x > 0) 1 else -1;
-            if (curr.move_x(dir)) |next| {
-                curr = next;
-                step_x -= dir;
-            } else break;
-        }
-        var step_y = dy;
-        while (step_y != 0) {
-            const dir: i64 = if (step_y > 0) 1 else -1;
-            if (curr.move_y(dir)) |next| {
-                curr = next;
-                step_y -= dir;
-            } else break;
+        inline for (.{ 0, 1 }) |axis| {
+            var remaining = if (axis == 0) dx else dy;
+            while (remaining != 0) {
+                const step = std.math.sign(remaining);
+                const next = if (axis == 0) curr.move_x(step) else curr.move_y(step);
+                if (next) |n| {
+                    curr = n;
+                    remaining -= step;
+                } else break;
+            }
         }
         return curr;
     }
@@ -286,32 +325,21 @@ pub const SimBuffer = struct {
     /// Safely handles shifts exceeding 1 chunk per frame via `shift`.
     pub fn sync(coord: Coordinate, shift: v2i64) void {
         const og = origin orelse {
-            const target_origin = get_clamped_move(coord, -8, -8);
-            full_refresh(target_origin);
+            full_refresh(get_clamped_move(coord, -8, -8));
             return;
         };
 
-        // Calculate distance from the CURRENT center of the buffer window
-        const center_x = @as(i64, @intCast(og.suffix[0])) + 8;
-        const center_y = @as(i64, @intCast(og.suffix[1])) + 8;
-        const dist_x = @as(i64, @intCast(coord.suffix[0])) - center_x;
-        const dist_y = @as(i64, @intCast(coord.suffix[1])) - center_y;
-
-        // Force a full refresh if we teleported or shifted too far for incremental updates
-        if (og.quadrant != coord.quadrant or @abs(dist_x) > 8 or @abs(dist_y) > 8) {
-            const target_origin = get_clamped_move(coord, -8, -8);
-            full_refresh(target_origin);
+        // Use shift directly for incremental updates if distance is small
+        if (@abs(shift[0]) < SIM_BUFFER_WIDTH and @abs(shift[1]) < SIM_BUFFER_WIDTH) {
+            if (shift[0] != 0 or shift[1] != 0) {
+                incremental_refresh(shift[0], shift[1]);
+            }
             return;
         }
 
-        if (shift[0] != 0 or shift[1] != 0) {
-            if (@abs(shift[0]) >= SIM_BUFFER_WIDTH or @abs(shift[1]) >= SIM_BUFFER_WIDTH) {
-                const target_origin = get_clamped_move(coord, -8, -8);
-                full_refresh(target_origin);
-            } else {
-                incremental_refresh(shift[0], shift[1]);
-            }
-        }
+        // Teleport or large jump fallback
+        const target_origin = get_clamped_move(coord, -8, -8);
+        if (!og.eql(target_origin)) full_refresh(target_origin);
     }
 
     fn full_refresh(new_origin: Coordinate) void {
@@ -321,14 +349,10 @@ pub const SimBuffer = struct {
 
         for (0..SIM_BUFFER_WIDTH) |cy| {
             for (0..SIM_BUFFER_WIDTH) |cx| {
-                const id = get_index(@intCast(cx), @intCast(cy));
+                const id = (cy << LOG_2_MASK) | cx;
                 if (new_origin.move(.{ @intCast(cx), @intCast(cy) })) |cell_coord| {
                     keys[id] = cell_coord;
-                    if (ChunkCache.get(cell_coord)) |cached| {
-                        sim_buffer_ptr[id] = cached.*;
-                    } else {
-                        generate_chunk(&sim_buffer_ptr[id], cell_coord);
-                    }
+                    write_chunk_skip(&sim_buffer_ptr[id], cell_coord);
                 } else {
                     keys[id] = null;
                 }
@@ -337,28 +361,48 @@ pub const SimBuffer = struct {
     }
 
     fn incremental_refresh(dx: i64, dy: i64) void {
-        const new_origin = get_clamped_move(origin.?, dx, dy);
+        const old_origin = origin.?;
+        const new_origin = get_clamped_move(old_origin, dx, dy);
         origin = new_origin;
 
-        // Shift 2D ring buffer origin safely
-        ring_x = @intCast(@mod(@as(i64, ring_x) + dx, SIM_BUFFER_WIDTH));
-        ring_y = @intCast(@mod(@as(i64, ring_y) + dy, SIM_BUFFER_WIDTH));
+        ring_x = @intCast((@as(u32, ring_x) +% @as(u32, @bitCast(@as(i32, @intCast(dx))))) & SIM_MASK);
+        ring_y = @intCast((@as(u32, ring_y) +% @as(u32, @bitCast(@as(i32, @intCast(dy))))) & SIM_MASK);
 
-        // Evaluate bounds to only process the new chunks entering the window
-        for (0..SIM_BUFFER_WIDTH) |cy| {
-            for (0..SIM_BUFFER_WIDTH) |cx| {
-                const is_new_x = if (dx > 0) cx >= SIM_BUFFER_WIDTH - @as(usize, @intCast(dx)) else cx < @as(usize, @intCast(-dx));
-                const is_new_y = if (dy > 0) cy >= SIM_BUFFER_WIDTH - @as(usize, @intCast(dy)) else cy < @as(usize, @intCast(-dy));
+        const adx: usize = @intCast(@abs(dx));
+        const ady: usize = @intCast(@abs(dy));
 
-                if (is_new_x or is_new_y) {
-                    const id = get_index(@intCast(cx), @intCast(cy));
-                    if (new_origin.move(.{ @intCast(cx), @intCast(cy) })) |cell_coord| {
+        // Refresh new columns
+        if (dx != 0) {
+            for (0..SIM_BUFFER_WIDTH) |cy_log| {
+                for (0..adx) |i| {
+                    // New columns are at the leading edge in the direction of travel
+                    const cx_log: u4 = if (dx > 0)
+                        @intCast(SIM_BUFFER_WIDTH - adx + i)
+                    else
+                        @intCast(i);
+                    const id = get_index(@intCast(cx_log), @intCast(cy_log));
+                    if (new_origin.move(.{ @intCast(cx_log), @intCast(cy_log) })) |cell_coord| {
                         keys[id] = cell_coord;
-                        if (ChunkCache.get(cell_coord)) |cached| {
-                            sim_buffer_ptr[id] = cached.*;
-                        } else {
-                            generate_chunk(&sim_buffer_ptr[id], cell_coord);
-                        }
+                        write_chunk_skip(&sim_buffer_ptr[id], cell_coord);
+                    } else {
+                        keys[id] = null;
+                    }
+                }
+            }
+        }
+
+        // Refresh new rows (avoid double-refreshing corners)
+        if (dy != 0) {
+            for (0..SIM_BUFFER_WIDTH) |cx_log| {
+                for (0..ady) |i| {
+                    const cy_log: u4 = if (dy > 0)
+                        @intCast(SIM_BUFFER_WIDTH - ady + i)
+                    else
+                        @intCast(i);
+                    const id = get_index(@intCast(cx_log), @intCast(cy_log));
+                    if (new_origin.move(.{ @intCast(cx_log), @intCast(cy_log) })) |cell_coord| {
+                        keys[id] = cell_coord;
+                        write_chunk_skip(&sim_buffer_ptr[id], cell_coord);
                     } else {
                         keys[id] = null;
                     }
@@ -398,7 +442,8 @@ pub const SimBuffer = struct {
             if (generated_count >= budget) break;
             if (player_coord.move(off)) |c| {
                 if (get(c) == null and ChunkCache.get(c) == null) {
-                    write_chunk(ChunkCache.allocate_slot(c), c);
+                    const slot = ChunkCache.allocate_slot(c);
+                    generate_chunk(slot, c);
                     generated_count += 1;
                 }
             }
@@ -411,7 +456,8 @@ pub const SimBuffer = struct {
             bg_scan_id = (bg_scan_id + 1) % RING_SIZE;
             if (player_coord.move(off)) |c| {
                 if (get(c) == null and ChunkCache.get(c) == null) {
-                    write_chunk(ChunkCache.allocate_slot(c), c);
+                    const slot = ChunkCache.allocate_slot(c);
+                    generate_chunk(slot, c);
                     generated_count += 1;
                 }
             }
@@ -485,10 +531,10 @@ pub const ChunkCache = struct {
     }
 };
 
-/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `ArrayList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `world_arena`.
+/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `ArrayList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `arena`.
 fn carry_path(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
-    const new_path = path.clone(world_arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
-    world_arena.reset(.retain_capacity); // TODO decide
+    const new_path = path.clone(arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
+    arena.reset(.retain_capacity); // TODO decide
     var carry: u1 = 1;
 
     for (new_path.items) |*word| {
@@ -524,9 +570,9 @@ pub const QuadCache = struct {
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
-    left_path: std.ArrayList(u64),
+    left_path: SegmentedList(u64, 0),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: std.ArrayList(u64),
+    top_path: SegmentedList(u64, 0),
 
     // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen/zooming in
     most_top: bool = true,
@@ -548,7 +594,7 @@ pub const QuadCache = struct {
     // pub inline fn cleanup_path(self: *const @This(), path: std.ArrayList(u64)) void {
     //     // Memory comparison is safe because QuadCache will never be de-initialized, top_left_path is always non-empty (so nothing weird), and there's no multicore/async shenanigans here.
     //     if (self.left_path.items.ptr != path.items.ptr and self.top_path.items.ptr != path.items.ptr) {
-    //         path.deinit(world_arena);
+    //         path.deinit(arena);
     //     }
     // }
 
@@ -602,6 +648,20 @@ pub fn write_chunk(chunk: *Chunk, coord: Coordinate) void {
         return;
     }
 
+    if (ChunkCache.get(coord)) |cached_ptr| { // see if it's in the cache, if it's not in SimBuffer
+        chunk.* = cached_ptr.*;
+        return;
+    }
+
+    const new_slot_ptr = ChunkCache.allocate_slot(coord); // we must create the chunk now
+    generate_chunk(new_slot_ptr, coord); // generate the data in the cache's memory
+    chunk.* = new_slot_ptr.*; // make a copy for a result
+    // TODO handle new modification logic when the time comes
+}
+
+/// Same as `write_chunk`, but avoids checking `SimBuffer` first.
+pub fn write_chunk_skip(chunk: *Chunk, coord: Coordinate) void {
+    // logger.write(3, .{ "{h}Chunk requested", coord });
     if (ChunkCache.get(coord)) |cached_ptr| { // see if it's in the cache, if it's not in SimBuffer
         chunk.* = cached_ptr.*;
         return;
@@ -785,6 +845,44 @@ inline fn should_have_edge_flags(sprite: Sprite, current_sprite: Sprite) bool {
     return sprite.is_foundation();
 }
 
+/// Applies a block modification. Mutates ModStore and caches in-place.
+pub fn apply_modification(coord: memory.Coordinate, bx: u4, by: u4, new_sprite: Sprite) void {
+    const depth = memory.game.depth;
+    const key = memory.ModKey{ .coord = coord, .depth = depth };
+
+    // Write to the persistent ModStore
+    const chunk_mod = mod_store.get_or_create(key);
+    const id: usize = @as(usize, by) * memory.SPAN + bx;
+    chunk_mod[id].id = new_sprite;
+    chunk_mod[id].hp = 15; // Set to fully mined/modified
+
+    // Mutate SimBuffer and ChunkCache in-place
+    // const is_solid = new_sprite.is_solid();
+    // const is_foundation = new_sprite.is_foundation();
+
+    if (SimBuffer.get(coord)) |sim_chunk| {
+        sim_chunk.blocks[id].id = new_sprite;
+        // Edge flags will be updated in step 3
+    }
+    if (ChunkCache.get(coord)) |cache_chunk| {
+        cache_chunk.blocks[id].id = new_sprite;
+    }
+
+    // 3. Recompute edge flags locally (3x3 grid around bx, by).
+    // This function must handle boundary checks to modify adjacent chunks if bx/by are on an edge.
+    update_local_edge_flags(coord, bx, by);
+}
+
+/// Recalculates edge flags for a specific block and its 8 neighbors.
+fn update_local_edge_flags(coord: memory.Coordinate, bx: u4, by: u4) void {
+    _ = .{ coord, bx, by };
+    // Iterate from -1 to 1 for both x and y.
+    // If neighbor x/y is out of 0-15 bounds, use coord.move() to find the adjacent chunk.
+    // Fetch chunk from SimBuffer/ChunkCache (do NOT generate if missing).
+    // Update the neighbor's edge_flags bitmask in-place.
+    // (Implementation omitted for brevity, but relies on types.EdgeFlags.get_flag_bit)
+}
+
 // /// The 16-step ascendent projection read loop thingy
 // /// Called when the SimBuffer generates a chunk.
 // pub fn get_effective_modification(self: *@This(), cx: u64, cy: u64) ?*ChunkMod {
@@ -915,13 +1013,13 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
     // update the prefix path (which is an ArrayList)
     if ((depth - (SPAN + 1)) % SPAN == 0) {
-        quad_cache.left_path.append(world_arena.allocator(), left_cell_x) catch @panic("quad-cache append failed");
-        quad_cache.top_path.append(world_arena.allocator(), top_cell_y) catch @panic("quad-cache append failed");
+        quad_cache.left_path.append(arena.allocator(), left_cell_x) catch @panic("quad-cache append failed");
+        quad_cache.top_path.append(arena.allocator(), top_cell_y) catch @panic("quad-cache append failed");
     } else {
         // quad_cache.left_path.len - 1 = (depth - 1) / 16 - 1
         const last_path_index: usize = @intCast((depth - 1) / 16 - 1);
-        const l_ptr: *u64 = &quad_cache.left_path.items[last_path_index];
-        const t_ptr: *u64 = &quad_cache.top_path.items[last_path_index];
+        const l_ptr: *u64 = quad_cache.left_path.at(last_path_index);
+        const t_ptr: *u64 = quad_cache.top_path.at(last_path_index);
 
         l_ptr.* = (l_ptr.* << SPAN_LOG2) + left_cell_x;
         t_ptr.* = (t_ptr.* << SPAN_LOG2) + top_cell_y;

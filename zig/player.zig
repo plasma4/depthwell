@@ -32,6 +32,8 @@ const CCD_STEP_SIZE = SPAN_SQ;
 
 /// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
 /// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
+///
+/// Setting this to a very small value is useful for testing cache validity or performance, however.
 pub const CAMERA_MIN_ZOOM = 1.0 / 3.0;
 
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
@@ -121,7 +123,7 @@ pub fn move(logic_speed: f64) void {
             total_chunk_shift[0] += handle_local_wrap(0);
             rem_x -= move_now;
         } else {
-            // Perfect Snap: Move 1 pixel at a time for the final fraction to hit the edge exactly
+            // Perfect snap: Move 1 pixel at a time for the final fraction to hit the edge exactly
             while (move_now > 0) {
                 if (!is_colliding(game.player_pos[0] + step_x, game.player_pos[1])) {
                     game.player_pos[0] += step_x;
@@ -145,7 +147,7 @@ pub fn move(logic_speed: f64) void {
             total_chunk_shift[1] += handle_local_wrap(1);
             rem_y -= move_now;
         } else {
-            // Perfect Snap
+            // Perfect snap (same as for horizontal)
             while (move_now > 0) {
                 if (!is_colliding(game.player_pos[0], game.player_pos[1] + step_y)) {
                     game.player_pos[1] += step_y;

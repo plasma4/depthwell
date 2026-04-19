@@ -150,10 +150,11 @@ pub var game: GameState = undefined;
 
 /// System-level allocator for pages. On WASM, this grows the linear heap. On native, this
 /// requests pages from the OS. Use as a backing for other allocators.
-pub const page_allocator = if (is_wasm) std.heap.wasm_allocator else std.heap.page_allocator;
+pub const page_allocator = if (builtin.is_test) std.testing.allocator else std.heap.page_allocator;
 
-/// An instance of the general-purpose allocator (or testing allocator when running tests). Use `make_arena()` to create an `ArenaAllocator` around this.
-const allocator = if (is_wasm) std.heap.wasm_allocator else if (builtin.is_test) std.testing.allocator else std.heap.smp_allocator; //.allocator();
+/// An instance of the general-purpose allocator (or testing allocator when running tests).
+/// Use `make_arena()` to create an `ArenaAllocator` around this (WASM has no SMP allocator support).
+const main_allocator = if (builtin.is_test) std.testing.allocator else std.heap.brk_allocator; // use .allocator() for instance
 
 /// Creates an `ArenaAllocator` around either the WASM allocator, testing allocator, or GPA, as necessary. It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
 ///
@@ -167,7 +168,7 @@ const allocator = if (is_wasm) std.heap.wasm_allocator else if (builtin.is_test)
 /// list.append(allocator, 12345) catch {};
 /// ```
 pub fn make_arena() std.heap.ArenaAllocator {
-    return std.heap.ArenaAllocator.init(allocator);
+    return std.heap.ArenaAllocator.init(page_allocator);
 }
 
 /// Start the scratch buffer with 4 MiB when allocating for the first time.
@@ -421,13 +422,13 @@ pub fn get_memory_layout_ptr() *align(MAIN_ALIGN_BYTES) const MemoryLayout {
 
 /// Allocates memory in WASM that JS can write to.
 pub fn wasm_alloc(len: usize) ?[*]u8 {
-    const slice = allocator.alloc(u8, len) catch return null;
+    const slice = main_allocator.alloc(u8, len) catch return null;
     return slice.ptr;
 }
 
 /// Frees memory allocated via wasm_alloc.
 pub fn wasm_free(ptr: [*]u8, len: usize) void {
-    allocator.free(ptr[0..len]);
+    main_allocator.free(ptr[0..len]);
 }
 
 /// Determines if scratch_buffer has at least `len` additional available capacity. If not, expands with the system allocator.
