@@ -54,7 +54,7 @@ if (import.meta.env.DEV) {
     </div>
     <div id="logicText"></div>
     <div id="renderText"></div>
-    <div id="debug-container"></div>`;
+    <div id="debugContainer"></div>`;
 } else {
     // Zig is not in debug mode!
     if (CONFIG.verbose) {
@@ -112,16 +112,6 @@ declare global {
         8,
     )
 */
-
-/** Elements that are used in logging and hidden in production. */
-const loggingElementIds = [
-    "text1",
-    "text2",
-    "text3",
-    "text4",
-    "logicText",
-    "renderText",
-];
 
 // Error-handling logic section!
 if (!CONFIG.noAlertOnError) {
@@ -307,75 +297,35 @@ engine.logicLoop = function (ticks: number) {
     }
 };
 
-// Helper to get normalized coordinates and call Zig
-const dispatch = (e: TouchEvent | MouseEvent, action: number) => {
-    let x: number;
-    let y: number;
-
-    // Check if it's a TouchEvent by looking for 'touches'
-    if ("touches" in e) {
-        // Use changedTouches for 'touchend' events, otherwise touches
-        const touch = e.touches[0] || e.changedTouches[0];
-        x = touch.clientX;
-        y = touch.clientY;
-    } else {
-        // standard mouse event
-        x = e.clientX;
-        y = e.clientY;
-    }
-    x /= engine.canvas.width;
-    y /= engine.canvas.height;
-    if (x >= 0 && x < 1 && y >= 0 && y < 1) {
+// Helper to get normalized coordinates and tell Zig
+const dispatch = (e: PointerEvent, action: number) => {
+    // check if the target is actually the canvas
+    if (e.target !== engine.canvas) return;
+    // get canvas position relative to the viewport
+    const rect = engine.canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+        // only allow if within canvas bounds
         engine.exports.handle_mouse(x, y, action);
     }
 };
 
-document.addEventListener("mousemove", (e) => {
-    if (e.buttons > 0) dispatch(e, 0); // move
+document.addEventListener("pointermove", (e) => {
+    if (e.buttons > 0) dispatch(e, 0); // move while pressing any button
 });
 
-document.addEventListener("mousedown", (e) => {
-    const action = e.button === 2 ? 3 : 1; // left down, right down
+document.addEventListener("pointerdown", (e) => {
+    const action = e.button === 2 ? 3 : 1;
     dispatch(e, action);
 });
 
-document.addEventListener("mouseup", (e) => {
-    const action = e.button === 2 ? 4 : 2; // left up, right up
+document.addEventListener("pointerup", (e) => {
+    const action = e.button === 2 ? 4 : 2;
     dispatch(e, action);
 });
 
-document.addEventListener(
-    "touchstart",
-    (e) => {
-        if (e.touches.length === 1) {
-            e.preventDefault(); // prevent scrolling/scoping while interacting
-            dispatch(e, 1);
-        }
-    },
-    { passive: false },
-);
-
-document.addEventListener(
-    "touchmove",
-    (e) => {
-        if (e.touches.length === 1) {
-            e.preventDefault();
-            dispatch(e, 0);
-        }
-    },
-    { passive: false },
-);
-
-document.addEventListener(
-    "touchend",
-    (e) => {
-        // here, use changedTouches because e.touches is empty when the finger leaves
-        if (e.changedTouches.length === 1) {
-            dispatch(e, 2);
-        }
-    },
-    { passive: false },
-);
+engine.canvas.style.touchAction = "none"; // prevent touch gesture interception
 
 // Prevent context menu on right-click
 document.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -391,7 +341,7 @@ if (import.meta.env.DEV) {
     const meta = JSON.parse(jsonStr);
 
     const container = document.getElementById(
-        "debug-container",
+        "debugContainer",
     ) as HTMLDivElement;
     meta.buttons.forEach((b: any) => {
         const btn = document.createElement("button");

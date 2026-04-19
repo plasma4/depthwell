@@ -24,9 +24,9 @@ pub var selected_sprite: usize = 0;
 var is_mouse_down: bool = false;
 
 /// Handles mouse logic, where `x` and `y` values are between 0-1, acting like a UV over the whole canvas from HTML.
-/// Action 0 (LEFT CLICK): mousemove (or touch equivalent)
-/// Action 1 (LEFT CLICK): mousedown (or touch equivalent)
-/// Action 2 (LEFT CLICK): mouseup   (or touch equivalent)
+/// Action 0 (LEFT CLICK): mousemove  (or touch equivalent)
+/// Action 1 (LEFT CLICK): mousedown  (or touch equivalent)
+/// Action 2 (LEFT CLICK): mouseup    (or touch equivalent)
 /// Action 3 (RIGHT CLICK): mousedown (or touch equivalent)
 /// Action 4 (RIGHT CLICK): mouseup   (or touch equivalent)
 pub fn handle_mouse(x: f64, y: f64, action: u32) void {
@@ -38,8 +38,8 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
     const screen_dx = (x - 0.5) * SCREEN_WIDTH;
     const screen_dy = (y - 0.5) * SCREEN_HEIGHT;
 
-    const world_dx = ((screen_dx - SPAN) / game.camera_scale) * SPAN; // 1 pixel = 16 subpixels
-    const world_dy = (screen_dy / game.camera_scale) * SPAN;
+    const world_dx = screen_dx / game.camera_scale * SPAN; // 1 pixel = 16 subpixels
+    const world_dy = screen_dy / game.camera_scale * SPAN;
 
     const target_sx = @as(i64, @intFromFloat(@round(@as(f64, @floatFromInt(game.camera_pos[0])) + world_dx)));
     const target_sy = @as(i64, @intFromFloat(@round(@as(f64, @floatFromInt(game.camera_pos[1])) + world_dy)));
