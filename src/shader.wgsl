@@ -8,6 +8,7 @@
 const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
 const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */;
 const STONE_START: u32 = /* STONE_START */ 1 /* STONE_START */;
+const ORE_START: u32 = /* ORE_START */ 1 /* ORE_START */;
 const GEM_START: u32 = /* GEM_START */ 1 /* GEM_START */;
 const GEM_MASK_START: u32 = /* GEM_MASK_START */ 1 /* GEM_MASK_START */;
 const DECOR_START: u32 = /* DECOR_START */ 1 /* DECOR_START */;
@@ -91,7 +92,9 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     // out.edge_flags = 0u; // test
 
     let light_u = extractBits(data.word0, 24u, 8u);
-    out.light = f32(light_u) / 3000.0 + 1.0; // allow for (and expect) light > 1, no longer square-rooted
+
+    // only apply to ores
+    out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
 
     // out.light = 1.0; // test
     out.hp = extractBits(data.word1, 0u, 4u);

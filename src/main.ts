@@ -1,5 +1,19 @@
 /// <reference types="vite/client" />
 "use strict";
+
+/**
+ * Debug/testing options. Set all values to false in production.
+ * TODO set to false for prod :P
+ */
+export const CONFIG = {
+    /** Whether to expose engine to globalThis or not. */
+    exportEngine: true,
+    /** Whether to use verbose logging or not. */
+    verbose: true,
+    /** If set to true, disables alerting on error. Error will always show in console regardless of what this value is set to. */
+    noAlertOnError: true,
+};
+
 if ("file:" === location.protocol) {
     alert(
         "This game cannot run from a local file:// context; use an online version or test from localhost instead.",
@@ -21,19 +35,34 @@ if (!adapter) {
 }
 
 import { GameEngine } from "./engine";
+import { KeyBits, game_state_offsets } from "./enums";
 
-/**
- * Debug/testing options. Set all values to false in production.
- * TODO set to false for prod :P
- */
-export const CONFIG = {
-    /** Whether to expose engine to globalThis or not. */
-    exportEngine: true,
-    /** Whether to use verbose logging or not. */
-    verbose: true,
-    /** If set to true, disables alerting on error. Error will always show in console regardless of what this value is set to. */
-    noAlertOnError: true,
-};
+globalThis.Zig = { KeyBits, game_state_offsets };
+if (import.meta.env.DEV) {
+    console.log(
+        "Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs.",
+    );
+
+    document.body.innerHTML += `
+    <div id="textTop">
+        <div id="text1"></div>
+        <div id="text2"></div>
+    </div>
+    <div id="textBottom">
+        <div id="text3"></div>
+        <div id="text4"></div>
+    </div>
+    <div id="logicText"></div>
+    <div id="renderText"></div>
+    <div id="debug-container"></div>`;
+} else {
+    // Zig is not in debug mode!
+    if (CONFIG.verbose) {
+        console.log(
+            'Note: engine is in verbose mode, but Zig code is not in -Doptimize=Debug; run just "zig build" to enable additional testing features and safety checks if possible.',
+        );
+    }
+}
 
 declare module "./engine" {
     interface GameEngine {
@@ -278,44 +307,92 @@ engine.logicLoop = function (ticks: number) {
     }
 };
 
-// TODO touch equivalents
-engine.canvas.addEventListener("mousemove", (e) =>
-    engine.exports.handle_mouse(
-        e.clientX / engine.canvas.width,
-        e.clientY / engine.canvas.height,
-        0,
-    ),
-);
-engine.canvas.addEventListener("mousedown", (e) =>
-    engine.exports.handle_mouse(
-        e.clientX / engine.canvas.width,
-        e.clientY / engine.canvas.height,
-        1,
-    ),
-);
-engine.canvas.addEventListener("mouseup", (e) =>
-    engine.exports.handle_mouse(
-        e.clientX / engine.canvas.width,
-        e.clientY / engine.canvas.height,
-        2,
-    ),
+// Helper to get normalized coordinates and call Zig
+const dispatch = (e: TouchEvent | MouseEvent, action: number) => {
+    let x: number;
+    let y: number;
+
+    // Check if it's a TouchEvent by looking for 'touches'
+    if ("touches" in e) {
+        // Use changedTouches for 'touchend' events, otherwise touches
+        const touch = e.touches[0] || e.changedTouches[0];
+        x = touch.clientX;
+        y = touch.clientY;
+    } else {
+        // standard mouse event
+        x = e.clientX;
+        y = e.clientY;
+    }
+    x /= engine.canvas.width;
+    y /= engine.canvas.height;
+    if (x >= 0 && x < 1 && y >= 0 && y < 1) {
+        engine.exports.handle_mouse(x, y, action);
+    }
+};
+
+document.addEventListener("mousemove", (e) => {
+    if (e.buttons > 0) dispatch(e, 0); // move
+});
+
+document.addEventListener("mousedown", (e) => {
+    const action = e.button === 2 ? 3 : 1; // left down, right down
+    dispatch(e, action);
+});
+
+document.addEventListener("mouseup", (e) => {
+    const action = e.button === 2 ? 4 : 2; // left up, right up
+    dispatch(e, action);
+});
+
+document.addEventListener(
+    "touchstart",
+    (e) => {
+        if (e.touches.length === 1) {
+            e.preventDefault(); // prevent scrolling/scoping while interacting
+            dispatch(e, 1);
+        }
+    },
+    { passive: false },
 );
 
-function initDebugUI() {
+document.addEventListener(
+    "touchmove",
+    (e) => {
+        if (e.touches.length === 1) {
+            e.preventDefault();
+            dispatch(e, 0);
+        }
+    },
+    { passive: false },
+);
+
+document.addEventListener(
+    "touchend",
+    (e) => {
+        // here, use changedTouches because e.touches is empty when the finger leaves
+        if (e.changedTouches.length === 1) {
+            dispatch(e, 2);
+        }
+    },
+    { passive: false },
+);
+
+// Prevent context menu on right-click
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// Build the fancy debug UI in the corner!
+if (import.meta.env.DEV) {
     const exports = engine.exports as any;
-    if (!exports.debug_build_ui_metadata) return;
 
     // Populate scratch buffer with JSON data and parse it
     exports.debug_build_ui_metadata();
     const jsonStr = engine.readStr();
-    if (!jsonStr) return;
 
     const meta = JSON.parse(jsonStr);
 
     const container = document.getElementById(
         "debug-container",
     ) as HTMLDivElement;
-    container.style.display = "inline";
     meta.buttons.forEach((b: any) => {
         const btn = document.createElement("button");
         btn.textContent = b.name;
@@ -351,29 +428,6 @@ function initDebugUI() {
     });
 
     document.body.appendChild(container);
-}
-
-import { KeyBits, game_state_offsets } from "./enums";
-globalThis.Zig = { KeyBits, game_state_offsets };
-if (import.meta.env.DEV) {
-    console.log(
-        "Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs.",
-    );
-
-    // engine.wireframeOpacity = 1.0 / 3.0;
-    loggingElementIds.forEach((id) => {
-        (document.getElementById(id) as HTMLDivElement).style.display =
-            "inline";
-    });
-
-    initDebugUI();
-} else {
-    // Zig is not in debug mode!
-    if (CONFIG.verbose) {
-        console.log(
-            'Note: engine is in verbose mode, but Zig code is not in -Doptimize=Debug; run just "zig build" to enable additional testing features and safety checks if possible.',
-        );
-    }
 }
 
 // Begin the logic

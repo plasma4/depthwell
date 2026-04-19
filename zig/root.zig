@@ -4,6 +4,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const SegmentedList = @import("SegmentedList.zig").SegmentedList;
+const sprite = @import("sprite.zig");
 const main = @import("main.zig");
 const memory = @import("memory.zig");
 const seeding = @import("seeding.zig");
@@ -18,6 +19,7 @@ const debug_ui = @import("debug_ui.zig");
 pub export fn setup() void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
     memory.game = .{}; // initialize GameState
+    world.mod_store = world.ModificationStore.init(world.alloc, 64);
     world.quad_cache = .{
         .path_hashes = undefined,
         .hash_cache_1 = undefined,
@@ -29,6 +31,7 @@ pub export fn setup() void {
     // doesn't +4096 max capacity every time setup() is called, just sets capacity possible to 4096
     world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
     world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
+    logger.write(3, "Use left click to draw blocks, and right click to change the type drawn.");
 }
 pub export fn init() void {
     main.init();
@@ -42,19 +45,22 @@ pub export fn get_tiles_per_row() u32 {
     return 10;
 }
 pub export fn get_tiles_per_column() u32 {
-    return (world.max_sprite_value + 1 + 9) / 10; // act as a ceil
+    return (sprite.max_sprite_value + 1 + 9) / 10; // act as a ceil
 }
 pub export fn get_stone_start() u32 {
-    return @intCast(@intFromEnum(world.Sprite.stone));
+    return @intCast(@intFromEnum(sprite.Sprite.stone));
 }
 pub export fn get_ore_start() u32 {
-    return @intCast(@intFromEnum(world.Sprite.amethyst));
+    return @intCast(@intFromEnum(sprite.Sprite.copper));
+}
+pub export fn get_gem_start() u32 {
+    return @intCast(@intFromEnum(sprite.Sprite.amethyst));
 }
 pub export fn get_gem_mask_start() u32 {
-    return @intCast(@intFromEnum(world.Sprite.gem_mask));
+    return @intCast(@intFromEnum(sprite.Sprite.gem_mask));
 }
 pub export fn get_decor_start() u32 {
-    return @intCast(@intFromEnum(world.Sprite.spiral_plant));
+    return @intCast(@intFromEnum(sprite.Sprite.spiral_plant));
 }
 
 pub export fn handle_mouse(mouse_x: f64, mouse_y: f64, action: u32) void {
@@ -66,7 +72,7 @@ pub export fn tick(speed: f64, iterations: u32) void {
     if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
         // if (in_debug_mode) {
         world.push_layer(
-            world.Sprite.none,
+            sprite.Sprite.none,
             memory.game.get_player_coord(),
             memory.game.get_block_x_in_chunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
             memory.game.get_block_y_in_chunk(),

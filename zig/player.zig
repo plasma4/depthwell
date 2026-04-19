@@ -12,6 +12,16 @@ const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
 const v2i64 = memory.v2i64;
 const v2f64 = memory.v2f64;
 
+/// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
+/// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
+///
+/// Setting this to a very small value is useful for testing cache validity or performance, however.
+pub const CAMERA_MIN_ZOOM = 1.0 / 3.0;
+
+/// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
+/// Any more and it would look weird, and camera deadzone would start to no longer work.
+pub const CAMERA_MAX_ZOOM = 1.0; // 100%
+
 /// The base speed of the player.
 pub var PLAYER_BASE_SPEED: f64 = 1.0;
 /// How strong the gravity is.
@@ -30,20 +40,10 @@ pub const PLAYER_HITBOX_HEIGHT = 160;
 /// Prevent block-skipping with collisions when travelling quickly.
 const CCD_STEP_SIZE = SPAN_SQ;
 
-/// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
-/// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
-///
-/// Setting this to a very small value is useful for testing cache validity or performance, however.
-pub const CAMERA_MIN_ZOOM = 1.0 / 3.0;
-
-/// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
-/// Any more and it would look weird, and camera deadzone would start to no longer work.
-pub const CAMERA_MAX_ZOOM = 1.0; // 100%
-
 /// The zoom in/out keys change the zoom multiplier this fast per frame.
 const CAMERA_CHANGE_SPEED = 1.02;
-/// How fast camera smoothing should be. Larger means faster.
-const CAMERA_SMOOTHING = 0.2;
+/// How fast the camera should adjust per frame to the new position. Larger means faster.
+const CAMERA_SMOOTHING = 0.1;
 
 /// How far the player has to move before actually panning the camera in sub-pixels (x-axis).
 const CAMERA_DEADZONE_X = 10 * memory.SPAN_SQ; // memory.SPAN_SQ means 1 block, basically
@@ -55,26 +55,6 @@ pub var subpixel_accum: v2f64 = .{ 0.0, 0.0 }; // note that vectors are smartly 
 
 /// Determines if the player is on the ground.
 var is_grounded: bool = false;
-
-// /// Cache for collision lookups to avoid redundant buffer/cache scans.
-// const CollisionContext = struct {
-//     coord: ?memory.Coordinate = null,
-//     chunk: ?*memory.Chunk = null,
-
-//     pub fn get_chunk(self: *@This(), target: memory.Coordinate) *memory.Chunk {
-//         if (self.coord) |c| {
-//             if (c.eql(target)) return self.chunk.?;
-//         }
-//         const ptr = world.SimBuffer.get(target) orelse world.ChunkCache.get(target) orelse blk: {
-//             const slot = world.ChunkCache.allocate_slot(target);
-//             world.write_chunk(slot, target);
-//             break :blk slot;
-//         };
-//         self.coord = target;
-//         self.chunk = ptr;
-//         return ptr;
-//     }
-// };
 
 /// Moves the player, handling camera changes.
 pub fn move(logic_speed: f64) void {
@@ -201,7 +181,7 @@ fn handle_local_wrap(comptime axis: u1) i64 {
 /// Performs an AABB check (for the player's position) against the world grid.
 pub fn is_colliding(px: i64, py: i64) bool {
     const game = &memory.game;
-    const corners = [_][2]i64{
+    const corners = [4][2]i64{
         .{ px - PLAYER_HITBOX_WIDTH / 2, py + SPAN_SQ / 2 - PLAYER_HITBOX_HEIGHT },
         .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + SPAN_SQ / 2 - PLAYER_HITBOX_HEIGHT },
         .{ px - PLAYER_HITBOX_WIDTH / 2, py + SPAN_SQ / 2 },
@@ -209,18 +189,22 @@ pub fn is_colliding(px: i64, py: i64) bool {
     };
 
     const player_coord = game.get_player_coord();
+    var last_coord: ?memory.Coordinate = null;
+    var cached_chunk: memory.Chunk = undefined;
 
     for (corners) |c| {
         const cx_shift = @divFloor(c[0], SUBPIXELS_IN_CHUNK);
         const cy_shift = @divFloor(c[1], SUBPIXELS_IN_CHUNK);
+        const target_coord = player_coord.move(.{ cx_shift, cy_shift }) orelse return true;
 
-        const coord = player_coord.move(.{ cx_shift, cy_shift }) orelse return true;
-        const chunk = world.get_chunk(coord);
+        if (last_coord == null or !target_coord.eql(last_coord.?)) {
+            cached_chunk = world.get_chunk(target_coord);
+            last_coord = target_coord;
+        }
 
         const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[0], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));
         const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[1], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));
-
-        if (chunk.blocks[@as(usize, ly) * SPAN + @as(usize, lx)].is_solid()) return true;
+        if (cached_chunk.blocks[@as(usize, ly) * SPAN + @as(usize, lx)].is_solid()) return true;
     }
     return false;
 }
