@@ -530,10 +530,9 @@ pub fn write_chunk(chunk: *Chunk, coord: Coordinate) void {
     const key = ModKey.from(coord);
 
     if (mod_store.get(key)) |modified_chunk| {
-        // Fast path: copy the fully cached modified state
+        // Modified state!
         new_slot_ptr.blocks = modified_chunk.*;
-    } else {
-        // Slow path: generate procedurally
+    } else { // generate procedurally
         generate_chunk(new_slot_ptr, coord);
     }
 
@@ -551,8 +550,9 @@ pub fn write_chunk_skip(chunk: *Chunk, coord: Coordinate) void {
     const key = ModKey.from(coord);
 
     if (mod_store.get(key)) |modified_chunk| {
+        // Modified state!
         new_slot_ptr.blocks = modified_chunk.*;
-    } else {
+    } else { // generate procedurally
         generate_chunk(new_slot_ptr, coord);
     }
 
@@ -766,13 +766,11 @@ pub fn apply_modification(coord: memory.Coordinate, bx: u4, by: u4, new_sprite: 
 
 /// Recalculates edge flags for a specific block and its 8 neighbors.
 fn update_local_edge_flags(coord: memory.Coordinate, bx: u4, by: u4) void {
-    // We must update the 3x3 area around the modification
     for ([_]i32{ -1, 0, 1 }) |dy| {
         for ([_]i32{ -1, 0, 1 }) |dx| {
             const nx: i32 = @as(i32, bx) + dx;
             const ny: i32 = @as(i32, by) + dy;
 
-            // Resolve target block coordinate and local indices
             var target_coord = coord;
             if (nx < 0 or nx >= SPAN or ny < 0 or ny >= SPAN) {
                 target_coord = coord.move(.{ @divFloor(nx, SPAN), @divFloor(ny, SPAN) }) orelse continue;
@@ -780,42 +778,57 @@ fn update_local_edge_flags(coord: memory.Coordinate, bx: u4, by: u4) void {
 
             const lbx: u4 = @intCast(@mod(nx, SPAN));
             const lby: u4 = @intCast(@mod(ny, SPAN));
-
-            // Fetch the chunk from cache. If it's not cached, it doesn't need live flag updates.
-            const target_chunk = SimBuffer.get(target_coord) orelse ChunkCache.get(target_coord) orelse continue;
             const target_id = @as(usize, lby) * SPAN + lbx;
-            const current_sprite = target_chunk.blocks[target_id].id;
 
-            if (!current_sprite.is_foundation()) { // correct here because we aren't doing procedural stuff
-                target_chunk.blocks[target_id].edge_flags = 0xFF;
-                continue;
-            }
-
+            // 1. Calculate the new flags
+            const current_sprite = get_block_id_at(target_coord, lbx, lby);
             var new_flags: u8 = 0;
-            // Recalculate 8 neighbors for this specific block
-            inline for (.{ -1, 0, 1 }) |ndy| {
-                inline for (.{ -1, 0, 1 }) |ndx| {
-                    if (ndx == 0 and ndy == 0) continue;
 
-                    const nnx: i32 = @as(i32, lbx) + ndx;
-                    const nny: i32 = @as(i32, lby) + ndy;
-
-                    const sprite = if (nnx >= 0 and nnx < SPAN and nny >= 0 and nny < SPAN)
-                        target_chunk.blocks[@as(usize, @intCast(nny * SPAN + nnx))].id
-                    else blk: {
-                        const neighbor_coord = target_coord.move(.{ @divFloor(nnx, SPAN), @divFloor(nny, SPAN) }) orelse break :blk .none;
-                        const nc = SimBuffer.get(neighbor_coord) orelse ChunkCache.get(neighbor_coord) orelse break :blk .none;
-                        break :blk nc.blocks[@as(usize, @intCast(nny & 15)) * SPAN + @as(usize, @intCast(nnx & 15))].id;
-                    };
-
-                    if (should_have_edge_flags(sprite, current_sprite)) {
-                        new_flags |= types.EdgeFlags.get_flag_bit(ndx, ndy);
+            if (current_sprite.is_foundation()) {
+                inline for (.{ -1, 0, 1 }) |ndy| {
+                    inline for (.{ -1, 0, 1 }) |ndx| {
+                        if (ndx == 0 and ndy == 0) continue;
+                        const sprite_id = get_block_id_at(target_coord.move(.{ @divFloor(@as(i32, lbx) + ndx, SPAN), @divFloor(@as(i32, lby) + ndy, SPAN) }) orelse target_coord, @intCast(@mod(@as(i32, lbx) + ndx, SPAN)), @intCast(@mod(@as(i32, lby) + ndy, SPAN)));
+                        if (should_have_edge_flags(sprite_id, current_sprite)) new_flags |= types.EdgeFlags.get_flag_bit(ndx, ndy);
                     }
                 }
+            } else {
+                new_flags = 0xFF;
             }
-            target_chunk.blocks[target_id].edge_flags = new_flags;
+
+            // 2. Update Live Caches (SimBuffer/ChunkCache)
+            if (SimBuffer.get(target_coord)) |c| c.blocks[target_id].edge_flags = new_flags;
+            if (ChunkCache.get(target_coord)) |c| c.blocks[target_id].edge_flags = new_flags;
+
+            // 3. Update Permanent Store (so it's correct on reload)
+            const key = ModKey.from(target_coord);
+            if (mod_store.index.get(key)) |idx| {
+                mod_store.history.items[idx][target_id].edge_flags = new_flags;
+            }
         }
     }
+}
+
+/// Highly optimized lookup to find a block's Sprite ID for flag calculation.
+/// Checks caches, then modifications, then falls back to procedural.
+pub fn get_block_id_at(coord: Coordinate, lx: u4, ly: u4) Sprite {
+    if (SimBuffer.get(coord)) |chunk| return chunk.blocks[@as(usize, ly) * SPAN + lx].id;
+    if (ChunkCache.get(coord)) |chunk| return chunk.blocks[@as(usize, ly) * SPAN + lx].id;
+
+    if (mod_store.get(ModKey.from(coord))) |mod_blocks| {
+        return mod_blocks[@as(usize, ly) * SPAN + lx].id;
+    }
+
+    const vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
+    const vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
+    return procedural.get_base_sprite_type(
+        vec1,
+        vec2,
+        @intCast(coord.suffix[0]),
+        @intCast(coord.suffix[1]),
+        lx,
+        ly,
+    ).sprite;
 }
 
 // /// The 16-step ascendent projection read loop thingy
