@@ -3,6 +3,7 @@
 //! and `extern` for WASM (with no other exported functions within other Zig files).
 const std = @import("std");
 const builtin = @import("builtin");
+const SegmentedList = @import("SegmentedList.zig").SegmentedList;
 const main = @import("main.zig");
 const memory = @import("memory.zig");
 const seeding = @import("seeding.zig");
@@ -20,10 +21,14 @@ pub export fn setup() void {
     world.quad_cache = .{
         .path_hashes = undefined,
         .hash_cache_1 = undefined,
-        .left_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
-        .top_path = std.ArrayList(u64).initCapacity(world.alloc, 4096) catch unreachable,
+        .left_path = SegmentedList(u64, 0){},
+        .top_path = SegmentedList(u64, 0){},
         .ancestor_materials = .{.none} ** 4,
     };
+
+    // doesn't +4096 max capacity every time setup() is called, just sets capacity possible to 4096
+    world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
+    world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
 }
 pub export fn init() void {
     main.init();

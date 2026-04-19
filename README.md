@@ -165,7 +165,7 @@ If any blocks are modified they get modified in the `SimBuffer` as well.
 
 #### Prefix stack and memoization
 
-You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using a dynamic array (specifically a `std.ArrayList(u64)`).
+You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using a dynamic array (specifically a `SegmentedList` copied from Zig 0.15.2).
 
 **Why memoize and make the logic so complicated?**
 
@@ -268,10 +268,13 @@ pub const BlockMod = packed struct(u32) {
 /// A full 256-block (chunk) of modifications.
 pub const ChunkMod = [memory.SPAN_SQ]BlockMod;
 
-/// A 512-bit key for the ModificationStore.
-/// Fits exactly into one 64-byte cache line.
+/// Stores where a modification is, as well as its depth to easily identify it.
 pub const ModKey = extern struct {
-    seed: seeding.Seed,
+    /// The coordinate of the modification.
+    coord: Coordinate,
+    /// The depth of the modification.
+    depth: u64,
+};
 // ...
 ```
 
@@ -280,14 +283,16 @@ pub const ModKey = extern struct {
 pub const QuadCache = struct {
     /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
-path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
+    path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
+    /// TODO actual logic
+    hash_cache_1: [4]seeding.Seed,
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
-    left_path: std.ArrayList(u64),
+    left_path: SegmentedList(u64, 0),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: std.ArrayList(u64),
-// ...
+    top_path: SegmentedList(u64, 0),
+...
 ```
 
 #### Zoom logic

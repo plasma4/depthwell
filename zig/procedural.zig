@@ -20,10 +20,13 @@ const Sprite = world.Sprite;
 const v2f64 = memory.v2f64;
 const v2u64 = memory.v2u64;
 
+// Lots of values controlled by debug sliders here!
+pub var base_gem_odds: f64 = 0.1;
 pub var procedural_cell_size: f64 = 1.0;
 pub var fbm_power: f64 = 1.0;
 pub var density_min: f64 = 0.32;
 pub var density_max: f64 = 0.9;
+
 /// Determines whether to use a heatmap or not for base terrain. Ignored if `is_debug` is false.
 pub var USE_BASE_HEATMAP = false;
 /// Determines whether to use a heatmap or not for ore generation. Ignored if `is_debug` is false.
@@ -298,10 +301,9 @@ pub fn add_ores(
         // Logic for generating gems
         const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.35 else 0.25;
         if (base_data.density >= 0.3 and base_data.density <= 0.5 and v2 >= 0.1 and v2 <= gem_v2_bound) {
-            const random_value = FastHash.hash_2d(seed_vector_3, @intCast(x), @intCast(y));
+            const random_value = FastHash.float_2d(seed_vector_3, @intCast(x), @intCast(y));
 
-            const base_odds = 0.1;
-            if (random_value <= odds_num(base_odds)) {
+            if (random_value <= base_gem_odds) {
                 const v3 = get_fbm_worley_value(
                     seed_vector_4,
                     y,
@@ -316,28 +318,28 @@ pub fn add_ores(
 
                 sprite = select_sprite(
                     .{ sprite, .amethyst },
-                    v3 <= 0.4 and random_value <= odds_num(0.4 * base_odds),
+                    v3 <= 0.4 and random_value <= 0.4 * base_gem_odds,
                     null,
                 );
                 if (sprite == .amethyst) return sprite;
 
                 sprite = select_sprite(
                     .{ sprite, .sapphire },
-                    v3 >= 0.75 and random_value <= odds_num(0.65 * base_odds),
+                    v3 >= 0.75 and random_value <= 0.65 * base_gem_odds,
                     null,
                 );
                 if (sprite == .sapphire) return sprite;
 
                 sprite = select_sprite(
                     .{ sprite, .emerald },
-                    v3 >= 0.45 and v3 >= 0.65 and random_value <= odds_num(0.86 * base_odds),
+                    v3 >= 0.45 and v3 >= 0.65 and random_value <= 0.86 * base_gem_odds,
                     null,
                 );
                 if (sprite == .emerald) return sprite;
 
                 sprite = select_sprite(
                     .{ sprite, .ruby },
-                    v3 >= 0.22 and v3 >= 0.3 and random_value <= odds_num(1.0 * base_odds),
+                    v3 >= 0.22 and v3 >= 0.3,
                     null,
                 );
                 if (sprite == .ruby) return sprite;

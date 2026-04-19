@@ -55,6 +55,13 @@ pub const sliders = [_]SliderDef{
         .regen = true,
     },
     .{
+        .name = "Gem odds",
+        .min = 0.0,
+        .max = 1.0,
+        .val = &procedural.base_gem_odds,
+        .regen = true,
+    },
+    .{
         .name = "Base speed",
         .min = 0.1,
         .max = 10.0,
