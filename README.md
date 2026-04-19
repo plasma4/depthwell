@@ -7,7 +7,7 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 ### Building
 
-Run `zig build` for the main build of Zig code, `zig test "zig/root.zig"` to run (all) tests, and `zig build --Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
+Run `zig build` for the main build of Zig code, `zig test "zig/root.zig"` to run (all) tests, and `zig build -Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
 
 Useful variables to customize include `CONFIG` in `src/main.ts`, `engine.wireframeOpacity`, `engine.baseSpeed`, and `zig/player.zig` config options.
 
@@ -22,16 +22,16 @@ It is quite helpful to use the Zig Language Server in VSCode and set it to "watc
 Alternatively, with a clear-screen command that uses ANSI-escape codes, you can clear the screen every time after building:
 
 ```bash
-cls && zig build --Dgen-enums
+cls && zig build -Dgen-enums
 ```
 
 (Replace `cls` with `printf "\033c"` for Bash, or create a custom command in `$PATH`.)
 
 ### Architecture details
 
-Game is created using Zig and WebGPU, and meant to be web-first. A final product that uses Mach Engine for native building is planned, but _web will always be free and recieve updates_. The internal viewport is 480x270 and scaled up in WebGPU automatically. Functions are exported from `root.zig`.
+Game is created using Zig and WebGPU, and meant to be web-first. A final product that uses Mach Engine for native building is planned, but _web will always be free and recieve updates_. The internal viewport is 480x270 (but it automatically scales with the DPI/base resolution). Functions are exported from `root.zig`.
 
-By using `ChaCha12` and a seed with 1-100 `a-z` characters, the game can generate over `10^140` possible maps, with each map containing a very large depth limit that allows for near-infinite exploration.
+By using `ChaCha12` and `Blake3` and a seed with 1-100 `a-z` characters, the game can generate over `10^140` possible maps, with each map containing a very large depth limit that allows for near-infinite exploration. Performance-sensitive areas are generated using `FastHash`, which uses 128-bit seed vectors at a time.
 
 #### Coordinates and basics
 
@@ -133,17 +133,17 @@ But wait, what is a block? Here is `zig/memory.zig`:
 /// A single block within a chunk. Each block uses 8 bytes.
 pub const Block = packed struct(u64) {
     /// Internal sprite ID.
-    id: world.Sprite,
-    /// How "mined" the block is. 0 is least mined, 15 is most mined.
-    hp: u4,
+    id: Sprite,
     /// Edge flags: which neighbors are air (for edge-darkening and culling).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
     edge_flags: u8,
-
     /// The brightness of the tile.
     light: u8,
+
+    /// How "mined" the block is. 0 is least mined, 15 is most mined.
+    hp: u4,
     /// Per-block seed for procedural variation in the shader.
-    seed: u24,
+    seed: u28,
 };
 ```
 
@@ -181,17 +181,44 @@ Groups of objects such as enemies are stored in a `MultiArrayList` with properti
 
 #### Procedural generation
 
-TODO finish
+Generating a world that is statistically infinite yet perfectly consistent across billions of chunks requires a multi-pass approach. While the math might look like a bunch of magic numbers, it’s actually a carefully layered sequence of domain warping and noise functions.
 
-Procedural generation currently uses...
+#### Hashing function
 
-The primary goal with procedural generation is to create **consistent, high-quality outcomes, independent of the path taken**. This means that the path the user takes should not influence the quality, and quadrant or chunk bounds should not be visually apparent. Performance is also a major concern here, as even with chunk caching, it is possible for 32 chunks to be requested in a single frame.
+In the earlier sections, I mentioned `ChaCha12` for its cryptographic strength. However, calling a full ChaCha block 256 times for every single chunk is (who knew) incredibly slow. For the heavy lifting of 2D noise, Depthwell uses a custom **stateless multiply-unrolled-multiply mixer** called `FastHash`.
 
-Utilizing `ChaCha12` (which has handy nonce/skip logic), it's possible to "skip" the PRNG by a certain amount of steps, and reliably get back to it. This is particularly useful for things like 2D noise!
+By using `v2u64` vectors and bit-folding, `FastHash.hash_2d` provides enough variance for smooth terrain while being significantly faster than a standard PRNG.
+
+#### Terrain and biomes
+
+The first pass determines the "flavor" of the chunk. We calculate two main values: **moisture** and **density**.
+
+Instead of standard Perlin noise, we use **FBM-Warped Worley Noise**. Worley noise (or cellular noise) creates those crisp, cavernous structures that look like organic cells. To prevent it from looking too "grid-like," we use Fractal Brownian Motion (FBM) to warp the input coordinates.
+
+Large cells (scale of 400.0) determine moisture. Smaller cells (scale of 80.0) determine density. These are mostly arbitrary properties; density determines the cave shape while moisture determines some extra "flavor" details like blue/purple `strange_stone` or different stone block variations.
+
+Depending on the (Moisture, Density) pair, the generator maps the block to a specific foundation type (like `.lava_stone` or `.blue_stone`).
+
+#### Dispersing ores
+
+Once the stone is placed, the generator makes a second pass to seed ores. This pass only triggers for "foundation" blocks (stone variations). We run another Worley pass with much smaller cells to create "veins."
+
+Using the `select_sprite` helper, we branch the logic:
+
+- First, copper, iron, silver, and gold are dispersed based on the density of the specific Worley cell.
+- The amethyst, sapphire, emerald, and ruby gems use a third `FastHash` pass to check against `base_gem_odds`. If the odds hit, a specific gem is selected based on a third Worley value.
+
+#### Decoration pass
+
+The final pass handles the "flavor" of the world. These are things like mushrooms, spiral plants, and ceiling flowers. Since this pass is less computationally expensive, we switch back to `ChaCha12` for high-quality entropy.
+
+Decorations are context-aware. Mushrooms only spawn if the block below is solid, ceiling flowers if the block above is solid, and spiral plants can grow multiple blocks tall by checking for a spiral plant above on top of a solid-block above generation check.
+
+Critically, the generator finishes by setting the `edge_flags` of these decorations to `0xFF`. This tells the WebGPU shader that it shouldn't have erosion and edge darkening applied to it.
 
 #### Particles
 
-TODO implement particles in the game
+TODO, actually implement.
 
 Particles are small squares with rotation and opacity and organized using a circular buffer`ParticleSystem`. There can be a maximum of 1,000 particles at a time (the circular buffer is greedy and "loops around" to always erase the oldest particles). All data is passed to WebGPU and WebGPU automatically culls expired particles (as this part isn't super performance-strict).
 
@@ -226,56 +253,61 @@ const Particle = packed struct {
 
 #### The fractal modification buffer
 
-TODO fully implement
+TODO, finish. This part is **not actually implemented** yet.
 
 Depthwell stores modifications with some fancy lineage inheritance: modifications are stored per-layer, and when generating a chunk at Depth $D$, the engine traverses up depths of the `ModificationStore` (eventually bubbling up to checking the type of a quad-cache if no changes were found). Small detail: portals can only spawn in places where the player is able to enter the new depth, not stuck within a block!
 
 The _goal_ with modifications is to ensure the following:
 
 1. Read _existing_ modifications to extract rectangular groups of chunks: ~1000 reads/second for as long as possible due to potential of requiring 16-32 new chunks in SimBuffer during some frames and camera features in the future.
-2. Write a _new_ modification (60fps for as long as possible).
-3. Increment the depth (<3 seconds for as long as possible). For this part, an $O(n)$ would be quite reasonable!
+2. Write a _new_ modification (60fps for as long as possible). In practice, this is very easy with hash maps.
+3. Increment the depth (<3 seconds for as long as possible). For this part, an $O(n)$ would be quite reasonable! However, the current approach (which stores the `depth` as part of the key) is an easy $O(1)$.
 4. Minimize heap fragmentation and "allocation churn."
 5. The entire state can be stored inside RAM.
 
-Therefore, the current solution is to utilize a 256-bit Blake3 path hash (statistically impossible collisions) using BLAKE3 that mixes the seed from a quadrant from the QuadCache with the suffix to unique identify a location in space for _fast lookups_, as well as a `v2u64` (determining where a chunk is within a QuadCache quadrant) and 64-bit `depth` value (used to determine what to add to the `Blake3` hash call, based on the seed).
-
-Seeds are even more unlikely to collide than hashes (256 bits of collision resistance instead of 128), so this is a safe assumption.
-
-A `std.AutoHashMap` stores the path hashes and a dynamically allocated array of `[memory.SPAN_SQ]BlockMod` (the dense data representing a chunk's entire modifications). See some definitions and more details:
+Therefore, the current solution is to hash a Coordinate and the current depth together using `std.hash.autoHash`. A `std.AutoHashMap` stores these hashes and a dynamically allocated array of `[memory.SPAN_SQ]BlockMod` (the dense data representing a chunk's entire modifications). See some definitions and more details:
 
 ```zig
-/// Empty block of id `Sprite.none`.
-pub const AIR_BLOCK: Block = .{
-    .id = .none,
-    .seed = 0,
-    .light = 0,
-    .hp = 0,
-    .edge_flags = 0xFF,
-};
-
-/// 32-bit packed structure representing a single modified block within a chunk.
-pub const BlockMod = packed struct(u32) {
-    /// The type of the block being represented. (Defaults to a special sprite type that represents "same as what procedural generation would say".)
-    id: Sprite = Sprite.unchanged,
-    /// The edge flags. TODO decide if we want modifications to actually update edge flags or if these should be updated dynamically.
-    edge_flags: u8 = undefined,
-    /// How "mined" the block is. 0 is least mined, 15 is most mined. Unlike in other games like Terraria, this mined state is permanent and isn't "quietly undone" without player action.
-    hp: u4 = undefined,
-};
-
-
 /// A full 256-block (chunk) of modifications.
-pub const ChunkMod = [memory.SPAN_SQ]BlockMod;
+pub const ChunkMod = [SPAN_SQ]Block;
+
+pub const ModificationStore = struct {
+    index: std.HashMap(ModKey, usize, ModKeyContext, std.hash_map.default_max_load_percentage),
+    history: std.ArrayList(ChunkMod),
+
+    pub fn init(allocator: std.mem.Allocator, starting_capacity: comptime_int) ModificationStore {
+        return .{
+            .index = std.HashMap(ModKey, usize, ModKeyContext, std.hash_map.default_max_load_percentage).init(allocator),
+            .history = std.ArrayList(ChunkMod).initCapacity(allocator, starting_capacity) catch @panic("modification history creation failed!"),
+        };
+    }
+
+    /// Gets an existing modification for reading.
+    pub fn get(self: *const @This(), key: ModKey) ?*const ChunkMod {
+        const idx = self.index.get(key) orelse return null;
+        return &self.history.items[idx];
+    }
+};
+
+pub var mod_store: ModificationStore = undefined;
 
 /// Stores where a modification is, as well as its depth to easily identify it.
 pub const ModKey = extern struct {
-    /// The coordinate of the modification.
-    coord: Coordinate,
+    // Active suffix (stored as a vector). You can think of the active suffix like 16 u4s packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see `README.md` for more details).
+    suffix: v2u64,
+    /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
+    quadrant: u32,
     /// The depth of the modification.
     depth: u64,
+
+    pub inline fn from(coord: Coordinate) @This() {
+        return .{
+            .suffix = coord.suffix,
+            .quadrant = @intCast(coord.quadrant),
+            .depth = memory.game.depth,
+        };
+    }
 };
-// ...
 ```
 
 ```zig
@@ -313,22 +345,20 @@ To manage near-infinite zoom, Depthwell utilizes a **16-level sliding active suf
 
 When zooming past Depth 16, the engine executes a "rebase." The player is re-centered inside the 64-bit bounds, and the highest 4 bits (the overflow nibble) "fall off" the top of the suffix.
 
-Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 16 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-16$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-15$.
+Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 16 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-16$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-15$. [TODO in the future, actually implement this.]
+
+Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.) [TODO in the future, actually implement this.]
 
 (Modifications are not culled in order to allow for a spectating/history once the player dies, and perhaps even be a main/custom mode where you can re-spawn, although this may might encounter its own set of difficult struggles in the future!)
-
-Chunk modifications are hashed in the sparse set by XORing the chunk's active coordinates directly into its corresponding 512-bit `Seed`. Because the `Seed` is just the BLAKE3 of a quadrant, XOR-ing a coordinate's `cx`/`cy` is fully secure (as this would change between quadrants anyway)!
-
-Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.)
 
 - Reading performance is an amortized O(1) due only needing to consider block sizes between depth D-15 to D.
 - Writing performance is an amortized O(1) due to needing to find a `HashMap.
 - Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `ModKey` and assuming that collisions are impossible.
-- Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 1KiB in history, plus additional index memory (so slightly more).
+- Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 2KiB in history.
 
 #### Smart chunk loading
 
-Despite the fact that chunks are procedural and written in Zig (you'd think that means blazing fast), there's a lot of heavy computation internally due to needing to calculate several FBM+Worley passes, _per block_.
+Despite the fact that chunks are procedural and written in Zig (you'd think that means blazing fast), there's a lot of heavy computation internally due to needing to calculate several FBM+Worley passes, _per block_. This optimization improves performance by 8 times in practice.
 
 That's why the code tries as hard as possible to only generate 2 chunks per frame (except on startup or depth increase, as that will use different logic). By doing this, the code can easily extract these chunks from `ChunkCache` lazily when the player moves in a way that requires the `SimBuffer` to pull chunks near the edge.
 
@@ -354,3 +384,49 @@ The interface between the TypeScript engine and the Zig core is managed via a pr
 WGSL offers several advantages (despite lower browser support). It lets you explicitly manage browser memory and is more efficient. Also, it's the more "modern" standard compared to things like WebGL, so might as well.
 
 Basically, the goal is to make sure that Zig handles as much of the state as possible, and Zig is the one that generates the data and places it into the scratch buffer. Then, this data is sent to WGSL and processed; Zig pre-processes the data, panning and converting to `f32` (so WebGPU doesn't encounter precision issues).
+
+Compared to using something like the native JS canvas manipulation, the use of GPU shaders blows that out of the water. `drawImage` is a good lazy way to do this, but it doesn't scale.
+
+### Optimization/effects of WGSL
+
+While Zig handles the logic, the visual fidelity of Depthwell is achieved through high-precision WGSL shaders. To maintain high performance on integrated GPUs while allowing for infinite variety, the shader employs several "expensive-looking" tricks that are actually quite cheap.
+
+#### Bit-Packed Tile Unpacking
+
+To minimize the data sent to the GPU, each tile is packed into two 32-bit unsigned integers (`word0` and `word1`). The shader uses `extractBits` to reconstruct the `UnpackedTile` struct on the fly:
+
+- `word0`: Contains the Sprite ID (16 bits), Edge Flags (8 bits), and Light (8 bits).
+- `word1`: Contains the HP/Mined state (4 bits) and a 28-bit procedural seed.
+
+This 28-bit seed provides a lot of variation. It is passed through a `murmurmix32` function to generate `seed2` and `seed3`, providing three independent streams of entropy for every single block on screen (with the other two seeds being used in erosion and edge flags).
+
+#### OKLAB
+
+Traditional RGB lighting often looks "muddy" or "gray" when desaturated or darkened. Depthwell performs all color manipulations in the **OKLAB** and **OKLCH** color spaces.
+
+When a tile is sampled from the atlas, it is immediately converted from linear sRGB to OKLAB. Using the block's 28-bit seed, the shader applies subtle nudges to the **L**ightness, **C**hroma, and **H**ue. Blocks of the same type (e.g., stone) have slightly different color tints based on their position. OKLAB also ensures that darkening an emerald makes it look like a "dark green" rather than a "muddy gray."
+
+(OKLAB is just awesome!)
+
+#### Procedural erosion
+
+Instead of using thousands of unique sprites for different wall shapes, Depthwell uses a single "foundation" sprite and a procedural erosion algorithm. (This also means less work in terms of drawing sprites.)
+
+Using the `edge_flags` calculated in Zig, the fragment shader determines if a pixel is near an "air" neighbor. If it is, it uses `seed2` and `seed3` to:
+
+1.  Round the corners by calculating pixel-perfect arcs for outer and inner corners.
+2.  Notch straight edges through an algorithm to indent or protrude the edge by 1-2 pixels.
+3.  Darken the edges by applying a curvy shadow gradient to "foundation" blocks, giving the world depth without requiring hand-drawn lighting.
+
+#### Gems and ores
+
+Ores and gems are rendered using a multi-texture "masking" trick to save atlas space. For a gem block:
+
+1.  The shader samples the background stone based on the block's world coordinates (preserving the 2x2 tiling).
+2.  It calculates a shifted UV for the gem itself using 8 bits of the seed, allowing the gem to appear at any of 256 sub-pixel offsets within the block.
+3.  It samples a Gem Mask and mixes the stone and gem colors based on the mask's red channel.
+4.  Finally, it applies a random horizontal/vertical flip to the mask, ensuring that even gems with the same offset look distinct.
+
+#### Parallax background
+
+The background isn't a static image; it's a multi-octave Fractal Brownian Motion (FBM) simulation. It uses a 2D noise function that is "panned" by the camera position at a scale of 0.02, creating a deep parallax effect. This still needs improvement to not constantly reset between chunks (which can be done by intermixing two backgrounds, but that's something in the future to do).
