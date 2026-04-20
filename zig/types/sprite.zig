@@ -3,178 +3,119 @@ const root = @import("root").root;
 const memory = root.memory;
 const procedural = root.procedural;
 
-/// Sprite IDs, based on src/main-Sheet.png
+/// Index where gem masks begin.
+const MASK_START = 22;
+/// Index where the HP mask ends.
+const MASK_END = MASK_START + 24;
+
+/// Sprite IDs with values based on their sprite sheet location
+/// Packed sprite sheet located at src/main-Sheet.png.
 pub const Sprite = enum(u16) {
-    none,
-    player,
-    edge_stone, // has visual variation
-    _edge_stone,
-    strange_stone,
-    strange_stone_other,
-    blue_stone,
-    seagreen_stone,
-    green_stone,
-    stone, // visual variations are in a 2x2
-    _stone,
-    __stone,
-    ___stone,
-    lava_stone,
-    copper,
-    iron,
-    silver,
-    gold,
-    amethyst,
-    sapphire,
-    emerald,
-    ruby,
-    gem_mask, // 8 masks for gems
-    _gem_mask,
-    __gem_mask,
-    ___gem_mask,
-    geode_mask,
-    _geode_mask,
-    __geode_mask,
-    ___geode_mask,
-    _o0, // 16 hp sprites
-    _o1,
-    _o2,
-    _o3,
-    _o4,
-    _o5,
-    _o6,
-    _o7,
-    _o8,
-    _o9,
-    _o10,
-    _o11,
-    _o12,
-    _o13,
-    _o14,
-    _o15,
-    spiral_plant,
-    ceiling_flower,
-    mushroom, // there is another variant of mushrooms
-    _mushroom, // visual variation
-    torch,
-    unchanged = 65535,
-    _, // non-exhaustive for heatmap
+    none = 0,
+    player = 1,
 
-    /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
-    /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
+    // Edge stone (2 variations)
+    edge_stone = 2,
+
+    // Stone types
+    strange_stone = 4,
+    strange_stone_other = 5,
+    blue_stone = 6,
+    seagreen_stone = 7,
+    green_stone = 8,
+    stone = 9, // 2x2 variation start
+    lava_stone = 13,
+
+    // ores
+    copper = 14,
+    iron = 15,
+    silver = 16,
+    gold = 17,
+
+    // gems!
+    amethyst = 18,
+    sapphire = 19,
+    emerald = 20,
+    ruby = 21,
+
+    // Internal assets (not valid for placement/foundation)
+    gem_mask = MASK_START, // 8 masks
+    hp_mask = MASK_START + 8, // 16 masks
+
+    // Decor
+    spiral_plant = MASK_END,
+    ceiling_flower = MASK_END + 1,
+    mushroom = MASK_END + 2, // 2 variations
+    torch = MASK_END + 4,
+
+    _, // heatmap range
+
     pub inline fn is_foundation(self: @This()) bool {
-        return switch (self) {
-            .none,
-            .spiral_plant,
-            .ceiling_flower,
-            .torch,
-            .mushroom,
-            .edge_stone,
-            ._edge_stone,
-            => false,
-            else => true,
-        };
+        const id = @intFromEnum(self);
+        return id >= @intFromEnum(Sprite.strange_stone) and id <= @intFromEnum(Sprite.ruby);
     }
 
-    /// Determines if the sprite's type is valid. Includes the empty block.
     pub inline fn is_valid(self: @This()) bool {
-        return switch (self) {
-            .player,
-            ._edge_stone,
-            .stone,
-            ._stone,
-            .__stone,
-            .___stone,
-            .gem_mask,
-            ._gem_mask,
-            .__gem_mask,
-            .___gem_mask,
-            .geode_mask,
-            ._geode_mask,
-            .__geode_mask,
-            .___geode_mask,
-            ._o0,
-            ._o1,
-            ._o2,
-            ._o3,
-            ._o4,
-            ._o5,
-            ._o6,
-            ._o7,
-            ._o8,
-            ._o9,
-            ._o10,
-            ._o11,
-            ._o12,
-            ._o13,
-            ._o14,
-            ._o15,
-            ._mushroom,
-            => false,
-            else => true,
-        };
-    }
-
-    /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
-    /// This returns true for edge stone, unlike `is_solid`.
-    pub inline fn is_solid(self: @This()) bool {
+        const id = @intFromEnum(self);
         return switch (self) {
             .none,
-            .spiral_plant,
-            .ceiling_flower,
-            .torch,
-            .mushroom,
-            => false,
-            else => true,
-        };
-    }
-
-    /// Determines if the sprite's type is `none` (air/void).
-    pub inline fn is_empty(self: @This()) bool {
-        return self == .none;
-    }
-
-    /// Determines if the sprite is stone (or a variation). Excludes edge stone.
-    pub inline fn is_stone(self: @This()) bool {
-        return switch (self) {
-            .stone,
-            .lava_stone,
+            .edge_stone,
+            .strange_stone,
+            .strange_stone_other,
             .blue_stone,
             .seagreen_stone,
             .green_stone,
-            .strange_stone,
-            .strange_stone_other,
-            => true,
-            else => false,
-        };
-    }
-
-    /// Determines if the sprite is an ore.
-    pub inline fn is_ore(self: @This()) bool {
-        return switch (self) {
+            .stone,
+            .lava_stone,
             .copper,
             .iron,
             .silver,
             .gold,
-            => true,
-            else => false,
-        };
-    }
-
-    /// Determines if the sprite is a gem.
-    pub inline fn is_gem(self: @This()) bool {
-        return switch (self) {
             .amethyst,
             .sapphire,
             .emerald,
             .ruby,
+            .spiral_plant,
+            .ceiling_flower,
+            .mushroom,
+            .torch,
             => true,
-            else => false,
+            else => id >= 256 and id <= 512, // heatmap
         };
     }
 
-    /// Determines if the sprite is a heatmap (types 256-512).
+    pub inline fn is_solid(self: @This()) bool {
+        const id = @intFromEnum(self);
+        if (id < @intFromEnum(Sprite.edge_stone)) return false;
+        if (id >= @intFromEnum(Sprite.gem_mask) and id < @intFromEnum(Sprite.spiral_plant)) return false;
+        return switch (self) {
+            .spiral_plant, .ceiling_flower, .mushroom, .torch, .none, .player => false,
+            else => true,
+        };
+    }
+
+    pub inline fn is_empty(self: @This()) bool {
+        return self == .none;
+    }
+
+    pub inline fn is_stone(self: @This()) bool {
+        const id = @intFromEnum(self);
+        return id >= @intFromEnum(Sprite.strange_stone) and id <= @intFromEnum(Sprite.lava_stone);
+    }
+
+    pub inline fn is_ore(self: @This()) bool {
+        const id = @intFromEnum(self);
+        return id >= @intFromEnum(Sprite.copper) and id <= @intFromEnum(Sprite.gold);
+    }
+
+    pub inline fn is_gem(self: @This()) bool {
+        const id = @intFromEnum(self);
+        return id >= @intFromEnum(Sprite.amethyst) and id <= @intFromEnum(Sprite.ruby);
+    }
+
     pub inline fn is_heatmap(self: @This()) bool {
-        return root.is_debug and procedural.USE_BASE_HEATMAP and @intFromEnum(self) >= 256 and @intFromEnum(self) <= 512;
+        const id = @intFromEnum(self);
+        return root.is_debug and procedural.USE_BASE_HEATMAP and id >= 256 and id <= 512;
     }
 };
 
@@ -184,7 +125,7 @@ pub const foundation_sprite_count: usize = blk: {
     var count: usize = 0;
     for (fields) |field| {
         const sprite: Sprite = @enumFromInt(field.value);
-        if (sprite != .unchanged and (sprite.is_valid())) {
+        if (sprite.is_valid()) {
             count += 1;
         }
     }
@@ -200,7 +141,7 @@ pub const foundation_sprites = blk: {
     // Populate the array!
     for (fields) |field| {
         const sprite: Sprite = @enumFromInt(field.value);
-        if (sprite != .unchanged and (sprite.is_valid())) {
+        if (sprite.is_valid()) {
             result[index] = sprite;
             index += 1;
         }
@@ -215,9 +156,6 @@ pub const max_sprite_value = blk: {
     const fields = @typeInfo(Sprite).@"enum".fields;
 
     for (fields) |field| {
-        // Skip the "unchanged" field by name
-        if (std.mem.eql(u8, field.name, "unchanged")) continue;
-
         if (field.value > max_val) {
             max_val = @intCast(field.value);
         }
