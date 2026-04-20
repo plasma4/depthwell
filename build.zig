@@ -43,15 +43,15 @@ pub fn build(b: *std.Build) void {
 
     const optimize: std.builtin.OptimizeMode = if (wasm_opt) .ReleaseFast else b.standardOptimizeOption(.{});
 
-    // Main WASM game build
-    const exe = b.addExecutable(.{
-        .name = "engine",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("zig/root.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+    const module = b.createModule(.{
+        .root_source_file = b.path("zig/root.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+
+    // Main WASM game build
+    const exe = b.addExecutable(.{ .name = "engine", .root_module = module });
+
     if (optimize == .Debug) {
         exe.root_module.strip = false; // try to reduce any WASM optimization
         exe.lto = .none;
@@ -118,7 +118,7 @@ pub fn build(b: *std.Build) void {
         b.getInstallStep().dependOn(&optimize_wasm.step);
     }
     if (gen_enums) {
-        generateEnums(b, &[_][]const u8{ "zig/root.zig", "zig/types.zig", "zig/memory.zig" });
+        generateEnums(b, &[_][]const u8{ "zig/root.zig", "zig/types/types.zig", "zig/memory.zig" });
     }
 }
 
@@ -174,6 +174,14 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
             .optimize = .Debug,
         }),
     });
+
+    // Create exactly ONE module for the game code
+    const depthwell_mod = b.createModule(.{
+        .root_source_file = b.path("zig/root.zig"),
+    });
+
+    // The tool only needs to see the game root
+    gen_tool.root_module.addImport("depthwell", depthwell_mod);
 
     const run_enums = b.addRunArtifact(gen_tool);
     run_enums.has_side_effects = true;

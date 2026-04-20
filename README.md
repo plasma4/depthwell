@@ -9,7 +9,7 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 ![Terrain example](images/sample.png)
 
-![Sprite sheet](src/assets/main.png)
+![Sprite sheet](src/assets/main-Sheet.png)
 
 ### Building
 

@@ -1,8 +1,9 @@
 //! Manages seeding calculations for the game.
 // seeding yippeeeeee
 const std = @import("std");
-const logger = @import("logger.zig");
-const memory = @import("memory.zig");
+const root = @import("root").root;
+const logger = root.logger;
+const memory = root.memory;
 const testing = std.testing;
 
 /// Represents 2^64.

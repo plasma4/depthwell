@@ -1,7 +1,9 @@
 //! Contains dedicated code for logging. Use quickWarn to quickly create warnings when testing (using ZLS or native zig test command), and quick to quickly log values to JS. Use the write()/clear() function to write to the 4 corners of the screen with the canvas for JS.
 const std = @import("std");
-const builtin = @import("builtin");
-const memory = @import("memory.zig");
+const root = @import("root").root;
+const memory = root.memory;
+const is_wasm = root.is_wasm;
+const is_debug = root.is_debug;
 
 const LogCategory = enum(i32) {
     log = 0,
@@ -37,7 +39,7 @@ extern "env" fn js_get_time() f64;
 
 /// Gets a time in milliseconds. Time is not guaranteed to start from 0 or standard UNIX timestamp when program execution begins.
 pub inline fn get_time() f64 {
-    if (memory.is_wasm) {
+    if (root.is_wasm) {
         return js_get_time();
     } else {
         const ns = std.time.nanoTimestamp();
@@ -47,7 +49,7 @@ pub inline fn get_time() f64 {
 
 // Sends a message (with pointer and length, as well as a message type) to either std.log with the appropriate category or JS.
 inline fn message(ptr: [*]const u8, len: usize, message_type: LogCategory) void {
-    if (memory.is_wasm) {
+    if (root.is_wasm) {
         js_message(ptr, len, message_type);
     } else {
         const msg_slice = ptr[0..len];
@@ -79,7 +81,7 @@ pub inline fn err(comptime src: std.builtin.SourceLocation, fmt: []const u8, arg
 
 inline fn write_log(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype, log_category: LogCategory) void {
     // Add source as comptime. WASM handles the [...url... part of the string
-    const prefix_fmt = if (memory.is_wasm) "{s}:{d}:{d}] " else "[zig/{s}:{d}:{d}] ";
+    const prefix_fmt = if (root.is_wasm) "{s}:{d}:{d}] " else "[zig/{s}:{d}:{d}] ";
     const prefix = std.fmt.comptimePrint(prefix_fmt, .{ src.file, src.line, src.column });
     const final_fmt = prefix ++ fmt;
     const cutoff = "... [remaining log truncated]";
@@ -137,7 +139,7 @@ fn quickFmt(args: anytype, prefix: []const u8) usize {
 
 /// Quickly logs a message for testing. Use .log() with proper arguments for non-temporary logging.
 pub inline fn quick(args: anytype) void {
-    const prefix = if (memory.is_wasm) "]" else "";
+    const prefix = if (root.is_wasm) "]" else "";
     const written = quickFmt(args, prefix);
     message(&logging_buffer, written, .log);
 }
@@ -334,7 +336,7 @@ fn format_args(writer: anytype, args: anytype) !void {
 
 /// Writes formatted text to one of the four UI text buffers. No-op in release modes. Argument can be a simple literal, complex nested struct, and most other things.
 pub inline fn write(buffer_id: u2, args: anytype) void {
-    if (builtin.mode != .Debug) return;
+    if (!is_debug) return;
 
     const targets = [4][]u8{ text_1, text_2, text_3, text_4 };
     const buf = targets[buffer_id];
@@ -361,7 +363,7 @@ pub inline fn write(buffer_id: u2, args: anytype) void {
         }
     }
 
-    if (memory.is_wasm) {
+    if (root.is_wasm) {
         js_write_text(@intCast(buffer_id), buf.ptr, text_lengths[buffer_id]);
     }
 }
@@ -387,9 +389,9 @@ fn writer_truncate(writer: *std.Io.Writer, args: anytype) bool {
 
 /// Clears the text from a specific UI buffer (id 0-3). No-op in release modes.
 pub inline fn clear(id: u2) void {
-    if (builtin.mode != .Debug) return;
+    if (!is_debug) return;
     text_lengths[id] = 0;
-    if (memory.is_wasm) {
+    if (root.is_wasm) {
         const targets = [4][]u8{ text_1, text_2, text_3, text_4 };
         js_write_text(@intCast(id), targets[id].ptr, 0);
     }

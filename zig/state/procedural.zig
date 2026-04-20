@@ -1,18 +1,18 @@
 //! Handles procedural generation logic for the game.
 const std = @import("std");
-const is_debug = @import("builtin").mode == .Debug;
-const types = @import("types.zig");
-const logger = @import("logger.zig");
-const memory = @import("memory.zig");
-const seeding = @import("seeding.zig");
-const world = @import("world.zig");
+const root = @import("root").root;
+const types = root.types;
+const logger = root.logger;
+const memory = root.memory;
+const seeding = root.seeding;
+const world = root.world;
 
 /// Represents 2^32.
 const POW_2_32 = 4294967296;
 const POW_2_64 = seeding.POW_2_64;
 const SPAN = memory.SPAN;
 
-const Sprite = @import("sprite.zig").Sprite;
+const Sprite = root.Sprite;
 const EdgeFlags = types.EdgeFlags;
 const odds_num = seeding.odds_num;
 const FastHash = seeding.FastHash;
@@ -27,9 +27,9 @@ pub var fbm_power: f64 = 1.0;
 pub var density_min: f64 = 0.32;
 pub var density_max: f64 = 0.9;
 
-/// Determines whether to use a heatmap or not for base terrain. Ignored if `is_debug` is false.
+/// Determines whether to use a heatmap or not for base terrain. Ignored if `root.is_debug` is false.
 pub var USE_BASE_HEATMAP = false;
-/// Determines whether to use a heatmap or not for ore generation. Ignored if `is_debug` is false.
+/// Determines whether to use a heatmap or not for ore generation. Ignored if `root.is_debug` is false.
 pub var USE_ORE_HEATMAP = false;
 
 /// Options for the FBM+Worley implementation.
@@ -50,7 +50,7 @@ const BaseTerrainData = struct {
 /// Generates a block for seeding (based on previous procedural generation logic).
 /// The terms moisture/density are used extremely loosely here.
 pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
-    if (is_debug and USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
+    if (root.is_debug and USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
 
     if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
         return .strange_stone;
@@ -261,7 +261,7 @@ pub fn add_ores(
     );
 
     // sprite IDs from 256-512 create a neat little heatmap (using only the first value), overriding normal ore logic
-    if (is_debug and USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v1 * 256.0)));
+    if (root.is_debug and USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v1 * 256.0)));
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
         // Generate various ore types

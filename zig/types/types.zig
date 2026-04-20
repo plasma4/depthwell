@@ -1,7 +1,10 @@
 //! Lists enums for communication between JS and WASM, or important misc ones.
 const std = @import("std");
-const GameState = @import("memory.zig").GameState;
-const GenerateOffsets = @import("generate_types.zig").GenerateOffsets;
+
+const root = @import("depthwell");
+
+const GameState = @import("../memory.zig").GameState; // Direct relative import
+const GenerateOffsets = @import("../internal/offsets.zig").GenerateOffsets;
 
 /// Masked data representing keyboard key inputs in the game.
 pub const KeyBits = struct {

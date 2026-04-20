@@ -1,7 +1,12 @@
 //! Automatically generates enum data and WASM export signatures for TypeScript.
 const std = @import("std");
-const types = @import("types.zig");
-const root = @import("root.zig");
+
+/// Points to definitions from zig/root.zig.
+pub const root = @import("depthwell");
+
+const types = root.types; // Get types through the game root
+
+pub const is_generate_types = true;
 
 /// Maps primitive Zig types to TypeScript type names.
 fn zigTypeToTs(comptime T: type) []const u8 {
@@ -22,43 +27,8 @@ fn zigTypeToTs(comptime T: type) []const u8 {
     }
 }
 
-/// Generates a struct where each field is a `usize` representing
-/// the offset of that field in the provided `T`.
-pub fn GenerateOffsets(comptime T: type) type {
-    const info = @typeInfo(T).@"struct";
-    inline for (info.fields) |field| {
-        if (field.type == usize) {
-            @compileError("Field '" ++ field.name ++ "' in struct '" ++ @typeName(T) ++
-                "' uses 'usize'. Use 'u32' or 'u64' for cross-platform consistency.");
-        }
-    }
-    const field_count = info.fields.len;
-    var names: [field_count][]const u8 = undefined;
-    var field_types: [field_count]type = undefined;
-    var field_attrs: [field_count]std.builtin.Type.StructField.Attributes = undefined;
-
-    inline for (info.fields, 0..) |field, i| {
-        names[i] = field.name;
-        field_types[i] = u64;
-        const offset_val: u64 = @offsetOf(T, field.name);
-        field_attrs[i] = .{
-            .@"align" = @alignOf(u64), // Changed from .alignment
-            .@"comptime" = false,
-            .default_value_ptr = @as(?*const anyopaque, @ptrCast(&offset_val)),
-        };
-    }
-
-    return @Struct(
-        .auto,
-        null,
-        &names,
-        &field_types,
-        &field_attrs,
-    );
-}
-
 pub fn main(init: std.process.Init) !void {
-    var buffer: [100000]u8 = undefined;
+    var buffer: [64 * 1024]u8 = undefined;
     var alloc: std.heap.FixedBufferAllocator = .init(&buffer);
     const allocator = alloc.allocator();
     var bw = std.Io.Writer.Allocating.init(allocator);
@@ -166,41 +136,6 @@ pub fn main(init: std.process.Init) !void {
                 try writer.print("}} as const;\n", .{});
             }
         }
-
-        // 0.16.0 maybe
-        // if (ValueType == type) {
-        //     const inner_info = @typeInfo(ValueType);
-        //     if (inner_info == .@"struct") {
-        //         try writer.print("\nexport const {s} = {{\n", .{decl.name});
-
-        //         inline for (inner_info.@"struct".fields) |field| {
-        //             const field_value = @field(value, field.name);
-        //             try writer.print("    {s}: {d},\n", .{ field.name, field_value });
-        //         }
-
-        //         try writer.print("}} as const;\n", .{});
-        //     } else if (inner_info == .@"enum") {
-        //         try writer.print("\nexport enum {s} {{\n", .{decl.name});
-
-        //         inline for (inner_info.@"enum".fields) |field| {
-        //             try writer.print("    {s} = {d},\n", .{ field.name, field.value });
-        //         }
-
-        //         try writer.print("}}\n", .{});
-        //     }
-        // } else {
-        //     const inner_info = @typeInfo(ValueType);
-        //     if (inner_info == .@"struct") {
-        //         try writer.print("\nexport const {s} = {{\n", .{decl.name});
-
-        //         inline for (inner_info.@"struct".fields) |field| {
-        //             const field_value = @field(value, field.name);
-        //             try writer.print("    {s}: {d},\n", .{ field.name, field_value });
-        //         }
-
-        //         try writer.print("}} as const;\n", .{});
-        //     }
-        // }
     }
 
     const stdout = std.Io.File.stdout();
