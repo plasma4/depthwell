@@ -199,10 +199,10 @@ pub const Block = packed struct(u64) {
     /// The brightness of the tile.
     light: u8,
 
-    /// How "mined" the block is. 0 is least mined, 15 is most mined.
-    hp: u4,
     /// Per-block seed for procedural variation in the shader.
     seed: u28,
+    /// How "mined" the block is. 0 is least mined, 15 is most mined.
+    hp: u4,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
     /// Using the BOTTOM 28 bits from `seed_bits` to place into `seed`.
