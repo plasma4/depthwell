@@ -2,6 +2,7 @@
 const std = @import("std");
 const memory = @import("memory.zig");
 const main = @import("main.zig");
+const logger = @import("logger.zig");
 const sprite = @import("sprite.zig");
 const world = @import("world.zig");
 
@@ -33,7 +34,10 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
     const game = &memory.game;
     if (action == 1) is_mouse_down = true;
     if (action == 2) is_mouse_down = false;
-    if (action == 3) selected_sprite = (selected_sprite + 1) % sprite.foundation_sprite_count;
+    if (action == 3) {
+        selected_sprite = (selected_sprite + 1) % sprite.foundation_sprite_count;
+        logger.write(3, .{ "{h}Currently selected", @as(sprite.Sprite, sprite.foundation_sprites[selected_sprite]) });
+    }
 
     const screen_dx = (x - 0.5) * SCREEN_WIDTH;
     const screen_dy = (y - 0.5) * SCREEN_HEIGHT;
