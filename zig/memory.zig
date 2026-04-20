@@ -385,7 +385,7 @@ pub const MemoryLayout = extern struct {
     scratch_ptr: u64 align(MAIN_ALIGN_BYTES),
     /// The current length or offset used within the scratch buffer.
     scratch_len: u64,
-    /// The total capacity of the fixed scratch buffer (4MB).
+    /// The total capacity of the fixed scratch buffer (starts off at 4 MiB).
     scratch_capacity: u64,
     /// Pointer to the GameState.
     game_ptr: u64,
