@@ -32,6 +32,7 @@ pub export fn setup() void {
     world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
     world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
     logger.write(3, "Use left click to draw blocks, and right click to change the type drawn.");
+    logger.write(3, .{ "{h}Currently selected", @as(sprite.Sprite, sprite.foundation_sprites[mouse.selected_sprite]) });
 }
 pub export fn init() void {
     main.init();

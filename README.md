@@ -5,6 +5,12 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 > [!WARNING]
 > The current `README` is **incomplete**, as this game is still in the pre-demo stage; more details will be added in the future and details might currently be out of date. Read the code for specific implementation details.
 
+#### Images
+
+![Terrain example](images/sample.png)
+
+![Sprite sheet](src/assets/main.png)
+
 ### Building
 
 Run `zig build` for the main build of Zig code, `zig test "zig/root.zig"` to run (all) tests, and `zig build -Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)

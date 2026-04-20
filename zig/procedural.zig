@@ -299,7 +299,7 @@ pub fn add_ores(
         if (sprite == .gold) return sprite;
     } else {
         // Logic for generating gems
-        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.35 else 0.25;
+        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.4 else 0.3;
         if (base_data.density >= 0.3 and base_data.density <= 0.5 and v2 >= 0.1 and v2 <= gem_v2_bound) {
             const random_value = FastHash.float_2d(seed_vector_3, @intCast(x), @intCast(y));
 
@@ -332,14 +332,14 @@ pub fn add_ores(
 
                 sprite = select_sprite(
                     .{ sprite, .emerald },
-                    v3 >= 0.45 and v3 >= 0.65 and random_value <= 0.86 * base_gem_odds,
+                    v3 >= 0.45 and v3 <= 0.65 and random_value <= 0.86 * base_gem_odds,
                     null,
                 );
                 if (sprite == .emerald) return sprite;
 
                 sprite = select_sprite(
                     .{ sprite, .ruby },
-                    v3 >= 0.22 and v3 >= 0.3,
+                    v3 >= 0.22 and v3 <= 0.3,
                     null,
                 );
                 if (sprite == .ruby) return sprite;
