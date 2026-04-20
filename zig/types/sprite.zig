@@ -50,40 +50,23 @@ pub const Sprite = enum(u16) {
 
     _, // heatmap range
 
+    /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
+    /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
     pub inline fn is_foundation(self: @This()) bool {
         const id = @intFromEnum(self);
         return id >= @intFromEnum(Sprite.strange_stone) and id <= @intFromEnum(Sprite.ruby);
     }
 
+    /// Determines if the sprite's type is valid. Includes the empty block.
     pub inline fn is_valid(self: @This()) bool {
+        // do note that heatmap isn't valid
         const id = @intFromEnum(self);
-        return switch (self) {
-            .none,
-            .edge_stone,
-            .strange_stone,
-            .strange_stone_other,
-            .blue_stone,
-            .seagreen_stone,
-            .green_stone,
-            .stone,
-            .lava_stone,
-            .copper,
-            .iron,
-            .silver,
-            .gold,
-            .amethyst,
-            .sapphire,
-            .emerald,
-            .ruby,
-            .spiral_plant,
-            .ceiling_flower,
-            .mushroom,
-            .torch,
-            => true,
-            else => id >= 256 and id <= 512, // heatmap
-        };
+        return self == .none or self == .spiral_plant or self == .ceiling_flower or self == .mushroom or self == .torch or
+            (id >= @intFromEnum(Sprite.strange_stone) and id <= @intFromEnum(Sprite.ruby));
     }
 
+    /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
+    /// This returns true for edge stone, unlike `is_solid`.
     pub inline fn is_solid(self: @This()) bool {
         const id = @intFromEnum(self);
         if (id < @intFromEnum(Sprite.edge_stone)) return false;
@@ -94,25 +77,30 @@ pub const Sprite = enum(u16) {
         };
     }
 
+    /// Determines if the sprite's type is `none` (air/void).
     pub inline fn is_empty(self: @This()) bool {
         return self == .none;
     }
 
+    /// Determines if the sprite is stone (or a variation). Excludes edge stone.
     pub inline fn is_stone(self: @This()) bool {
         const id = @intFromEnum(self);
-        return id >= @intFromEnum(Sprite.strange_stone) and id <= @intFromEnum(Sprite.lava_stone);
+        return id >= @intFromEnum(Sprite.strange_stone) and id < @intFromEnum(Sprite.copper);
     }
 
+    /// Determines if the sprite is an ore.
     pub inline fn is_ore(self: @This()) bool {
         const id = @intFromEnum(self);
-        return id >= @intFromEnum(Sprite.copper) and id <= @intFromEnum(Sprite.gold);
+        return id >= @intFromEnum(Sprite.copper) and id < @intFromEnum(Sprite.amethyst);
     }
 
+    /// Determines if the sprite is a gem.
     pub inline fn is_gem(self: @This()) bool {
         const id = @intFromEnum(self);
-        return id >= @intFromEnum(Sprite.amethyst) and id <= @intFromEnum(Sprite.ruby);
+        return id >= @intFromEnum(Sprite.amethyst) and id < @intFromEnum(Sprite.gem_mask);
     }
 
+    /// Determines if the sprite is a heatmap (between types 256-512).
     pub inline fn is_heatmap(self: @This()) bool {
         const id = @intFromEnum(self);
         return root.is_debug and procedural.USE_BASE_HEATMAP and id >= 256 and id <= 512;
@@ -132,7 +120,7 @@ pub const foundation_sprite_count: usize = blk: {
     break :blk count;
 };
 
-/// An array of all `Sprite` values that return true for `is_foundation()`.
+/// An array of all `Sprite` values that are considered valid (according to `is_valid()`).
 pub const foundation_sprites = blk: {
     const fields = @typeInfo(Sprite).@"enum".fields;
     var result: [foundation_sprite_count]Sprite = undefined;
