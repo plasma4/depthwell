@@ -481,7 +481,7 @@ pub fn scratch_as_slice(comptime T: type) []T {
 pub fn run_scratch_allocation_tests() void {
     scratch_reset();
 
-    // Force 0-to-256KiB scratch allocation.
+    // Force starting scratch allocation (if it hadn't existed already).
     const len1 = 100;
     _ = scratch_alloc(len1) orelse @panic("Bootstrap allocation failed");
 
