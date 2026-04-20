@@ -7,7 +7,7 @@ import WASM_URL from "./main.wasm?url";
 /** The URL for the WebGPU shader code. ADD ?raw FOR DEBUGGING SHADER. */
 import SHADER_SOURCE from "./shader.wgsl?raw"; // TODO remove ?raw for prod
 /** The URL for the sprite sheet. */
-import SPRITE_SHEET_URL from "./assets/main.png?url";
+import SPRITE_SHEET_URL from "./assets/main-Sheet.png?url";
 
 /** Creates a new GameEngine, sets up WebGPU shaders, and calls init() from Zig. */
 export async function create(

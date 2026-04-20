@@ -1,20 +1,45 @@
-//! Root file. Imports main.zig and handles exporting functions to WASM.
+//! Root file. Imports startup.zig and handles exporting functions to WASM.
 //! All functions here (excluding internal ones like panic) should be `pub` to expose functions to `generate_types.zig`,
 //! and `extern` for WASM (with no other exported functions within other Zig files).
 const std = @import("std");
 const builtin = @import("builtin");
-const SegmentedList = @import("SegmentedList.zig").SegmentedList;
-const sprite = @import("sprite.zig");
-const main = @import("main.zig");
-const memory = @import("memory.zig");
-const seeding = @import("seeding.zig");
-const procedural = @import("internal/procedural.zig");
-const logger = @import("logger.zig");
-const player = @import("player.zig");
-const world = @import("world.zig");
-const mouse = @import("mouse.zig");
-const KeyBits = @import("types.zig").KeyBits;
-const debug_ui = @import("debug_ui.zig");
+
+/// Points to definitions from zig/root.zig.
+pub const root = @This();
+
+pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
+pub const is_debug = builtin.is_test or builtin.mode == .Debug;
+
+pub const SCREEN_WIDTH = 480;
+pub const SCREEN_HEIGHT = 270;
+pub const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
+pub const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
+
+pub const utils = @import("internal/utils.zig");
+pub const GenerateOffsets = @import("internal/offsets.zig").GenerateOffsets;
+pub const SegmentedList = @import("internal/SegmentedList.zig").SegmentedList;
+
+pub const render = @import("render/render.zig");
+
+pub const types = @import("types/types.zig");
+pub const KeyBits = types.KeyBits;
+
+pub const sprite = @import("types/sprite.zig");
+pub const Sprite = sprite.Sprite;
+
+pub const startup = @import("startup.zig");
+pub const memory = @import("memory.zig");
+
+pub const seeding = @import("state/seeding.zig");
+pub const procedural = @import("state/procedural.zig");
+pub const player = @import("state/player.zig");
+pub const world = @import("state/world.zig");
+
+pub const logger = @import("tools/logger.zig");
+pub const debug_ui = @import("tools/debug_ui.zig");
+
+pub const mining = @import("input/mining.zig");
+pub const mouse = @import("input/mouse.zig");
 
 pub export fn setup() void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
@@ -35,15 +60,15 @@ pub export fn setup() void {
     logger.write(3, .{ "{h}Currently selected", @as(sprite.Sprite, sprite.foundation_sprites[mouse.selected_sprite]) });
 }
 pub export fn init() void {
-    main.init();
+    startup.init();
 }
 pub export fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
-    main.prepare_visible_chunks(time_interpolated, canvas_w, canvas_h);
+    render.prepare_visible_chunks(time_interpolated, canvas_w, canvas_h);
 }
 
 pub export fn get_tiles_per_row() u32 {
     // return world.max_sprite_value + 1; // the length is the highest value + 1
-    return 10;
+    return 10; // Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
 }
 pub export fn get_tiles_per_column() u32 {
     return (sprite.max_sprite_value + 1 + 9) / 10; // act as a ceil
@@ -68,7 +93,7 @@ pub export fn handle_mouse(mouse_x: f64, mouse_y: f64, action: u32) void {
     mouse.handle_mouse(mouse_x, mouse_y, action);
 }
 
-pub export fn tick(speed: f64, iterations: u32) void {
+pub export fn tick(speed: u32, iterations: u32) void {
     // increase the depth (testing hotkey)
     if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
         // if (in_debug_mode) {
@@ -79,6 +104,8 @@ pub export fn tick(speed: f64, iterations: u32) void {
             memory.game.get_block_y_in_chunk(),
         );
         // }
+    } else {
+        mining.handle_mining();
     }
 
     for (0..iterations) |_| { // iterations is guaranteed to be positive
@@ -122,27 +149,24 @@ pub export fn wasm_free(ptr: u64, len: usize) void {
     memory.wasm_free(@ptrFromInt(@as(usize, @intCast(ptr))), len); // Memory64 hack
 }
 
-// Debug/testing logic
-pub const in_debug_mode = builtin.mode == .Debug;
-
 pub export fn debug_build_ui_metadata() void {
-    if (in_debug_mode) debug_ui.build_metadata();
+    if (is_debug) debug_ui.build_metadata();
 }
 pub export fn debug_ui_slider_change(id: u32, val: f32) void {
-    if (in_debug_mode) debug_ui.slider_change(id, val);
+    if (is_debug) debug_ui.slider_change(id, val);
 }
 pub export fn debug_ui_button_click(id: u32) void {
-    if (in_debug_mode) debug_ui.button_click(id);
+    if (is_debug) debug_ui.button_click(id);
 }
 
 /// Returns if code is in debugging mode for JS to see.
 pub export fn isDebug() bool {
-    return in_debug_mode;
+    return is_debug;
 }
 
 // Import debugging API if optimization level is Debug.
 comptime {
-    _ = if (in_debug_mode) struct {
+    _ = if (is_debug) struct {
         pub export fn test_logs() void {
             logger.test_logs(true);
         }
@@ -164,9 +188,9 @@ fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noretur
 test "main_tests" {
     const modules = .{
         @import("png/png_to_binary.zig"),
-        @import("color_rgba.zig"),
-        @import("seeding.zig"),
-        @import("logger.zig"),
+        @import("visual/color_rgba.zig"),
+        @import("state/seeding.zig"),
+        @import("tools/logger.zig"),
     };
 
     inline for (modules) |mod| {

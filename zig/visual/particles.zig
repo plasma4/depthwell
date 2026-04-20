@@ -1,5 +1,6 @@
 const std = @import("std");
-const memory = @import("memory.zig");
+const root = @import("root").root;
+const memory = root.memory;
 const Particle = memory.Particle;
 
 /// Custom circular buffer system for particles that doesn't require CPU-side culling.

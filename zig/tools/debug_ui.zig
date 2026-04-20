@@ -1,12 +1,13 @@
 //! Handles debug options for sliders and buttons, and contains functions to pass these to JS.
 const std = @import("std");
-const main = @import("main.zig");
-const logger = @import("logger.zig");
-const memory = @import("memory.zig");
-const world = @import("world.zig");
-const player = @import("player.zig");
-const seeding = @import("seeding.zig");
-const procedural = @import("procedural.zig");
+const root = @import("root").root;
+const main = root.startup;
+const logger = root.logger;
+const memory = root.memory;
+const world = root.world;
+const player = root.player;
+const seeding = root.seeding;
+const procedural = root.procedural;
 
 pub const SliderDef = struct {
     name: []const u8,

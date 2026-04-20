@@ -31,6 +31,8 @@ export interface EngineOptions {
 export interface EngineExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
 
+    readonly GenerateOffsets: (arg0: unknown) => unknown;
+    readonly SegmentedList: (arg0: unknown, arg1: number) => unknown;
     readonly setup: () => void;
     readonly init: () => void;
     readonly prepare_visible_chunks: (arg0: number, arg1: number, arg2: number) => void;

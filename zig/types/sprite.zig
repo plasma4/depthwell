@@ -1,9 +1,9 @@
 const std = @import("std");
-const is_debug = @import("builtin").mode == .Debug;
-const memory = @import("memory.zig");
-const procedural = @import("procedural.zig");
+const root = @import("root").root;
+const memory = root.memory;
+const procedural = root.procedural;
 
-/// Sprite IDs, based on src/main.png
+/// Sprite IDs, based on src/main-Sheet.png
 pub const Sprite = enum(u16) {
     none,
     player,
@@ -27,7 +27,7 @@ pub const Sprite = enum(u16) {
     sapphire,
     emerald,
     ruby,
-    gem_mask,
+    gem_mask, // 8 masks for gems
     _gem_mask,
     __gem_mask,
     ___gem_mask,
@@ -35,6 +35,22 @@ pub const Sprite = enum(u16) {
     _geode_mask,
     __geode_mask,
     ___geode_mask,
+    _o0, // 16 hp sprites
+    _o1,
+    _o2,
+    _o3,
+    _o4,
+    _o5,
+    _o6,
+    _o7,
+    _o8,
+    _o9,
+    _o10,
+    _o11,
+    _o12,
+    _o13,
+    _o14,
+    _o15,
     spiral_plant,
     ceiling_flower,
     mushroom, // there is another variant of mushrooms
@@ -76,6 +92,22 @@ pub const Sprite = enum(u16) {
             ._geode_mask,
             .__geode_mask,
             .___geode_mask,
+            ._o0,
+            ._o1,
+            ._o2,
+            ._o3,
+            ._o4,
+            ._o5,
+            ._o6,
+            ._o7,
+            ._o8,
+            ._o9,
+            ._o10,
+            ._o11,
+            ._o12,
+            ._o13,
+            ._o14,
+            ._o15,
             ._mushroom,
             => false,
             else => true,
@@ -128,9 +160,21 @@ pub const Sprite = enum(u16) {
         };
     }
 
+    /// Determines if the sprite is a gem.
+    pub inline fn is_gem(self: @This()) bool {
+        return switch (self) {
+            .amethyst,
+            .sapphire,
+            .emerald,
+            .ruby,
+            => true,
+            else => false,
+        };
+    }
+
     /// Determines if the sprite is a heatmap (types 256-512).
     pub inline fn is_heatmap(self: @This()) bool {
-        return is_debug and procedural.USE_BASE_HEATMAP and @intFromEnum(self) >= 256 and @intFromEnum(self) <= 512;
+        return root.is_debug and procedural.USE_BASE_HEATMAP and @intFromEnum(self) >= 256 and @intFromEnum(self) <= 512;
     }
 };
 

@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 "use strict";
 
-// const is_dev = import.meta.env.DEV;
-const is_dev = true;
+const is_dev = import.meta.env.DEV;
+// const is_dev = true; // TODO use the other def in production
 
 /**
  * Debug/testing options. Set all values to false in production.

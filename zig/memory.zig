@@ -1,14 +1,14 @@
 //! Contains important datatypes, some of which bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
 const std = @import("std");
 const builtin = @import("builtin");
-const Sprite = @import("sprite.zig").Sprite;
-const types = @import("types.zig");
-const logger = @import("logger.zig");
-const player = @import("player.zig");
-const ColorRGBA = @import("color_rgba.zig").ColorRGBA;
-const seeding = @import("seeding.zig");
-const world = @import("world.zig");
-pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
+const root = @import("root").root;
+const Sprite = root.Sprite;
+const types = root.types;
+const logger = root.logger;
+const player = root.player;
+const ColorRGBA = root.ColorRGBA;
+const seeding = root.seeding;
+const world = root.world;
 
 /// Represents log2(SPAN).
 pub const SPAN_LOG2: comptime_int = 4;
@@ -69,9 +69,6 @@ pub const GameState = extern struct {
     ///
     /// Example:
     /// ```zig
-    /// const logger = @import("logger.zig");
-    /// const memory = @import("memory.zig");
-    /// const KeyBits = @import("types.zig").KeyBits;
     /// logger.log(@src(), "{}", .{KeyBits.isSet(KeyBits.up, memory.game.keys_pressed_mask)}); // Gets if UP key was pressed this frame.
     /// ```
     keys_pressed_mask: u32 = 0,
@@ -79,9 +76,6 @@ pub const GameState = extern struct {
     ///
     /// Example:
     /// ```zig
-    /// const logger = @import("logger.zig");
-    /// const memory = @import("memory.zig");
-    /// const KeyBits = @import("types.zig").KeyBits;
     /// logger.log(@src(), "{}", .{KeyBits.isSet(KeyBits.up, memory.game.keys_held_mask)}); // Gets if UP key is being held down.
     /// ```
     keys_held_mask: u32 = 0,
@@ -161,7 +155,6 @@ const main_allocator = if (builtin.is_test) std.testing.allocator else if (built
 ///
 /// Example:
 /// ```zig
-/// const memory = @import("memory.zig");
 /// var arena = memory.make_arena();
 /// const allocator = arena.allocator();
 /// defer arena.deinit();
@@ -212,7 +205,7 @@ pub const Block = packed struct(u64) {
     seed: u28,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
-    /// Using the BOTTOM 32 bits from `seed_bits`, (up to, but not necessarily) 8 bits of `light` and (guaranteed) 24 bits of `seed`.
+    /// Using the BOTTOM 28 bits from `seed_bits` to place into `seed`.
     pub inline fn make_basic_block(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
@@ -220,7 +213,7 @@ pub const Block = packed struct(u64) {
             .edge_flags = 0,
 
             // light only applies to ores in WGSL
-            .light = if (sprite_type.is_ore()) (@as(u8, @intCast((seed_bits >> 24) % 64))) + 64 else 0,
+            .light = 0,
             .seed = @truncate(seed_bits),
         };
     }
@@ -250,6 +243,11 @@ pub const Block = packed struct(u64) {
         return self.id.is_ore();
     }
 
+    /// Determines if the sprite is a gem.
+    pub inline fn is_gem(self: @This()) bool {
+        return self.id.is_gem();
+    }
+
     /// Determines if the sprite is a heatmap (types 256-512).
     pub inline fn is_heatmap(self: @This()) bool {
         return self.id.is_heatmap();
@@ -264,8 +262,9 @@ pub const Block = packed struct(u64) {
 /// 16x16 fixed grid of blocks. Each chunk is 2KiB in size.
 pub const Chunk = struct {
     blocks: [SPAN_SQ]Block align(MAIN_ALIGN_BYTES),
-    pub inline fn getIndex(x: u4, y: u4) u8 {
-        return (@as(u8, y) << SPAN_LOG2) | @as(u8, x);
+
+    pub inline fn get_block(self: @This(), x: u4, y: u4) Block {
+        return self.blocks[(@as(usize, y) << SPAN_LOG2) | @as(usize, x)];
     }
 };
 
@@ -396,7 +395,7 @@ pub const MemoryLayout = extern struct {
 
 /// Global static instance of the layout so the pointer remains valid for JS. Starts near the start of a WASM page.
 pub var mem: MemoryLayout align(MAIN_ALIGN_BYTES) = .{
-    .scratch_ptr = 0, // pointer is set in main.zig's init
+    .scratch_ptr = 0, // pointer is set in startup.zig's init
     .scratch_len = 0,
     .scratch_capacity = 0,
     .game_ptr = 0,

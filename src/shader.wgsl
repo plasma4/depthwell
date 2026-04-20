@@ -2,7 +2,7 @@
  * Main shader for Depthwell. ADD ?raw FOR DEBUGGING SHADER TO THE END OF engineMaker.ts's `SHADER_SOURCE` VARIABLE TO NOT COMPRESS.
  */
 
-// These are sprite sheet constants. Sprites are saved as a .png, and each asset is 16x16.
+// These are sprite sheet constants. Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
 // See zig/world.zig's Sprite definitions for sprite type list.
 // These const values values with /* VARIABLE_NAME */ are dynamically patched in from TypeScript, so do not set them here.
 const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
@@ -12,6 +12,9 @@ const ORE_START: u32 = /* ORE_START */ 1 /* ORE_START */;
 const GEM_START: u32 = /* GEM_START */ 1 /* GEM_START */;
 const GEM_MASK_START: u32 = /* GEM_MASK_START */ 1 /* GEM_MASK_START */;
 const DECOR_START: u32 = /* DECOR_START */ 1 /* DECOR_START */;
+
+const TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
+const HP_SAMPLE_START = GEM_MASK_START + 8; // there are 8 gem masks and 16 HP masks
 
 const TILE_SIZE: f32 = 16.0;
 const PIXEL_UV_SIZE: f32 = 1.0 / TILE_SIZE;
@@ -54,9 +57,7 @@ struct UnpackedTile {
     sprite_id: u32,
     light: f32,
     hp: u32,
-    seed: u32,
-    seed2: u32,
-    seed3: u32,
+    seeds: vec3u,
     edge_flags: u32,
 };
 
@@ -78,9 +79,8 @@ struct VertexOutput {
     @location(3) @interpolate(flat) sprite_id: u32,
     @location(4) @interpolate(flat) edge_flags: u32,
     @location(5) @interpolate(flat) light: f32,
-    @location(6) @interpolate(flat) seed: u32, // these 28 bits are used as efficently as possible
-    @location(7) @interpolate(flat) seed2: u32, // murmurmix32'ed from seed
-    @location(8) @interpolate(flat) seed3: u32, // murmurmix32'ed from seed2
+    @location(6) @interpolate(flat) hp: u32,
+    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 28 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
 };
 
 // Extracts the specific bit ranges in the Block type (see zig/memory.zig).
@@ -91,16 +91,16 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.edge_flags = extractBits(data.word0, 16u, 8u);
     // out.edge_flags = 0u; // test
 
-    let light_u = extractBits(data.word0, 24u, 8u);
-
     // only apply to ores
-    out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
+    // let light_u = extractBits(data.word0, 24u, 8u);
+    // out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
 
-    // out.light = 1.0; // test
+    out.light = 1.0;
     out.hp = extractBits(data.word1, 0u, 4u);
-    out.seed = extractBits(data.word1, 4u, 28u); // 28-bit seed
-    out.seed2 = murmurmix32(out.seed);
-    out.seed3 = murmurmix32(out.seed2);
+    let s1 = data.word1; // hp takes up the top 4 bits perfectly
+    let s2 = murmurmix32(s1);
+    let s3 = murmurmix32(s2);
+    out.seeds = vec3u(s1, s2, s3);
     return out;
 }
 
@@ -109,35 +109,18 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32
 ) -> VertexOutput {
-    // const POSITIONS = array<vec2f, 6>(
-    //     vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0), // bottom-right, top-left triangle
-    //     vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0) // top-left, bottom-right triangle
-    // );
-
-    // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50)
-    let x = f32((50u >> vertex_index) & 1u);
-
-    // A bitmask where bits 2, 3, and 5 are set (0b101100 = 44)
-    let y = f32((44u >> vertex_index) & 1u);
-
-    let local_pos = vec2f(x, y);
+    // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50) and bits 2, 3, and 5 are set (0b101100 = 44)
+    let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
 
     let total_tiles = scene.map_size.x * scene.map_size.y;
-
     var out: VertexOutput;
+
     if (instance_index == total_tiles) {
         // There's intentionally one more instance than the number of tiles to render the player!
         let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
         let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
-        let atlas_uv = vec2f(
-            (1 + local_pos.x) * SPRITE_W, // player sprite at (1, 0)
-            (0 + local_pos.y) * SPRITE_H
-        );
 
-        let ndc = vec2f(
-            (screen_pos.x / scene.viewport_size.x) * 2.0 - 1.0,
-            1.0 - (screen_pos.y / scene.viewport_size.y) * 2.0
-        );
+        let ndc = (screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
 
         out.position = vec4f(ndc, 0.0, 1.0);
         out.sprite_uv_origin = vec2f(1.0 * SPRITE_W, 0.0 * SPRITE_H);
@@ -154,31 +137,26 @@ fn vs_main(
         return out;
     }
 
-    let tile_x = instance_index % scene.map_size.x;
-    let tile_y = instance_index / scene.map_size.x;
-
+    let tile_coords = vec2u(instance_index % scene.map_size.x, instance_index / scene.map_size.x);
     var id = tile.sprite_id;
+
     if (id == STONE_START) {
         // 2x2 grid stone pattern
-        let offset = (tile_y % 2u) * 2u + (tile_x % 2u);
+        let offset = (tile_coords.y % 2u) * 2u + (tile_coords.x % 2u);
         id += offset;
     } else if (id == 2) { // edge stone (too lazy to make constant, like player)
-        let offset = (tile_x % 2u) ^ (tile_y % 2u); // checkerboard
+        let offset = (tile_coords.x % 2u) ^ (tile_coords.y % 2u); // checkerboard
         id += offset;
     } else if (id == (DECOR_START + 2u)) {
         // seed-based variation for Mushrooms
-        let random_mod = extractBits(tile.seed, 16u, 2u);
+        let random_mod = extractBits(tile.seeds[0], 16u, 2u);
         if (random_mod == 0u) {
             id++;
         }
     }
 
-    let world_pixel_pos = vec2f(f32(tile_x), f32(tile_y)) * TILE_SIZE + local_pos * TILE_SIZE;
-
-    // get offset from camera center in world pixels
-    let offset_from_cam = world_pixel_pos - scene.camera;
-    // scale that offset by zoom, then add the screen center
-    let screen_pos = (offset_from_cam * scene.zoom) + (scene.viewport_size * 0.5);
+    let world_pixel_pos = (vec2f(tile_coords) + local_pos) * TILE_SIZE;
+    let screen_pos = ((world_pixel_pos - scene.camera) * scene.zoom) + (scene.viewport_size * 0.5);
 
     // normalize coordinates
     // first, make sure spiral plant and ceiling flower should move up by 3 pixels, mushroom should move down 2 pixels
@@ -195,27 +173,20 @@ fn vs_main(
 
     // apply to screen_pos.y before converting to NDC
     // subtract from Y because in screen space, lower values are "higher" up
-    let adjusted_y = screen_pos.y - vertical_offset;
-
-    let ndc = vec2f(
-        (screen_pos.x / scene.viewport_size.x) * 2.0 - 1.0,
-        1.0 - (adjusted_y / scene.viewport_size.y) * 2.0
-    );
+    let adjusted_screen_pos = screen_pos - vec2f(0.0, vertical_offset);
+    let ndc = (adjusted_screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
 
     // Calculate which sprite in the atlas to sample
-    let sprite_col = f32(id % u32(TILES_PER_ROW));
-    let sprite_row = f32(id / u32(TILES_PER_ROW));
-    let origin = vec2f(sprite_col * SPRITE_W, sprite_row * SPRITE_H);
+    let origin = vec2f(f32(id % TILES_PER_ROW_U), f32(id / TILES_PER_ROW_U)) * vec2f(SPRITE_W, SPRITE_H);
 
     out.position = vec4f(ndc, 0.0, 1.0);
     out.sprite_uv_origin = origin;
     out.sprite_id = id;
+    out.hp = tile.hp;
+    out.seeds = tile.seeds;
     out.edge_flags = tile.edge_flags;
-    out.tile_coords = vec2u(tile_x, tile_y);
+    out.tile_coords = tile_coords;
     out.light = tile.light;
-    out.seed = tile.seed;
-    out.seed2 = tile.seed2;
-    out.seed3 = tile.seed3;
     out.local_uv = local_pos;
     return out;
 }
@@ -226,17 +197,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
     if (in.edge_flags != 0xFFu) {
-        erode_mask = erosion(in.local_uv, in.edge_flags, in.seed2, in.seed3);
+        erode_mask = erosion(in.local_uv, in.edge_flags, in.seeds[1], in.seeds[2]);
         if (scene.wireframe_opacity == 0.0 && erode_mask == 0u) {
             discard; // discard early
         }
     }
 
-    // technically I could optimize this part
-    // but it doesn't really matter because its for procedural generation testing anyway
     if (in.sprite_id >= 256u && in.sprite_id <= 512u) {
         // Heatmap logic!
-        // if (in.sprite_id == 256) { discard; }
         let color = (f32(in.sprite_id) - 256.0) / 256.0;
         var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
         let lab = oklch_to_oklab(lch);
@@ -244,55 +212,49 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         return vec4f(final_rgb, 1.0);
     }
 
+    let seed = in.seeds[0];
     var final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
     if (in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START) {
-        let shift_bits = extractBits(in.seed, 18u, 8u); // shift the gem sprite around 0-15 pixels using bits 18-26
-        let shift = vec2f(
-            f32(shift_bits & 0xFu) / 16.0,
-            f32(shift_bits >> 4u) / 16.0
-        );
+        let shift_bits = extractBits(seed, 18u, 8u); // shift the gem sprite around 0-15 pixels using bits 18-26
+        let shift = vec2f(vec2u(shift_bits & 0xFu, shift_bits >> 4u)) / 16.0;
         let wrapped_local = fract(in.local_uv + shift); // there are 1 pixel boundaries so fract() being imprecise is okay
         let safe_wrapped = clamp(wrapped_local, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
         final_uv = in.sprite_uv_origin + safe_wrapped * vec2f(SPRITE_W, SPRITE_H);
     }
 
+    let hp_id = HP_SAMPLE_START + in.hp;
+    let hp_grid = vec2f(f32(hp_id % TILES_PER_ROW_U), f32(hp_id / TILES_PER_ROW_U));
+    let hp_uv = (hp_grid + safe_local_uv) * vec2f(SPRITE_W, SPRITE_H);
+
     // Sample the primary color (the actual original sprite, gem or not)
+    var hp_darkness_mult = textureSampleLevel(sprite_atlas, pixel_sampler, hp_uv, 0.0).r;
     var tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
+    tex_color = vec4f(tex_color.rgb * hp_darkness_mult, tex_color.a);
 
     // ore sampling pixel logic
     if (in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START) {
-        let mask_variation = extractBits(in.seed, 15u, 3u); // 8 masks
+        let mask_variation = extractBits(seed, 15u, 3u); // 8 masks
         let mask_id = GEM_MASK_START + mask_variation;
 
-        var flipped_uv = in.local_uv;
-
-        // for bit 26 decide horizontal flip of the ore mask
-        if ((extractBits(in.seed, 25u, 1u) == 1u)) {
-            flipped_uv.x = 1.0 - flipped_uv.x;
-        }
-
-        // decide vertical for bit 27
-        if ((extractBits(in.seed, 26u, 1u) == 1u)) {
-            flipped_uv.y = 1.0 - flipped_uv.y;
-        }
-
-        // Use 2x2 grid logic for the background stone's ID (similar to the id-determining part of vs_main)
+        let flip = vec2f(vec2u(extractBits(seed, 25u, 1u), extractBits(seed, 26u, 1u)));
+        let flipped_uv = mix(in.local_uv, 1.0 - in.local_uv, flip);
+        // Use 2x2 grid logic for the background stone's ID
         let bg_id = STONE_START + (in.tile_coords.y % 2u) * 2u + (in.tile_coords.x % 2u);
 
         // Calculate UVs for the background stone
-        let bg_col = f32(bg_id % u32(TILES_PER_ROW));
-        let bg_row = f32(bg_id / u32(TILES_PER_ROW));
-        let stone_uv = vec2f(bg_col * SPRITE_W, bg_row * SPRITE_H) + (safe_local_uv * vec2f(SPRITE_W, SPRITE_H));
+        let bg_grid = vec2f(f32(bg_id % TILES_PER_ROW_U), f32(bg_id / TILES_PER_ROW_U));
+        let stone_uv = (bg_grid + safe_local_uv) * vec2f(SPRITE_W, SPRITE_H);
 
         // Calculate UVs for the mask (using the UNSHIFTED uv)
-        let mask_col = f32(mask_id % u32(TILES_PER_ROW));
-        let mask_row = f32(mask_id / u32(TILES_PER_ROW));
         let safe_flipped_uv = clamp(flipped_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
-        let mask_uv = vec2f(mask_col * SPRITE_W, mask_row * SPRITE_H) + (safe_flipped_uv * vec2f(SPRITE_W, SPRITE_H));
+        let mask_grid = vec2f(f32(mask_id % TILES_PER_ROW_U), f32(mask_id / TILES_PER_ROW_U));
+        let mask_uv = (mask_grid + safe_flipped_uv) * vec2f(SPRITE_W, SPRITE_H);
+
         let tex_stone = textureSampleLevel(sprite_atlas, pixel_sampler, stone_uv, 0.0);
         let tex_mask = textureSampleLevel(sprite_atlas, pixel_sampler, mask_uv, 0.0);
 
-        let u_dist = max(abs(in.local_uv.x - 0.5), abs(in.local_uv.y - 0.5));
+        let abs_dist = abs(in.local_uv - 0.5);
+        let u_dist = max(abs_dist.x, abs_dist.y);
 
         // with linear RGB: r component of mask determines mix amount, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
@@ -311,61 +273,50 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let is_block_edge = any(in.local_uv < vec2f(inv_tile_scale)) || any(in.local_uv > vec2f(1.0 - inv_tile_scale));
 
         if (is_block_edge) {
-            let x_mod = in.tile_coords.x & 15u;
-            let y_mod = in.tile_coords.y & 15u;
+            let mods = in.tile_coords & vec2u(15u);
 
             if (in.sprite_id == 1u) {
                 wire_color = vec4f(1.0, 0.5, 0.0, 1.0);
             } else {
                 // Is this pixel on the edge of a CHUNK?
-                let is_chunk_edge =
-                    (x_mod == 0u && in.local_uv.x < inv_tile_scale) ||
-                    (x_mod == 15u && in.local_uv.x > (1.0 - inv_tile_scale)) ||
-                    (y_mod == 0u && in.local_uv.y < inv_tile_scale) ||
-                    (y_mod == 15u && in.local_uv.y > (1.0 - inv_tile_scale));
+                let is_chunk_edge = any((mods == vec2u(0u)) & (in.local_uv < vec2f(inv_tile_scale))) ||
+                                    any((mods == vec2u(15u)) & (in.local_uv > vec2f(1.0 - inv_tile_scale)));
 
                 if (is_chunk_edge) {
                     wire_color = vec4f(1.0, 1.0, 0.0, min(1.0, scene.wireframe_opacity * 2.5));
                 } else {
-                    // wire_color = vec4f(1.0, 0.0, 0.0, scene.wireframe_opacity);
-
                     // neat-lookin' fancy wireframe coloring
-                    let r = f32(x_mod) * 0.0625;
-                    let g = f32(y_mod) * 0.0625;
-                    let b = 0.5 + f32(x_mod ^ y_mod) * 0.03125;
-                    wire_color = vec4f(r, g, b, scene.wireframe_opacity);
+                    let rg = vec2f(mods) * 0.0625;
+                    let b = 0.5 + f32(mods.x ^ mods.y) * 0.03125;
+                    wire_color = vec4f(rg.x, rg.y, b, scene.wireframe_opacity);
                 }
             }
         }
     }
-
-    // too transparent? exit early (removed, as unlikely to matter unless wireframes are enabled: most blocks are dense)
-    // if (tex_color.a < 0.005 && !is_wireframe) { discard; }
 
     // convert to oklab and nudge values with seed
     var lab = linear_srgb_to_oklab(tex_color.rgb);
     var lch = oklab_to_oklch(lab);
 
     // we use 9 out of the 28 seed bits here
-    let extracted_l = f32(extractBits(in.seed, 0u, 3u));
-    let extracted_a = f32(extractBits(in.seed, 3u, 3u));
-    let l_nudge = extracted_l / 7.0;
-    let a_nudge = extracted_a / 7.0;
-    let b_nudge = f32(extractBits(in.seed, 6u, 3u)) / 7.0;
+    let lab_nudge_bits = vec3u(
+        extractBits(seed, 0u, 3u),
+        extractBits(seed, 3u, 3u),
+        extractBits(seed, 6u, 3u)
+    );
+    let nudges = vec3f(lab_nudge_bits) / 7.0;
 
-    lch.x = lch.x * in.light + l_nudge * 0.02; // shift lightness (0-1)
-    lch.y *= 1.0 + a_nudge * 0.2; // shift chroma, which acts similar to saturation (0-1)
-    lch.z += b_nudge * 0.1; // shift hue (in RADIANS, red isn't exactly 0)
+    // Apply light and nudges in a single MAD operation where possible
+    lch = lch * vec3f(in.light, 1.0 + nudges.y * 0.2, 1.0) + vec3f(nudges.x * 0.02, 0.0, nudges.z * 0.1);
 
     var final_rgb = vec3f(0.0);
     if (in.edge_flags != 0xFFu) {
         // add the edge darkening and base light value, with the function using bits 10-16
-        let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, in.seed);
-        lch.x = lch.x * (1.0 - darkening);
+        let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, seed);
+        lch.x *= (1.0 - darkening);
 
         if (erode_mask == 2u) {
-            lch.x *= 0.6 + extracted_l * 0.01; // lower lightness significantly
-            lch.y *= 1.3 + extracted_a * 0.04; // increase chroma
+            lch *= vec3f(0.6 + f32(lab_nudge_bits.x) * 0.01, 1.3 + f32(lab_nudge_bits.y) * 0.04, 1.0);
         }
     }
 
@@ -617,44 +568,20 @@ fn popcount8(v: u32) -> u32 {
 
 // Calculates edge darkening procedurally based on flags calculated in Zig.
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
-    var darkening = 0.0;
-    let edge_width = 0.30 + f32(extractBits(seed, 9u, 3u)) / 32.0;
+    let edge_width = 0.40 + f32(extractBits(seed, 9u, 3u)) / 32.0;
     let edge_strength = 0.25 + f32(extractBits(seed, 12u, 3u)) / 64.0;
-    let corner_width = 0.5;
 
-    // Curvy shadow gradient
-    if ((edge_flags & EDGE_TOP) == 0u) {
-        darkening = max(darkening, (1.0 - smoothstep(0.0, edge_width, local_uv.y)) * edge_strength);
-    }
-    if ((edge_flags & EDGE_BOTTOM) == 0u) {
-        darkening = max(darkening, (1.0 - smoothstep(0.0, edge_width, 1.0 - local_uv.y)) * edge_strength);
-    }
-    if ((edge_flags & EDGE_LEFT) == 0u) {
-        darkening = max(darkening, (1.0 - smoothstep(0.0, edge_width, local_uv.x)) * edge_strength);
-    }
-    if ((edge_flags & EDGE_RIGHT) == 0u) {
-        darkening = max(darkening, (1.0 - smoothstep(0.0, edge_width, 1.0 - local_uv.x)) * edge_strength);
-    }
+    let dists = vec4f(local_uv.y, 1.0 - local_uv.y, local_uv.x, 1.0 - local_uv.x);
+    let edge_masks = vec4u(edge_flags) & vec4u(EDGE_TOP, EDGE_BOTTOM, EDGE_LEFT, EDGE_RIGHT);
+    let is_edge = edge_masks == vec4u(0u);
 
-    // Additional corner darkening
-    // if ((edge_flags & EDGE_TOP_LEFT) == 0u || ((edge_flags & EDGE_TOP) == 0u && (edge_flags & EDGE_LEFT) == 0u)) {
-    //     let corner_dist = length(local_uv);
-    //     darkening = max(darkening, (1.0 - smoothstep(0.0, corner_width * 1.414, corner_dist)) * edge_strength * 1.2);
-    // }
-    // if ((edge_flags & EDGE_TOP_RIGHT) == 0u || ((edge_flags & EDGE_TOP) == 0u && (edge_flags & EDGE_RIGHT) == 0u)) {
-    //     let corner_dist = length(vec2f(1.0 - local_uv.x, local_uv.y));
-    //     darkening = max(darkening, (1.0 - smoothstep(0.0, corner_width * 1.414, corner_dist)) * edge_strength * 1.2);
-    // }
-    // if ((edge_flags & EDGE_BOTTOM_LEFT) == 0u || ((edge_flags & EDGE_BOTTOM) == 0u && (edge_flags & EDGE_LEFT) == 0u)) {
-    //     let corner_dist = length(vec2f(local_uv.x, 1.0 - local_uv.y));
-    //     darkening = max(darkening, (1.0 - smoothstep(0.0, corner_width * 1.414, corner_dist)) * edge_strength * 1.2);
-    // }
-    // if ((edge_flags & EDGE_BOTTOM_RIGHT) == 0u || ((edge_flags & EDGE_BOTTOM) == 0u && (edge_flags & EDGE_RIGHT) == 0u)) {
-    //     let corner_dist = length(1.0 - local_uv);
-    //     darkening = max(darkening, (1.0 - smoothstep(0.0, corner_width * 1.414, corner_dist)) * edge_strength * 1.2);
-    // }
+    let edge_darkenings = select(
+        vec4f(0.0),
+        (1.0 - smoothstep(vec4f(0.0), vec4f(edge_width), dists)) * edge_strength,
+        is_edge
+    );
 
-    return darkening;
+    return max(max(edge_darkenings.x, edge_darkenings.y), max(edge_darkenings.z, edge_darkenings.w));
 }
 
 
@@ -737,8 +664,9 @@ fn noise(st: vec2f) -> f32 {
     let f = fract(st);
 
     // Grid corners: (0,0), (1,0), (0,1), (1,1)
-    let ix = vec4u(i.x, i.x + 1u, i.x, i.x + 1u);
-    let iy = vec4u(i.y, i.y, i.y + 1u, i.y + 1u);
+    // Vectorized construction of coordinate vectors
+    let ix = i.x + vec4u(0u, 1u, 0u, 1u);
+    let iy = i.y + vec4u(0u, 0u, 1u, 1u);
 
     let h = hash_2d(ix, iy);
 

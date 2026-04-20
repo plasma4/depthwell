@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ColorRGBA = @import("../color_rgba.zig").ColorRGBA;
+const ColorRGBA = @import("../visual/color_rgba.zig").ColorRGBA;
 
 pub const PngError = error{
     InvalidSignature,

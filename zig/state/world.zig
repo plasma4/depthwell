@@ -1,15 +1,15 @@
 //! Defines the architecture of the fractal world, contains cache data, and some ore definitions.
 const std = @import("std");
-const SegmentedList = @import("SegmentedList.zig").SegmentedList;
-const is_debug = @import("builtin").mode == .Debug;
-const Sprite = @import("sprite.zig").Sprite;
-const utils = @import("utils.zig");
-const types = @import("types.zig");
-const memory = @import("memory.zig");
-const logger = @import("logger.zig");
-const seeding = @import("seeding.zig");
-const procedural = @import("procedural.zig");
-const player = @import("player.zig");
+const root = @import("root").root;
+const SegmentedList = root.SegmentedList;
+const Sprite = root.Sprite;
+const utils = root.utils;
+const types = root.types;
+const memory = root.memory;
+const logger = root.logger;
+const seeding = root.seeding;
+const procedural = root.procedural;
+const player = root.player;
 
 const v2i64 = memory.v2i64;
 const v2u64 = memory.v2u64;
@@ -559,6 +559,18 @@ pub fn write_chunk_skip(chunk: *Chunk, coord: Coordinate) void {
     chunk.* = new_slot_ptr.*;
 }
 
+/// Same as `write_chunk`, but avoids checking `mod_store`.
+pub fn write_chunk_modless(chunk: *Chunk, coord: Coordinate) void {
+    if (ChunkCache.get(coord)) |cached_ptr| {
+        chunk.* = cached_ptr.*;
+        return;
+    }
+
+    const new_slot_ptr = ChunkCache.allocate_slot(coord);
+    generate_chunk(new_slot_ptr, coord);
+    chunk.* = new_slot_ptr.*;
+}
+
 /// Creates a new instance of a `Chunk`. Does not update edge flags.
 pub inline fn get_chunk(coord: Coordinate) Chunk {
     var chunk: Chunk = undefined;
@@ -736,8 +748,8 @@ inline fn should_have_edge_flags(sprite: Sprite, current_sprite: Sprite) bool {
     return sprite.is_foundation();
 }
 
-/// Applies a block modification. Mutates ModStore and caches in-place.
-pub fn apply_modification(coord: memory.Coordinate, bx: u4, by: u4, new_sprite: Sprite) void {
+/// Applies a block modification, changing the `Sprite` type and resetting `hp`. Mutates ModStore and caches in-place.
+pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) void {
     const key = ModKey.from(coord);
     const id: usize = @as(usize, by) * memory.SPAN + bx;
 
@@ -745,27 +757,77 @@ pub fn apply_modification(coord: memory.Coordinate, bx: u4, by: u4, new_sprite: 
     const entry_idx = mod_store.index.get(key) orelse blk: {
         const new_idx = mod_store.history.items.len;
         // Seed new modification with current generated state if it's the first edit
-        const base_chunk = get_chunk(coord);
-        mod_store.history.append(alloc, base_chunk.blocks) catch return;
-        mod_store.index.put(key, new_idx) catch return;
+        var base_chunk: Chunk = undefined;
+        write_chunk_modless(&base_chunk, coord);
+        mod_store.history.append(alloc, base_chunk.blocks) catch @panic("Failed to add to modification storage!");
+        mod_store.index.put(key, new_idx) catch @panic("Failed to add to modification storage!");
         break :blk new_idx;
     };
 
     mod_store.history.items[entry_idx][id].id = new_sprite;
+    mod_store.history.items[entry_idx][id].hp = 0;
 
     // Update caches so changes appear immediately
     if (SimBuffer.get(coord)) |sim_chunk| {
         sim_chunk.blocks[id].id = new_sprite;
+        sim_chunk.blocks[id].hp = 0;
     }
     if (ChunkCache.get(coord)) |cache_chunk| {
         cache_chunk.blocks[id].id = new_sprite;
+        cache_chunk.blocks[id].hp = 0;
     }
 
     update_local_edge_flags(coord, bx, by);
 }
 
+/// Increases a block's `hp` by a specified amount (making it more mined).
+/// If the new `hp` becomes larger than 15, the sprite is mined.
+/// If `hp_to_add` is 0, the sprite is instantly mined. Returns if the block became/was type `none`.
+pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add: u4) bool {
+    const key = ModKey.from(coord);
+    const id: usize = @as(usize, by) * memory.SPAN + bx;
+
+    // Ensure entry exists in history
+    const entry_idx = mod_store.index.get(key) orelse blk: {
+        const new_idx = mod_store.history.items.len;
+        // Seed new modification with current generated state if it's the first edit
+        var base_chunk: Chunk = undefined;
+        write_chunk_modless(&base_chunk, coord);
+        mod_store.history.append(alloc, base_chunk.blocks) catch @panic("Failed to add to modification storage!");
+        mod_store.index.put(key, new_idx) catch @panic("Failed to add to modification storage!");
+        break :blk new_idx;
+    };
+
+    const overflow_hp = @addWithOverflow(hp_to_add, block.hp);
+    if (overflow_hp[1] == 1 or hp_to_add == 0 or !block.is_solid()) {
+        if (block.id == .none) return true;
+        mod_store.history.items[entry_idx][id].id = .none;
+
+        // Update caches so changes appear immediately
+        if (SimBuffer.get(coord)) |sim_chunk| {
+            sim_chunk.blocks[id].id = .none;
+        }
+        if (ChunkCache.get(coord)) |cache_chunk| {
+            cache_chunk.blocks[id].id = .none;
+        }
+        update_local_edge_flags(coord, bx, by);
+        return true;
+    } else {
+        const new_hp: u4 = overflow_hp[0];
+        mod_store.history.items[entry_idx][id].hp = new_hp;
+
+        if (SimBuffer.get(coord)) |sim_chunk| {
+            sim_chunk.blocks[id].hp = new_hp;
+        }
+        if (ChunkCache.get(coord)) |cache_chunk| {
+            cache_chunk.blocks[id].hp = new_hp;
+        }
+    }
+    return false;
+}
+
 /// Recalculates edge flags for a specific block and its 8 neighbors.
-fn update_local_edge_flags(coord: memory.Coordinate, bx: u4, by: u4) void {
+fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
     for ([_]i32{ -1, 0, 1 }) |dy| {
         for ([_]i32{ -1, 0, 1 }) |dx| {
             const nx: i32 = @as(i32, bx) + dx;
@@ -780,7 +842,7 @@ fn update_local_edge_flags(coord: memory.Coordinate, bx: u4, by: u4) void {
             const lby: u4 = @intCast(@mod(ny, SPAN));
             const target_id = @as(usize, lby) * SPAN + lbx;
 
-            // 1. Calculate the new flags
+            // Calculate the new flags
             const current_sprite = get_block_id_at(target_coord, lbx, lby);
             var new_flags: u8 = 0;
 
@@ -796,11 +858,11 @@ fn update_local_edge_flags(coord: memory.Coordinate, bx: u4, by: u4) void {
                 new_flags = 0xFF;
             }
 
-            // 2. Update Live Caches (SimBuffer/ChunkCache)
+            // Update the live caches
             if (SimBuffer.get(target_coord)) |c| c.blocks[target_id].edge_flags = new_flags;
             if (ChunkCache.get(target_coord)) |c| c.blocks[target_id].edge_flags = new_flags;
 
-            // 3. Update Permanent Store (so it's correct on reload)
+            // Finally, update the permanent modification storage!
             const key = ModKey.from(target_coord);
             if (mod_store.index.get(key)) |idx| {
                 mod_store.history.items[idx][target_id].edge_flags = new_flags;
