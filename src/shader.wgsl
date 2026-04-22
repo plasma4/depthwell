@@ -300,14 +300,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     // we use 9 out of the 28 seed bits here
     let lab_nudge_bits = vec3u(
-        extractBits(seed, 0u, 3u),
-        extractBits(seed, 3u, 3u),
-        extractBits(seed, 6u, 3u)
+        extractBits(seed, 0u, 3u), // shift lightness (0-1)
+        extractBits(seed, 3u, 3u), // shift chroma, which acts similar to saturation (0-1)
+        extractBits(seed, 6u, 3u) // shift hue (in RADIANS, red isn't exactly 0)
     );
     let nudges = vec3f(lab_nudge_bits) / 7.0;
 
     // Apply light and nudges in a single MAD operation where possible
-    lch = lch * vec3f(in.light, 1.0 + nudges.y * 0.2, 1.0) + vec3f(nudges.x * 0.02, 0.0, nudges.z * 0.1);
+    lch *= vec3f(in.light, 1.0 + nudges.y * 0.2, 1.0) +
+        vec3f(nudges.x * 0.02, 0.0, nudges.z * 0.1);
 
     var final_rgb = vec3f(0.0);
     if (in.edge_flags != 0xFFu) {

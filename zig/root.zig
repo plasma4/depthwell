@@ -10,9 +10,15 @@ pub const root = @This();
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
 pub const is_debug = builtin.is_test or builtin.mode == .Debug;
 
+pub const ColorRGBA = @import("visual/color_rgba.zig");
+
+// The width of the screen for the internal viewport. Normalized to 0-1 before being used in WGSL.
 pub const SCREEN_WIDTH = 480;
+// The height of the screen for the internal viewport. Normalized to 0-1 before being used in WGSL.
 pub const SCREEN_HEIGHT = 270;
+// Half the internal viewport width.
 pub const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
+// Half the internal viewport height.
 pub const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
 pub const utils = @import("internal/utils.zig");
@@ -20,6 +26,7 @@ pub const GenerateOffsets = @import("internal/offsets.zig").GenerateOffsets;
 pub const SegmentedList = @import("internal/SegmentedList.zig").SegmentedList;
 
 pub const render = @import("render/render.zig");
+pub const entities = @import("render/entities.zig");
 
 pub const types = @import("types/types.zig");
 pub const KeyBits = types.KeyBits;
@@ -62,8 +69,8 @@ pub export fn setup() void {
 pub export fn init() void {
     startup.init();
 }
-pub export fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
-    render.prepare_visible_chunks(time_interpolated, canvas_w, canvas_h);
+pub export fn prepare_visible_data(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
+    render.prepare_visible_data(time_interpolated, canvas_w, canvas_h);
 }
 
 pub export fn get_tiles_per_row() u32 {

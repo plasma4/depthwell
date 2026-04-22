@@ -107,7 +107,7 @@ pub fn find_safe_spawn() void {
 
                         game.set_player_pos(.{
                             @as(i64, @intCast(x)) * SPAN_SQ + (SPAN_SQ / 2),
-                            @as(i64, @intCast(y)) * SPAN_SQ + (SPAN_SQ / 2),
+                            @as(i64, @intCast(y)) * SPAN_SQ + (SPAN_SQ / 2) - 1, // -1 or you have to jump to move
                         });
 
                         game.set_camera_pos(game.player_pos);

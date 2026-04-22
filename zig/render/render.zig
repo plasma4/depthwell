@@ -1,5 +1,6 @@
 const std = @import("std");
 const root = @import("root").root;
+const entities = root.entities;
 const memory = root.memory;
 const world = root.world;
 const sprite = root.sprite;
@@ -20,17 +21,27 @@ pub inline fn handle_visible_chunks(opacity: f64) void {
     }
 }
 
+/// External function that makes a call to `engine.handleVisibleChunks()`.
+extern "env" fn js_handle_visible_entities() void;
+
+/// Makes a call to `engine.handleVisibleChunks()` in JS.
+pub inline fn handle_visible_entities() void {
+    if (root.is_wasm) {
+        return js_handle_visible_entities();
+    } else {
+        return; // no native impl yet
+    }
+}
+
 /// Processes data for renderFrame in TypeScript.
-pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
+pub fn prepare_visible_data(dt: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
     const game = &memory.game;
-
-    // this variable allows for super smooth frame interpolation :)
-    const dt = time_interpolated;
 
     // calculate effective zoom
     const resolution_scale = canvas_w / @as(f64, root.SCREEN_WIDTH);
     // since interpolated doesn't really influence logic, std.math.pow can be non-deterministic
+    // dt allows for super smooth frame interpolation
     const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dt);
     const effective_zoom = interpolated_zoom * resolution_scale;
 
@@ -105,6 +116,12 @@ pub fn prepare_visible_chunks(time_interpolated: f64, canvas_w: f64, canvas_h: f
 
     update_render_properties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom);
     handle_visible_chunks(1.0);
+
+    memory.scratch_reset(); // scratch allocator always needs to be reset!
+    // const out = memory.scratch_alloc_slice(memory.Block, entities.count) orelse return;
+
+    handle_visible_entities();
+    entities.count = 0;
 }
 
 /// Sets scratch properties containing information to TypeScript for renderFrame.

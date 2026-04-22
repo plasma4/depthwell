@@ -48,6 +48,11 @@ pub const Sprite = enum(u16) {
     mushroom = MASK_END + 2, // 2 variations
     torch = MASK_END + 4,
 
+    inv = MASK_END + 5,
+    inv_selected = MASK_END + 6,
+    text_0 = MASK_END + 7,
+    particle = MASK_END + 17,
+
     _, // heatmap range
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
