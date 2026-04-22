@@ -230,7 +230,7 @@ engine.renderLoop = function (_t: number) {
         past60SlowestRenders.shift();
         past60SlowestRenders.push(delta);
         past60SlowestZigRenders.shift();
-        past60SlowestZigRenders.push(engine.prepare_visible_chunks_time);
+        past60SlowestZigRenders.push(engine.prepare_visible_data_time);
 
         const slowestRender = Math.max.apply(null, past60SlowestRenders);
         const slowestZigRender = Math.max.apply(null, past60SlowestZigRenders);
@@ -248,7 +248,7 @@ engine.renderLoop = function (_t: number) {
         const debugElem = document.getElementById(
             "renderText",
         ) as HTMLDivElement;
-        debugElem.textContent = `Time since last render/prepare_visible_chunks time: ${delta.toFixed(1)}ms, ${engine.prepare_visible_chunks_time.toFixed(1)}ms
+        debugElem.textContent = `Time since last render/prepare_visible_data time: ${delta.toFixed(1)}ms, ${engine.prepare_visible_data_time.toFixed(1)}ms
 Worst (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixed(1)}ms`;
 
         debugElem.style.fontWeight = (

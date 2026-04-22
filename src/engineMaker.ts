@@ -91,7 +91,7 @@ export async function create(
                         new Uint8Array(memory.buffer, Number(ptr), Number(len)),
                     );
                     if (str.charAt(0) !== "]") {
-                        str = "[" + (engine?.LOGGING_PREFIX || "") + str;
+                        str = "[" + (engine!.LOGGING_PREFIX || "") + str;
                     } else {
                         str = str.slice(1);
                     }
@@ -125,7 +125,9 @@ export async function create(
                 },
                 js_get_time: () => performance.now(),
                 js_handle_visible_chunks: (opacity: number) =>
-                    engine?.handleVisibleChunks(opacity),
+                    engine!.handleVisibleChunks(opacity),
+                js_handle_visible_entities: () =>
+                    engine!.handleVisibleEntities(),
             },
         },
     );

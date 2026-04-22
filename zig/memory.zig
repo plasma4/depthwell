@@ -347,24 +347,24 @@ pub const ModifiedChunk = struct {
     }
 };
 
-/// Tightly packed data for a square particle to be sent to WebGPU.
-const Particle = packed struct {
-    /// Current position.
+/// Tightly packed data for a square particle (converted to `Entity` before sending to WGSL).
+pub const Particle = extern struct {
+    /// Current position (based on internal viewport).
     position: @Vector(2, f32),
 
     /// Velocity vector for position.
     d_position: @Vector(2, f32),
 
-    /// The color of the particle (alpha is multiplied by time and how long the particle lasts)
+    /// The color of the particle (alpha is multiplied by time and how long the particle lasts).
     color: ColorRGBA,
-    /// The size of the particle
-    size: u24,
-    /// The opacity of the particle (based on time start/end)
-    opacity: u8,
+    /// The size of the particle.
+    size: f32,
+    /// The opacity of the particle (based on time start/end).
+    opacity: f32,
 
-    /// The rotation of the particle (radians)
+    /// The rotation of the particle (radians).
     rotation: f32,
-    /// The rate of change of rotation of the particle (radians)
+    /// The rate of change of rotation of the particle (radians).
     d_rotation: f32,
 
     /// The time at which the particle spawned in from (performance.now()).
@@ -372,6 +372,24 @@ const Particle = packed struct {
 
     /// The time at which the particle will disappear.
     time_end: f64,
+};
+
+pub const DEFAULT_ENTITY_LCHA: @Vector(4, f32) = .{ 1.0, 1.0, 0.0, 1.0 };
+
+/// Tightly packed data for a particle to be sent to WGSL. Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
+pub const Entity = extern struct {
+    /// Current position (based on internal viewport).
+    position: @Vector(2, f32),
+
+    /// The light, chroma, hue, and opacity components (HSL + alpha).
+    /// L, C, and alpha components are multiplied by the sprite's color in WGSL, while H (hue) is shifted additively in radians.
+    lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
+
+    /// The size of the particle (based on internal viewport).
+    size: f32 = 16.0,
+
+    /// The rotation of the particle (radians).
+    rotation: f32 = 0.0,
 };
 
 /// A dynamically expandable scratch buffer for fast one-time passing through of data like strings or temporary particle data. Assumes fully single-thread communication. A separate, smaller logging_buffer is used in logger.zig.

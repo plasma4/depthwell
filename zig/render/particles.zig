@@ -1,3 +1,4 @@
+//! Handles particle storage for the game. Particles are technically entities.
 const std = @import("std");
 const root = @import("root").root;
 const memory = root.memory;
