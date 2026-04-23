@@ -122,7 +122,7 @@ pub fn SegmentedList(comptime T: type, comptime prealloc_item_count: usize) type
         };
 
         prealloc_segment: [prealloc_item_count]T align(MAIN_ALIGN_BYTES) = undefined,
-        dynamic_segments: [][*]T = &[_][*]T{},
+        dynamic_segments: [][*]T align(64) = &[_][*]T{},
         len: usize = 0,
 
         pub const prealloc_count = prealloc_item_count;
@@ -213,7 +213,7 @@ pub fn SegmentedList(comptime T: type, comptime prealloc_item_count: usize) type
             const old_shelf_count = @as(ShelfIndex, @intCast(self.dynamic_segments.len));
             if (new_cap_shelf_count <= old_shelf_count) return;
 
-            const new_dynamic_segments = try allocator.alloc([*]T, new_cap_shelf_count);
+            const new_dynamic_segments = try allocator.alignedAlloc([*]T, MAIN_ALIGN, new_cap_shelf_count);
             errdefer allocator.free(new_dynamic_segments);
 
             var i: ShelfIndex = 0;
