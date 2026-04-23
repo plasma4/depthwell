@@ -20,9 +20,9 @@ pub var mouse_subpixel: ?memory.v2u64 = null;
 pub var mouse_block_x: u4 = 0;
 /// Y block location the mouse is on (within the chunk).
 pub var mouse_block_y: u4 = 0;
-/// Whether the mouse's block position changed.
+/// Whether the mouse's block position changed. If coordinate is out of bounds, then set to true.
 /// Is reset in `handle_mining()`, called from `tick()` in zig/root.zig.
-pub var position_changed = false;
+pub var block_position_changed = true;
 
 /// Current sprite (index) selected (to place, set to 0 if to mining instead).
 pub var selected_sprite: usize = 0;
@@ -53,6 +53,7 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
     const target_sx = game.camera_pos[0] + @as(i64, @round(world_dx));
     const target_sy = game.camera_pos[1] + @as(i64, @round(world_dy));
 
+    const old_coord = mouse_chunk;
     const chunk_offset_x = @divFloor(target_sx, memory.SUBPIXELS_IN_CHUNK);
     const chunk_offset_y = @divFloor(target_sy, memory.SUBPIXELS_IN_CHUNK);
 
@@ -67,9 +68,12 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
         const old_y = mouse_block_y;
         mouse_block_x = @intCast(@divFloor(lx, SPAN_SQ));
         mouse_block_y = @intCast(@divFloor(ly, SPAN_SQ));
-        position_changed = position_changed or (mouse_block_x != old_x or mouse_block_y != old_y or chunk_offset_x != 0 or chunk_offset_y != 0);
+        block_position_changed =
+            mouse_block_x != old_x or
+            mouse_block_y != old_y or
+            !memory.Coordinate.eql(coord, old_coord);
     } else {
         mouse_chunk = null;
-        position_changed = true;
+        block_position_changed = true; // doesn't matter
     }
 }

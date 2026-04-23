@@ -176,6 +176,7 @@ export async function create(
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                 buffer: { type: "uniform", hasDynamicOffset: true }, // can be swapped live
             }, // SceneUniforms
+
             {
                 binding: 1,
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
@@ -183,6 +184,12 @@ export async function create(
             }, // tiles
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // atlas
             { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} }, // sampler
+
+            {
+                binding: 4,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: { type: "read-only-storage" },
+            }, // entities
         ],
     });
 
@@ -191,13 +198,13 @@ export async function create(
         bindGroupLayouts: [bindGroupLayout],
     });
 
-    // Create pipeline
-    const pipeline = device.createRenderPipeline({
+    // Create pipelines
+    const tilePipeline = device.createRenderPipeline({
         label: "Tilemap pipeline",
         layout: pipelineLayout,
         vertex: {
             module: shaderModule,
-            entryPoint: "vs_main",
+            entryPoint: "vs_tile",
         },
         fragment: {
             module: shaderModule,
@@ -251,14 +258,46 @@ export async function create(
         // },
     });
 
+    const entityPipeline = device.createRenderPipeline({
+        label: "Entity pipeline",
+        layout: pipelineLayout,
+        vertex: {
+            module: shaderModule,
+            entryPoint: "vs_entity",
+        },
+        fragment: {
+            module: shaderModule,
+            entryPoint: "fs_entity",
+            targets: [
+                {
+                    format: format,
+                    blend: {
+                        color: {
+                            srcFactor: "src-alpha",
+                            dstFactor: "one-minus-src-alpha",
+                        },
+                        alpha: {
+                            srcFactor: "one",
+                            dstFactor: "one-minus-src-alpha",
+                        },
+                    },
+                },
+            ],
+        },
+        primitive: {
+            topology: "triangle-list",
+        },
+    });
+
     engine = new GameEngine(
         canvas,
         adapter,
         device,
         context,
         engineModule,
-        pipeline,
+        tilePipeline,
         bgPipeline,
+        entityPipeline,
     );
     engine.exports.setup();
     await engine.setSeed(Seeding.makeSeed(100));
@@ -305,12 +344,16 @@ export async function create(
     engine.atlasTextureView = atlasTexture.createView();
     engine.pixelSampler = pixelSampler;
 
-    const uniformBuffer = device.createBuffer({
+    engine.uniformBuffer = device.createBuffer({
         label: "SceneUniforms",
         size: 256 * MAX_DRAW_CALLS, // see setSceneData() in engine.ts OR SceneUniforms in shader.wgsl to understand this
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    engine.uniformBuffer = uniformBuffer;
+    engine.entityBuffer = engine.device.createBuffer({
+        label: "Entities",
+        size: 4800, // random value, 100 entities here
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
 
     // engine.uploadVisibleChunks();
     // engine.handleVisibleChunks();

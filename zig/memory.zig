@@ -26,6 +26,7 @@ pub const SUBPIXELS_IN_CHUNK: comptime_int = SPAN * SPAN * SPAN;
 pub const v2i64 = @Vector(2, i64);
 pub const v2u64 = @Vector(2, u64);
 pub const v2f64 = @Vector(2, f64);
+pub const v2f32 = @Vector(2, f32);
 
 /// Non-pointer data (short known length) representing part of the game state.
 /// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
@@ -276,8 +277,12 @@ pub const Coordinate = struct {
     quadrant: u2,
 
     /// Checks equality between two `Coordinate` values.
-    pub fn eql(self: @This(), other: Coordinate) bool {
-        return @reduce(.And, self.suffix == other.suffix) and self.quadrant == other.quadrant;
+    pub fn eql(a: ?Coordinate, b: ?Coordinate) bool {
+        if (a == null and b == null) return true;
+        if (a == null or b == null) return false;
+
+        return @reduce(.And, a.?.suffix == b.?.suffix) and
+            a.?.quadrant == b.?.quadrant;
     }
 
     /// Adds both an X and Y value, creating a new Coordinate and handling quadrants.
@@ -347,13 +352,13 @@ pub const ModifiedChunk = struct {
     }
 };
 
-/// Tightly packed data for a square particle (converted to `Entity` before sending to WGSL).
-pub const Particle = extern struct {
+/// Data for a single particle (converted to `WGSLEntity` before sending to WGSL).
+pub const Particle = struct {
     /// Current position (based on internal viewport).
-    position: @Vector(2, f32),
+    position: v2f32,
 
     /// Velocity vector for position.
-    d_position: @Vector(2, f32),
+    d_position: v2f32,
 
     /// The color of the particle (alpha is multiplied by time and how long the particle lasts).
     color: ColorRGBA,
@@ -374,25 +379,51 @@ pub const Particle = extern struct {
     time_end: f64,
 };
 
-pub const DEFAULT_ENTITY_LCHA: @Vector(4, f32) = .{ 1.0, 1.0, 0.0, 1.0 };
+pub const DEFAULT_ENTITY_LCHA: @Vector(4, f32) = .{ 1.0, 0.0, 0.0, 1.0 };
 
-/// Tightly packed data for a particle to be sent to WGSL. Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
-pub const Entity = extern struct {
-    /// Current position (based on internal viewport).
-    position: @Vector(2, f32),
-
+/// Entity data (before being sent to WGSL, using internal viewport).
+/// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
+pub const Entity = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
-    /// L, C, and alpha components are multiplied by the sprite's color in WGSL, while H (hue) is shifted additively in radians.
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// H (hue) and C (chroma) are shifted additively in radians.
     lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
 
-    /// The size of the particle (based on internal viewport).
+    /// Current position (based on internal viewport).
+    position: v2f32,
+
+    /// The size of the entity (based on internal viewport).
     size: f32 = 16.0,
 
-    /// The rotation of the particle (radians).
+    /// The rotation of the entity (radians).
     rotation: f32 = 0.0,
+
+    sprite: Sprite = .none,
 };
 
-/// A dynamically expandable scratch buffer for fast one-time passing through of data like strings or temporary particle data. Assumes fully single-thread communication. A separate, smaller logging_buffer is used in logger.zig.
+/// Tightly packed data for a entity to be sent directly to WGSL (using UV coordinates).
+/// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
+pub const WGSLEntity = extern struct {
+    /// The light, chroma, hue, and opacity components (HSL + alpha).
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// H (hue) and C (chroma) are shifted additively in radians.
+    lcha: @Vector(4, f32) align(16),
+
+    /// Current position (based on UV, not the internal viewport).
+    position: v2f32,
+
+    /// The width and height of the entity (based on UV, not the internal viewport).
+    size: v2f32,
+
+    /// The rotation of the entity (radians).
+    rotation: f32 = 0.0,
+
+    id: u32 = 0,
+};
+
+/// A dynamically expandable scratch buffer for fast one-time passing through of data like strings or temporary particle data.
+/// Assumes fully single-thread communication. A separate, smaller logging_buffer is used in logger.zig.
+///
 /// Information in the scratch buffer should be assumed to be corrupted as soon as any other function that could modify the scratch buffer is called and thought of as a temporary "handshake" between Zig and TypeScript.
 pub var scratch_buffer: []align(MAIN_ALIGN_BYTES) u8 = &[_]u8{};
 var is_dynamic_scratch: bool = false;
@@ -440,9 +471,10 @@ pub fn wasm_free(ptr: [*]u8, len: usize) void {
 
 /// Determines if scratch_buffer has at least `len` additional available capacity. If not, expands with the system allocator.
 /// Does NOT set the `scratch_len` property; only allocates sufficiently (using `scratch_capacity`).
-pub fn scratch_alloc(len: usize) ?[*]u8 {
+pub fn scratch_alloc(len: usize) [*]u8 {
     const base_addr = @intFromPtr(scratch_buffer.ptr);
-    const current_addr = base_addr + @as(usize, @intCast(mem.scratch_len));
+    const current_used: usize = @intCast(mem.scratch_len);
+    const current_addr = base_addr + current_used;
     const aligned_addr = std.mem.alignForward(usize, current_addr, MAIN_ALIGN_BYTES);
     const new_scratch_len = (aligned_addr - base_addr) + len;
 
@@ -453,13 +485,12 @@ pub fn scratch_alloc(len: usize) ?[*]u8 {
 
         // Final capacity becomes 256KiB, 1.5x growth, or the requested length, whichever is largest.
         const new_cap = @max(STARTING_SCRATCH_BUFFER_SIZE, clamped_growth, new_scratch_len);
-        const current_used: usize = @intCast(mem.scratch_len);
 
         if (!is_dynamic_scratch) {
-            scratch_buffer = page_allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch return null;
+            scratch_buffer = page_allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch @panic("Ran out of memory!");
             is_dynamic_scratch = true;
         } else {
-            scratch_buffer = page_allocator.realloc(scratch_buffer, new_cap) catch return null;
+            scratch_buffer = page_allocator.realloc(scratch_buffer, new_cap) catch @panic("Ran out of memory!");
         }
 
         // Update JS metadata
@@ -482,7 +513,7 @@ pub fn scratch_alloc(len: usize) ?[*]u8 {
 /// This is the ideal way to write structural data (like chunks) directly into the buffer.
 pub fn scratch_alloc_slice(comptime T: type, count: usize) ?[]T {
     const byte_count = count * @sizeOf(T);
-    const ptr = scratch_alloc(byte_count) orelse return null;
+    const ptr = scratch_alloc(byte_count);
     return @as([*]T, @ptrCast(@alignCast(ptr)))[0..count];
 }
 
@@ -501,7 +532,7 @@ pub fn run_scratch_allocation_tests() void {
 
     // Force starting scratch allocation (if it hadn't existed already).
     const len1 = 100;
-    _ = scratch_alloc(len1) orelse @panic("Bootstrap allocation failed");
+    _ = scratch_alloc(len1);
 
     const heap_cap = scratch_buffer.len;
     const current_used = std.mem.alignForward(usize, @intCast(mem.scratch_len), MAIN_ALIGN_BYTES);
@@ -511,13 +542,13 @@ pub fn run_scratch_allocation_tests() void {
     const rem = heap_cap - current_used;
 
     // Fill to the exact amount of capacity
-    _ = scratch_alloc(rem) orelse @panic("Fill allocation failed");
+    _ = scratch_alloc(rem);
     if (scratch_buffer.len != heap_cap) @panic("Buffer expanded before reaching capacity");
     logger.log(@src(), "Requested {d} bytes successfully without buffer expansion.", .{rem});
 
     // force expansion and reallocate
     const len_exp = 64;
-    _ = scratch_alloc(len_exp) orelse @panic("Expansion allocation failed");
+    _ = scratch_alloc(len_exp);
 
     if (scratch_buffer.len <= heap_cap) @panic("Buffer failed to grow after exceeding capacity");
     if (mem.scratch_ptr != @intFromPtr(scratch_buffer.ptr)) @panic("JS pointer desync");
@@ -573,5 +604,8 @@ const _ = {
     }
     if (@sizeOf(Block) != 8) {
         @compileError("Memory size for each block should be 8 bytes.");
+    }
+    if (@sizeOf(WGSLEntity) != 48) {
+        @compileError("WGSL entity must be 48 bytes!");
     }
 };

@@ -10,7 +10,7 @@ pub const root = @This();
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
 pub const is_debug = builtin.is_test or builtin.mode == .Debug;
 
-pub const ColorRGBA = @import("visual/color_rgba.zig");
+pub const ColorRGBA = @import("visual/color_rgba.zig").ColorRGBA;
 
 // The width of the screen for the internal viewport. Normalized to 0-1 before being used in WGSL.
 pub const SCREEN_WIDTH = 480;
@@ -26,7 +26,9 @@ pub const GenerateOffsets = @import("internal/offsets.zig").GenerateOffsets;
 pub const SegmentedList = @import("internal/SegmentedList.zig").SegmentedList;
 
 pub const render = @import("render/render.zig");
-pub const entities = @import("render/entities.zig");
+pub const chunks = @import("render/chunk.zig");
+pub const particle = @import("render/particle.zig");
+pub const entity = @import("render/entity.zig");
 
 pub const types = @import("types/types.zig");
 pub const KeyBits = types.KeyBits;
@@ -55,14 +57,11 @@ pub export fn setup() void {
     world.quad_cache = .{
         .path_hashes = undefined,
         .hash_cache_1 = undefined,
-        .left_path = SegmentedList(u64, 0){},
-        .top_path = SegmentedList(u64, 0){},
+        .left_path = SegmentedList(u64, 1024){}, // easiest to do prealloc with larger stack size in case
+        .top_path = SegmentedList(u64, 1024){},
         .ancestor_materials = .{.none} ** 4,
     };
 
-    // doesn't +4096 max capacity every time setup() is called, just sets capacity possible to 4096
-    world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
-    world.quad_cache.left_path.growCapacity(world.alloc, 4096) catch @panic("world path growing failed!");
     logger.write(3, "Use left click to draw blocks, and right click to change the type drawn.");
     logger.write(3, .{ "{h}Currently selected", @as(sprite.Sprite, sprite.foundation_sprites[mouse.selected_sprite]) });
 }
@@ -111,6 +110,7 @@ pub export fn tick(speed: u32, iterations: u32) void {
             memory.game.get_block_y_in_chunk(),
         );
         // }
+        mining.selected_hp = 255;
     } else {
         mining.handle_mining();
     }

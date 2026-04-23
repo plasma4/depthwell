@@ -23,6 +23,9 @@
 // THE SOFTWARE.
 
 const std = @import("std");
+const memory = @import("root").root.memory;
+const MAIN_ALIGN = memory.MAIN_ALIGN;
+const MAIN_ALIGN_BYTES = memory.MAIN_ALIGN_BYTES;
 const assert = std.debug.assert;
 const testing = std.testing;
 const mem = std.mem;
@@ -85,6 +88,8 @@ const Allocator = std.mem.Allocator;
 // box_index = customer_index + prealloc - 2 ** (log2(prealloc) + 1 + shelf)
 // shelf_size = prealloc * 2 ** (shelf_index + 1)
 
+/// (Modified to use `MAIN_ALIGN` from `zig/memory.zig` for alignment.)
+///
 /// This is a stack data structure where pointers to indexes have the same lifetime as the data structure
 /// itself, unlike ArrayList where append() invalidates all existing element pointers.
 /// The tradeoff is that elements are not guaranteed to be contiguous. For that, use ArrayList.
@@ -116,7 +121,7 @@ pub fn SegmentedList(comptime T: type, comptime prealloc_item_count: usize) type
             }
         };
 
-        prealloc_segment: [prealloc_item_count]T = undefined,
+        prealloc_segment: [prealloc_item_count]T align(MAIN_ALIGN_BYTES) = undefined,
         dynamic_segments: [][*]T = &[_][*]T{},
         len: usize = 0,
 
@@ -219,7 +224,7 @@ pub fn SegmentedList(comptime T: type, comptime prealloc_item_count: usize) type
                 allocator.free(new_dynamic_segments[i][0..shelfSize(i)]);
             };
             while (i < new_cap_shelf_count) : (i += 1) {
-                new_dynamic_segments[i] = (try allocator.alloc(T, shelfSize(i))).ptr;
+                new_dynamic_segments[i] = (try allocator.alignedAlloc(T, MAIN_ALIGN, shelfSize(i))).ptr;
             }
 
             allocator.free(self.dynamic_segments);

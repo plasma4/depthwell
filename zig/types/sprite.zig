@@ -7,6 +7,8 @@ const procedural = root.procedural;
 const MASK_START = 22;
 /// Index where the HP mask ends.
 const MASK_END = MASK_START + 24;
+/// Index where numbers (0-9) start.
+pub const NUMBER_START = MASK_END + 7;
 
 /// Sprite IDs with values based on their sprite sheet location
 /// Packed sprite sheet located at src/main-Sheet.png.
@@ -50,8 +52,8 @@ pub const Sprite = enum(u16) {
 
     inv = MASK_END + 5,
     inv_selected = MASK_END + 6,
-    text_0 = MASK_END + 7,
-    particle = MASK_END + 17,
+    text_0 = NUMBER_START,
+    particle = NUMBER_START + 10,
 
     _, // heatmap range
 

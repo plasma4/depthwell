@@ -232,6 +232,6 @@ pub fn build_metadata() void {
 
     const written = out.written();
     memory.scratch_reset();
-    const scratch_ptr = memory.scratch_alloc(written.len) orelse return;
+    const scratch_ptr = memory.scratch_alloc(written.len);
     @memcpy(scratch_ptr[0..written.len], written);
 }
