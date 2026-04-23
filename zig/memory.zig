@@ -398,6 +398,7 @@ pub const Entity = struct {
     /// The rotation of the entity (radians).
     rotation: f32 = 0.0,
 
+    /// The sprite type of the entity to use.
     sprite: Sprite = .none,
 };
 
@@ -416,9 +417,10 @@ pub const WGSLEntity = extern struct {
     size: v2f32,
 
     /// The rotation of the entity (radians).
-    rotation: f32 = 0.0,
+    rotation: f32,
 
-    id: u32 = 0,
+    /// The ID of the entity (sprite type).
+    id: u32,
 };
 
 /// A dynamically expandable scratch buffer for fast one-time passing through of data like strings or temporary particle data.

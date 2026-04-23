@@ -222,40 +222,65 @@ Decorations are context-aware. Mushrooms only spawn if the block below is solid,
 
 Critically, the generator finishes by setting the `edge_flags` of these decorations to `0xFF`. This tells the WebGPU shader that it shouldn't have erosion and edge darkening applied to it.
 
-#### Particles
+#### Entities
 
-TODO, actually implement.
+Entities represent a generic type of sprite, with color shifts, rotation, and size changes.
 
-Particles are small squares with rotation and opacity and organized using a circular buffer`ParticleSystem`. There can be a maximum of 1,000 particles at a time (the circular buffer is greedy and "loops around" to always erase the oldest particles). All data is passed to WebGPU and WebGPU automatically culls expired particles (as this part isn't super performance-strict).
+Here is their definition:
 
 ```zig
-/// Tightly packed data for a square particle to be sent to WebGPU.
-const Particle = packed struct {
-    /// Current position.
+/// Entity data (before being sent to WGSL, using internal viewport).
+/// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
+pub const Entity = struct {
+    /// The light, chroma, hue, and opacity components (HSL + alpha).
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// H (hue) and C (chroma) are shifted additively in radians.
+    lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
+
+    /// Current position (based on internal viewport).
     position: v2f32,
 
-    /// Velocity vector for position.
-    d_position: v2f32,
+    /// The size of the entity (based on internal viewport).
+    size: f32 = 16.0,
 
-    /// The color of the particle (alpha is multiplied by time and how long the particle lasts)
-    color: ColorRGBA,
-    /// The size of the particle
-    size: u24,
-    /// The opacity of the particle (based on time start/end)
-    opacity: u8,
+    /// The rotation of the entity (radians).
+    rotation: f32 = 0.0,
 
-    /// The rotation of the particle (radians)
-    rotation: f32,
-    /// The rate of change of rotation of the particle (radians)
-    d_rotation: f32,
-
-    /// The time at which the particle spawned in from (performance.now()).
-    time_start: f64,
-
-    /// The time at which the particle will disappear.
-    time_end: f64,
+    /// The sprite type of the entity to use.
+    sprite: Sprite = .none,
 };
 ```
+
+These are then passed to WGSL in a large batch. Here is an example of usage:
+
+```zig
+const progress = root.mining.selected_hp;
+const pos: v2f32 = .{ 4, 31 };
+const font_size = 12.0;
+
+if (progress != 255) {
+    // draw shadow of text
+    draw_number(progress, pos, .{
+        .lcha = comptime ColorRGBA.hex_to_oklch("#000000bb"),
+        .font_size = font_size,
+        .ltr = true,
+    });
+
+    // draw the actual number now
+    draw_number(progress, pos, .{
+        .lcha = .{
+            0.75,
+            0.4,
+            0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing!
+            1.0,
+        },
+        .font_size = font_size,
+        .ltr = true,
+    });
+}
+```
+
+You can see how because the entities are _ordered_, it's easy to add a shadow. Additionally, the usage of white text or masks works perfectly with OKLCH (which stands for lightness, chroma, and hue). This means that not only can entities have various small color shifts, but they can also perfectly be masked with a white sprite (see the sprite sheet up top)!
 
 #### The fractal modification buffer
 
@@ -267,7 +292,7 @@ The _goal_ with modifications is to ensure the following:
 
 1. Read _existing_ modifications to extract rectangular groups of chunks: ~1000 reads/second for as long as possible due to potential of requiring 16-32 new chunks in SimBuffer during some frames and camera features in the future.
 2. Write a _new_ modification (60fps for as long as possible). In practice, this is very easy with hash maps.
-3. Increment the depth (<3 seconds for as long as possible). For this part, an $O(n)$ would be quite reasonable! However, the current approach (which stores the `depth` as part of the key) is an easy $O(1)$.
+3. Increment the depth (below 3 seconds for as long as possible). For this part, an O(n) would be quite reasonable! However, the current approach (which stores the `depth` as part of the key) is an easy O(1).
 4. Minimize heap fragmentation and "allocation churn."
 5. The entire state can be stored inside RAM.
 
@@ -327,9 +352,9 @@ pub const QuadCache = struct {
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
-    left_path: SegmentedList(u64, 0),
+    left_path: SegmentedList(u64, 1024),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: SegmentedList(u64, 0),
+    top_path: SegmentedList(u64, 1024),
 ...
 ```
 
@@ -433,9 +458,13 @@ Ores and gems are rendered using a multi-texture "masking" trick to save atlas s
 3.  It samples a Gem Mask and mixes the stone and gem colors based on the mask's red channel.
 4.  Finally, it applies a random horizontal/vertical flip to the mask, ensuring that even gems with the same offset look distinct.
 
-#### Parallax background
+#### Background
 
-The background isn't a static image; it's a multi-octave Fractal Brownian Motion (FBM) simulation. It uses a 2D noise function that is "panned" by the camera position at a scale of 0.02, creating a deep parallax effect. This still needs improvement to not constantly reset between chunks (which can be done by intermixing two backgrounds, but that's something in the future to do).
+The background isn't simply a static image. Instead it's created with a custom multi-octave Fractal Brownian Motion (FBM) implementation!
+
+It uses a 2D noise function that is "panned" by the camera position at a scale of 0.02, creating a deep parallax effect. This still needs improvement to not constantly reset between chunks (which can be done by intermixing two backgrounds, but that's something in the future to do).
+
+TODO, add parallax or similar effects in tandem
 
 ### Copyright
 

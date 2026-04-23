@@ -50,8 +50,8 @@ pub const Sprite = enum(u16) {
     mushroom = MASK_END + 2, // 2 variations
     torch = MASK_END + 4,
 
-    inv = MASK_END + 5,
-    inv_selected = MASK_END + 6,
+    inventory = MASK_END + 5,
+    inventory_selected = MASK_END + 6,
     text_0 = NUMBER_START,
     particle = NUMBER_START + 10,
 
