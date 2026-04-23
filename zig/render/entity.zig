@@ -4,6 +4,7 @@ const root = @import("root").root;
 const SegmentedList = root.SegmentedList;
 const memory = root.memory;
 const ColorRGBA = root.ColorRGBA;
+const inventory = root.inventory;
 const Entity = memory.Entity;
 const WGSLEntity = memory.WGSLEntity;
 
@@ -25,31 +26,21 @@ const number_widths: [10]f32 = .{
     0.5625 + spacing,
 };
 
-/// Array of entities.
-pub var entities: SegmentedList(WGSLEntity, 1024) = .{}; // easiest to do prealloc with larger stack size in case
+// not needed: entities are generated directly in the scratch alloc
+// /// Array of entities.
+// pub var entities: SegmentedList(WGSLEntity, 1024) = .{}; // easiest to do prealloc with larger stack size in case
+var entity_byte_count_before_end: usize = 0;
 
-pub fn update_entities() void {
+pub fn update_entities(dt: f64) void {
+    entity_byte_count_before_end = 0;
     // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
     // Some properties are optional with defaults (size, rotation, LCHA).
 
-    for (0..10) |i| {
-        add_entity(.{ // draw shadow of inventory
-            .sprite = if (i == 0) .inventory_selected else .inventory,
-            .position = .{ 30 + 20 * @as(f32, @floatFromInt(i)), 30 },
-            .lcha = .{ if (i == 0) 0.8 else 0.7, 0.0, 0.0, 1.0 },
-        });
-    }
+    inventory.draw_inventory(dt);
 
-    for (0..10) |i| {
-        add_entity(.{
-            .sprite = if (i == 0) .inventory_selected else .inventory,
-            .position = .{ 32 + 20 * @as(f32, @floatFromInt(i)), 32 },
-        });
-    }
-
-    // example usage (TODO remove)
+    // draw selected HP (for testing)
     const progress = root.mining.selected_hp;
-    const pos: v2f32 = .{ 4, 31 };
+    const pos: v2f32 = .{ 2, 28 };
     const font_size = 12.0;
 
     if (progress != 255) {
@@ -143,9 +134,11 @@ pub fn draw_number(
 }
 
 /// Adds a single entity to the `entities` array, changing position to use UV.
-/// Modifies the original entity instance.
+/// Modifies the original entity instance. Does not do anything if the sprite type is `none`.
 pub inline fn add_entity(entity: Entity) void {
-    const wgsl_entity: WGSLEntity = .{
+    if (entity.sprite == .none) return;
+    const wgsl_entity = memory.scratch_alloc_type(WGSLEntity, &entity_byte_count_before_end);
+    wgsl_entity.* = .{
         .lcha = entity.lcha,
         .position = entity.position /
             v2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
@@ -156,5 +149,5 @@ pub inline fn add_entity(entity: Entity) void {
         .rotation = entity.rotation,
         .id = @intFromEnum(entity.sprite),
     };
-    entities.append(root.world.alloc, wgsl_entity) catch @panic("Failed to add more entities!");
+    // root.logger.quick(.{@intFromPtr(wgsl_entity) -| @intFromPtr(memory.scratch_buffer.ptr)});
 }

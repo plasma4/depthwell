@@ -6,6 +6,7 @@ const main = root.startup;
 const logger = root.logger;
 const sprite = root.sprite;
 const world = root.world;
+const inventory = root.inventory;
 
 const SPAN = memory.SPAN;
 const SPAN_SQ = memory.SPAN_SQ;
@@ -25,7 +26,7 @@ pub var mouse_block_y: u4 = 0;
 pub var block_position_changed = true;
 
 /// Current sprite (index) selected (to place, set to 0 if to mining instead).
-pub var selected_sprite: usize = 0;
+pub var selected_sprite: sprite.Sprite = .none;
 
 pub var is_mouse_down: bool = false;
 
@@ -39,10 +40,7 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
     const game = &memory.game;
     if (action == 1) is_mouse_down = true;
     if (action == 2) is_mouse_down = false;
-    if (action == 3) {
-        selected_sprite = (selected_sprite + 1) % sprite.foundation_sprite_count;
-        logger.write(3, .{ "{h}Currently selected", @as(sprite.Sprite, sprite.foundation_sprites[selected_sprite]) });
-    }
+    selected_sprite = inventory.inventory_blocks[@intCast(inventory.selected_id)];
 
     const screen_dx = (x - 0.5) * SCREEN_WIDTH;
     const screen_dy = (y - 0.5) * SCREEN_HEIGHT;

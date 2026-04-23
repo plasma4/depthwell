@@ -169,7 +169,7 @@ pub fn make_arena() std.heap.ArenaAllocator {
 /// Start the scratch buffer with 4 MiB when allocating for the first time.
 const STARTING_SCRATCH_BUFFER_SIZE = 4 * MemorySizes.MiB;
 
-/// 64 bytes is ana all-round good alignment size.
+/// 64 bytes is an all-round good alignment size in terms of cache pages.
 pub const MAIN_ALIGN_BYTES: usize = 64;
 /// Type-safe alignment for use with `std.mem.Allocator` functions.
 /// Derived from `MAIN_ALIGN_BYTES`.
@@ -471,7 +471,8 @@ pub fn wasm_free(ptr: [*]u8, len: usize) void {
     main_allocator.free(ptr[0..len]);
 }
 
-/// Determines if scratch_buffer has at least `len` additional available capacity. If not, expands with the system allocator.
+/// Determines if scratch_buffer has at least `len` additional available capacity while aligning with `MAIN_ALIGN`.
+/// If not, expands with the system's page allocator.
 /// Does NOT set the `scratch_len` property; only allocates sufficiently (using `scratch_capacity`).
 pub fn scratch_alloc(len: usize) [*]u8 {
     const base_addr = @intFromPtr(scratch_buffer.ptr);
@@ -482,28 +483,7 @@ pub fn scratch_alloc(len: usize) [*]u8 {
 
     if (!is_dynamic_scratch or new_scratch_len > scratch_buffer.len) {
         @branchHint(.cold);
-        const growth_150_percent = scratch_buffer.len + (scratch_buffer.len >> 1);
-        const clamped_growth = @min(growth_150_percent, scratch_buffer.len + (32 * MemorySizes.MiB));
-
-        // Final capacity becomes 256KiB, 1.5x growth, or the requested length, whichever is largest.
-        const new_cap = @max(STARTING_SCRATCH_BUFFER_SIZE, clamped_growth, new_scratch_len);
-
-        if (!is_dynamic_scratch) {
-            scratch_buffer = page_allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch @panic("Ran out of memory!");
-            is_dynamic_scratch = true;
-        } else {
-            scratch_buffer = page_allocator.realloc(scratch_buffer, new_cap) catch @panic("Ran out of memory!");
-        }
-
-        // Update JS metadata
-        mem.scratch_ptr = @intFromPtr(scratch_buffer.ptr);
-        mem.scratch_capacity = scratch_buffer.len;
-
-        // Re-calculate the return pointer based on the new base address
-        const updated_base = @intFromPtr(scratch_buffer.ptr);
-        const updated_aligned = std.mem.alignForward(usize, updated_base + current_used, MAIN_ALIGN_BYTES);
-        mem.scratch_len = @intCast((updated_aligned - updated_base) + len);
-        return @ptrFromInt(updated_aligned);
+        return grow_scratch_buffer(len, new_scratch_len);
     }
 
     // Fits in existing buffer already, fast!
@@ -511,19 +491,76 @@ pub fn scratch_alloc(len: usize) [*]u8 {
     return @ptrFromInt(aligned_addr);
 }
 
-/// Allocates a typed slice in the scratch buffer.
-/// This is the ideal way to write structural data (like chunks) directly into the buffer.
-pub fn scratch_alloc_slice(comptime T: type, count: usize) ?[]T {
+/// Internal function to grow the scratch buffer.
+fn grow_scratch_buffer(len: usize, new_scratch_len: usize) [*]u8 {
+    const current_used: usize = @intCast(mem.scratch_len);
+
+    // Final capacity becomes 256KiB, 1.5x growth, or the requested length, whichever is largest.
+    const growth_150_percent = scratch_buffer.len + (scratch_buffer.len >> 1);
+    const clamped_growth = @min(growth_150_percent, scratch_buffer.len + (32 * MemorySizes.MiB));
+    const new_cap = @max(STARTING_SCRATCH_BUFFER_SIZE, clamped_growth, new_scratch_len);
+
+    if (!is_dynamic_scratch) {
+        @branchHint(.cold);
+        scratch_buffer = page_allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch @panic("Ran out of memory for scratch allocation!");
+        is_dynamic_scratch = true;
+    } else {
+        scratch_buffer = page_allocator.realloc(scratch_buffer, new_cap) catch @panic("Ran out of memory for scratch allocation!");
+    }
+
+    // Update JS metadata
+    mem.scratch_ptr = @intFromPtr(scratch_buffer.ptr);
+    mem.scratch_capacity = scratch_buffer.len;
+
+    // Re-calculate the return pointer based on the new base address
+    const updated_base = @intFromPtr(scratch_buffer.ptr);
+    const updated_aligned = std.mem.alignForward(usize, updated_base + current_used, MAIN_ALIGN_BYTES);
+    mem.scratch_len = @intCast((updated_aligned - updated_base) + len);
+    return @ptrFromInt(updated_aligned);
+}
+
+/// Allocates one instance of a type in a scratch buffer.
+/// This is the ideal fast way to write generic data (like entities) if the total amount is unknown.
+///
+/// The `byte_count_before_end` property, if `null`, makes the data aligned to `MAIN_ALIGN_BYTES`.
+/// If unaligned, it is required to start the data at an aligned location (such as right after `scratch_reset` or `mem.scratch_len` set).
+pub inline fn scratch_alloc_type(comptime T: type, byte_count_before_end: ?*usize) *T {
+    const type_size: usize = @sizeOf(T);
+    const mod = type_size % MAIN_ALIGN_BYTES;
+    if (byte_count_before_end == null or mod == 0) {
+        const ptr = scratch_alloc(type_size);
+        return @as(T, @ptrCast(@alignCast(ptr)));
+    }
+
+    // ask for more and find the right position!
+    const before_end = byte_count_before_end.?.*;
+    var diff = type_size -| before_end;
+    const old_len = mem.scratch_len; // can't trust scratch_alloc lengths
+
+    if (diff == 0) diff = type_size;
+    const ptr: [*]u8 = @ptrFromInt(
+        @as(usize, @intCast(mem.scratch_ptr + mem.scratch_len)),
+    );
+    if (type_size < MAIN_ALIGN_BYTES and diff > 0) _ = scratch_alloc(diff);
+    mem.scratch_len = old_len + type_size;
+
+    byte_count_before_end.?.* = (before_end + MAIN_ALIGN_BYTES - type_size) % MAIN_ALIGN_BYTES;
+    return @as(*T, @ptrCast(@alignCast(ptr)));
+}
+
+/// Allocates a typed slice in the scratch buffer (aligned).
+/// This is the ideal fast way to write structural data (like chunks) directly into the buffer if length is known up front.
+pub inline fn scratch_alloc_slice(comptime T: type, count: usize) []T {
     const byte_count = count * @sizeOf(T);
     const ptr = scratch_alloc(byte_count);
     return @as([*]T, @ptrCast(@alignCast(ptr)))[0..count];
 }
 
-/// Views the entirely used portion of the scratch buffer as a single typed slice.
-/// Note: This will panic if `mem.scratch_len` is not an exact multiple of `@sizeOf(T)`.
+/// Views the entire used portion of the scratch buffer as a single typed slice.
+/// Note: This will error if `mem.scratch_len` is not an exact multiple of `@sizeOf(T)`.
 ///
 /// Only use this if the entire frame's scratch buffer contains a single data type.
-pub fn scratch_as_slice(comptime T: type) []T {
+pub inline fn scratch_as_slice(comptime T: type) []T {
     const bytes = scratch_buffer[0..mem.scratch_len];
     return std.mem.bytesAsSlice(T, bytes);
 }
