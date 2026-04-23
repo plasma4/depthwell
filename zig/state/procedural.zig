@@ -187,7 +187,7 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
 }
 
 /// Returns two independent noise values (32-bit float) based on the classic Value Noise algorithm.
-fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
+fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
     const scale: f32 = 16.0;
     const fx_raw = @as(f32, @floatFromInt(x)) / scale;
     const fy_raw = @as(f32, @floatFromInt(y)) / scale;
@@ -206,7 +206,7 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) @Vector(2, f32) {
     const h01 = FastHash.hash_2d(seed, x0, y0 +% 1);
     const h11 = FastHash.hash_2d(seed, x0 +% 1, y0 +% 1);
 
-    var res: @Vector(2, f32) = .{ 0, 0 };
+    var res: memory.v2f32 = .{ 0, 0 };
     inline for (0..2) |i| {
         const shift = @as(u6, @intCast(i * 32));
         const v00 = @as(f32, @floatFromInt(@as(u32, @truncate(h00 >> shift)))) / POW_2_32;

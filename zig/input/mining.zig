@@ -7,21 +7,29 @@ const world = root.world;
 const mouse = root.mouse;
 
 /// How far the player has progressed to increase `hp`.
-var mining_progress: u64 = 0;
+pub var mining_progress: u64 = 0;
 
 /// How much the player increases `mining_progress` every tick.
-var mining_speed: u64 = 10;
+pub var mining_speed: u64 = 10;
 
 /// How much `hp` the tool takes off the block every time `mining_progress` reaches the block's strength.
-var mining_strength: u4 = 1;
+pub var mining_strength: u4 = 1;
+
+/// Current selected block's HP. Do NOT rely on for logic, only visuals.
+/// Should be from 0-15 normally, and 255 if block is empty.
+pub var selected_hp: u8 = 1;
 
 /// Updates mining or placing blocks. Should be called from `tick()` in zig/root.zig.
 pub fn handle_mining() void {
-    if (mouse.position_changed) {
-        mouse.position_changed = false;
+    if (mouse.block_position_changed) {
+        mouse.block_position_changed = false;
         mining_progress = 0;
     }
-    if (!mouse.is_mouse_down) return; // mouse must be down for these actions to occur
+    if (!mouse.is_mouse_down) {
+        // mouse must be down for mining actions to occur
+        selected_hp = 255;
+        return;
+    }
 
     const sprite_type = sprite.foundation_sprites[mouse.selected_sprite];
     if (mouse.mouse_chunk) |mouse_chunk| {
@@ -40,13 +48,18 @@ pub fn handle_mining() void {
                     // if no strength, set to 0 to instantly mine
                     if (strength > 0) mining_strength else 0,
                 );
-                if (was_deleted and sprite_type != .none) {
+
+                // block is not modified so we actually have to recalculate
+                selected_hp = if (strength > 0) block.hp -| mining_strength else 255;
+
+                if (was_deleted and sprite_type != .none) { // place in the same frame
                     world.modify_block_type(
                         mouse_chunk,
                         mouse.mouse_block_x,
                         mouse.mouse_block_y,
                         sprite_type,
                     );
+                    selected_hp = 0;
                 }
             }
         } else { // placing?
@@ -56,7 +69,10 @@ pub fn handle_mining() void {
                 mouse.mouse_block_y,
                 sprite_type,
             );
+            selected_hp = 0;
         }
+    } else {
+        selected_hp = 255;
     }
 }
 

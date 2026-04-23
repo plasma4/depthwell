@@ -444,9 +444,9 @@ pub const QuadCache = struct {
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
-    left_path: SegmentedList(u64, 0),
+    left_path: SegmentedList(u64, 1024),
     /// Stores the topmost QuadCache's Y-coordinate.
-    top_path: SegmentedList(u64, 0),
+    top_path: SegmentedList(u64, 1024),
 
     // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen/zooming in
     most_top: bool = true,

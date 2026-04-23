@@ -232,10 +232,10 @@ Particles are small squares with rotation and opacity and organized using a circ
 /// Tightly packed data for a square particle to be sent to WebGPU.
 const Particle = packed struct {
     /// Current position.
-    position: @Vector(2, f32),
+    position: v2f32,
 
     /// Velocity vector for position.
-    d_position: @Vector(2, f32),
+    d_position: v2f32,
 
     /// The color of the particle (alpha is multiplied by time and how long the particle lasts)
     color: ColorRGBA,

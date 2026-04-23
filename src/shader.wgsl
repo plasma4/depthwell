@@ -3,7 +3,7 @@
  */
 
 // These are sprite sheet constants. Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
-// See zig/world.zig's Sprite definitions for sprite type list.
+// See zig/state/world.zig's Sprite definitions for sprite type list.
 // These const values values with /* VARIABLE_NAME */ are dynamically patched in from TypeScript, so do not set them here.
 const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
 const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */;
@@ -24,7 +24,7 @@ const SPRITE_W = TILE_SIZE / ATLAS_WIDTH;
 const SPRITE_H = TILE_SIZE / ATLAS_HEIGHT;
 const TEXTURE_BLEEDING_EPSILON = 0.5 / TILE_SIZE;
 
-// See EdgeFlags in zig/types.zig.
+// See EdgeFlags in zig/types/types.zig.
 const EDGE_TOP: u32         = 0x02u;
 const EDGE_BOTTOM: u32      = 0x40u;
 const EDGE_LEFT: u32        = 0x08u;
@@ -44,7 +44,38 @@ struct SceneUniforms {
     chunk_opacity: f32,
     player_screen_pos: vec2f,
     map_size: vec2u,
-    _extra_padding: array<vec4f, 13>, // Pad to 256 bytes for dynamic offsets
+    _extra_padding: array<vec4u, 13>, // Pad to 256 bytes for dynamic offsets
+};
+
+@group(0) @binding(0) var<uniform> scene: SceneUniforms;
+@group(0) @binding(1) var<storage, read> tiles: array<TileData>;
+@group(0) @binding(2) var sprite_atlas: texture_2d<f32>;
+@group(0) @binding(3) var pixel_sampler: sampler;
+@group(0) @binding(4) var<storage, read> entities: array<WGSLEntity>;
+
+
+
+/*
+    ----
+    TILES
+    ----
+*/
+
+// Data passed from the Vertex step (per-corner) to the Fragment step (per-pixel)
+struct TileOutput {
+    @builtin(position) position: vec4f,
+    // Local UV (0.0 to 1.0) across the surface of the specific tile.
+    @location(0) local_uv: vec2f,
+    // Where on the chunk a tile is
+    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
+    @location(1) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
+    @location(2) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
+
+    @location(3) @interpolate(flat) sprite_id: u32,
+    @location(4) @interpolate(flat) edge_flags: u32,
+    @location(5) @interpolate(flat) light: f32,
+    @location(6) @interpolate(flat) hp: u32,
+    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 28 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
 };
 
 struct TileData {
@@ -59,28 +90,6 @@ struct UnpackedTile {
     hp: u32,
     seeds: vec3u,
     edge_flags: u32,
-};
-
-@group(0) @binding(0) var<uniform> scene: SceneUniforms;
-@group(0) @binding(1) var<storage, read> tiles: array<TileData>;
-@group(0) @binding(2) var sprite_atlas: texture_2d<f32>;
-@group(0) @binding(3) var pixel_sampler: sampler;
-
-// Data passed from the Vertex step (per-corner) to the Fragment step (per-pixel)
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    // Local UV (0.0 to 1.0) across the surface of the specific tile.
-    @location(0) local_uv: vec2f,
-    // Where on the chunk a tile is
-    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
-    @location(1) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
-    @location(2) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
-
-    @location(3) @interpolate(flat) sprite_id: u32,
-    @location(4) @interpolate(flat) edge_flags: u32,
-    @location(5) @interpolate(flat) light: f32,
-    @location(6) @interpolate(flat) hp: u32,
-    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 28 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
 };
 
 // Extracts the specific bit ranges in the Block type (see zig/memory.zig).
@@ -104,22 +113,24 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     return out;
 }
 
+// Main vertex shader for tiles.
 @vertex
-fn vs_main(
+fn vs_tile(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32
-) -> VertexOutput {
+) -> TileOutput {
     // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50) and bits 2, 3, and 5 are set (0b101100 = 44)
     let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
 
     let total_tiles = scene.map_size.x * scene.map_size.y;
-    var out: VertexOutput;
+    var out: TileOutput;
 
     if (instance_index == total_tiles) {
         // There's intentionally one more instance than the number of tiles to render the player!
         let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
         let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
 
+        // normalized device coordinates
         let ndc = (screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
 
         out.position = vec4f(ndc, 0.0, 1.0);
@@ -171,7 +182,7 @@ fn vs_main(
         id == (DECOR_START + 2u) || id == (DECOR_START + 3u) // mushroom sprites
     );
 
-    // apply to screen_pos.y before converting to NDC
+    // apply to screen_pos.y before converting to normalized device coordinates
     // subtract from Y because in screen space, lower values are "higher" up
     let adjusted_screen_pos = screen_pos - vec2f(0.0, vertical_offset);
     let ndc = (adjusted_screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
@@ -192,7 +203,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main(in: TileOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
@@ -208,7 +219,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let color = (f32(in.sprite_id) - 256.0) / 256.0;
         var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
         let lab = oklch_to_oklab(lch);
-        let final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
+        let final_rgb = oklab_to_linear_srgb(lab);
         return vec4f(final_rgb, 1.0);
     }
 
@@ -322,7 +333,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     lab = oklch_to_oklab(lch);
-    final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
+    final_rgb = oklab_to_linear_srgb(lab);
     var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, in.sprite_id == 1u); // use chunk_opacity, unless this sprite is for the player
 
     if (scene.wireframe_opacity != 0.0) {
@@ -587,6 +598,12 @@ fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 
 
 
 
+/*
+    ----
+    BACKGROUND
+    ----
+*/
+
 // FBM background logic
 struct BackgroundOutput {
     @builtin(position) position: vec4f,
@@ -595,6 +612,7 @@ struct BackgroundOutput {
     @location(2) time2: f32,
 };
 
+// Main vertex shader for rendering the fancy background.
 @vertex
 fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
     // Full-screen triangle to draw: [(-1, -1), (3, -1), (-1, 3)]
@@ -738,6 +756,109 @@ fn linear_srgb_to_oklab(c: vec3f) -> vec3f {
     return m2 * lms_;
 }
 
+
+
+/*
+    ----
+    ENTITIES
+    ----
+*/
+
+struct WGSLEntity {
+    lcha: vec4f,
+    position: vec2f,
+    size: vec2f,
+    rotation: f32,
+    id: u32,
+    _pad: vec2u,
+}
+
+struct EntityOutput {
+    @builtin(position) position: vec4f,
+    @location(0) local_uv: vec2f,
+    @location(1) @interpolate(flat) lcha: vec4f,
+    @location(2) @interpolate(flat) id: u32,
+    @location(3) @interpolate(flat) sprite_uv_origin: vec2f,
+};
+
+// Main vertex shader for generic entities.
+@vertex
+fn vs_entity(
+    @builtin(vertex_index) vertex_index: u32,
+    @builtin(instance_index) instance_index: u32
+) -> EntityOutput {
+    let entity = entities[instance_index];
+    // presume ID 0 is unreasonable
+    // var out: EntityOutput;
+    // if (entity.id == 0u) {
+    //     out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
+    // }
+
+    let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
+    let centered_pos = local_pos - 0.5;
+
+    // Rotate sprite as needed
+    let c = cos(entity.rotation);
+    let s = sin(entity.rotation);
+    let rotated_pos = vec2f(
+        centered_pos.x * c - centered_pos.y * s,
+        centered_pos.x * s + centered_pos.y * c
+    );
+
+    let pixel_pos = entity.position + (rotated_pos * entity.size);
+
+    // Convert to normalized device coords
+    let ndc = pixel_pos * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
+
+    // Calculate UV origin
+    var origin = vec2f(
+            f32(entity.id % TILES_PER_ROW_U), 
+            f32(entity.id / TILES_PER_ROW_U)
+        ) * vec2f(SPRITE_W, SPRITE_H);
+
+    var out: EntityOutput;
+    out.position = vec4f(ndc, 0.0, 1.0);
+    out.local_uv = local_pos;
+    out.lcha = entity.lcha;
+    out.id = entity.id;
+    out.sprite_uv_origin = origin;
+    return out;
+}
+
+@fragment
+fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
+    // Calculate UVs with bleeding protection
+    let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+    let final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
+
+    let tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
+    // Early discard if the pixel is fully transparent (maybe)
+    // if (tex_color.a <= 0.0) { 
+    //     discard; 
+    // }
+    var lab = linear_srgb_to_oklab(tex_color.rgb);
+    var lch = oklab_to_oklch(lab);
+
+    // Apply modifications from lcha (vec4f: L, C, H, A), see zig/render/entity.zig
+    lch.x *= in.lcha.x; // mult light
+    lch.y += in.lcha.y; // add chroma
+    lch.z += in.lcha.z; // add hue
+
+    lab = oklch_to_oklab(lch);
+    let final_rgb = oklab_to_linear_srgb(lab);
+
+    // apply alpha after being back to RGB!
+    let final_a = tex_color.a * in.lcha.w;
+    return vec4f(final_rgb, final_a);
+}
+
+
+
+/*
+    ----
+    OKLAB Conversions
+    ----
+*/
 fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
     let m1 = mat3x3f( // LMS again
         1.0, 1.0, 1.0,
@@ -752,12 +873,13 @@ fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
         -3.3077115913, 2.6097574011, -0.7034186147,
         0.2309699292, -0.3413193965, 1.7076127010
     );
-    return m2 * lms;
+    let result = m2 * lms;
+    return max(result, vec3f(0.0)); // prevent out of range values
 }
 
 fn oklab_to_oklch(lab: vec3f) -> vec3f {
     let chroma = length(lab.yz);
-    let hue = atan2(lab.z, lab.y);
+    let hue = select(atan2(lab.z, lab.y), 0.0, chroma < 0.0001); // prevent invalid numbers
     return vec3f(lab.x, chroma, hue);
 }
 

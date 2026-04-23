@@ -78,14 +78,21 @@ export class GameEngine {
     public uniformBuffer!: GPUBuffer;
     /** The array of tile buffers for WebGPU. */
     public tileBuffers: GPUBuffer[] = Array(MAX_DRAW_CALLS);
+    /** The array of entity buffers for WebGPU. There is only one buffer. */
+    public entityBuffer?: GPUBuffer;
     /** Determines if the tile buffer is dirty. */
     public tileBufferDirty: boolean = false;
     /** The cached texture view for the sprite atlas. */
     public atlasTextureView!: GPUTextureView;
     /** The cached nearest-neighbor sampler. */
     public pixelSampler!: GPUSampler;
-    public readonly renderPipeline: GPURenderPipeline;
+
+    /** WGSL pipeline for tiles. */
+    public readonly tilePipeline: GPURenderPipeline;
+    /** WGSL pipeline for backgrounds. */
     public readonly bgPipeline: GPURenderPipeline;
+    /** WGSL pipeline for entities. */
+    public readonly entityPipeline: GPURenderPipeline;
 
     /** Represents the current render pass. */
     private renderPass: GPURenderPassEncoder | null = null;
@@ -150,14 +157,16 @@ export class GameEngine {
         engineModule: WebAssembly.WebAssemblyInstantiatedSource,
         renderPipeline: GPURenderPipeline,
         bgPipeline: GPURenderPipeline,
+        entityPipeline: GPURenderPipeline,
     ) {
         this.canvas = canvas;
         this.adapter = adapter;
         this.device = device;
         this.context = context;
         this.engineModule = engineModule;
-        this.renderPipeline = renderPipeline;
+        this.tilePipeline = renderPipeline;
         this.bgPipeline = bgPipeline;
+        this.entityPipeline = entityPipeline;
         this.exports = engineModule.instance.exports as Zig.EngineExports;
         this.memory = engineModule.instance.exports
             .memory as WebAssembly.Memory;
@@ -251,9 +260,8 @@ export class GameEngine {
             u32Count,
         );
 
-        const neededBytes = u32Count * 4;
-        this.recreateBufferAndBindGroup(neededBytes);
-        this.renderPass.setPipeline(this.renderPipeline);
+        this.recreateBufferAndBindGroup(u32Count * 4);
+        this.renderPass.setPipeline(this.tilePipeline);
         this.renderPass.setBindGroup(0, this.bindGroups[this.renderCallId], [
             this.renderCallId * 256,
         ]);
@@ -281,7 +289,36 @@ export class GameEngine {
     }
 
     /** Function called from Zig (using the `js_handle_visible_entities` function in `env`) that renders entities. */
-    public handleVisibleEntities() {}
+    public handleVisibleEntities() {
+        const scratchPtr = this.getScratchPtr();
+        const scratchLen = this.getScratchLen();
+        if (scratchLen === 0 || !this.renderPass) return;
+
+        let bufferRecreated = false;
+        if (!this.entityBuffer || this.entityBuffer.size < scratchLen) {
+            this.entityBuffer = this.device.createBuffer({
+                label: "Entities",
+                size: Math.max(scratchLen, 1024), // Minimum size to avoid tiny buffers
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            });
+            bufferRecreated = true;
+        }
+
+        const wasmView = new Uint8Array(
+            this.memory.buffer,
+            scratchPtr,
+            scratchLen,
+        );
+        this.device.queue.writeBuffer(this.entityBuffer, 0, wasmView);
+
+        if (bufferRecreated) {
+            this.recreateBufferAndBindGroup(this.tileBuffers[0]?.size || 256);
+        }
+
+        this.renderPass!.setPipeline(this.entityPipeline);
+        this.renderPass!.setBindGroup(0, this.bindGroups[0], [0]);
+        this.renderPass!.draw(6, scratchLen / 48); // entity size is 48 bytes a piece
+    }
 
     /** Configures the data in the `scene` used by WGSL. */
     private setSceneData(
@@ -346,7 +383,7 @@ export class GameEngine {
             // Rebuild the bind group because the tileBuffer reference changed
             this.bindGroups[id] = this.device.createBindGroup({
                 label: `Bind group slot ${id}`,
-                layout: this.renderPipeline.getBindGroupLayout(0),
+                layout: this.tilePipeline.getBindGroupLayout(0),
                 entries: [
                     {
                         binding: 0,
@@ -364,6 +401,12 @@ export class GameEngine {
                     },
                     { binding: 2, resource: this.atlasTextureView },
                     { binding: 3, resource: this.pixelSampler },
+                    {
+                        binding: 4,
+                        resource: {
+                            buffer: this.entityBuffer!,
+                        },
+                    },
                 ],
             });
         }
@@ -624,7 +667,7 @@ export class GameEngine {
         this.renderPass = renderPass;
 
         // Draw background (same bind group as chunk drawing)
-        this.recreateBufferAndBindGroup(1024); // start off with a minimum byte size
+        this.recreateBufferAndBindGroup(256 * MAX_DRAW_CALLS); // start off with a minimum byte size
         this.sceneDataF32[7] = 1.0; // set opacity of BG to 1.0, TODO figure out how to allow multiple uniform buffer values in singular draw call!
         this.device.queue.writeBuffer(
             this.uniformBuffer,

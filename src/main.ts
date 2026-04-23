@@ -302,8 +302,6 @@ engine.logicLoop = function (ticks: number) {
 
 // Helper to get normalized coordinates and tell Zig
 const dispatch = (e: PointerEvent, action: number) => {
-    // check if the target is actually the canvas
-    if (e.target !== engine.canvas) return;
     // get canvas position relative to the viewport
     const rect = engine.canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
@@ -319,6 +317,8 @@ document.addEventListener("pointermove", (e) => {
 });
 
 document.addEventListener("pointerdown", (e) => {
+    // check if the target is actually the canvas
+    if (!e.target || (e.target as any).id === "debugContainer") return;
     const action = e.button === 2 ? 3 : 1;
     dispatch(e, action);
 });

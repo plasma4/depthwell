@@ -38,7 +38,7 @@ pub const ParticleSystem = struct {
                 self.list.swapRemove(i);
             } else {
                 // Alive: Update physics
-                const dt_splat: @Vector(2, f32) = @splat(dt);
+                const dt_splat: memory.v2f32 = @splat(dt);
                 positions[i] += d_positions[i] * dt_splat;
                 rotations[i] += d_rotations[i] * dt;
 
@@ -47,25 +47,32 @@ pub const ParticleSystem = struct {
         }
     }
 
-    /// Packs the SoA data into AoS format in the scratch buffer for WebGPU. Overwrites data in scratch buffer, disregarding pre-existing data.
-    pub fn export_to_scratch(self: *@This()) void {
-        const total_bytes = self.list.len * @sizeOf(Particle);
-        memory.scratch_reset();
+    /// Packs the active particles directly into the scratch buffer as WGSLEntities.
+    pub fn export_to_scratch_as_entities(self: *@This()) void {
+        const count = self.list.len;
+        if (count == 0) return;
 
-        if (total_bytes > memory.mem.scratch_capacity) {
-            @branchHint(.cold);
-            memory.scratch_alloc(total_bytes);
+        // Allocate the exact slice size needed in the scratch buffer
+        const slice = memory.scratch_alloc_slice(memory.WGSLEntity, count) orelse return;
+
+        const times = self.list.items(.time);
+        const times_end = self.list.items(.time_end);
+        const positions = self.list.items(.position);
+        const colors = self.list.items(.color);
+        const sizes = self.list.items(.size);
+        const rotations = self.list.items(.rotation);
+
+        for (0..count) |i| {
+            // Optional: Calculate alpha fade based on life remaining
+            const life_ratio = @as(f32, @floatCast(times[i] / times_end[i]));
+
+            slice[i] = .{
+                .lcha = .{ colors[i].r, colors[i].g, colors[i].b, colors[i].a * life_ratio },
+                .position = positions[i] / .{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
+                .size = @splat(sizes[i] / root.SCREEN_WIDTH),
+                .rotation = rotations[i],
+                .id = @intFromEnum(root.Sprite.particle),
+            };
         }
-
-        // Cast scratch memory to a slice of Particles
-        const dest_buffer = @as([*]Particle, @ptrFromInt(memory.mem.scratch_ptr));
-
-        // Copy active particles
-        for (0..self.list.len) |i| {
-            dest_buffer[i] = self.list.get(i);
-        }
-
-        // Tell JS exactly how many bytes to read
-        memory.mem.scratch_len = total_bytes;
     }
 };

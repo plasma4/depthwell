@@ -1,9 +1,9 @@
-(function(){const t=document.createElement("link").relList;if(t&&t.supports&&t.supports("modulepreload"))return;for(const e of document.querySelectorAll('link[rel="modulepreload"]'))i(e);new MutationObserver(e=>{for(const s of e)if(s.type==="childList")for(const o of s.addedNodes)o.tagName==="LINK"&&o.rel==="modulepreload"&&i(o)}).observe(document,{childList:!0,subtree:!0});function r(e){const s={};return e.integrity&&(s.integrity=e.integrity),e.referrerPolicy&&(s.referrerPolicy=e.referrerPolicy),e.crossOrigin==="use-credentials"?s.credentials="include":e.crossOrigin==="anonymous"?s.credentials="omit":s.credentials="same-origin",s}function i(e){if(e.ep)return;e.ep=!0;const s=r(e);fetch(e.href,s)}})();const a={zoom:131072,drop:262144,minus:32768,plus:65536,up:2048,left:4096,down:8192,right:16384,k0:1,k1:2,k2:4,k3:8,k4:16,k5:32,k6:64,k7:128,k8:256,k9:512},S={player_pos:0,last_player_pos:16,player_chunk:32,player_velocity:48,camera_pos:64,last_camera_pos:80,camera_scale:96,camera_scale_change:104,depth:112,player_quadrant:120,frame:124,keys_pressed_mask:128,keys_held_mask:132,seed:144,seed2:208},N="abcdefghijklmnopqrstuvwxyz",y=26n;function C(n=100){if(n<=0)return"";const t=new Uint8Array(72);crypto.getRandomValues(t);let r=0n;const i=new DataView(t.buffer);for(let o=0;o<t.length;o+=8)r=r<<64n|i.getBigUint64(o);let e="",s=r%y**BigInt(n);for(;s>=0n&&(e+=N[Number(s%y)],s=s/y-1n,!(s<0n)););return e}function V(n){let t=0n;for(let r=0;r<n.length;r++){const i=BigInt(n.charCodeAt(r)-97);t=t*y+(i+1n)}return t}async function q(n,t){const r=V(n),i=new DataView(new ArrayBuffer(64));for(let l=0;l<8;l++)i.setBigUint64(l*8,r>>BigInt((7-l)*64)&0xffffffffffffffffn);let e=new Uint8Array(i.buffer,0,32),s=new Uint8Array(i.buffer,32,32);const o=await Promise.all([0,1,2,3].map(l=>crypto.subtle.importKey("raw",new Uint8Array([l]),{name:"HMAC",hash:"SHA-256"},!1,["sign"])));for(const l of o){const d=new Uint8Array(await crypto.subtle.sign("HMAC",l,s)),h=new Uint8Array(32);for(let f=0;f<32;f++)h[f]=e[f]^d[f];e=s,s=h}const u=new Uint8Array(64);return u.set(e,0),u.set(s,32),t.set(new BigUint64Array(u.buffer)),t}const k={Minus:a.minus,Equal:a.plus,KeyZ:a.zoom,KeyQ:a.drop,Space:a.up,ArrowUp:a.up,KeyW:a.up,ArrowLeft:a.left,KeyA:a.left,ArrowDown:a.down,KeyS:a.down,ArrowRight:a.right,KeyD:a.right,Digit0:a.k0,Digit1:a.k1,Digit2:a.k2,Digit3:a.k3,Digit4:a.k4,Digit5:a.k5,Digit6:a.k6,Digit7:a.k7,Digit8:a.k8,Digit9:a.k9};function H(){let n={};const t={heldMask:0,keysHeld:0,keysPressed:0,currentlyHeld:0,horizontalPriority:0,verticalPriority:0,plusMinusPriority:0};function r(){n={},t.horizontalPriority=0,t.verticalPriority=0,t.plusMinusPriority=0,t.currentlyHeld=0,t.heldMask=0,t.keysPressed=0}return window.addEventListener("keydown",i=>{if(i.repeat||i.altKey||i.ctrlKey||i.metaKey||i.shiftKey)return;const e=k[i.code];e&&(t.heldMask|=e,n[e]=(n[e]||0)+1,e&(a.left|a.right)&&(t.horizontalPriority=e),e&(a.up|a.down)&&(t.verticalPriority=e),e&(a.plus|a.minus)&&(t.plusMinusPriority=e))}),window.addEventListener("keyup",i=>{const e=k[i.code];e&&(n[e]=Math.max(0,(n[e]||0)-1),n[e]===0&&(t.heldMask&=~e,e===t.horizontalPriority&&(t.horizontalPriority=t.heldMask&a.left||t.heldMask&a.right||0),e===t.verticalPriority&&(t.verticalPriority=t.heldMask&a.up||t.heldMask&a.down||0),e===t.plusMinusPriority&&(t.plusMinusPriority=t.heldMask&a.plus||t.heldMask&a.minus||0)))}),window.addEventListener("blur",r),document.addEventListener("visibilitychange",r),window.addEventListener("contextmenu",r),t}function W(n){const t=a.up|a.down|a.left|a.right;let r=n.heldMask&~t;r|=n.horizontalPriority,r|=n.verticalPriority,r|=n.plusMinusPriority,n.keysPressed=r&~n.keysHeld,n.currentlyHeld=r,n.keysHeld=r}const K=""+new URL("main-mk95UBja.wasm",import.meta.url).href,Z=`/*
+(function(){const t=document.createElement("link").relList;if(t&&t.supports&&t.supports("modulepreload"))return;for(const e of document.querySelectorAll('link[rel="modulepreload"]'))r(e);new MutationObserver(e=>{for(const s of e)if(s.type==="childList")for(const o of s.addedNodes)o.tagName==="LINK"&&o.rel==="modulepreload"&&r(o)}).observe(document,{childList:!0,subtree:!0});function n(e){const s={};return e.integrity&&(s.integrity=e.integrity),e.referrerPolicy&&(s.referrerPolicy=e.referrerPolicy),e.crossOrigin==="use-credentials"?s.credentials="include":e.crossOrigin==="anonymous"?s.credentials="omit":s.credentials="same-origin",s}function r(e){if(e.ep)return;e.ep=!0;const s=n(e);fetch(e.href,s)}})();const a={zoom:131072,drop:262144,minus:32768,plus:65536,up:2048,left:4096,down:8192,right:16384,k0:1,k1:2,k2:4,k3:8,k4:16,k5:32,k6:64,k7:128,k8:256,k9:512},R={player_pos:0,last_player_pos:16,player_chunk:32,player_velocity:48,camera_pos:64,last_camera_pos:80,camera_scale:96,camera_scale_change:104,depth:112,player_quadrant:120,frame:124,keys_pressed_mask:128,keys_held_mask:132,seed:144,seed2:208},N="abcdefghijklmnopqrstuvwxyz",b=26n;function C(i=100){if(i<=0)return"";const t=new Uint8Array(72);crypto.getRandomValues(t);let n=0n;const r=new DataView(t.buffer);for(let o=0;o<t.length;o+=8)n=n<<64n|r.getBigUint64(o);let e="",s=n%b**BigInt(i);for(;s>=0n&&(e+=N[Number(s%b)],s=s/b-1n,!(s<0n)););return e}function V(i){let t=0n;for(let n=0;n<i.length;n++){const r=BigInt(i.charCodeAt(n)-97);t=t*b+(r+1n)}return t}async function q(i,t){const n=V(i),r=new DataView(new ArrayBuffer(64));for(let l=0;l<8;l++)r.setBigUint64(l*8,n>>BigInt((7-l)*64)&0xffffffffffffffffn);let e=new Uint8Array(r.buffer,0,32),s=new Uint8Array(r.buffer,32,32);const o=await Promise.all([0,1,2,3].map(l=>crypto.subtle.importKey("raw",new Uint8Array([l]),{name:"HMAC",hash:"SHA-256"},!1,["sign"])));for(const l of o){const _=new Uint8Array(await crypto.subtle.sign("HMAC",l,s)),p=new Uint8Array(32);for(let f=0;f<32;f++)p[f]=e[f]^_[f];e=s,s=p}const u=new Uint8Array(64);return u.set(e,0),u.set(s,32),t.set(new BigUint64Array(u.buffer)),t}const k={Minus:a.minus,Equal:a.plus,KeyZ:a.zoom,KeyQ:a.drop,Space:a.up,ArrowUp:a.up,KeyW:a.up,ArrowLeft:a.left,KeyA:a.left,ArrowDown:a.down,KeyS:a.down,ArrowRight:a.right,KeyD:a.right,Digit0:a.k0,Digit1:a.k1,Digit2:a.k2,Digit3:a.k3,Digit4:a.k4,Digit5:a.k5,Digit6:a.k6,Digit7:a.k7,Digit8:a.k8,Digit9:a.k9};function H(){let i={};const t={heldMask:0,keysHeld:0,keysPressed:0,currentlyHeld:0,horizontalPriority:0,verticalPriority:0,plusMinusPriority:0};function n(){i={},t.horizontalPriority=0,t.verticalPriority=0,t.plusMinusPriority=0,t.currentlyHeld=0,t.heldMask=0,t.keysPressed=0}return window.addEventListener("keydown",r=>{if(r.repeat||r.altKey||r.ctrlKey||r.metaKey||r.shiftKey)return;const e=k[r.code];e&&(t.heldMask|=e,i[e]=(i[e]||0)+1,e&(a.left|a.right)&&(t.horizontalPriority=e),e&(a.up|a.down)&&(t.verticalPriority=e),e&(a.plus|a.minus)&&(t.plusMinusPriority=e))}),window.addEventListener("keyup",r=>{const e=k[r.code];e&&(i[e]=Math.max(0,(i[e]||0)-1),i[e]===0&&(t.heldMask&=~e,e===t.horizontalPriority&&(t.horizontalPriority=t.heldMask&a.left||t.heldMask&a.right||0),e===t.verticalPriority&&(t.verticalPriority=t.heldMask&a.up||t.heldMask&a.down||0),e===t.plusMinusPriority&&(t.plusMinusPriority=t.heldMask&a.plus||t.heldMask&a.minus||0)))}),window.addEventListener("blur",n),document.addEventListener("visibilitychange",n),window.addEventListener("contextmenu",n),t}function W(i){const t=a.up|a.down|a.left|a.right;let n=i.heldMask&~t;n|=i.horizontalPriority,n|=i.verticalPriority,n|=i.plusMinusPriority,i.keysPressed=n&~i.keysHeld,i.currentlyHeld=n,i.keysHeld=n}const K=""+new URL("main-C8FA57Py.wasm",import.meta.url).href,Z=`/*
  * Main shader for Depthwell. ADD ?raw FOR DEBUGGING SHADER TO THE END OF engineMaker.ts's \`SHADER_SOURCE\` VARIABLE TO NOT COMPRESS.
  */
 
 // These are sprite sheet constants. Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
-// See zig/world.zig's Sprite definitions for sprite type list.
+// See zig/state/world.zig's Sprite definitions for sprite type list.
 // These const values values with /* VARIABLE_NAME */ are dynamically patched in from TypeScript, so do not set them here.
 const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
 const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */;
@@ -24,7 +24,7 @@ const SPRITE_W = TILE_SIZE / ATLAS_WIDTH;
 const SPRITE_H = TILE_SIZE / ATLAS_HEIGHT;
 const TEXTURE_BLEEDING_EPSILON = 0.5 / TILE_SIZE;
 
-// See EdgeFlags in zig/types.zig.
+// See EdgeFlags in zig/types/types.zig.
 const EDGE_TOP: u32         = 0x02u;
 const EDGE_BOTTOM: u32      = 0x40u;
 const EDGE_LEFT: u32        = 0x08u;
@@ -44,7 +44,38 @@ struct SceneUniforms {
     chunk_opacity: f32,
     player_screen_pos: vec2f,
     map_size: vec2u,
-    _extra_padding: array<vec4f, 13>, // Pad to 256 bytes for dynamic offsets
+    _extra_padding: array<vec4u, 13>, // Pad to 256 bytes for dynamic offsets
+};
+
+@group(0) @binding(0) var<uniform> scene: SceneUniforms;
+@group(0) @binding(1) var<storage, read> tiles: array<TileData>;
+@group(0) @binding(2) var sprite_atlas: texture_2d<f32>;
+@group(0) @binding(3) var pixel_sampler: sampler;
+@group(0) @binding(4) var<storage, read> entities: array<WGSLEntity>;
+
+
+
+/*
+    ----
+    TILES
+    ----
+*/
+
+// Data passed from the Vertex step (per-corner) to the Fragment step (per-pixel)
+struct TileOutput {
+    @builtin(position) position: vec4f,
+    // Local UV (0.0 to 1.0) across the surface of the specific tile.
+    @location(0) local_uv: vec2f,
+    // Where on the chunk a tile is
+    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
+    @location(1) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
+    @location(2) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
+
+    @location(3) @interpolate(flat) sprite_id: u32,
+    @location(4) @interpolate(flat) edge_flags: u32,
+    @location(5) @interpolate(flat) light: f32,
+    @location(6) @interpolate(flat) hp: u32,
+    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 28 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
 };
 
 struct TileData {
@@ -59,28 +90,6 @@ struct UnpackedTile {
     hp: u32,
     seeds: vec3u,
     edge_flags: u32,
-};
-
-@group(0) @binding(0) var<uniform> scene: SceneUniforms;
-@group(0) @binding(1) var<storage, read> tiles: array<TileData>;
-@group(0) @binding(2) var sprite_atlas: texture_2d<f32>;
-@group(0) @binding(3) var pixel_sampler: sampler;
-
-// Data passed from the Vertex step (per-corner) to the Fragment step (per-pixel)
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    // Local UV (0.0 to 1.0) across the surface of the specific tile.
-    @location(0) local_uv: vec2f,
-    // Where on the chunk a tile is
-    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
-    @location(1) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
-    @location(2) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
-
-    @location(3) @interpolate(flat) sprite_id: u32,
-    @location(4) @interpolate(flat) edge_flags: u32,
-    @location(5) @interpolate(flat) light: f32,
-    @location(6) @interpolate(flat) hp: u32,
-    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 28 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
 };
 
 // Extracts the specific bit ranges in the Block type (see zig/memory.zig).
@@ -104,22 +113,24 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     return out;
 }
 
+// Main vertex shader for tiles.
 @vertex
-fn vs_main(
+fn vs_tile(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32
-) -> VertexOutput {
+) -> TileOutput {
     // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50) and bits 2, 3, and 5 are set (0b101100 = 44)
     let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
 
     let total_tiles = scene.map_size.x * scene.map_size.y;
-    var out: VertexOutput;
+    var out: TileOutput;
 
     if (instance_index == total_tiles) {
         // There's intentionally one more instance than the number of tiles to render the player!
         let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
         let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
 
+        // normalized device coordinates
         let ndc = (screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
 
         out.position = vec4f(ndc, 0.0, 1.0);
@@ -171,7 +182,7 @@ fn vs_main(
         id == (DECOR_START + 2u) || id == (DECOR_START + 3u) // mushroom sprites
     );
 
-    // apply to screen_pos.y before converting to NDC
+    // apply to screen_pos.y before converting to normalized device coordinates
     // subtract from Y because in screen space, lower values are "higher" up
     let adjusted_screen_pos = screen_pos - vec2f(0.0, vertical_offset);
     let ndc = (adjusted_screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
@@ -192,7 +203,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main(in: TileOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
@@ -208,7 +219,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let color = (f32(in.sprite_id) - 256.0) / 256.0;
         var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
         let lab = oklch_to_oklab(lch);
-        let final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
+        let final_rgb = oklab_to_linear_srgb(lab);
         return vec4f(final_rgb, 1.0);
     }
 
@@ -322,7 +333,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     lab = oklch_to_oklab(lch);
-    final_rgb = max(oklab_to_linear_srgb(lab), vec3f(0.0));
+    final_rgb = oklab_to_linear_srgb(lab);
     var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, in.sprite_id == 1u); // use chunk_opacity, unless this sprite is for the player
 
     if (scene.wireframe_opacity != 0.0) {
@@ -587,6 +598,12 @@ fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 
 
 
 
+/*
+    ----
+    BACKGROUND
+    ----
+*/
+
 // FBM background logic
 struct BackgroundOutput {
     @builtin(position) position: vec4f,
@@ -595,6 +612,7 @@ struct BackgroundOutput {
     @location(2) time2: f32,
 };
 
+// Main vertex shader for rendering the fancy background.
 @vertex
 fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
     // Full-screen triangle to draw: [(-1, -1), (3, -1), (-1, 3)]
@@ -738,6 +756,109 @@ fn linear_srgb_to_oklab(c: vec3f) -> vec3f {
     return m2 * lms_;
 }
 
+
+
+/*
+    ----
+    ENTITIES
+    ----
+*/
+
+struct WGSLEntity {
+    lcha: vec4f,
+    position: vec2f,
+    size: vec2f,
+    rotation: f32,
+    id: u32,
+    _pad: vec2u,
+}
+
+struct EntityOutput {
+    @builtin(position) position: vec4f,
+    @location(0) local_uv: vec2f,
+    @location(1) @interpolate(flat) lcha: vec4f,
+    @location(2) @interpolate(flat) id: u32,
+    @location(3) @interpolate(flat) sprite_uv_origin: vec2f,
+};
+
+// Main vertex shader for generic entities.
+@vertex
+fn vs_entity(
+    @builtin(vertex_index) vertex_index: u32,
+    @builtin(instance_index) instance_index: u32
+) -> EntityOutput {
+    let entity = entities[instance_index];
+    // presume ID 0 is unreasonable
+    // var out: EntityOutput;
+    // if (entity.id == 0u) {
+    //     out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
+    // }
+
+    let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
+    let centered_pos = local_pos - 0.5;
+
+    // Rotate sprite as needed
+    let c = cos(entity.rotation);
+    let s = sin(entity.rotation);
+    let rotated_pos = vec2f(
+        centered_pos.x * c - centered_pos.y * s,
+        centered_pos.x * s + centered_pos.y * c
+    );
+
+    let pixel_pos = entity.position + (rotated_pos * entity.size);
+
+    // Convert to normalized device coords
+    let ndc = pixel_pos * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
+
+    // Calculate UV origin
+    var origin = vec2f(
+            f32(entity.id % TILES_PER_ROW_U), 
+            f32(entity.id / TILES_PER_ROW_U)
+        ) * vec2f(SPRITE_W, SPRITE_H);
+
+    var out: EntityOutput;
+    out.position = vec4f(ndc, 0.0, 1.0);
+    out.local_uv = local_pos;
+    out.lcha = entity.lcha;
+    out.id = entity.id;
+    out.sprite_uv_origin = origin;
+    return out;
+}
+
+@fragment
+fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
+    // Calculate UVs with bleeding protection
+    let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
+    let final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
+
+    let tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
+    // Early discard if the pixel is fully transparent (maybe)
+    // if (tex_color.a <= 0.0) { 
+    //     discard; 
+    // }
+    var lab = linear_srgb_to_oklab(tex_color.rgb);
+    var lch = oklab_to_oklch(lab);
+
+    // Apply modifications from lcha (vec4f: L, C, H, A), see zig/render/entity.zig
+    lch.x *= in.lcha.x; // mult light
+    lch.y += in.lcha.y; // add chroma
+    lch.z += in.lcha.z; // add hue
+
+    lab = oklch_to_oklab(lch);
+    let final_rgb = oklab_to_linear_srgb(lab);
+
+    // apply alpha after being back to RGB!
+    let final_a = tex_color.a * in.lcha.w;
+    return vec4f(final_rgb, final_a);
+}
+
+
+
+/*
+    ----
+    OKLAB Conversions
+    ----
+*/
 fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
     let m1 = mat3x3f( // LMS again
         1.0, 1.0, 1.0,
@@ -752,19 +873,19 @@ fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
         -3.3077115913, 2.6097574011, -0.7034186147,
         0.2309699292, -0.3413193965, 1.7076127010
     );
-    return m2 * lms;
+    let result = m2 * lms;
+    return max(result, vec3f(0.0)); // prevent out of range values
 }
 
 fn oklab_to_oklch(lab: vec3f) -> vec3f {
     let chroma = length(lab.yz);
-    let hue = atan2(lab.z, lab.y);
+    let hue = select(atan2(lab.z, lab.y), 0.0, chroma < 0.0001); // prevent invalid numbers
     return vec3f(lab.x, chroma, hue);
 }
 
 fn oklch_to_oklab(lch: vec3f) -> vec3f {
     return vec3f(lch.x, lch.y * cos(lch.z), lch.y * sin(lch.z));
-}
-`,$=""+new URL("main-Sheet-tbla42Pd.png",import.meta.url).href;async function X(n,t){const r=await navigator.gpu.requestAdapter({powerPreference:t&&t.highPerformance?"high-performance":"low-power"});if(!r)throw new DOMException("Couldn't request WebGPU adapter.","NotSupportedError");const i=await r.requestDevice();let e=null;if(i.addEventListener("uncapturederror",_=>{const m=_.error;if(e===null)if(globalThis.reportError)reportError(m);else throw m;else if(!e.destroyed){e.destroy("fatal WebGPU error",m);return}}),i.lost.then(_=>console.error(`WebGPU Device lost: ${_.message}`)),n===void 0){if(n=document.getElementsByTagName("canvas")[0],n===void 0)throw Error("No canvas element or ID string provided, and no canvas was not found in the HTML.")}else if(typeof n=="string"){const _=document.getElementById(n);if(!(_ instanceof HTMLCanvasElement))throw Error(`Element with ID "${n}" is not a canvas element.`);n=_}const s=n.getContext("webgpu");if(!s)throw Error("Could not get WebGPU context from canvas.");const o=i.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm";s.configure({device:i,format:o,alphaMode:"opaque"});const u=await WebAssembly.instantiateStreaming(fetch(K),{env:{js_message:(_,m,x)=>{let p=new TextDecoder().decode(new Uint8Array(d.buffer,Number(_),Number(m)));p.charAt(0)!=="]"?p="["+(e.LOGGING_PREFIX||"")+p:p=p.slice(1),x===1?console.info("%c"+p,"font-weight: 600"):[console.log,console.info,console.warn,console.error][x](p)},js_write_text:(_,m,x)=>{const p=new Uint8Array(d.buffer,Number(m),Number(x)),F=new TextDecoder().decode(p),z=document.getElementById(`text${_+1}`);z.textContent=F},js_get_time:()=>performance.now(),js_handle_visible_chunks:_=>e.handleVisibleChunks(_),js_handle_visible_entities:()=>e.handleVisibleEntities()}}),l=u.instance.exports,d=l.memory,h=i.createShaderModule({label:"Main shader",code:Z.replace("/* TILES_PER_ROW */ 1 /* TILES_PER_ROW */",""+l.get_tiles_per_row()).replace("/* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */",""+l.get_tiles_per_column()).replace("/* STONE_START */ 1 /* STONE_START */",""+l.get_stone_start()).replace("/* ORE_START */ 1 /* ORE_START */",""+l.get_ore_start()).replace("/* GEM_START */ 1 /* GEM_START */",""+l.get_gem_start()).replace("/* GEM_MASK_START */ 1 /* GEM_MASK_START */",""+l.get_gem_mask_start()).replace("/* DECOR_START */ 1 /* DECOR_START */",""+l.get_decor_start())}),f=i.createBindGroupLayout({label:"Main bind group layout",entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform",hasDynamicOffset:!0}},{binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}},{binding:2,visibility:GPUShaderStage.FRAGMENT,texture:{}},{binding:3,visibility:GPUShaderStage.FRAGMENT,sampler:{}}]}),g=i.createPipelineLayout({label:"Shared Pipeline Layout",bindGroupLayouts:[f]}),L=i.createRenderPipeline({label:"Tilemap pipeline",layout:g,vertex:{module:h,entryPoint:"vs_main"},fragment:{module:h,entryPoint:"fs_main",targets:[{format:o,blend:{color:{srcFactor:"src-alpha",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},primitive:{topology:"triangle-list",cullMode:"none"}}),U=i.createRenderPipeline({label:"Background pipeline",layout:g,vertex:{module:h,entryPoint:"vs_background"},fragment:{module:h,entryPoint:"fs_background",targets:[{format:o}]},primitive:{topology:"triangle-list"}});e=new P(n,r,i,s,u,L,U),e.exports.setup(),await e.setSeed(C(100)),e.startDelta=Number(l.mix_seed(60n)%120000n),e.exports.init();const O=new ResizeObserver(e.onResize);e.resizeObserver=O,e.updateCanvasStyle();try{e.resizeObserver.observe(n,{box:"device-pixel-content-box"})}catch{console.log("ResizeObserver property device-pixel-content-box not supported, falling back to content-box."),e.resizeObserver.observe(n,{box:"content-box"})}e.onResize([{contentRect:{width:n.clientWidth,height:n.clientHeight}}]);const D=await P.loadTexture(i,$),M=i.createSampler({magFilter:"nearest",minFilter:"nearest",addressModeU:"clamp-to-edge",addressModeV:"clamp-to-edge"});e.atlasTextureView=D.createView(),e.pixelSampler=M;const G=i.createBuffer({label:"SceneUniforms",size:256*R,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});return e.uniformBuffer=G,e}var B=(n=>(n[n.Uint8=8]="Uint8",n[n.Uint16=16]="Uint16",n[n.Uint32=32]="Uint32",n[n.Uint64=64]="Uint64",n[n.Int8=-8]="Int8",n[n.Int16=-16]="Int16",n[n.Int32=-32]="Int32",n[n.Int64=-64]="Int64",n[n.Uint8Clamped=-80]="Uint8Clamped",n[n.Float32=-320]="Float32",n[n.Float64=-640]="Float64",n))(B||{});globalThis.WasmTypeCode=B;const I={8:Uint8Array,16:Uint16Array,32:Uint32Array,64:BigUint64Array,[-8]:Int8Array,[-16]:Int16Array,[-32]:Int32Array,[-64]:BigInt64Array,[-80]:Uint8ClampedArray,[-320]:Float32Array,[-640]:Float64Array},R=4;class P{engineModule;exports;memory;LAYOUT_PTR;GAME_STATE_PTR;canvas;adapter;device;context;bindGroups=Array(R);uniformBuffer;tileBuffers=Array(R);tileBufferDirty=!1;atlasTextureView;pixelSampler;renderPipeline;bgPipeline;renderPass=null;currentEncoder=null;currentTextureView=null;renderCallId=0;sceneDataBuffer=new ArrayBuffer(256);sceneDataF32=new Float32Array(this.sceneDataBuffer);sceneDataU32=new Uint32Array(this.sceneDataBuffer);inputState;resizeObserver;forceAspectRatio=!0;previousForceAspectRatio=null;tileMapWidth;tileMapHeight;prepare_visible_data_time=0;isVisibleDataNew=!0;wireframeOpacity=0;startTime=performance.now();startDelta;seed="";destroyed=!1;destroyedError=null;encoder=new TextEncoder;decoder=new TextDecoder;LOGGING_PREFIX="";constructor(t,r,i,e,s,o,u){this.canvas=t,this.adapter=r,this.device=i,this.context=e,this.engineModule=s,this.renderPipeline=o,this.bgPipeline=u,this.exports=s.instance.exports,this.memory=s.instance.exports.memory,this.LAYOUT_PTR=Number(this.exports.get_memory_layout_ptr()),this.GAME_STATE_PTR=Number(this.getScratchView()[3]),this.inputState=H()}static async create(t,r){return await X(t,r)}destroy(t="unknown reason",r=null){this.resizeObserver.disconnect(),this.destroyed=t,this.destroyedError=r}static async loadTexture(t,r){const e=await(await fetch(r)).blob(),s=await createImageBitmap(e),o=t.createTexture({label:`Texture from  ${r}`,size:[s.width,s.height],format:t.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm",usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});return t.queue.copyExternalImageToTexture({source:s},{texture:o},[s.width,s.height]),o}uploadVisibleChunks(t=1){const r=performance.now();this.exports.prepare_visible_data(t,this.canvas.width,this.canvas.height),this.prepare_visible_data_time=performance.now()-r}handleVisibleChunks(t){if(!this.currentEncoder||!this.currentTextureView||!this.renderPass)return;const r=this.getScratchPtr();if(this.getScratchLen()===0)return;const e=Number(this.getScratchProperty(0)),s=Number(this.getScratchProperty(1)),o=e*s*2;this.tileMapWidth=e,this.tileMapHeight=s;const u=new Uint32Array(this.memory.buffer,r,o),l=o*4;this.recreateBufferAndBindGroup(l),this.renderPass.setPipeline(this.renderPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId*256]),this.renderPass.setViewport(0,0,this.canvas.width,this.canvas.height,0,1),this.setSceneData(t,e,s),this.device.queue.writeBuffer(this.tileBuffers[this.renderCallId],0,u);const d=e*s+1;this.renderPass.draw(6,d),this.renderCallId++}handleVisibleEntities(){}setSceneData(t,r,i){const e=this.getScratchProperty(2,-640),s=this.getScratchProperty(3,-640),o=this.getScratchProperty(4,-640),u=this.getScratchProperty(5,-640),l=this.getScratchProperty(6,-640);this.sceneDataF32[0]=e,this.sceneDataF32[1]=s,this.sceneDataF32[2]=this.canvas.width,this.sceneDataF32[3]=this.canvas.height;const d=6e4,f=(performance.now()-this.startTime+this.startDelta)%(d*2);let g;f<d?g=f/1e3:g=(d-(f-d))/1e3,this.sceneDataF32[4]=g,this.sceneDataF32[5]=o,this.sceneDataF32[6]=o<.25?0:this.wireframeOpacity,this.sceneDataF32[7]=t,this.sceneDataF32[8]=u,this.sceneDataF32[9]=l,this.sceneDataU32[10]=r,this.sceneDataU32[11]=i,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32)}recreateBufferAndBindGroup(t){const r=this.renderCallId;(!this.tileBuffers[r]||this.tileBuffers[r].size<t)&&(this.tileBuffers[r]=this.device.createBuffer({label:`Tile grid slot ${r}`,size:t,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),this.bindGroups[r]=this.device.createBindGroup({label:`Bind group slot ${r}`,layout:this.renderPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniformBuffer,offset:0,size:256}},{binding:1,resource:{buffer:this.tileBuffers[r]}},{binding:2,resource:this.atlasTextureView},{binding:3,resource:this.pixelSampler}]}))}getWASMMemoryMB(){return this.memory.buffer.byteLength/1024/1024}getGameView(t,r=0,i){return new I[t](this.memory.buffer,this.GAME_STATE_PTR+r,i)}getRawView(t,r,i){return new I[t](this.memory.buffer,r,i)}_tempScratchViewU64=null;_tempScratchViewF64=null;getScratchView(){return(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24)),this._tempScratchViewU64}getScratchPtr(){return Number(this.getScratchView()[0])}getScratchLen(){return Number(this.getScratchView()[1])}setScratchLen(t){this.getScratchView()[1]=BigInt(t)}getScratchCapacity(){return Number(this.getScratchView()[2])}getScratchProperty(t,r=64){(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24));let i=this._tempScratchViewU64;return r==-640&&((this._tempScratchViewF64===null||this._tempScratchViewF64.buffer!==this.memory.buffer)&&(this._tempScratchViewF64=new Float64Array(i.buffer,i.byteOffset,i.length)),i=this._tempScratchViewF64),Number(i[t+4])}readStr(t=this.getScratchPtr(),r=this.getScratchLen()){const i=new Uint8Array(this.memory.buffer,t,r);return this.decoder.decode(i)}writeStr(t,r=!0){const i=t.length;if(i===0)return null;r&&this.setScratchLen(0);const e=this.exports.scratch_alloc(i);if(e===0n)return null;const s=new Uint8Array(this.memory.buffer,Number(e),i);if(this.encoder.encodeInto(t,s).read<i)throw new RangeError("String truncated with non-ASCII characters detected.");return Number(e)}async setSeed(t){this.seed=t,await q(t,this.getGameView(64,S.seed,8))}updateCanvasStyle(){this.forceAspectRatio!==this.previousForceAspectRatio&&(this.previousForceAspectRatio=this.forceAspectRatio,this.forceAspectRatio?(this.canvas.style.maxWidth=`calc(100vh*${16/9})`,this.canvas.style.maxHeight=`calc(100vw*${9/16})`):(this.canvas.style.maxWidth="none",this.canvas.style.maxHeight="none"))}onResize=t=>{const r=t[0];let i,e;if(r.devicePixelContentBoxSize)i=r.devicePixelContentBoxSize[0].inlineSize,e=r.devicePixelContentBoxSize[0].blockSize;else if(r.contentBoxSize){const s=r.contentBoxSize[0].inlineSize,o=r.contentBoxSize[0].blockSize;i=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}else{const s=r.contentRect.width,o=r.contentRect.height;i=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}(this.canvas.width!==i||this.canvas.height!==e)&&(this.canvas.width=i,this.canvas.height=e)};renderFrame(t,r){if(this.renderCallId=0,this.destroyed!==!1)return;this.updateCanvasStyle(),this.currentEncoder=this.device.createCommandEncoder(),this.currentTextureView=this.context.getCurrentTexture().createView();const i=this.currentEncoder.beginRenderPass({colorAttachments:[{view:this.currentTextureView,loadOp:"clear",clearValue:{r:0,g:0,b:0,a:1},storeOp:"store"}]});this.renderPass=i,this.recreateBufferAndBindGroup(1024),this.sceneDataF32[7]=1,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32),this.renderPass.setPipeline(this.bgPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId++*256]),this.renderPass.draw(3),this.uploadVisibleChunks(t),this.renderPass.end(),this.device.queue.submit([this.currentEncoder.finish()]),this.currentEncoder=null,this.currentTextureView=null}tick(t,r){const i=this.getGameView(32,S.keys_pressed_mask,2);W(this.inputState),i[0]=this.inputState.keysPressed,i[1]=this.inputState.keysHeld,this.exports.tick(t,r)}}location.protocol==="file:"&&alert("This game cannot run from a local file:// context; use an online version or test from localhost instead.");isSecureContext||alert("This game cannot run in a non-secure context.");navigator.gpu||alert("WebGPU is not supported by your browser; try playing this on an alternate or more modern browser.");const j=await navigator.gpu.requestAdapter();j||alert("WebGPU is supported, but no compatible GPU was found.");globalThis.Zig={KeyBits:a,game_state_offsets:S};console.log("Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs."),document.body.innerHTML+=`
+}`,X=""+new URL("main-Sheet-tbla42Pd.png",import.meta.url).href;async function $(i,t){const n=await navigator.gpu.requestAdapter({powerPreference:t&&t.highPerformance?"high-performance":"low-power"});if(!n)throw new DOMException("Couldn't request WebGPU adapter.","NotSupportedError");const r=await n.requestDevice();let e=null;if(r.addEventListener("uncapturederror",d=>{const g=d.error;if(e===null)if(globalThis.reportError)reportError(g);else throw g;else if(!e.destroyed){e.destroy("fatal WebGPU error",g);return}}),r.lost.then(d=>console.error(`WebGPU Device lost: ${d.message}`)),i===void 0){if(i=document.getElementsByTagName("canvas")[0],i===void 0)throw Error("No canvas element or ID string provided, and no canvas was not found in the HTML.")}else if(typeof i=="string"){const d=document.getElementById(i);if(!(d instanceof HTMLCanvasElement))throw Error(`Element with ID "${i}" is not a canvas element.`);i=d}const s=i.getContext("webgpu");if(!s)throw Error("Could not get WebGPU context from canvas.");const o=r.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm";s.configure({device:r,format:o,alphaMode:"opaque"});const u=await WebAssembly.instantiateStreaming(fetch(K),{env:{js_message:(d,g,y)=>{let h=new TextDecoder().decode(new Uint8Array(_.buffer,Number(d),Number(g)));h.charAt(0)!=="]"?h="["+(e.LOGGING_PREFIX||"")+h:h=h.slice(1),y===1?console.info("%c"+h,"font-weight: 600"):[console.log,console.info,console.warn,console.error][y](h)},js_write_text:(d,g,y)=>{const h=new Uint8Array(_.buffer,Number(g),Number(y)),z=new TextDecoder().decode(h),F=document.getElementById(`text${d+1}`);F.textContent=z},js_get_time:()=>performance.now(),js_handle_visible_chunks:d=>e.handleVisibleChunks(d),js_handle_visible_entities:()=>e.handleVisibleEntities()}}),l=u.instance.exports,_=l.memory,p=r.createShaderModule({label:"Main shader",code:Z.replace("/* TILES_PER_ROW */ 1 /* TILES_PER_ROW */",""+l.get_tiles_per_row()).replace("/* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */",""+l.get_tiles_per_column()).replace("/* STONE_START */ 1 /* STONE_START */",""+l.get_stone_start()).replace("/* ORE_START */ 1 /* ORE_START */",""+l.get_ore_start()).replace("/* GEM_START */ 1 /* GEM_START */",""+l.get_gem_start()).replace("/* GEM_MASK_START */ 1 /* GEM_MASK_START */",""+l.get_gem_mask_start()).replace("/* DECOR_START */ 1 /* DECOR_START */",""+l.get_decor_start())}),f=r.createBindGroupLayout({label:"Main bind group layout",entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform",hasDynamicOffset:!0}},{binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}},{binding:2,visibility:GPUShaderStage.FRAGMENT,texture:{}},{binding:3,visibility:GPUShaderStage.FRAGMENT,sampler:{}},{binding:4,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}}]}),m=r.createPipelineLayout({label:"Shared Pipeline Layout",bindGroupLayouts:[f]}),L=r.createRenderPipeline({label:"Tilemap pipeline",layout:m,vertex:{module:p,entryPoint:"vs_tile"},fragment:{module:p,entryPoint:"fs_main",targets:[{format:o,blend:{color:{srcFactor:"src-alpha",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},primitive:{topology:"triangle-list",cullMode:"none"}}),U=r.createRenderPipeline({label:"Background pipeline",layout:m,vertex:{module:p,entryPoint:"vs_background"},fragment:{module:p,entryPoint:"fs_background",targets:[{format:o}]},primitive:{topology:"triangle-list"}}),O=r.createRenderPipeline({label:"Entity pipeline",layout:m,vertex:{module:p,entryPoint:"vs_entity"},fragment:{module:p,entryPoint:"fs_entity",targets:[{format:o,blend:{color:{srcFactor:"src-alpha",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},primitive:{topology:"triangle-list"}});e=new P(i,n,r,s,u,L,U,O),e.exports.setup(),await e.setSeed(C(100)),e.startDelta=Number(l.mix_seed(60n)%120000n),e.exports.init();const G=new ResizeObserver(e.onResize);e.resizeObserver=G,e.updateCanvasStyle();try{e.resizeObserver.observe(i,{box:"device-pixel-content-box"})}catch{console.log("ResizeObserver property device-pixel-content-box not supported, falling back to content-box."),e.resizeObserver.observe(i,{box:"content-box"})}e.onResize([{contentRect:{width:i.clientWidth,height:i.clientHeight}}]);const D=await P.loadTexture(r,X),M=r.createSampler({magFilter:"nearest",minFilter:"nearest",addressModeU:"clamp-to-edge",addressModeV:"clamp-to-edge"});return e.atlasTextureView=D.createView(),e.pixelSampler=M,e.uniformBuffer=r.createBuffer({label:"SceneUniforms",size:256*E,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),e.entityBuffer=e.device.createBuffer({label:"Entities",size:4800,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),e}var B=(i=>(i[i.Uint8=8]="Uint8",i[i.Uint16=16]="Uint16",i[i.Uint32=32]="Uint32",i[i.Uint64=64]="Uint64",i[i.Int8=-8]="Int8",i[i.Int16=-16]="Int16",i[i.Int32=-32]="Int32",i[i.Int64=-64]="Int64",i[i.Uint8Clamped=-80]="Uint8Clamped",i[i.Float32=-320]="Float32",i[i.Float64=-640]="Float64",i))(B||{});globalThis.WasmTypeCode=B;const I={8:Uint8Array,16:Uint16Array,32:Uint32Array,64:BigUint64Array,[-8]:Int8Array,[-16]:Int16Array,[-32]:Int32Array,[-64]:BigInt64Array,[-80]:Uint8ClampedArray,[-320]:Float32Array,[-640]:Float64Array},E=4;class P{engineModule;exports;memory;LAYOUT_PTR;GAME_STATE_PTR;canvas;adapter;device;context;bindGroups=Array(E);uniformBuffer;tileBuffers=Array(E);entityBuffer;tileBufferDirty=!1;atlasTextureView;pixelSampler;tilePipeline;bgPipeline;entityPipeline;renderPass=null;currentEncoder=null;currentTextureView=null;renderCallId=0;sceneDataBuffer=new ArrayBuffer(256);sceneDataF32=new Float32Array(this.sceneDataBuffer);sceneDataU32=new Uint32Array(this.sceneDataBuffer);inputState;resizeObserver;forceAspectRatio=!0;previousForceAspectRatio=null;tileMapWidth;tileMapHeight;prepare_visible_data_time=0;isVisibleDataNew=!0;wireframeOpacity=0;startTime=performance.now();startDelta;seed="";destroyed=!1;destroyedError=null;encoder=new TextEncoder;decoder=new TextDecoder;LOGGING_PREFIX="";constructor(t,n,r,e,s,o,u,l){this.canvas=t,this.adapter=n,this.device=r,this.context=e,this.engineModule=s,this.tilePipeline=o,this.bgPipeline=u,this.entityPipeline=l,this.exports=s.instance.exports,this.memory=s.instance.exports.memory,this.LAYOUT_PTR=Number(this.exports.get_memory_layout_ptr()),this.GAME_STATE_PTR=Number(this.getScratchView()[3]),this.inputState=H()}static async create(t,n){return await $(t,n)}destroy(t="unknown reason",n=null){this.resizeObserver.disconnect(),this.destroyed=t,this.destroyedError=n}static async loadTexture(t,n){const e=await(await fetch(n)).blob(),s=await createImageBitmap(e),o=t.createTexture({label:`Texture from  ${n}`,size:[s.width,s.height],format:t.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm",usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});return t.queue.copyExternalImageToTexture({source:s},{texture:o},[s.width,s.height]),o}uploadVisibleChunks(t=1){const n=performance.now();this.exports.prepare_visible_data(t,this.canvas.width,this.canvas.height),this.prepare_visible_data_time=performance.now()-n}handleVisibleChunks(t){if(!this.currentEncoder||!this.currentTextureView||!this.renderPass)return;const n=this.getScratchPtr();if(this.getScratchLen()===0)return;const e=Number(this.getScratchProperty(0)),s=Number(this.getScratchProperty(1)),o=e*s*2;this.tileMapWidth=e,this.tileMapHeight=s;const u=new Uint32Array(this.memory.buffer,n,o);this.recreateBufferAndBindGroup(o*4),this.renderPass.setPipeline(this.tilePipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId*256]),this.renderPass.setViewport(0,0,this.canvas.width,this.canvas.height,0,1),this.setSceneData(t,e,s),this.device.queue.writeBuffer(this.tileBuffers[this.renderCallId],0,u);const l=e*s+1;this.renderPass.draw(6,l),this.renderCallId++}handleVisibleEntities(){const t=this.getScratchPtr(),n=this.getScratchLen();if(n===0||!this.renderPass)return;let r=!1;(!this.entityBuffer||this.entityBuffer.size<n)&&(this.entityBuffer=this.device.createBuffer({label:"Entities",size:Math.max(n,1024),usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),r=!0);const e=new Uint8Array(this.memory.buffer,t,n);this.device.queue.writeBuffer(this.entityBuffer,0,e),r&&this.recreateBufferAndBindGroup(this.tileBuffers[0]?.size||256),this.renderPass.setPipeline(this.entityPipeline),this.renderPass.setBindGroup(0,this.bindGroups[0],[0]),this.renderPass.draw(6,n/48)}setSceneData(t,n,r){const e=this.getScratchProperty(2,-640),s=this.getScratchProperty(3,-640),o=this.getScratchProperty(4,-640),u=this.getScratchProperty(5,-640),l=this.getScratchProperty(6,-640);this.sceneDataF32[0]=e,this.sceneDataF32[1]=s,this.sceneDataF32[2]=this.canvas.width,this.sceneDataF32[3]=this.canvas.height;const _=6e4,f=(performance.now()-this.startTime+this.startDelta)%(_*2);let m;f<_?m=f/1e3:m=(_-(f-_))/1e3,this.sceneDataF32[4]=m,this.sceneDataF32[5]=o,this.sceneDataF32[6]=o<.25?0:this.wireframeOpacity,this.sceneDataF32[7]=t,this.sceneDataF32[8]=u,this.sceneDataF32[9]=l,this.sceneDataU32[10]=n,this.sceneDataU32[11]=r,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32)}recreateBufferAndBindGroup(t){const n=this.renderCallId;(!this.tileBuffers[n]||this.tileBuffers[n].size<t)&&(this.tileBuffers[n]=this.device.createBuffer({label:`Tile grid slot ${n}`,size:t,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),this.bindGroups[n]=this.device.createBindGroup({label:`Bind group slot ${n}`,layout:this.tilePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniformBuffer,offset:0,size:256}},{binding:1,resource:{buffer:this.tileBuffers[n]}},{binding:2,resource:this.atlasTextureView},{binding:3,resource:this.pixelSampler},{binding:4,resource:{buffer:this.entityBuffer}}]}))}getWASMMemoryMB(){return this.memory.buffer.byteLength/1024/1024}getGameView(t,n=0,r){return new I[t](this.memory.buffer,this.GAME_STATE_PTR+n,r)}getRawView(t,n,r){return new I[t](this.memory.buffer,n,r)}_tempScratchViewU64=null;_tempScratchViewF64=null;getScratchView(){return(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24)),this._tempScratchViewU64}getScratchPtr(){return Number(this.getScratchView()[0])}getScratchLen(){return Number(this.getScratchView()[1])}setScratchLen(t){this.getScratchView()[1]=BigInt(t)}getScratchCapacity(){return Number(this.getScratchView()[2])}getScratchProperty(t,n=64){(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24));let r=this._tempScratchViewU64;return n==-640&&((this._tempScratchViewF64===null||this._tempScratchViewF64.buffer!==this.memory.buffer)&&(this._tempScratchViewF64=new Float64Array(r.buffer,r.byteOffset,r.length)),r=this._tempScratchViewF64),Number(r[t+4])}readStr(t=this.getScratchPtr(),n=this.getScratchLen()){const r=new Uint8Array(this.memory.buffer,t,n);return this.decoder.decode(r)}writeStr(t,n=!0){const r=t.length;if(r===0)return null;n&&this.setScratchLen(0);const e=this.exports.scratch_alloc(r);if(e===0n)return null;const s=new Uint8Array(this.memory.buffer,Number(e),r);if(this.encoder.encodeInto(t,s).read<r)throw new RangeError("String truncated with non-ASCII characters detected.");return Number(e)}async setSeed(t){this.seed=t,await q(t,this.getGameView(64,R.seed,8))}updateCanvasStyle(){this.forceAspectRatio!==this.previousForceAspectRatio&&(this.previousForceAspectRatio=this.forceAspectRatio,this.forceAspectRatio?(this.canvas.style.maxWidth=`calc(100vh*${16/9})`,this.canvas.style.maxHeight=`calc(100vw*${9/16})`):(this.canvas.style.maxWidth="none",this.canvas.style.maxHeight="none"))}onResize=t=>{const n=t[0];let r,e;if(n.devicePixelContentBoxSize)r=n.devicePixelContentBoxSize[0].inlineSize,e=n.devicePixelContentBoxSize[0].blockSize;else if(n.contentBoxSize){const s=n.contentBoxSize[0].inlineSize,o=n.contentBoxSize[0].blockSize;r=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}else{const s=n.contentRect.width,o=n.contentRect.height;r=Math.round(s*devicePixelRatio),e=Math.round(o*devicePixelRatio)}(this.canvas.width!==r||this.canvas.height!==e)&&(this.canvas.width=r,this.canvas.height=e)};renderFrame(t,n){if(this.renderCallId=0,this.destroyed!==!1)return;this.updateCanvasStyle(),this.currentEncoder=this.device.createCommandEncoder(),this.currentTextureView=this.context.getCurrentTexture().createView();const r=this.currentEncoder.beginRenderPass({colorAttachments:[{view:this.currentTextureView,loadOp:"clear",clearValue:{r:0,g:0,b:0,a:1},storeOp:"store"}]});this.renderPass=r,this.recreateBufferAndBindGroup(256*E),this.sceneDataF32[7]=1,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32),this.renderPass.setPipeline(this.bgPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId++*256]),this.renderPass.draw(3),this.uploadVisibleChunks(t),this.renderPass.end(),this.device.queue.submit([this.currentEncoder.finish()]),this.currentEncoder=null,this.currentTextureView=null}tick(t,n){const r=this.getGameView(32,R.keys_pressed_mask,2);W(this.inputState),r[0]=this.inputState.keysPressed,r[1]=this.inputState.keysHeld,this.exports.tick(t,n)}}location.protocol==="file:"&&alert("This game cannot run from a local file:// context; use an online version or test from localhost instead.");isSecureContext||alert("This game cannot run in a non-secure context.");navigator.gpu||alert("WebGPU is not supported by your browser; try playing this on an alternate or more modern browser.");const Y=await navigator.gpu.requestAdapter();Y||alert("WebGPU is supported, but no compatible GPU was found.");globalThis.Zig={KeyBits:a,game_state_offsets:R};console.log("Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs."),document.body.innerHTML+=`
     <div id="textTop">
         <div id="text1"></div>
         <div id="text2"></div>
@@ -775,7 +896,7 @@ fn oklch_to_oklab(lch: vec3f) -> vec3f {
     </div>
     <div id="logicText"></div>
     <div id="renderText"></div>
-    <div id="debugContainer"></div>`;document.addEventListener("wheel",function(n){n.ctrlKey},{passive:!1});let c=await P.create();c.getTimeoutLength=function(){return++Y%3==2?16:17};c.getFrameRate=function(){return 60};c.baseSpeed=1;let v=performance.now(),b=0,Y=0;globalThis.engine=c;console.log("Engine initialized successfully:",c),console.log("Exported functions and memory:",c.exports);window.addEventListener("blur",()=>v=1/0);const E=Array(60).fill(0),T=Array(60).fill(0),w=Array(60).fill(0);c.isDebug=!!c.exports.isDebug();c.renderLoop=function(n){let t=performance.now(),r=v===1/0?0:t-v,i=Math.min(r*c.getFrameRate()/1e3,c.getFrameRate());c.logicLoop(Math.max(Math.floor(b+i),1)),b=(b+i)%1;{T.shift(),T.push(r),w.shift(),w.push(c.prepare_visible_data_time);const s=Math.max.apply(null,T),o=Math.max.apply(null,w);let u="#cccccc";s>55?u="#e83769":s>30?u="#f39c19":s>20&&(u="#f7ce1a");const l=document.getElementById("renderText");l.textContent=`Time since last render/prepare_visible_data time: ${r.toFixed(1)}ms, ${c.prepare_visible_data_time.toFixed(1)}ms
-Worst (past 60 frames): ${s.toFixed(1)}ms, ${o.toFixed(1)}ms`,l.style.fontWeight=s>40?s>55?700:600:500,l.style.color=u}let e=Math.min(b-1,0);c.renderFrame(e,v),requestAnimationFrame(c.renderLoop)};c.logicLoop=function(n){const t=performance.now();c.tick(60/c.getFrameRate()*c.baseSpeed,n),v=performance.now();let r=v-t;{E.shift(),E.push(r);const i=Math.max.apply(null,E);let e="#cccccc";i>30?e="#e83769":i>15?e="#f39c19":i>10&&(e="#f7ce1a");const s=document.getElementById("logicText");s.textContent=`Logic diff: ${r.toFixed(1)}ms for ${n} tick${n==1?"":"s"}
-Worst (past 60 frames): ${i.toFixed(1)}ms
-`,s.style.fontWeight=i>20?i>40?700:600:500,s.style.color=e}};const A=(n,t)=>{if(n.target!==c.canvas)return;const r=c.canvas.getBoundingClientRect(),i=(n.clientX-r.left)/r.width,e=(n.clientY-r.top)/r.height;i>=0&&i<=1&&e>=0&&e<=1&&c.exports.handle_mouse(i,e,t)};document.addEventListener("pointermove",n=>{n.buttons>0&&A(n,0)});document.addEventListener("pointerdown",n=>{const t=n.button===2?3:1;A(n,t)});document.addEventListener("pointerup",n=>{const t=n.button===2?4:2;A(n,t)});c.canvas.style.touchAction="none";document.addEventListener("contextmenu",n=>n.preventDefault());{const n=c.exports;n.debug_build_ui_metadata();const t=c.readStr(),r=JSON.parse(t),i=document.getElementById("debugContainer");r.buttons.forEach(e=>{const s=document.createElement("button");s.textContent=e.name,s.onclick=()=>n.debug_ui_button_click(e.id),i.appendChild(s)}),r.sliders.forEach(e=>{const s=document.createElement("div");s.style.display="flex",s.style.flexDirection="column";const o=document.createElement("label");o.textContent=`${e.name}: ${e.val.toFixed(2)}`,o.style.fontSize="12px";const u=document.createElement("input");u.type="range",u.min=e.min,u.max=e.max,u.step=((e.max-e.min)/1e3).toString(),u.value=e.val,u.oninput=l=>{const d=parseFloat(l.target.value);o.textContent=`${e.name}: ${d.toFixed(2)}`,n.debug_ui_slider_change(e.id,d)},s.appendChild(o),s.appendChild(u),i.appendChild(s)}),document.body.appendChild(i)}setTimeout(function(){c.renderLoop(0)},17);
+    <div id="debugContainer"></div>`;document.addEventListener("wheel",function(i){i.ctrlKey},{passive:!1});let c=await P.create();c.getTimeoutLength=function(){return++j%3==2?16:17};c.getFrameRate=function(){return 60};c.baseSpeed=1;let v=performance.now(),x=0,j=0;globalThis.engine=c;console.log("Engine initialized successfully:",c),console.log("Exported functions and memory:",c.exports);window.addEventListener("blur",()=>v=1/0);const T=Array(60).fill(0),S=Array(60).fill(0),w=Array(60).fill(0);c.isDebug=!!c.exports.isDebug();c.renderLoop=function(i){let t=performance.now(),n=v===1/0?0:t-v,r=Math.min(n*c.getFrameRate()/1e3,c.getFrameRate());c.logicLoop(Math.max(Math.floor(x+r),1)),x=(x+r)%1;{S.shift(),S.push(n),w.shift(),w.push(c.prepare_visible_data_time);const s=Math.max.apply(null,S),o=Math.max.apply(null,w);let u="#cccccc";s>55?u="#e83769":s>30?u="#f39c19":s>20&&(u="#f7ce1a");const l=document.getElementById("renderText");l.textContent=`Time since last render/prepare_visible_data time: ${n.toFixed(1)}ms, ${c.prepare_visible_data_time.toFixed(1)}ms
+Worst (past 60 frames): ${s.toFixed(1)}ms, ${o.toFixed(1)}ms`,l.style.fontWeight=s>40?s>55?700:600:500,l.style.color=u}let e=Math.min(x-1,0);c.renderFrame(e,v),requestAnimationFrame(c.renderLoop)};c.logicLoop=function(i){const t=performance.now();c.tick(60/c.getFrameRate()*c.baseSpeed,i),v=performance.now();let n=v-t;{T.shift(),T.push(n);const r=Math.max.apply(null,T);let e="#cccccc";r>30?e="#e83769":r>15?e="#f39c19":r>10&&(e="#f7ce1a");const s=document.getElementById("logicText");s.textContent=`Logic diff: ${n.toFixed(1)}ms for ${i} tick${i==1?"":"s"}
+Worst (past 60 frames): ${r.toFixed(1)}ms
+`,s.style.fontWeight=r>20?r>40?700:600:500,s.style.color=e}};const A=(i,t)=>{const n=c.canvas.getBoundingClientRect(),r=(i.clientX-n.left)/n.width,e=(i.clientY-n.top)/n.height;r>=0&&r<=1&&e>=0&&e<=1&&c.exports.handle_mouse(r,e,t)};document.addEventListener("pointermove",i=>{i.buttons>0&&A(i,0)});document.addEventListener("pointerdown",i=>{if(!i.target||i.target.id==="debugContainer")return;const t=i.button===2?3:1;A(i,t)});document.addEventListener("pointerup",i=>{const t=i.button===2?4:2;A(i,t)});c.canvas.style.touchAction="none";document.addEventListener("contextmenu",i=>i.preventDefault());{const i=c.exports;i.debug_build_ui_metadata();const t=c.readStr(),n=JSON.parse(t),r=document.getElementById("debugContainer");n.buttons.forEach(e=>{const s=document.createElement("button");s.textContent=e.name,s.onclick=()=>i.debug_ui_button_click(e.id),r.appendChild(s)}),n.sliders.forEach(e=>{const s=document.createElement("div");s.style.display="flex",s.style.flexDirection="column";const o=document.createElement("label");o.textContent=`${e.name}: ${e.val.toFixed(2)}`,o.style.fontSize="12px";const u=document.createElement("input");u.type="range",u.min=e.min,u.max=e.max,u.step=((e.max-e.min)/1e3).toString(),u.value=e.val,u.oninput=l=>{const _=parseFloat(l.target.value);o.textContent=`${e.name}: ${_.toFixed(2)}`,i.debug_ui_slider_change(e.id,_)},s.appendChild(o),s.appendChild(u),r.appendChild(s)}),document.body.appendChild(r)}setTimeout(function(){c.renderLoop(0)},17);
