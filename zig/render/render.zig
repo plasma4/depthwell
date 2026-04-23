@@ -39,12 +39,16 @@ pub fn prepare_visible_data(dt: f64, canvas_w: f64, canvas_h: f64) void {
     root.chunks.update_visible_chunks(dt, canvas_w, canvas_h);
     handle_visible_chunks(1.0);
 
-    entity.update_entities();
-    const count = entity.entities.count();
     memory.scratch_reset();
-    const out_ptr: [*]memory.WGSLEntity = @ptrCast(@alignCast(memory.scratch_alloc(count * @sizeOf(memory.WGSLEntity))));
-    const out_slice = out_ptr[0..count];
-    entity.entities.writeToSlice(out_slice, 0);
+    entity.update_entities(dt);
+    // no longer using SegmentedList
+    // const count = entity.entities.count();
+
+    // const out_ptr: [*]memory.WGSLEntity = @ptrCast(@alignCast(memory.scratch_alloc(count * @sizeOf(memory.WGSLEntity))));
+    // const out_slice = out_ptr[0..count];
+    // entity.entities.writeToSlice(out_slice, 0);
+
     handle_visible_entities();
-    entity.entities.clearRetainingCapacity(); // clear previous sprites
+
+    // entity.entities.clearRetainingCapacity(); // clear previous sprites
 }

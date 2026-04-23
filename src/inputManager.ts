@@ -66,7 +66,8 @@ export function initInput(): InputState {
 
     window.addEventListener("keydown", (e: KeyboardEvent) => {
         if (e.repeat) return;
-        // Ramble here. Actually, for some reason, I tested this out, and it turns out that MacOS just bypasses all of this if you three-fingers swipe up. WHY?????? I have no clue, and I also can't deal with it. By disabling these keys it's probably also going to mess with someone's screen reader or something. Ah well.
+        // Ramble here. Actually, for some reason, I tested this out, and it turns out that MacOS just bypasses all of this if you three-fingers swipe up. WHY??????
+        // It's kind of dumb, and I also can't deal with it. By disabling these keys it's probably also going to mess with someone's screen reader or something. So no reset() here. Ah well.
         if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
             // reset(); // prevent weird shenanigans with lifting a key
             return;
@@ -75,6 +76,11 @@ export function initInput(): InputState {
         // console.log(e.code);
         const bit = keyMap[e.code]; // apparently .code is more robust as it's based on physical keyboard locations, which is what we want here
         if (!bit) return;
+
+        if (bit <= 512) {
+            // This is a number bit. Clear the other numbers first!
+            state.heldMask = state.heldMask & 0xfffffc00; // only last 10 bits are 0
+        }
 
         state.heldMask |= bit;
         keyCounts[bit] = (keyCounts[bit] || 0) + 1;

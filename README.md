@@ -254,6 +254,23 @@ pub const Entity = struct {
 These are then passed to WGSL in a large batch. Here is an example of usage:
 
 ```zig
+// entity example
+for (0..10) |i| {
+    add_entity(.{ // draw shadow of inventory slot by darkening and reducing opacity
+        .sprite = if (i == selected_id) .inventory_selected else .inventory,
+        .position = get_inventory_pos(i) - v2f32{ 2, 2 },
+        .lcha = .{ if (i == 0) 0.8 else 0.7, 0.0, 0.0, 0.9 },
+    });
+}
+
+for (0..10) |i| {
+    add_entity(.{ // draw inventory slot
+        .sprite = if (i == selected_id) .inventory_selected else .inventory,
+        .position = get_inventory_pos(i),
+    });
+}
+
+// text example
 const progress = root.mining.selected_hp;
 const pos: v2f32 = .{ 4, 31 };
 const font_size = 12.0;

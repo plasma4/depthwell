@@ -10,7 +10,8 @@ pub const root = @This();
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
 pub const is_debug = builtin.is_test or builtin.mode == .Debug;
 
-pub const ColorRGBA = @import("visual/color_rgba.zig").ColorRGBA;
+pub const memory = @import("memory.zig");
+pub const startup = @import("startup.zig");
 
 // The width of the screen for the internal viewport. Normalized to 0-1 before being used in WGSL.
 pub const SCREEN_WIDTH = 480;
@@ -24,6 +25,7 @@ pub const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 pub const utils = @import("internal/utils.zig");
 pub const GenerateOffsets = @import("internal/offsets.zig").GenerateOffsets;
 pub const SegmentedList = @import("internal/SegmentedList.zig").SegmentedList;
+pub const ColorRGBA = @import("visual/color_rgba.zig").ColorRGBA;
 
 pub const render = @import("render/render.zig");
 pub const chunks = @import("render/chunk.zig");
@@ -36,9 +38,6 @@ pub const KeyBits = types.KeyBits;
 pub const sprite = @import("types/sprite.zig");
 pub const Sprite = sprite.Sprite;
 
-pub const startup = @import("startup.zig");
-pub const memory = @import("memory.zig");
-
 pub const seeding = @import("state/seeding.zig");
 pub const procedural = @import("state/procedural.zig");
 pub const player = @import("state/player.zig");
@@ -47,6 +46,7 @@ pub const world = @import("state/world.zig");
 pub const logger = @import("tools/logger.zig");
 pub const debug_ui = @import("tools/debug_ui.zig");
 
+pub const inventory = @import("input/inventory.zig");
 pub const mining = @import("input/mining.zig");
 pub const mouse = @import("input/mouse.zig");
 
@@ -62,8 +62,7 @@ pub export fn setup() void {
         .ancestor_materials = .{.none} ** 4,
     };
 
-    logger.write(3, "Use left click to draw blocks, and right click to change the type drawn.");
-    logger.write(3, .{ "{h}Currently selected", @as(sprite.Sprite, sprite.foundation_sprites[mouse.selected_sprite]) });
+    logger.write(3, "Use left click to draw blocks, and number keys/mouse to change inventory slots.");
 }
 pub export fn init() void {
     startup.init();
@@ -100,8 +99,10 @@ pub export fn handle_mouse(mouse_x: f64, mouse_y: f64, action: u32) void {
 }
 
 pub export fn tick(speed: u32, iterations: u32) void {
+    const number_id = KeyBits.get_number(memory.game.keys_held_mask);
+    if (number_id != 255) inventory.selected_id = if (number_id == 0) 9 else (number_id - 1);
     // increase the depth (testing hotkey)
-    if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
+    if (KeyBits.is_set(KeyBits.zoom, memory.game.keys_pressed_mask)) {
         // if (in_debug_mode) {
         world.push_layer(
             sprite.Sprite.none,
@@ -143,13 +144,13 @@ pub export fn wasm_seed_from_string() void {
 }
 
 // Layout logic
-pub export fn get_memory_layout_ptr() u64 { // pointer like *const memory.MemoryLayout, Memory64 hack
+pub export fn get_memory_layout_ptr() u64 { // pointer-like *const memory.MemoryLayout, Memory64 hack
     return @intFromPtr(memory.get_memory_layout_ptr());
 }
-pub export fn scratch_alloc(len: usize) u64 { // pointer like [*]u8, Memory64 hack
+pub export fn scratch_alloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
     return @intFromPtr(memory.scratch_alloc(len));
 }
-pub export fn wasm_alloc(len: usize) u64 { // pointer like [*]u8, Memory64 hack
+pub export fn wasm_alloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
     return @intFromPtr(memory.wasm_alloc(len));
 }
 pub export fn wasm_free(ptr: u64, len: usize) void {

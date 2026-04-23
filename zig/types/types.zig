@@ -15,8 +15,19 @@ pub const KeyBits = struct {
     }
 
     /// Checks if a specific key KeyBit is set within the bitfield.
-    pub inline fn isSet(comptime bitfield: u32, key_mask: u32) bool {
+    pub inline fn is_set(comptime bitfield: u32, key_mask: u32) bool {
         return (bitfield & key_mask) != 0;
+    }
+
+    /// Returns a number selected, if any.Prioritizes smaller numbers, returning 255 for none.
+    pub inline fn get_number(key_mask: u32) u8 {
+        inline for (0..10) |i| { // k0 -> mask(0), k9 -> mask(9)
+            if (key_mask & @This().mask(i) != 0) {
+                return i;
+            }
+        }
+
+        return 255;
     }
 
     /// Z key (increases depth, for testing)

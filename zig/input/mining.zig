@@ -31,7 +31,7 @@ pub fn handle_mining() void {
         return;
     }
 
-    const sprite_type = sprite.foundation_sprites[mouse.selected_sprite];
+    const sprite_type = mouse.selected_sprite;
     if (mouse.mouse_chunk) |mouse_chunk| {
         const block = world.get_chunk(mouse_chunk).get_block(mouse.mouse_block_x, mouse.mouse_block_y);
         if (sprite_type == .none or (block.id != .none and block.id != sprite_type)) { // mining, possibly to clear out old non-empty block?

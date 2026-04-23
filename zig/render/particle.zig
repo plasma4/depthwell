@@ -64,7 +64,7 @@ pub const ParticleSystem = struct {
 
         for (0..count) |i| {
             // Optional: Calculate alpha fade based on life remaining
-            const life_ratio = @as(f32, @floatCast(times[i] / times_end[i]));
+            const life_ratio: f32 = @floatCast(times[i] / times_end[i]);
 
             slice[i] = .{
                 .lcha = .{ colors[i].r, colors[i].g, colors[i].b, colors[i].a * life_ratio },

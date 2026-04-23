@@ -32,7 +32,7 @@ pub var JUMP_FORCE: f64 = 7.0;
 /// Friction of player movement (horizontal).
 pub var FRICTION_X: f64 = 0.2;
 /// Friction of player movement (vertical).
-pub var FRICTION_Y: f64 = 0.01;
+pub var FRICTION_Y: f64 = 0.02;
 
 /// The size of the player's width. The player is assumed to be centered at the bottom as a rectangle.
 pub const PLAYER_HITBOX_WIDTH = 64;
@@ -44,12 +44,12 @@ const CCD_STEP_SIZE = SPAN_SQ;
 /// The zoom in/out keys change the zoom multiplier this fast per frame.
 const CAMERA_CHANGE_SPEED = 1.02;
 /// How fast the camera should adjust per frame to the new position. Larger means faster.
-const CAMERA_SMOOTHING = 0.1;
+const CAMERA_SMOOTHING = 0.25;
 
 /// How far the player has to move before actually panning the camera in sub-pixels (x-axis).
 const CAMERA_DEADZONE_X = 10 * memory.SPAN_SQ; // memory.SPAN_SQ means 1 block, basically
 /// How far the player has to move before actually panning the camera in sub-pixels (y-axis).
-const CAMERA_DEADZONE_Y = 4 * memory.SPAN_SQ;
+const CAMERA_DEADZONE_Y = 3 * memory.SPAN_SQ;
 
 const pixel_mult: v2f64 = .{ @floatFromInt(SPAN), @floatFromInt(SPAN) };
 pub var subpixel_accum: v2f64 = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
@@ -62,18 +62,18 @@ pub fn move(logic_speed: f64) void {
     const game = &memory.game;
 
     const old_camera_scale = game.camera_scale; // handle scaling
-    if (KeyBits.isSet(KeyBits.plus, game.keys_held_mask)) {
+    if (KeyBits.is_set(KeyBits.plus, game.keys_held_mask)) {
         game.camera_scale = @min(game.camera_scale * std.math.pow(f64, CAMERA_CHANGE_SPEED, logic_speed), CAMERA_MAX_ZOOM);
     }
-    if (KeyBits.isSet(KeyBits.minus, game.keys_held_mask)) {
+    if (KeyBits.is_set(KeyBits.minus, game.keys_held_mask)) {
         game.camera_scale = @max(game.camera_scale / std.math.pow(f64, CAMERA_CHANGE_SPEED, logic_speed), CAMERA_MIN_ZOOM);
     }
     game.camera_scale_change = game.camera_scale / old_camera_scale;
 
     // Manage horizontal physics.
     var move_input: f64 = 0;
-    if (KeyBits.isSet(KeyBits.left, game.keys_held_mask)) move_input -= PLAYER_BASE_SPEED;
-    if (KeyBits.isSet(KeyBits.right, game.keys_held_mask)) move_input += PLAYER_BASE_SPEED;
+    if (KeyBits.is_set(KeyBits.left, game.keys_held_mask)) move_input -= PLAYER_BASE_SPEED;
+    if (KeyBits.is_set(KeyBits.right, game.keys_held_mask)) move_input += PLAYER_BASE_SPEED;
 
     if (move_input != 0) {
         game.player_velocity[0] += move_input * logic_speed;
@@ -81,7 +81,7 @@ pub fn move(logic_speed: f64) void {
     game.player_velocity[0] *= (1.0 - FRICTION_X);
 
     game.player_velocity[1] = (game.player_velocity[1] + GRAVITY * logic_speed) * (1.0 - FRICTION_Y); // vertical jump!
-    if (is_grounded and KeyBits.isSet(KeyBits.up, game.keys_held_mask)) {
+    if (is_grounded and KeyBits.is_set(KeyBits.up, game.keys_held_mask)) {
         game.player_velocity[1] = -JUMP_FORCE;
         is_grounded = false;
     }

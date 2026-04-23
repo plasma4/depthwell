@@ -49,7 +49,7 @@ pub fn update_visible_chunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const hb = ch * SPAN;
 
     memory.scratch_reset(); // scratch allocator always needs to be reset!
-    const out = memory.scratch_alloc_slice(memory.Block, wb * hb) orelse return;
+    const out = memory.scratch_alloc_slice(memory.Block, wb * hb);
 
     const world_limit: u64 = world.max_possible_suffix;
     const player_coord = game.get_player_coord();
