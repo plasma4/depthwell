@@ -219,32 +219,35 @@ pub const ColorRGBA = extern union {
         return std.math.pow(f32, (c + 0.055) / 1.055, 2.4);
     }
 
+    /// Converts a hex code directly into OKLCH. Use like `comptime ColorRGBA.hex_to_oklch("#ffffff")`.
     pub fn hex_to_oklch(comptime html_hex: []const u8) @Vector(4, f32) {
-        const rgba = ColorRGBA.from_hex(html_hex);
+        comptime {
+            const rgba = ColorRGBA.from_hex(html_hex);
 
-        const r_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.r)) / 255.0);
-        const g_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.g)) / 255.0);
-        const b_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.b)) / 255.0);
+            const r_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.r)) / 255.0);
+            const g_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.g)) / 255.0);
+            const b_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.b)) / 255.0);
 
-        // convert to LMS
-        const l_ = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin;
-        const m_ = 0.2119034982 * r_lin + 0.6806995451 * g_lin + 0.1073969566 * b_lin;
-        const s_ = 0.0883024619 * r_lin + 0.2817188376 * g_lin + 0.6299787005 * b_lin;
+            // convert to LMS
+            const l_ = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin;
+            const m_ = 0.2119034982 * r_lin + 0.6806995451 * g_lin + 0.1073969566 * b_lin;
+            const s_ = 0.0883024619 * r_lin + 0.2817188376 * g_lin + 0.6299787005 * b_lin;
 
-        const l = std.math.cbrt(l_);
-        const m = std.math.cbrt(m_);
-        const s = std.math.cbrt(s_);
+            const l = std.math.cbrt(l_);
+            const m = std.math.cbrt(m_);
+            const s = std.math.cbrt(s_);
 
-        // Now, change to OKLAB
-        const lab_l = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
-        const lab_a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
-        const lab_b = 0.0259040371 * l + 0.7827717662 * m - 0.8086758031 * s;
+            // Now, change to OKLAB
+            const lab_l = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+            const lab_a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+            const lab_b = 0.0259040371 * l + 0.7827717662 * m - 0.8086758031 * s;
 
-        // Convert to OKLCH
-        const oklch_chroma = std.math.sqrt(lab_a * lab_a + lab_b * lab_b);
-        const oklch_hue = std.math.atan2(lab_b, lab_a);
+            // Convert to OKLCH
+            const oklch_chroma = std.math.sqrt(lab_a * lab_a + lab_b * lab_b);
+            const oklch_hue = std.math.atan2(lab_b, lab_a);
 
-        return .{ lab_l, oklch_chroma, oklch_hue, @as(f32, @floatFromInt(rgba.channels.a)) / 255.0 };
+            return .{ lab_l, oklch_chroma, oklch_hue, @as(f32, @floatFromInt(rgba.channels.a)) / 255.0 };
+        }
     }
 };
 
