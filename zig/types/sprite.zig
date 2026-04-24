@@ -3,10 +3,21 @@ const root = @import("root").root;
 const memory = root.memory;
 const procedural = root.procedural;
 
-/// Index where gem masks begin.
-const MASK_START = 22;
+/// Index where stone-like sprites begin.
+const STONE_START = 4;
+
+/// Index where ore sprites begin.
+const ORE_START = STONE_START + 12;
+
+/// Index where gem sprites begin.
+const GEM_START = ORE_START + 4;
+
+/// Index where gem masks (not gem sprites) begin.
+const MASK_START = GEM_START + 4;
 /// Index where the HP mask ends.
+/// Between `MASK_START` and `MASK_END` are 8 ore masks and 16 HP masks.
 const MASK_END = MASK_START + 24;
+
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = MASK_END + 7;
 
@@ -20,25 +31,27 @@ pub const Sprite = enum(u16) {
     edge_stone = 2,
 
     // Stone types
-    strange_stone = 4,
-    strange_stone_other = 5,
-    blue_stone = 6,
-    seagreen_stone = 7,
-    green_stone = 8,
-    lava_stone = 9,
-    stone = 10, // 2x2 variations of stone exist
+    strange_stone = STONE_START,
+    strange_stone_other,
+    blue_stone,
+    seagreen_stone,
+    green_stone,
+    lava_stone,
+    mossy_stone,
+    old_stone,
+    stone, // 2x2 variations of stone exist
 
     // ores
-    copper = 14,
-    iron = 15,
-    silver = 16,
-    gold = 17,
+    copper = ORE_START,
+    iron,
+    silver,
+    gold,
 
     // gems!
-    amethyst = 18,
-    sapphire = 19,
-    emerald = 20,
-    ruby = 21,
+    amethyst = GEM_START,
+    sapphire,
+    emerald,
+    ruby,
 
     // Internal assets (not valid for placement/foundation)
     gem_mask = MASK_START, // 8 masks
@@ -61,7 +74,7 @@ pub const Sprite = enum(u16) {
     /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
     pub inline fn is_foundation(self: @This()) bool {
         const id = @intFromEnum(self);
-        return id >= @intFromEnum(Sprite.strange_stone) and id <= @intFromEnum(Sprite.ruby);
+        return id >= STONE_START and id < MASK_START;
     }
 
     /// Determines if the sprite's type is valid. Includes the empty block.
@@ -69,14 +82,15 @@ pub const Sprite = enum(u16) {
         // do note that heatmap isn't valid
         const id = @intFromEnum(self);
         return self == .none or self == .spiral_plant or self == .ceiling_flower or self == .mushroom or self == .torch or
-            (id >= @intFromEnum(Sprite.strange_stone) and id <= @intFromEnum(Sprite.ruby));
+            (id >= STONE_START and id < MASK_START);
     }
 
     /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
     /// This returns true for edge stone, unlike `is_solid`.
     pub inline fn is_solid(self: @This()) bool {
+        if (self == Sprite.none or self == .player) return false;
+
         const id = @intFromEnum(self);
-        if (id < @intFromEnum(Sprite.edge_stone)) return false;
         if (id >= @intFromEnum(Sprite.gem_mask) and id < @intFromEnum(Sprite.spiral_plant)) return false;
         return switch (self) {
             .spiral_plant, .ceiling_flower, .mushroom, .torch, .none, .player => false,
@@ -92,19 +106,19 @@ pub const Sprite = enum(u16) {
     /// Determines if the sprite is stone (or a variation). Excludes edge stone.
     pub inline fn is_stone(self: @This()) bool {
         const id = @intFromEnum(self);
-        return id >= @intFromEnum(Sprite.strange_stone) and id < @intFromEnum(Sprite.copper);
+        return id >= STONE_START and id < ORE_START;
     }
 
     /// Determines if the sprite is an ore.
     pub inline fn is_ore(self: @This()) bool {
         const id = @intFromEnum(self);
-        return id >= @intFromEnum(Sprite.copper) and id < @intFromEnum(Sprite.amethyst);
+        return id >= ORE_START and id < GEM_START;
     }
 
     /// Determines if the sprite is a gem.
     pub inline fn is_gem(self: @This()) bool {
         const id = @intFromEnum(self);
-        return id >= @intFromEnum(Sprite.amethyst) and id < @intFromEnum(Sprite.gem_mask);
+        return id >= GEM_START and id < MASK_START;
     }
 
     /// Determines if the sprite is a heatmap (between types 256-512).
