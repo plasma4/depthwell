@@ -84,6 +84,8 @@ export class GameEngine {
     public tileBufferDirty: boolean = false;
     /** The cached texture view for the sprite atlas. */
     public atlasTextureView!: GPUTextureView;
+    /** The cached texture view for item masks of the sprite atlas. */
+    public atlasTextureMaskView!: GPUTextureView;
     /** The cached nearest-neighbor sampler. */
     public pixelSampler!: GPUSampler;
 
@@ -120,6 +122,8 @@ export class GameEngine {
     public tileMapWidth!: number;
     /** The height of the sprite tile map. */
     public tileMapHeight!: number;
+    /** The last time `prepare_visible_data` was called. */
+    public last_upload_visible_chunks_time: number = 0;
     /** Represents how long it took for `prepare_visible_data` to execute, including JS-side `handleVisibleChunks` logic. */
     public prepare_visible_data_time: number = 0;
     /** Determines if visible data is new for this frame or not (allowing for `loadOp` in `GPURenderPassDescriptor` to be changed from `"clear"` to `"load"` as necessary). */
@@ -202,7 +206,7 @@ export class GameEngine {
         const imageBitmap = await createImageBitmap(blob);
 
         const texture = device.createTexture({
-            label: `Texture from  ${url}`,
+            label: `Texture from ${url}`,
             size: [imageBitmap.width, imageBitmap.height],
             format: device.features.has("canvas-rgba16float-support")
                 ? "rgba16float"
@@ -227,9 +231,11 @@ export class GameEngine {
         const start_time = performance.now();
         this.exports.prepare_visible_data(
             timeInterpolated,
+            start_time - this.last_upload_visible_chunks_time,
             this.canvas.width,
             this.canvas.height,
         );
+        this.last_upload_visible_chunks_time = start_time;
         this.prepare_visible_data_time = performance.now() - start_time;
     }
 
@@ -400,9 +406,10 @@ export class GameEngine {
                         },
                     },
                     { binding: 2, resource: this.atlasTextureView },
-                    { binding: 3, resource: this.pixelSampler },
+                    { binding: 3, resource: this.atlasTextureMaskView },
+                    { binding: 4, resource: this.pixelSampler },
                     {
-                        binding: 4,
+                        binding: 5,
                         resource: {
                             buffer: this.entityBuffer!,
                         },

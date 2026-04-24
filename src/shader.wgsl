@@ -50,8 +50,9 @@ struct SceneUniforms {
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 @group(0) @binding(1) var<storage, read> tiles: array<TileData>;
 @group(0) @binding(2) var sprite_atlas: texture_2d<f32>;
-@group(0) @binding(3) var pixel_sampler: sampler;
-@group(0) @binding(4) var<storage, read> entities: array<WGSLEntity>;
+@group(0) @binding(3) var sprite_atlas_mask: texture_2d<f32>;
+@group(0) @binding(4) var pixel_sampler: sampler;
+@group(0) @binding(5) var<storage, read> entities: array<WGSLEntity>;
 
 
 
@@ -781,7 +782,7 @@ struct EntityOutput {
     @location(3) @interpolate(flat) sprite_uv_origin: vec2f,
 };
 
-// Main vertex shader for generic entities.
+// Main vertex shader for generic entities (uses the mask).
 @vertex
 fn vs_entity(
     @builtin(vertex_index) vertex_index: u32,
@@ -831,7 +832,9 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
     let final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
 
-    let tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
+    let tex_color =
+        textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0) *
+        textureSampleLevel(sprite_atlas_mask, pixel_sampler, final_uv, 0.0);
     // Early discard if the pixel is fully transparent (maybe)
     // if (tex_color.a <= 0.0) { 
     //     discard; 

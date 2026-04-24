@@ -7,7 +7,9 @@ import WASM_URL from "./main.wasm?url";
 /** The URL for the WebGPU shader code. ADD ?raw FOR DEBUGGING SHADER. */
 import SHADER_SOURCE from "./shader.wgsl?raw"; // TODO remove ?raw for prod
 /** The URL for the sprite sheet. */
-import SPRITE_SHEET_URL from "./assets/main-Sheet.png?url";
+import SPRITE_SHEET_URL from "./assets/main.png?url";
+/** The URL for the sprite sheet. */
+import SPRITE_SHEET_MASK_URL from "./assets/mainMasked.png?url";
 
 /** Creates a new GameEngine, sets up WebGPU shaders, and calls init() from Zig. */
 export async function create(
@@ -182,11 +184,12 @@ export async function create(
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                 buffer: { type: "read-only-storage" },
             }, // tiles
-            { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // atlas
-            { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} }, // sampler
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // atlas (main)
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // atlas (masks)
+            { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }, // sampler
 
             {
-                binding: 4,
+                binding: 5,
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                 buffer: { type: "read-only-storage" },
             }, // entities
@@ -332,6 +335,10 @@ export async function create(
 
     // Start working on WebGPU stuff
     const atlasTexture = await GameEngine.loadTexture(device, SPRITE_SHEET_URL);
+    const atlasTextureMask = await GameEngine.loadTexture(
+        device,
+        SPRITE_SHEET_MASK_URL,
+    );
 
     // Create sampler (nearest neighbor for pixel art)
     const pixelSampler = device.createSampler({
@@ -342,6 +349,7 @@ export async function create(
     });
 
     engine.atlasTextureView = atlasTexture.createView();
+    engine.atlasTextureMaskView = atlasTextureMask.createView();
     engine.pixelSampler = pixelSampler;
 
     engine.uniformBuffer = device.createBuffer({

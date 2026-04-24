@@ -35,12 +35,12 @@ pub inline fn handle_visible_entities() void {
 }
 
 /// Processes data for renderFrame in TypeScript.
-pub fn prepare_visible_data(dt: f64, canvas_w: f64, canvas_h: f64) void {
+pub fn prepare_visible_data(dt: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
     root.chunks.update_visible_chunks(dt, canvas_w, canvas_h);
     handle_visible_chunks(1.0);
 
     memory.scratch_reset();
-    entity.update_entities(dt);
+    entity.update_entities(time_diff);
     // no longer using SegmentedList
     // const count = entity.entities.count();
 

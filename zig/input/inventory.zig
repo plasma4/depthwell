@@ -37,46 +37,44 @@ fn ease_back(t: f32) f32 {
     return c3 * t * t * t - c1 * t * t;
 }
 
-/// Gets the position in internal viewport of an inventory ID.
-pub inline fn get_inventory_pos(i: usize) v2f32 {
-    return .{ 32 + 20 * @as(f32, @floatFromInt(i)), 32 };
-}
-
 /// Draws the 10 inventory slots and the blocks within them.
-pub fn draw_inventory(dt: f64) void {
-    _ = dt; // dt is an interpolation factor between -1 and 0; ignored for UI step
+pub fn draw_inventory(time_diff: f64) void {
+    // Animation progression (in milliseconds).
+    const animation_step: f32 = 200.0;
 
-    // Progress the animation by a fixed amount per frame.
-    // 0.1 completes the animation in 10 frames (approx. 0.16s at 60Hz).
-    const animation_step: f32 = 0.1;
+    // base size of inventory slots
+    const base_size = 16.0;
 
     for (0..10) |i| {
         // Update animation state per slot
         const target: f32 = if (i == selected_id) 1.0 else 0.0;
 
+        const animation_speed = @as(f32, @floatCast(time_diff)) / animation_step;
         if (inventory_animation_t[i] < target) {
-            inventory_animation_t[i] = @min(target, inventory_animation_t[i] + animation_step);
+            inventory_animation_t[i] = @min(target, inventory_animation_t[i] + animation_speed);
         } else if (inventory_animation_t[i] > target) {
-            inventory_animation_t[i] = @max(target, inventory_animation_t[i] - animation_step);
+            inventory_animation_t[i] = @max(target, inventory_animation_t[i] - animation_speed);
         }
 
         // Calculate visual scale using the easing formula
         const t_eased = ease_back(inventory_animation_t[i]);
 
-        const size_normal: f32 = 10;
-        const size_selected: f32 = 12;
+        const size_normal: f32 = 10.0 / 16.0 * base_size;
+        const size_selected: f32 = 12.0 / 16.0 * base_size;
 
         // Interpolate size based on eased t
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
         const size_vec = v2f32{ current_size, current_size };
 
         // Center item based on size
-        const pos = get_inventory_pos(i) - size_vec / v2f32{ 4, 4 } - v2f32{ 1, 1 };
+        const inventory_pos: v2f32 = .{ 32 + 1.25 * base_size * @as(f32, @floatFromInt(i)), 32 };
+        const pos = inventory_pos -
+            size_vec / v2f32{ base_size / 4.0, base_size / 4.0 } - v2f32{ base_size / 16.0, base_size / 16.0 };
 
-        // Calculate background scale offset to keep it centered with the item
-        const bg_size: f32 = if (i == selected_id) 18.0 else 16.0;
+        // Calculate inventory square background position to keep it centered with the item
+        const bg_size: f32 = if (i == selected_id) base_size + 2.0 else base_size;
         const bg_vec = v2f32{ bg_size, bg_size };
-        const bg_pos = get_inventory_pos(i) - bg_vec / v2f32{ 4, 4 };
+        const bg_pos = inventory_pos - bg_vec / v2f32{ base_size / 4.0, base_size / 4.0 };
 
         add_entity(.{ // draw inventory slot
             .sprite = if (i == selected_id) .inventory_selected else .inventory,
@@ -86,9 +84,9 @@ pub fn draw_inventory(dt: f64) void {
 
         add_entity(.{ // Item shadow
             .sprite = inventory_blocks[i],
-            .position = pos - v2f32{ 1, 1 },
+            .position = pos - v2f32{ base_size / 16.0, base_size / 16.0 },
             .size = current_size,
-            .lcha = .{ 0.7, 0.0, 0.0, 0.8 }, // darken with LCHA
+            .lcha = .{ 0.7, 0.05, 0.0, 0.75 }, // do some filtering with chroma
         });
 
         add_entity(.{ // actual item inside
