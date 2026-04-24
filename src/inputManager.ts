@@ -54,7 +54,7 @@ export function initInput(): InputState {
         plusMinusPriority: 0,
     };
 
-    function reset() {
+    function resetKeys() {
         keyCounts = {};
         state.horizontalPriority = 0;
         state.verticalPriority = 0;
@@ -67,9 +67,10 @@ export function initInput(): InputState {
     window.addEventListener("keydown", (e: KeyboardEvent) => {
         if (e.repeat) return;
         // Ramble here. Actually, for some reason, I tested this out, and it turns out that MacOS just bypasses all of this if you three-fingers swipe up. WHY??????
-        // It's kind of dumb, and I also can't deal with it. By disabling these keys it's probably also going to mess with someone's screen reader or something. So no reset() here. Ah well.
-        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
-            // reset(); // prevent weird shenanigans with lifting a key
+        // It's kind of dumb, and there's also not really a solution.
+        // But if you don't try to disable at all, you'll end up with buggy key counts logic. So we kind of still have to do it.
+        if (e.ctrlKey || e.metaKey) {
+            resetKeys(); // prevent weird shenanigans with lifting a key
             return;
         }
 
@@ -126,9 +127,9 @@ export function initInput(): InputState {
         }
     });
 
-    window.addEventListener("blur", reset);
-    document.addEventListener("visibilitychange", reset);
-    window.addEventListener("contextmenu", reset);
+    window.addEventListener("blur", resetKeys);
+    document.addEventListener("visibilitychange", resetKeys);
+    window.addEventListener("contextmenu", resetKeys);
 
     return state;
 }

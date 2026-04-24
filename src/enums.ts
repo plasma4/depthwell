@@ -35,7 +35,7 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly SegmentedList: (arg0: unknown, arg1: number) => unknown;
     readonly setup: () => void;
     readonly init: () => void;
-    readonly prepare_visible_data: (arg0: number, arg1: number, arg2: number) => void;
+    readonly prepare_visible_data: (arg0: number, arg1: number, arg2: number, arg3: number) => void;
     readonly get_tiles_per_row: () => number;
     readonly get_tiles_per_column: () => number;
     readonly get_stone_start: () => number;

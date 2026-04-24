@@ -11,7 +11,7 @@ const MASK_END = MASK_START + 24;
 pub const NUMBER_START = MASK_END + 7;
 
 /// Sprite IDs with values based on their sprite sheet location
-/// Packed sprite sheet located at src/main-Sheet.png.
+/// Packed sprite sheet located at src/main.png.
 pub const Sprite = enum(u16) {
     none = 0,
     player = 1,
@@ -25,8 +25,8 @@ pub const Sprite = enum(u16) {
     blue_stone = 6,
     seagreen_stone = 7,
     green_stone = 8,
-    stone = 9, // 2x2 variation start
-    lava_stone = 13,
+    lava_stone = 9,
+    stone = 10, // 2x2 variations of stone exist
 
     // ores
     copper = 14,

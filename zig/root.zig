@@ -67,8 +67,8 @@ pub export fn setup() void {
 pub export fn init() void {
     startup.init();
 }
-pub export fn prepare_visible_data(time_interpolated: f64, canvas_w: f64, canvas_h: f64) void {
-    render.prepare_visible_data(time_interpolated, canvas_w, canvas_h);
+pub export fn prepare_visible_data(time_interpolated: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
+    render.prepare_visible_data(time_interpolated, time_diff, canvas_w, canvas_h);
 }
 
 pub export fn get_tiles_per_row() u32 {

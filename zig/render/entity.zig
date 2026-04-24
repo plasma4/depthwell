@@ -31,12 +31,12 @@ const number_widths: [10]f32 = .{
 // pub var entities: SegmentedList(WGSLEntity, 1024) = .{}; // easiest to do prealloc with larger stack size in case
 var entity_byte_count_before_end: usize = 0;
 
-pub fn update_entities(dt: f64) void {
+pub fn update_entities(time_diff: f64) void {
     entity_byte_count_before_end = 0;
     // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
     // Some properties are optional with defaults (size, rotation, LCHA).
 
-    inventory.draw_inventory(dt);
+    inventory.draw_inventory(time_diff);
 
     // draw selected HP (for testing)
     const progress = root.mining.selected_hp;
