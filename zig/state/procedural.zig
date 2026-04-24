@@ -55,14 +55,17 @@ pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
     if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
         return .strange_stone;
     } else if (density <= density_min or density >= density_max) {
-        return if (moisture >= 0.93 and moisture <= 0.99) .strange_stone_other else .none;
+        return if (moisture >= 0.93 and moisture <= 0.97) .strange_stone_other else .none;
     }
 
     if (moisture >= 0.88 and moisture <= 0.92) return .lava_stone;
-    if (moisture <= 0.5) return .stone;
-    if (moisture <= 0.53 and density <= 0.5) return .green_stone;
-    if (moisture <= 0.58 and density >= 0.4) return .seagreen_stone;
-    if (moisture <= 0.65 and density >= 0.6) return .blue_stone;
+    if (moisture >= 0.50 and density <= 0.53) return .green_stone;
+
+    if (moisture >= 0.58 and density >= 0.40) return .seagreen_stone;
+    if (moisture <= 0.65 and density >= 0.60) return .blue_stone;
+
+    if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
+    if (moisture >= 0.98) return .old_stone;
     return .stone;
 }
 
