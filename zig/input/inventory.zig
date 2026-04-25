@@ -156,7 +156,7 @@ pub fn draw_inventory(time_diff: f64) void {
             .{
                 .lcha = .{ 0.5, 0.2, color_hue, 0.8 },
                 .font_size = base_size / 3.0,
-                .ltr = true,
+                .ltr = false,
             },
         );
 
@@ -166,7 +166,7 @@ pub fn draw_inventory(time_diff: f64) void {
             .{
                 .lcha = .{ 1.0, 0.2, @as(f32, @floatFromInt(i)) * 0.1, 1.0 },
                 .font_size = base_size / 3.0,
-                .ltr = true,
+                .ltr = false,
             },
         );
     }

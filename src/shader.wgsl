@@ -170,7 +170,7 @@ fn vs_tile(
 
     // add to ID based on pre-determined shifts
     if (id == STONE_START) {
-        // 2x2 grid stone pattern
+        // 2x2 grid stone pattern (like a 32x32 sprite)
         let offset = (tile_coords.y % 2u) * 2u + (tile_coords.x % 2u);
         id += offset;
     } else if (id == 2) { // (IDs here hard-coded, like player)
@@ -179,7 +179,7 @@ fn vs_tile(
         id += offset;
     } else if (id == DECOR_START + 1u || id == DECOR_START + 3u) {
         // seed-based variation for mushrooms OR ceiling flowers
-        id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); // 50% odds
+        id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); // 50% odds to select the variation
 
         // for 25%:
         // let random_mod = extractBits(tile.seeds[0], 16u, 2u);
@@ -338,8 +338,10 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
+    // convert OKLCH result to OKLAB, then finally back to float-based RGB
     lab = oklch_to_oklab(lch);
     final_rgb = oklab_to_linear_srgb(lab);
+
     var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, in.sprite_id == 1u); // use chunk_opacity, unless this sprite is for the player
 
     if (scene.wireframe_opacity != 0.0) {
@@ -837,6 +839,9 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
     let final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
 
+    // Both the original sprite and the mask are sampled. The mask is pre-made: for many sprites it is white.
+    // For gems, there's a special gem mask, and ores have a rounded rectangular mask with darkening.
+    // This is multiplied with RGBA instead of OKLCH for simplicity.
     let tex_color =
         textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0) *
         textureSampleLevel(sprite_atlas_mask, pixel_sampler, final_uv, 0.0);

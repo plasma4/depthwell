@@ -19,8 +19,8 @@ pub var mining_strength: u4 = 1;
 /// Should be from 0-15 normally, and 255 if block is empty.
 pub var selected_hp: u8 = 1;
 
-/// Updates mining or placing blocks. Should be called from `tick()` in zig/root.zig.
-pub fn handle_mining() void {
+/// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
+pub fn handle_mining_and_placing() void {
     if (mouse.block_position_changed) {
         mouse.block_position_changed = false;
         mining_progress = 0;

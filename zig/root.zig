@@ -123,7 +123,7 @@ pub export fn tick(speed: u32, iterations: u32) void {
         // }
         mining.selected_hp = 255;
     } else {
-        mining.handle_mining();
+        mining.handle_mining_and_placing();
     }
 
     for (0..iterations) |_| { // iterations is guaranteed to be positive
