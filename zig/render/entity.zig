@@ -43,7 +43,7 @@ pub fn update_entities(time_diff: f64) void {
     const pos: v2f32 = .{ 2, 28 };
     const font_size = 12.0;
 
-    if (progress != 255) {
+    if (progress != 255 and progress != 0) {
         // draw shadow of text
         draw_number(progress, pos, .{
             .lcha = comptime ColorRGBA.hex_to_oklch("#000000bb"),

@@ -40,7 +40,7 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
     const game = &memory.game;
     if (action == 1) is_mouse_down = true;
     if (action == 2) is_mouse_down = false;
-    selected_sprite = inventory.inventory_blocks[@intCast(inventory.selected_id)];
+    selected_sprite = @enumFromInt(inventory.selected_id);
 
     const screen_dx = (x - 0.5) * SCREEN_WIDTH;
     const screen_dy = (y - 0.5) * SCREEN_HEIGHT;
