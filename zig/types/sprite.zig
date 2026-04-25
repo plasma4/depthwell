@@ -81,7 +81,8 @@ pub const Sprite = enum(u16) {
         return id >= STONE_START and id < MASK_START;
     }
 
-    /// Determines if the sprite's type is valid. Includes the empty block.
+    /// Determines if the sprite's type is a valid block that could exist in any chunk.
+    /// Includes the empty block, and excludes entities.
     pub inline fn is_valid(self: @This()) bool {
         // do note that heatmap isn't valid
         const id = @intFromEnum(self);

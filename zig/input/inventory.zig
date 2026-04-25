@@ -15,17 +15,21 @@ pub var selected_id: u8 = 0;
 /// Current sprite (index) selected (to place, set to 0 if to mining instead).
 pub var selected_sprite: Sprite = .none;
 
-/// Dense storage: index is @intFromEnum(Sprite), value is quantity.
-pub var inventory_counts = [_]u32{0} ** (sprite.max_sprite_value + 1);
+/// Dense storage: index is `@intFromEnum(Sprite)`, value is the amount of that item in the inventory.
+pub var inventory_counts = [_]u64{0} ** (sprite.max_sprite_value + 1);
 
-/// Animation progress for each potential slot.
-pub var inventory_animation_t = [_]f32{0.0} ** (sprite.max_sprite_value + 1);
+/// Animation progress for each potential slot. Always between 0 (idle) and 1 (fully triggered).
+pub var inventory_anim_progress = [_]f32{0.0} ** (sprite.max_sprite_value + 1);
+
+/// Animation progress for the wobble effect. Always between 0 (idle) and 1 (fully triggered).
+pub var inventory_wobble_progress = [_]f32{0.0} ** (sprite.max_sprite_value + 1);
 
 /// Increments the count for a mined block.
 pub fn add_to_inventory(id: Sprite) void {
     const idx = @intFromEnum(id);
     if (idx < inventory_counts.len) {
         inventory_counts[idx] += 1;
+        if (inventory_wobble_progress[idx] == 0.0) inventory_wobble_progress[idx] = 1.0;
     }
 }
 
@@ -37,6 +41,7 @@ pub fn remove_from_inventory(id: Sprite) bool {
     if (idx >= inventory_counts.len or inventory_counts[idx] == 0) return false;
 
     inventory_counts[idx] -= 1;
+    if (inventory_wobble_progress[idx] == 0.0) inventory_wobble_progress[idx] = 1.0;
 
     // If we used the last one, unselect it immediately
     if (inventory_counts[idx] == 0 and selected_sprite == id) {
@@ -74,8 +79,9 @@ pub fn draw_inventory(time_diff: f64) void {
     var slot_buffer: [sprite.foundation_sprite_count + 1]Sprite = undefined;
     const active_slots = get_active_slots(&slot_buffer);
 
-    const animation_step: f32 = 200.0;
-    const base_size = 16.0;
+    const wobble_decay_speed: f32 = 2.0; // controls wobble decay speed
+    const animation_length: f32 = 200.0; // ms of animation time
+    const base_size = 16.0; // base size of inventory sprites
     const spacing = 1.25 * base_size;
 
     for (active_slots, 0..) |active_sprite, i| {
@@ -84,15 +90,15 @@ pub fn draw_inventory(time_diff: f64) void {
         const is_selected = active_sprite == selected_sprite;
 
         const target: f32 = if (is_selected) 1.0 else 0.0;
-        const animation_speed = @as(f32, @floatCast(time_diff)) / animation_step;
+        const animation_speed = @as(f32, @floatCast(time_diff)) / animation_length;
 
-        if (inventory_animation_t[id] < target) {
-            inventory_animation_t[id] = @min(target, inventory_animation_t[id] + animation_speed);
-        } else if (inventory_animation_t[id] > target) {
-            inventory_animation_t[id] = @max(target, inventory_animation_t[id] - animation_speed);
+        if (inventory_anim_progress[id] < target) {
+            inventory_anim_progress[id] = @min(target, inventory_anim_progress[id] + animation_speed);
+        } else if (inventory_anim_progress[id] > target) {
+            inventory_anim_progress[id] = @max(target, inventory_anim_progress[id] - animation_speed);
         }
 
-        const t_eased = ease_back(inventory_animation_t[id]);
+        const t_eased = ease_back(inventory_anim_progress[id]);
         const size_normal: f32 = 10.0 / 16.0 * base_size;
         const size_selected: f32 = 12.0 / 16.0 * base_size;
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
@@ -131,11 +137,20 @@ pub fn draw_inventory(time_diff: f64) void {
     }
 
     // Second pass for numbers to ensure they are at the top of inventory rendering
-    for (active_slots, 0..) |s, i| {
-        if (s == .none) continue;
+    for (active_slots, 0..) |active_sprite, i| {
+        if (active_sprite == .none) continue;
 
-        const id = @intFromEnum(s);
-        const t_eased = ease_back(inventory_animation_t[id]);
+        const id = @intFromEnum(active_sprite);
+        const t_eased = ease_back(inventory_anim_progress[id]);
+
+        const dt = @as(f32, @floatCast(time_diff)) / 1000.0; // delta time in seconds
+        if (inventory_wobble_progress[id] > 0) {
+            inventory_wobble_progress[id] = @max(0.0, inventory_wobble_progress[id] - (dt * wobble_decay_speed));
+        }
+
+        // calculate wobble angle with sine wave (angle is in radians)
+        const item_wobble = inventory_wobble_progress[id];
+        const wobble_angle = std.math.sin(item_wobble * 15.0) * (item_wobble * 0.5);
 
         const size_normal: f32 = 10.0 / 16.0 * base_size;
         const size_selected: f32 = 12.0 / 16.0 * base_size;
@@ -147,7 +162,7 @@ pub fn draw_inventory(time_diff: f64) void {
         const inventory_pos: v2f32 = .{ 32 + col * spacing, 32 + row * spacing };
         const pos = inventory_pos - size_vec / v2f32{ base_size / 4.0, base_size / 4.0 } - v2f32{ base_size / 16.0, base_size / 16.0 };
 
-        const count = inventory_counts[@intFromEnum(s)];
+        const count = inventory_counts[@intFromEnum(active_sprite)];
         const color_hue = @as(f32, @floatFromInt(i)) * 0.2;
 
         draw_number( // shadow
@@ -157,6 +172,7 @@ pub fn draw_inventory(time_diff: f64) void {
                 .lcha = .{ 0.5, 0.2, color_hue, 0.8 },
                 .font_size = base_size / 3.0,
                 .ltr = false,
+                .rotation = wobble_angle, // text wobbles when you mine something!
             },
         );
 
@@ -167,6 +183,7 @@ pub fn draw_inventory(time_diff: f64) void {
                 .lcha = .{ 1.0, 0.2, @as(f32, @floatFromInt(i)) * 0.1, 1.0 },
                 .font_size = base_size / 3.0,
                 .ltr = false,
+                .rotation = wobble_angle,
             },
         );
     }

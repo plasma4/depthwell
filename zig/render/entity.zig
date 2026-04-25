@@ -32,6 +32,7 @@ const number_widths: [10]f32 = .{
 // pub var entities: SegmentedList(WGSLEntity, 1024) = .{}; // easiest to do prealloc with larger stack size in case
 var entity_byte_count_before_end: usize = 0;
 
+/// Updates all entities by adding them to the scratch buffer.
 pub fn update_entities(time_diff: f64) void {
     entity_byte_count_before_end = 0;
     // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
@@ -70,17 +71,100 @@ pub fn update_entities(time_diff: f64) void {
 
 /// Configuration for drawing a number.
 pub const TextConfig = struct {
+    /// The light, chroma, hue, and opacity components (HSL + alpha).
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// H (hue, in radians) and C (chroma) are shifted additively.
     lcha: @Vector(4, f32) = memory.DEFAULT_ENTITY_LCHA,
-    font_size: f32 = 20.0,
+    /// The font size of the text.
+    font_size: f32 = 16.0,
+    /// The rotation of the text.
+    rotation: f32 = 0.0,
     ltr: bool = true,
 };
 
-/// Draws an unsigned integer.
+/// Draws an unsigned integer by creating entities; should NEVER be called outside of `update_entities()`.
 pub fn draw_number(
     number: u64,
     position: v2f32,
     options: TextConfig,
 ) void {
+    const lcha = options.lcha;
+    const font_size = options.font_size;
+    const rotation = options.rotation;
+    const ltr = options.ltr;
+
+    // Fast path for zero-rotation cases
+    if (rotation == 0.0) {
+        draw_number_fast(number, position, options);
+        return;
+    }
+
+    if (number == 0) {
+        add_entity(.{
+            .sprite = @enumFromInt(sprite.NUMBER_START),
+            .lcha = lcha,
+            .position = position,
+            .size = font_size,
+            .rotation = rotation,
+        });
+        return;
+    }
+
+    var digits: [20]u8 = undefined;
+    var count: usize = 0;
+    var n = number;
+
+    while (n > 0) : (n /= 10) {
+        digits[count] = @intCast(n % 10);
+        count += 1;
+    }
+
+    // Precompute trig for the entire string
+    const cos_r = @cos(rotation);
+    const sin_r = @sin(rotation);
+
+    // We track the relative X offset from the pivot point
+    var rel_x: f32 = 0.0;
+
+    if (ltr) {
+        // Initial shift for LTR logic
+        rel_x -= number_widths[@intCast(digits[count - 1])] * font_size;
+
+        var i: usize = count;
+        while (i > 0) {
+            i -= 1;
+            const digit = digits[i];
+            rel_x += number_widths[@intCast(digit)] * font_size;
+
+            // Rotate the relative offset vector (rel_x, 0)
+            const rotated_offset = v2f32{ rel_x * cos_r, rel_x * sin_r };
+
+            add_entity(.{
+                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
+                .lcha = lcha,
+                .position = position + rotated_offset,
+                .size = font_size,
+                .rotation = rotation,
+            });
+        }
+    } else {
+        for (digits[0..count]) |digit| {
+            const rotated_offset = v2f32{ rel_x * cos_r, rel_x * sin_r };
+
+            add_entity(.{
+                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
+                .lcha = lcha,
+                .position = position + rotated_offset,
+                .size = font_size,
+                .rotation = rotation,
+            });
+            rel_x -= number_widths[@intCast(digit)] * font_size;
+        }
+    }
+}
+
+/// Optimized version of draw_number for when rotation is exactly 0.
+fn draw_number_fast(number: u64, position: v2f32, options: TextConfig) void {
     const lcha = options.lcha;
     const font_size = options.font_size;
     const ltr = options.ltr;
