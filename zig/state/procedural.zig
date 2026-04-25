@@ -59,10 +59,10 @@ pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
     }
 
     if (moisture >= 0.88 and moisture <= 0.92) return .lava_stone;
-    if (moisture >= 0.50 and density <= 0.53) return .green_stone;
+    if (moisture >= 0.50 and density <= 0.53 and density <= 0.6) return .green_stone;
 
-    if (moisture >= 0.58 and density >= 0.40) return .seagreen_stone;
-    if (moisture <= 0.65 and density >= 0.60) return .blue_stone;
+    if (moisture >= 0.58 and density >= 0.92) return .seagreen_stone;
+    if (moisture <= 0.65 and density >= 0.60 and density <= 0.65) return .blue_stone;
 
     if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
     if (moisture >= 0.98) return .old_stone;

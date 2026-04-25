@@ -1,4 +1,4 @@
-//! Handles mining and placing blocks
+//! Handles mining and placing blocks.
 const std = @import("std");
 const root = @import("root").root;
 const sprite = root.sprite;
@@ -48,6 +48,7 @@ pub fn handle_mining() void {
                     // if no strength, set to 0 to instantly mine
                     if (strength > 0) mining_strength else 0,
                 );
+                if (was_deleted) root.inventory.add_to_inventory(block.id);
 
                 // block is not modified so we actually have to recalculate
                 selected_hp = if (strength > 0) block.hp -| mining_strength else 255;
