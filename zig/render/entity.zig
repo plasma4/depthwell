@@ -3,6 +3,7 @@ const std = @import("std");
 const root = @import("root").root;
 const SegmentedList = root.SegmentedList;
 const memory = root.memory;
+const sprite = root.sprite;
 const ColorRGBA = root.ColorRGBA;
 const inventory = root.inventory;
 const Entity = memory.Entity;
@@ -86,7 +87,7 @@ pub fn draw_number(
 
     if (number == 0) {
         add_entity(.{
-            .sprite = @enumFromInt(root.sprite.NUMBER_START),
+            .sprite = @enumFromInt(sprite.NUMBER_START),
             .lcha = lcha,
             .position = position,
             .size = font_size,
@@ -114,7 +115,7 @@ pub fn draw_number(
             current_pos[0] += number_widths[@intCast(digit)] * font_size;
 
             add_entity(.{
-                .sprite = @enumFromInt(root.sprite.NUMBER_START + digit),
+                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
                 .lcha = lcha,
                 .position = current_pos,
                 .size = font_size,
@@ -123,7 +124,7 @@ pub fn draw_number(
     } else {
         for (digits[0..count]) |digit| {
             add_entity(.{
-                .sprite = @enumFromInt(root.sprite.NUMBER_START + digit),
+                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
                 .lcha = lcha,
                 .position = current_pos,
                 .size = font_size,
@@ -136,7 +137,6 @@ pub fn draw_number(
 /// Adds a single entity to the `entities` array, changing position to use UV.
 /// Modifies the original entity instance. Does not do anything if the sprite type is `none`.
 pub inline fn add_entity(entity: Entity) void {
-    if (entity.sprite == .none) return;
     const wgsl_entity = memory.scratch_alloc_type(WGSLEntity, &entity_byte_count_before_end);
     wgsl_entity.* = .{
         .lcha = entity.lcha,

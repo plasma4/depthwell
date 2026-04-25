@@ -16,10 +16,10 @@ const GEM_START = ORE_START + 4;
 const MASK_START = GEM_START + 4;
 /// Index where the HP mask ends.
 /// Between `MASK_START` and `MASK_END` are 8 ore masks and 16 HP masks.
-const MASK_END = MASK_START + 24;
+const DECOR_START = MASK_START + 24;
 
 /// Index where numbers (0-9) start.
-pub const NUMBER_START = MASK_END + 7;
+pub const NUMBER_START = DECOR_START + 8;
 
 /// Sprite IDs with values based on their sprite sheet location
 /// Packed sprite sheet located at src/main.png.
@@ -58,15 +58,19 @@ pub const Sprite = enum(u16) {
     hp_mask = MASK_START + 8, // 16 masks
 
     // Decor
-    spiral_plant = MASK_END,
-    ceiling_flower = MASK_END + 1,
-    mushroom = MASK_END + 2, // 2 variations
-    torch = MASK_END + 4,
+    spiral_plant = DECOR_START,
+    ceiling_flower = DECOR_START + 1, // 2 variations
+    mushroom = DECOR_START + 3, // 2 variations
+    torch = DECOR_START + 5,
 
-    inventory = MASK_END + 5,
-    inventory_selected = MASK_END + 6,
+    inventory = DECOR_START + 6,
+    inventory_selected = DECOR_START + 7,
     text_0 = NUMBER_START,
     particle = NUMBER_START + 10,
+    pickaxe,
+
+    /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
+    unselected,
 
     _, // heatmap range
 

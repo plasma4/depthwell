@@ -840,7 +840,7 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
 
             const lbx: u4 = @intCast(@mod(nx, SPAN));
             const lby: u4 = @intCast(@mod(ny, SPAN));
-            const target_id = @as(usize, lby) * SPAN + lbx;
+            const block_id = @as(usize, lby) * SPAN + lbx;
 
             // Calculate the new flags
             const current_sprite = get_block_id_at(target_coord, lbx, lby);
@@ -859,13 +859,13 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
             }
 
             // Update the live caches
-            if (SimBuffer.get(target_coord)) |c| c.blocks[target_id].edge_flags = new_flags;
-            if (ChunkCache.get(target_coord)) |c| c.blocks[target_id].edge_flags = new_flags;
+            if (SimBuffer.get(target_coord)) |c| c.blocks[block_id].edge_flags = new_flags;
+            if (ChunkCache.get(target_coord)) |c| c.blocks[block_id].edge_flags = new_flags;
 
             // Finally, update the permanent modification storage!
             const key = ModKey.from(target_coord);
             if (mod_store.index.get(key)) |idx| {
-                mod_store.history.items[idx][target_id].edge_flags = new_flags;
+                mod_store.history.items[idx][block_id].edge_flags = new_flags;
             }
         }
     }

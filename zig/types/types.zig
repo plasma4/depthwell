@@ -19,10 +19,13 @@ pub const KeyBits = struct {
         return (bitfield & key_mask) != 0;
     }
 
-    /// Returns a number selected, if any.Prioritizes smaller numbers, returning 255 for none.
+    /// Returns a number selected, if any.
+    /// Prioritizes smaller numbers, returning 255 for none. Treats `mine` key as 0 and 0 key as 10.
     pub inline fn get_number(key_mask: u32) u8 {
+        if (key_mask & mine != 0) return 0;
         inline for (0..10) |i| { // k0 -> mask(0), k9 -> mask(9)
             if (key_mask & @This().mask(i) != 0) {
+                if (i == 0) return 10;
                 return i;
             }
         }
@@ -32,8 +35,10 @@ pub const KeyBits = struct {
 
     /// Z key (increases depth, for testing)
     pub const zoom = mask(17);
+    /// Tilde key
+    pub const mine = mask(18);
     /// Q key
-    pub const drop = mask(18);
+    pub const drop = mask(19);
 
     /// Minus (or underscore) key
     pub const minus = mask(15);
