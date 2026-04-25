@@ -25,9 +25,6 @@ pub var mouse_block_y: u4 = 0;
 /// Is reset in `handle_mining()`, called from `tick()` in zig/root.zig.
 pub var block_position_changed = true;
 
-/// Current sprite (index) selected (to place, set to 0 if to mining instead).
-pub var selected_sprite: sprite.Sprite = .none;
-
 pub var is_mouse_down: bool = false;
 
 /// Handles mouse logic, where `x` and `y` values are between 0-1, acting like a UV over the whole canvas from HTML.
@@ -40,7 +37,6 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
     const game = &memory.game;
     if (action == 1) is_mouse_down = true;
     if (action == 2) is_mouse_down = false;
-    selected_sprite = @enumFromInt(inventory.selected_id);
 
     const screen_dx = (x - 0.5) * SCREEN_WIDTH;
     const screen_dy = (y - 0.5) * SCREEN_HEIGHT;

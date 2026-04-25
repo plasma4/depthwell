@@ -12,10 +12,11 @@ export interface InputState {
 }
 
 /** An object representing what a keydown/keyup code should map to numerically (as a bit in Zig.KeyBits). */
-const keyMap: Record<string, number> = {
+const KEY_MAP: Record<string, number> = {
     Minus: Zig.KeyBits.minus,
     Equal: Zig.KeyBits.plus,
     KeyZ: Zig.KeyBits.zoom,
+    Backquote: Zig.KeyBits.mine,
     KeyQ: Zig.KeyBits.drop,
     Space: Zig.KeyBits.up,
     ArrowUp: Zig.KeyBits.up,
@@ -37,6 +38,9 @@ const keyMap: Record<string, number> = {
     Digit8: Zig.KeyBits.k8,
     Digit9: Zig.KeyBits.k9,
 };
+
+const SHARED_BITS =
+    Zig.KeyBits.up | Zig.KeyBits.down | Zig.KeyBits.left | Zig.KeyBits.right;
 
 /** Creates an initial InputState and creates event listeners. Should be updated with with updateInput() in a logic loop. */
 export function initInput(): InputState {
@@ -75,7 +79,7 @@ export function initInput(): InputState {
         }
 
         // console.log(e.code);
-        const bit = keyMap[e.code]; // apparently .code is more robust as it's based on physical keyboard locations, which is what we want here
+        const bit = KEY_MAP[e.code]; // apparently .code is more robust as it's based on physical keyboard locations, which is what we want here
         if (!bit) return;
 
         if (bit <= 512) {
@@ -84,8 +88,10 @@ export function initInput(): InputState {
         }
 
         state.heldMask |= bit;
-        keyCounts[bit] = (keyCounts[bit] || 0) + 1;
-
+        // Only track counts for shared keys: arrow keys actually use this logic for priority
+        if (bit & SHARED_BITS) {
+            keyCounts[bit] = (keyCounts[bit] || 0) + 1;
+        }
         // The most recently pressed key wins!
         if (bit & (Zig.KeyBits.left | Zig.KeyBits.right))
             state.horizontalPriority = bit;
@@ -96,16 +102,22 @@ export function initInput(): InputState {
     });
 
     window.addEventListener("keyup", (e: KeyboardEvent) => {
-        const bit = keyMap[e.code];
+        const bit = KEY_MAP[e.code];
         if (!bit) return;
 
-        keyCounts[bit] = Math.max(0, (keyCounts[bit] || 0) - 1);
+        if (bit & SHARED_BITS) {
+            // Decrement and check count for shared keys
+            keyCounts[bit] = Math.max(0, (keyCounts[bit] || 0) - 1);
 
-        // Only clear the bit in the mask if ALL keys mapped to it are released
-        if (keyCounts[bit] === 0) {
+            if (keyCounts[bit] === 0) {
+                state.heldMask &= ~bit;
+            }
+        } else {
+            // Non-shared keys  ignore counts entirely
             state.heldMask &= ~bit;
+        }
 
-            // If the priority key was released, switch priority to the other key (if held)
+        if (!(state.heldMask & bit)) {
             if (bit === state.horizontalPriority) {
                 state.horizontalPriority =
                     state.heldMask & Zig.KeyBits.left ||

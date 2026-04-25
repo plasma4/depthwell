@@ -152,36 +152,41 @@ fn vs_tile(
     let tile_coords = vec2u(instance_index % scene.map_size.x, instance_index / scene.map_size.x);
     var id = tile.sprite_id;
 
-    if (id == STONE_START) {
-        // 2x2 grid stone pattern
-        let offset = (tile_coords.y % 2u) * 2u + (tile_coords.x % 2u);
-        id += offset;
-    } else if (id == 2) { // edge stone (too lazy to make constant, like player)
-        let offset = (tile_coords.x % 2u) ^ (tile_coords.y % 2u); // checkerboard
-        id += offset;
-    } else if (id == (DECOR_START + 2u)) {
-        // seed-based variation for Mushrooms
-        let random_mod = extractBits(tile.seeds[0], 16u, 2u);
-        if (random_mod == 0u) {
-            id++;
-        }
-    }
-
     let world_pixel_pos = (vec2f(tile_coords) + local_pos) * TILE_SIZE;
     let screen_pos = ((world_pixel_pos - scene.camera) * scene.zoom) + (scene.viewport_size * 0.5);
 
     // normalize coordinates
-    // first, make sure spiral plant and ceiling flower should move up by 3 pixels, mushroom should move down 2 pixels
+    // first, make sure spiral plant and ceiling flower should move up by 3 pixels, mushroom should move down 1 pixel
     // this is necessary because otherwise, they would look like they're floating in space
     var vertical_offset = select(
         select(
             0.0,
             3.0 * scene.zoom,
-            id == (DECOR_START + 0u) || id == (DECOR_START + 1u) // spiral plant, ceiling flower
+            id == DECOR_START + 0u || id == DECOR_START + 1u // spiral plant, ceiling flower
         ),
-        -2.0 * scene.zoom,
-        id == (DECOR_START + 2u) || id == (DECOR_START + 3u) // mushroom sprites
+        -1.0 * scene.zoom,
+        id == DECOR_START + 3u // mushroom sprite
     );
+
+    // add to ID based on pre-determined shifts
+    if (id == STONE_START) {
+        // 2x2 grid stone pattern
+        let offset = (tile_coords.y % 2u) * 2u + (tile_coords.x % 2u);
+        id += offset;
+    } else if (id == 2) { // (IDs here hard-coded, like player)
+        // edge stone alternates in a checkerboard pattern
+        let offset = (tile_coords.x % 2u) ^ (tile_coords.y % 2u);
+        id += offset;
+    } else if (id == DECOR_START + 1u || id == DECOR_START + 3u) {
+        // seed-based variation for mushrooms OR ceiling flowers
+        id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); // 50% odds
+
+        // for 25%:
+        // let random_mod = extractBits(tile.seeds[0], 16u, 2u);
+        // if (random_mod == 0u) {
+        //     id++;
+        // }
+    }
 
     // apply to screen_pos.y before converting to normalized device coordinates
     // subtract from Y because in screen space, lower values are "higher" up
@@ -813,7 +818,7 @@ fn vs_entity(
 
     // Calculate UV origin
     var origin = vec2f(
-            f32(entity.id % TILES_PER_ROW_U), 
+            f32(entity.id % TILES_PER_ROW_U),
             f32(entity.id / TILES_PER_ROW_U)
         ) * vec2f(SPRITE_W, SPRITE_H);
 
@@ -836,8 +841,8 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
         textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0) *
         textureSampleLevel(sprite_atlas_mask, pixel_sampler, final_uv, 0.0);
     // Early discard if the pixel is fully transparent (maybe)
-    // if (tex_color.a <= 0.0) { 
-    //     discard; 
+    // if (tex_color.a <= 0.0) {
+    //     discard;
     // }
     var lab = linear_srgb_to_oklab(tex_color.rgb);
     var lch = oklab_to_oklch(lab);

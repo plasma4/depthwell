@@ -15,7 +15,7 @@ pub var mining_speed: u64 = 10;
 /// How much `hp` the tool takes off the block every time `mining_progress` reaches the block's strength.
 pub var mining_strength: u4 = 1;
 
-/// Current selected block's HP. Do NOT rely on for logic, only visuals.
+/// Current selected block's HP. Do NOT rely on for logic (as it's not guaranteed to be correct), only visuals.
 /// Should be from 0-15 normally, and 255 if block is empty.
 pub var selected_hp: u8 = 1;
 
@@ -31,46 +31,65 @@ pub fn handle_mining() void {
         return;
     }
 
-    const sprite_type = mouse.selected_sprite;
+    const sprite_type = root.inventory.selected_sprite;
+    if (sprite_type == .unselected) {
+        selected_hp = 255;
+        return;
+    }
     if (mouse.mouse_chunk) |mouse_chunk| {
         const block = world.get_chunk(mouse_chunk).get_block(mouse.mouse_block_x, mouse.mouse_block_y);
-        if (sprite_type == .none or (block.id != .none and block.id != sprite_type)) { // mining, possibly to clear out old non-empty block?
+
+        // Don't mine the block of the same type you're trying to place1
+        if (sprite_type != .none and block.id == sprite_type) {
+            selected_hp = 0;
+            mining_progress = 0;
+            return;
+        }
+
+        // Are we breaking something, or placing into empty air?
+        if (sprite_type == .none or block.id != .none) {
+            // mining or replacing case
             mining_progress += mining_speed;
             const strength = get_sprite_strength(block.id);
+
             if (strength != std.math.maxInt(u64) and mining_progress >= strength) {
-                // Reset mining progress; this intentionally doesn't carry over to the next hp mine.
                 mining_progress = 0;
                 const was_deleted = world.modify_block_hp(
                     mouse_chunk,
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
                     block,
-                    // if no strength, set to 0 to instantly mine
                     if (strength > 0) mining_strength else 0,
                 );
-                if (was_deleted) root.inventory.add_to_inventory(block.id);
 
-                // block is not modified so we actually have to recalculate
-                selected_hp = if (strength > 0) block.hp -| mining_strength else 255;
+                if (was_deleted) {
+                    root.inventory.add_to_inventory(block.id);
 
-                if (was_deleted and sprite_type != .none) { // place in the same frame
-                    world.modify_block_type(
-                        mouse_chunk,
-                        mouse.mouse_block_x,
-                        mouse.mouse_block_y,
-                        sprite_type,
-                    );
-                    selected_hp = 0;
+                    // Only auto-replace if the block being mined is NOT the same as the held item
+                    // AND we successfully consume the item.
+                    if (sprite_type != .none and sprite_type != .unselected) {
+                        if (root.inventory.remove_from_inventory(sprite_type)) {
+                            world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type);
+
+                            // IMPORTANT: Reset progress and set selected_hp so the next tick
+                            // correctly identifies the new block ID and hits the early-exit return.
+                            mining_progress = 0;
+                            selected_hp = 0;
+                            return;
+                        }
+                    }
+                    selected_hp = 255;
+                } else {
+                    selected_hp = block.hp -| mining_strength;
                 }
             }
-        } else { // placing?
-            world.modify_block_type(
-                mouse_chunk,
-                mouse.mouse_block_x,
-                mouse.mouse_block_y,
-                sprite_type,
-            );
-            selected_hp = 0;
+        } else if (block.id == .none and sprite_type != .none) {
+            // placing into empty air!
+            if (root.inventory.remove_from_inventory(sprite_type)) {
+                world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type);
+                selected_hp = 0;
+                mining_progress = 0;
+            }
         }
     } else {
         selected_hp = 255;
