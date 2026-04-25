@@ -386,7 +386,7 @@ pub const DEFAULT_ENTITY_LCHA: @Vector(4, f32) = .{ 1.0, 0.0, 0.0, 1.0 };
 pub const Entity = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
-    /// H (hue) and C (chroma) are shifted additively in radians.
+    /// H (hue, in radians) and C (chroma) are shifted additively.
     lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
 
     /// Current position (based on internal viewport).

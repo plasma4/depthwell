@@ -223,7 +223,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     if (in.sprite_id >= 256u && in.sprite_id <= 512u) {
         // Heatmap logic!
         let color = (f32(in.sprite_id) - 256.0) / 256.0;
-        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, hue
+        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, and hue
         let lab = oklch_to_oklab(lch);
         let final_rgb = oklab_to_linear_srgb(lab);
         return vec4f(final_rgb, 1.0);
@@ -318,7 +318,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     // we use 9 out of the 28 seed bits here
     let lab_nudge_bits = vec3u(
         extractBits(seed, 0u, 3u), // shift lightness (0-1)
-        extractBits(seed, 3u, 3u), // shift chroma, which acts similar to saturation (0-1)
+        extractBits(seed, 3u, 3u), // shift chroma, which acts similar to saturation (in practice, between 0-0.4)
         extractBits(seed, 6u, 3u) // shift hue (in RADIANS, red isn't exactly 0)
     );
     let nudges = vec3f(lab_nudge_bits) / 7.0;
@@ -805,7 +805,7 @@ fn vs_entity(
     let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
     let centered_pos = local_pos - 0.5;
 
-    // Rotate sprite as needed
+    // Rotate sprite as needed (in radians)
     let c = cos(entity.rotation);
     let s = sin(entity.rotation);
     let rotated_pos = vec2f(

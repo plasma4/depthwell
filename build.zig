@@ -65,7 +65,7 @@ pub fn build(b: *std.Build) void {
     }
     exe.rdynamic = true; // export functions with "export" keyword
     exe.entry = .disabled; // No main()
-    exe.stack_size = 16 * 65536; // 16 pages, can increase as necessary
+    exe.stack_size = 8 * 65536; // 8 pages, can increase as necessary
 
     // removed since Zig manages pointers automatically
     // exe.global_base = 8;

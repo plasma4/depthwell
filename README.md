@@ -234,7 +234,7 @@ Here is their definition:
 pub const Entity = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
-    /// H (hue) and C (chroma) are shifted additively in radians.
+    /// H (hue, in radians) and C (chroma) are shifted additively.
     lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
 
     /// Current position (based on internal viewport).
@@ -251,7 +251,7 @@ pub const Entity = struct {
 };
 ```
 
-These are then passed to WGSL in a large batch. Here is an example of usage:
+These are then passed to WGSL in a large batch. Here is an example of potential usage:
 
 ```zig
 // entity example
@@ -270,7 +270,7 @@ for (0..10) |i| {
     });
 }
 
-// text example
+// number-drawing example
 const progress = root.mining.selected_hp;
 const pos: v2f32 = .{ 4, 31 };
 const font_size = 12.0;
