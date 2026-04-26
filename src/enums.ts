@@ -62,7 +62,8 @@ export interface EngineExports extends WebAssembly.Exports {
 export const KeyBits = {
     zoom: 131072,
     mine: 262144,
-    drop: 524288,
+    inventory_up: 524288,
+    inventory_down: 1048576,
     minus: 32768,
     plus: 65536,
     up: 2048,

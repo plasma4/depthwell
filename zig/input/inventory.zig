@@ -16,8 +16,12 @@ const SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is.
 const inventory_width = 10;
 
+/// Which row the selected sprite is in.
+/// Used for finding which active slot should be used and navigated through Q and E keys.
+pub var selected_row: u16 = 0;
+
 /// Slice array tyoe for possible slots.
-pub const SlotBuffer = [sprite.foundation_sprite_count + 1]Sprite;
+pub const SlotBuffer = [sprite.valid_sprite_count + 1]Sprite;
 
 /// Current sprite selected to place.
 pub var selected_sprite: Sprite = .none;
@@ -73,7 +77,7 @@ pub fn get_active_slots(buffer: *SlotBuffer) []Sprite {
     buffer[0] = .none; // slot 0 (pickaxe) must always exist
 
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
-    inline for (sprite.foundation_sprites) |s| {
+    inline for (sprite.valid_sprites) |s| {
         if (s == .none) continue;
         if (SHOW_ALL_INVENTORY_ITEMS or inventory_counts[@intFromEnum(s)] > 0) {
             buffer[count] = s;
@@ -83,6 +87,22 @@ pub fn get_active_slots(buffer: *SlotBuffer) []Sprite {
     }
 
     return buffer[0..count];
+}
+
+/// Gets the index of `selected_sprite` in the active slots.
+pub fn get_selected_index() u16 {
+    if (selected_sprite == .none) return 0;
+    var count: usize = 1;
+    // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
+    inline for (sprite.valid_sprites) |s| {
+        if (s == .none) continue;
+        if (SHOW_ALL_INVENTORY_ITEMS or inventory_counts[@intFromEnum(s)] > 0) {
+            if (s == selected_sprite) return @intCast(count);
+            count += 1;
+        }
+    }
+
+    unreachable;
 }
 
 /// Draws the inventory slots, wrapping into new rows every 10 items.
@@ -203,7 +223,7 @@ pub fn draw_inventory(time_diff: f64) void {
         const digit_count_minus_one: f32 = if (count == 0) 1 else std.math.log10_int(count);
         const number_size = base_size * (1.0 + 0.3 * wobble_progress) / (@max(3.0, digit_count_minus_one + 0.5));
 
-        draw_number( // shadow of number
+        draw_number( // shadow of inventory number
             count,
             pos + v2f32{ base_size / 3.5, base_size / 3.5 },
             .{
@@ -214,7 +234,7 @@ pub fn draw_inventory(time_diff: f64) void {
             },
         );
 
-        draw_number( // actual number
+        draw_number( // actual value
             count,
             pos + v2f32{ base_size / 3.2, base_size / 3.2 },
             .{

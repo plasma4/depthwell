@@ -19,12 +19,13 @@ pub var mining_speed: u64 = 10;
 /// How much `hp` the tool takes off the block every time `mining_progress` reaches the block's strength.
 pub var mining_strength: u4 = 1;
 
-/// Current selected block's HP. Do NOT rely on for logic (as it's not guaranteed to be correct), only visuals.
-/// Should be from 0-15 normally, and 255 if block is empty.
+/// Current selected block's HP. Should be from 0-15 normally, and 255 if block is empty.
 pub var selected_hp: u8 = 1;
 
 /// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
 pub fn handle_mining_and_placing() void {
+    mouse.update_mouse_block(); // update to get correct mouse position data
+
     if (mouse.block_position_changed) {
         mouse.block_position_changed = false;
         mining_progress = 0;
@@ -74,12 +75,16 @@ pub fn handle_mining_and_placing() void {
                         // Only auto-replace if the block being mined is different from the held item.
                         if (sprite_type != .none and sprite_type != .unselected) {
                             if (inventory.remove_from_inventory(sprite_type)) { // make sure it's possible to use
-                                world.modify_block_type(
+                                if (world.modify_block_type(
                                     mouse_chunk,
                                     mouse.mouse_block_x,
                                     mouse.mouse_block_y,
                                     sprite_type,
-                                );
+                                )) {
+                                    // If TRUE, then the block was NOT successfully modified. Revert selection if so.
+                                    // This fixes funny issues involving deselection due to invalid placement
+                                    inventory.selected_sprite = sprite_type;
+                                }
 
                                 mining_progress = 0;
                                 selected_hp = 0;
@@ -90,13 +95,17 @@ pub fn handle_mining_and_placing() void {
 
                     selected_hp = 255;
                 } else {
-                    selected_hp = block.hp -| mining_strength;
+                    selected_hp = block.hp + mining_strength;
                 }
             }
         } else if (block.id == .none and sprite_type != .none) {
             // placing into empty air!
             if (inventory.remove_from_inventory(sprite_type)) {
-                world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type);
+                if (world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type)) {
+                    // If TRUE, then the block was NOT successfully modified. Revert selection if so.
+                    // This fixes funny issues involving deselection due to invalid placement
+                    inventory.selected_sprite = sprite_type;
+                }
                 selected_hp = 0;
                 mining_progress = 0;
             }
@@ -128,8 +137,7 @@ fn get_sprite_strength(s: Sprite) u64 {
             .ruby => 100,
             else => 100,
         };
-    }
-    if (root.is_debug) return std.math.maxInt(u64) else unreachable;
+    } else if (root.is_debug) return std.math.maxInt(u64) else unreachable;
 }
 
 comptime {
