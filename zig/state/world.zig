@@ -749,8 +749,10 @@ inline fn should_have_edge_flags(sprite: Sprite, current_sprite: Sprite) bool {
     return sprite.is_foundation();
 }
 
-/// Applies a block modification, changing the `Sprite` type and resetting `hp`. Mutates ModStore and caches in-place.
-pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) void {
+/// Applies a block modification, changing the `Sprite` type and resetting `hp`.
+/// Mutates ModStore and caches in-place.
+/// Returns whether `update_local_edge_flags` instantly removed the current block due to being in an invalid position.
+pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bool {
     const key = ModKey.from(coord);
     const id: usize = @as(usize, by) * memory.SPAN + bx;
 
@@ -778,7 +780,7 @@ pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) 
         cache_chunk.blocks[id].hp = 0;
     }
 
-    update_local_edge_flags(coord, bx, by);
+    return update_local_edge_flags(coord, bx, by);
 }
 
 /// Increases a block's `hp` by a specified amount (making it more mined).
@@ -799,7 +801,7 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
         break :blk new_id;
     };
 
-    const overflow_hp = @addWithOverflow(hp_to_add, block.hp);
+    const overflow_hp = @addWithOverflow(hp_to_add, block.hp); // overflows past 15
     if (overflow_hp[1] == 1 or hp_to_add == 0 or !block.is_solid()) {
         if (block.id == .none) return true;
         mod_store.history.items[entry_id][id].id = .none;
@@ -811,7 +813,7 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
         if (ChunkCache.get(coord)) |cache_chunk| {
             cache_chunk.blocks[id].id = .none;
         }
-        update_local_edge_flags(coord, bx, by);
+        _ = update_local_edge_flags(coord, bx, by);
         return true;
     } else {
         const new_hp: u4 = overflow_hp[0];
@@ -829,7 +831,9 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
 
 /// Recalculates edge flags for a specific block its 8 neighbors.
 /// Also breaks any non-foundation blocks.
-fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
+/// Returns whether the current block was removed due to being in an invalid position.
+fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) bool {
+    var return_value = false;
     for ([_]i32{ -1, 0, 1 }) |dy| {
         for ([_]i32{ -1, 0, 1 }) |dx| {
             const nx: i32 = @as(i32, bx) + dx;
@@ -871,9 +875,10 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
             }
 
             if (broken) {
+                if (dy == 0 and dx == 0) return_value = true;
                 // modify_block_type will recursively call this function to cascade the effect, so this works out!
                 root.inventory.add_to_inventory(current_sprite);
-                modify_block_type(target_coord, lbx, lby, .none);
+                _ = modify_block_type(target_coord, lbx, lby, .none);
                 continue;
             }
 
@@ -926,6 +931,7 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
             }
         }
     }
+    return return_value;
 }
 
 /// Highly optimized lookup to find a block's Sprite ID for flag calculation.

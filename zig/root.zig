@@ -34,6 +34,7 @@ pub const entity = @import("render/entity.zig");
 
 pub const types = @import("types/types.zig");
 pub const KeyBits = types.KeyBits;
+pub const geometry = @import("types/geometry.zig");
 
 pub const sprite = @import("types/sprite.zig");
 pub const Sprite = sprite.Sprite;
@@ -62,7 +63,10 @@ pub export fn setup() void {
         .ancestor_materials = .{.none} ** 4,
     };
 
-    logger.write(3, "Use tilde/backquote and number keys to change inventory selection. Left click places blocks.");
+    logger.write(3,
+        \\Use tilde/backquote and number keys to change inventory selection.
+        \\Q moves up a row while E moves down a row. Left-clicking places blocks.
+    );
 }
 pub export fn init() void {
     startup.init();
@@ -102,11 +106,30 @@ pub export fn tick(speed: u32, iterations: u32) void {
     const active_slots = inventory.get_active_slots(&buffer);
 
     // handles M and 0 cases, see code in function for details
-    const number = KeyBits.get_number(memory.game.keys_held_mask);
-    if (number != 255) {
-        // Only change selection if the slot actually exists
-        if (number < active_slots.len) {
-            inventory.selected_sprite = active_slots[number];
+    if (KeyBits.is_set(KeyBits.inventory_up, memory.game.keys_pressed_mask)) inventory.selected_row -|= 1;
+    if (KeyBits.is_set(KeyBits.inventory_down, memory.game.keys_pressed_mask)) inventory.selected_row += 1;
+    if (KeyBits.is_set(KeyBits.mine, memory.game.keys_pressed_mask)) {
+        inventory.selected_row = 0;
+        inventory.selected_sprite = .none;
+    } else {
+        const selected_column = KeyBits.get_number(memory.game.keys_held_mask);
+        if (!(inventory.selected_sprite == .unselected and selected_column == 65535)) {
+            const slot_len = active_slots.len;
+            const current_column = if (inventory.selected_sprite == .unselected) 0 else inventory.get_selected_index() % 10;
+            inventory.selected_row = @min(
+                @as(u16, @intCast(slot_len / 10)), // zeroth row holds 10 slots, so this works out
+                inventory.selected_row,
+            );
+            // get index of selected sprite by checking already selected sprite type
+            var selected_id = inventory.selected_row * 10 +
+                if (selected_column == 65535) current_column else selected_column;
+
+            // Only change selection if the slot actually exists
+            if (selected_id >= slot_len) {
+                selected_id -= 10;
+                inventory.selected_row -= 1;
+            }
+            inventory.selected_sprite = active_slots[selected_id];
         }
     }
 
@@ -121,7 +144,9 @@ pub export fn tick(speed: u32, iterations: u32) void {
         );
         // }
         mining.selected_hp = 255;
+        mouse.mouse_chunk = null;
     } else {
+        // mouse block and mining/placing logic all updated in this function
         mining.handle_mining_and_placing();
     }
 

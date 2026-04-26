@@ -5,7 +5,7 @@ import { MAX_DRAW_CALLS, GameEngine } from "./engine";
 /** The URL for the WebAssembly code (compiled from zig build). */
 import WASM_URL from "./main.wasm?url";
 /** The URL for the WebGPU shader code. ADD ?raw FOR DEBUGGING SHADER. */
-import SHADER_SOURCE from "./shader.wgsl?raw"; // TODO remove ?raw for prod
+import SHADER_SOURCE from "./shader.wgsl?raw"; // sadly not possible to use .DEV env detection
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_URL from "./assets/main.png?url";
 /** The URL for the sprite sheet. */

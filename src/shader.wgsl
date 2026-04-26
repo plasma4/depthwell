@@ -664,7 +664,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
 
     let f = fbm_4(st + r);
 
-    let mix_blue = mix(0.0, 0.2, in.time);
+    let mix_blue = mix(0.0, 0.4, in.time);
     var color = mix(
         vec3f(0.0, 0.01, mix_blue * mix_blue),
         vec3f(0.1, 0.4, 0.2),
@@ -676,7 +676,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let mix_green = mix(0.0, 1.0, in.time2);
     color = mix(
         color,
-        vec3f(mix_red * mix_red, mix_green * mix_green, 0.3),
+        vec3f(mix_red * mix_red, mix_green * mix_green, 0.8),
         clamp(length(q), 0.0, 1.0)
     );
 
@@ -684,7 +684,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let final_rgb = max(intensity, 0.0) * color;
 
     let opacity = scene.chunk_opacity;
-    return vec4f(apply_color_management(final_rgb), opacity);
+    return vec4f(final_rgb * opacity, opacity); // don't do color space stuff here
 }
 
 fn noise(st: vec2f) -> f32 {

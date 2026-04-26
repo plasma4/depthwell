@@ -46,9 +46,9 @@ Here are the basic terms (note that there are, for example, 16 possible subpixel
 - 1 Pixel = 16 Subpixels
 - 1 Block = 16 Pixels
 - 1 Chunk = 16 Blocks = 256 Pixels = 4,096 Subpixels
-- Depth = how "deep" the player is. Starts off at $3$, and we say the player is at depth $D$ at any given time. You can think of depth $D-1$ as having "16x16-chunk-level precision" while depth $D$ represents individual chunks. To the player, depth $D-1$ (where $D$ is the current depth) would be what the game was like right _before_ entering a portal. (The portal would make everything look 16 times larger and increment $D$.)
+- Depth = how "deep" the player is. Starts off at $3$, and we say the player is at depth $D$ at any given time. You can think of depth $D-1$ as having "16x16-chunk-level precision" while depth $D$ represents individual chunks. To the player, depth $D-1$ (where $D$ is the current depth) would be what the game was such as right _before_ entering a portal. (The portal would make everything look 16 times larger and increment $D$.)
 
-Things like the camera and the player concern themselves with subpixels. Seeding of specific blocks in chunks and modifications concern themselves with blocks. Asking something "where" it is involves just chunks (see later).
+The camera and the player work with (integeric) subpixels, while entities are considered in terms of (floating-point) pixels. Seeding of specific blocks in chunks and modifications concern themselves with blocks. Asking something "where" it is involves just chunks (see later).
 
 Now, bear with me here, because you might be freaking out over the fact a code segment just appeared. But don't fret, I'll break things down! This code is just those interested in specific details on what these numbers _could_ mean, because there are a lot of definitions
 
@@ -199,11 +199,11 @@ By using `v2u64` vectors and bit-folding, `FastHash.hash_2d` provides enough var
 
 The first pass determines the "flavor" of the chunk. We calculate two main values: **moisture** and **density**.
 
-Instead of standard Perlin noise, we use **FBM-Warped Worley Noise**. Worley noise (or cellular noise) creates those crisp, cavernous structures that look like organic cells. To prevent it from looking too "grid-like," we use Fractal Brownian Motion (FBM) to warp the input coordinates.
+Instead of standard Perlin noise, we use FBM-warped Worley noise. Worley noise (or cellular noise) creates those crisp, cavernous structures that look like organic cells. To create a smoky-like texture the code uses fractal brownian motion (FBM) to warp the input coordinates.
 
 Large cells (scale of 400.0) determine moisture. Smaller cells (scale of 80.0) determine density. These are mostly arbitrary properties; density determines the cave shape while moisture determines some extra "flavor" details like blue/purple `strange_stone` or different stone block variations.
 
-Depending on the (Moisture, Density) pair, the generator maps the block to a specific foundation type (like `.lava_stone` or `.blue_stone`).
+Based on the moisture and density values, a specific block type is chosen such as normal, blue, or lava stone.
 
 #### Dispersing ores
 
@@ -216,7 +216,7 @@ Using the `select_sprite` helper, we branch the logic:
 
 #### Decoration pass
 
-The final pass handles the "flavor" of the world. These are things like mushrooms, spiral plants, and ceiling flowers. Since this pass is less computationally expensive, we switch back to `ChaCha12` for high-quality entropy.
+The final pass handles the "flavor" of the world. These are things such as mushrooms, spiral plants, and ceiling flowers. Since this pass is less computationally expensive, we switch back to `ChaCha12` for high-quality entropy.
 
 Decorations are context-aware. Mushrooms only spawn if the block below is solid, ceiling flowers if the block above is solid, and spiral plants can grow multiple blocks tall by checking for a spiral plant above on top of a solid-block above generation check.
 
@@ -273,7 +273,7 @@ for (0..10) |i| {
 // number-drawing example:
 // draw selected HP
 const progress = root.mining.selected_hp;
-const pos: v2f32 = .{ 4, 28 };
+const pos: v2f32 = .{ 10, 28 };
 const font_size = 10.0;
 
 if (progress != 255 and progress != 0) {

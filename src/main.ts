@@ -204,8 +204,6 @@ if (CONFIG.verbose) {
     console.log("Exported functions and memory:", engine.exports);
 }
 
-window.addEventListener("blur", () => (time = Infinity)); // basically, don't let frames when the tab is hidden cause any simulation.
-
 const past60SlowestLogicLoops = Array(60).fill(0);
 const past60SlowestRenders = Array(60).fill(0);
 const past60SlowestZigRenders = Array(60).fill(0);
@@ -301,9 +299,13 @@ engine.logicLoop = function (ticks: number) {
 };
 
 // Helper to get normalized coordinates and tell Zig
-const dispatch = (e: PointerEvent, action: number) => {
+const dispatch = (e: PointerEvent | null, action: number) => {
     // get canvas position relative to the viewport
     const rect = engine.canvas.getBoundingClientRect();
+    if (e == null) {
+        engine.exports.handle_mouse(-1.0, -1.0, 5);
+        return;
+    }
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
     if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
@@ -311,6 +313,11 @@ const dispatch = (e: PointerEvent, action: number) => {
         engine.exports.handle_mouse(x, y, action);
     }
 };
+
+window.addEventListener("blur", () => {
+    time = Infinity;
+    dispatch(null, 0);
+}); // basically, don't let frames when the tab is hidden cause any simulation.
 
 document.addEventListener("pointermove", (e) => {
     if (e.buttons > 0) dispatch(e, 0); // move while pressing any button

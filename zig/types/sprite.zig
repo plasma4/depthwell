@@ -21,7 +21,7 @@ const MASK_START = GEM_START + 4;
 const DECOR_START = MASK_START + 24;
 
 /// Index where numbers (0-9) start.
-pub const NUMBER_START = DECOR_START + 9;
+pub const NUMBER_START = DECOR_START + 10;
 
 /// Sprite IDs with values based on their sprite sheet location
 /// Packed sprite sheet located at src/main.png.
@@ -65,8 +65,9 @@ pub const Sprite = enum(u16) {
     ceiling_flower = DECOR_START + 1, // 2 variations
     mushroom = DECOR_START + 3, // 2 variations
     torch = DECOR_START + 5,
+    portal = DECOR_START + 6,
 
-    inventory = DECOR_START + 6,
+    inventory = DECOR_START + 7,
     inventory_selected,
     inventory_selected_invalid,
     text_0 = NUMBER_START,
@@ -92,7 +93,7 @@ pub const Sprite = enum(u16) {
     pub inline fn is_valid(self: @This()) bool {
         // do note that heatmap isn't valid
         const id = @intFromEnum(self);
-        return self == .none or
+        return self == .none or self == .portal or
             self == .spiral_plant or self == .ceiling_flower or self == .mushroom or self == .torch or
             (id >= STONE_START and id <= STONE_END) or
             (id >= ORE_START and id < MASK_START);
@@ -106,7 +107,14 @@ pub const Sprite = enum(u16) {
         const id = @intFromEnum(self);
         if (id >= @intFromEnum(Sprite.gem_mask) and id < @intFromEnum(Sprite.spiral_plant)) return false;
         return switch (self) {
-            .spiral_plant, .ceiling_flower, .mushroom, .torch, .none, .player => false,
+            .spiral_plant,
+            .ceiling_flower,
+            .mushroom,
+            .torch,
+            .none,
+            .player,
+            .portal,
+            => false,
             else => true,
         };
     }
@@ -141,8 +149,8 @@ pub const Sprite = enum(u16) {
     }
 };
 
-/// The total number of foundation sprites.
-pub const foundation_sprite_count: usize = blk: {
+/// The total number of valid sprites that are considered valid (according to `is_valid()`).
+pub const valid_sprite_count: usize = blk: {
     @setEvalBranchQuota(1e6);
     const fields = @typeInfo(Sprite).@"enum".fields;
     var count: usize = 0;
@@ -156,10 +164,10 @@ pub const foundation_sprite_count: usize = blk: {
 };
 
 /// An array of all `Sprite` values that are considered valid (according to `is_valid()`).
-pub const foundation_sprites = blk: {
+pub const valid_sprites = blk: {
     @setEvalBranchQuota(1e6);
     const fields = @typeInfo(Sprite).@"enum".fields;
-    var result: [foundation_sprite_count]Sprite = undefined;
+    var result: [valid_sprite_count]Sprite = undefined;
     var index: usize = 0;
 
     // Populate the array!
@@ -201,7 +209,8 @@ pub const AIR_BLOCK: memory.Block = .{
 
 comptime {
     @setEvalBranchQuota(1e6);
-    // Check is_valid() is being reasonable.
+    // Check if is_valid() is being reasonable and isn't producing unmapped results.
+    // Mapped but invalid results can be checked by setting `SHOW_ALL_INVENTORY_ITEMS` to true in the zig/input/inventory.zig file.
     var i: u16 = 0;
     var wentToHeatmap = false;
     if (@as(Sprite, @enumFromInt(65535)).is_valid()) @compileError("is_valid() returned true for the unselected type! Ranges are wrong.");

@@ -35,7 +35,7 @@ const number_widths: [10]f32 = .{
 var entity_byte_count_before_end: usize = 0;
 
 /// Current number of entities (reset every frame).
-var entity_count: u64 = 0;
+var entity_count: u64 = undefined;
 
 /// Updates all entities by adding them to the scratch buffer. Does not actually inform JS.
 pub fn update_entities(time_diff: f64) void {
@@ -50,7 +50,7 @@ pub fn update_entities(time_diff: f64) void {
 
     // draw selected HP (for testing)
     const progress = root.mining.selected_hp;
-    const pos: v2f32 = .{ 8, 28 };
+    const pos: v2f32 = .{ 10, 28 };
     const font_size = 10.0;
 
     if (progress != 255 and progress != 0) {
