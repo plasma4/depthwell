@@ -39,7 +39,10 @@ const WasmTypeMap = {
     [WasmTypeCode.Float64]: Float64Array,
 } as const;
 
-/** The maximum number of WebGPU buffers necessary to render everything. This is set to 2 because it is guaranteed that only 2 backgrounds and 2 batches of tiles need to be drawn per frame. */
+/**
+ * The maximum number of WebGPU buffers necessary to render everything.
+ * This is set to 4 because it is guaranteed that only 2 backgrounds and 2 batches of tiles need to be drawn per frame.
+ * */
 export const MAX_DRAW_CALLS = 4;
 
 // Note: constants where most of the game logic resides are in Zig. These are currently unused in JS.
@@ -79,7 +82,7 @@ export class GameEngine {
     /** The array of tile buffers for WebGPU. */
     public tileBuffers: GPUBuffer[] = Array(MAX_DRAW_CALLS);
     /** The array of entity buffers for WebGPU. There is only one buffer. */
-    public entityBuffer?: GPUBuffer;
+    public entityBuffer!: GPUBuffer;
     /** Determines if the tile buffer is dirty. */
     public tileBufferDirty: boolean = false;
     /** The cached texture view for the sprite atlas. */
@@ -297,33 +300,34 @@ export class GameEngine {
     /** Function called from Zig (using the `js_handle_visible_entities` function in `env`) that renders entities. */
     public handleVisibleEntities() {
         const scratchPtr = this.getScratchPtr();
-        const scratchLen = this.getScratchLen();
-        if (scratchLen === 0 || !this.renderPass) return;
+        const entityBytes = this.getScratchProperty(0) * 48; // can't trust length as it's a multiple of 64
+        if (entityBytes === 0 || !this.renderPass) return;
 
-        let bufferRecreated = false;
-        if (!this.entityBuffer || this.entityBuffer.size < scratchLen) {
+        if (this.entityBuffer.size < entityBytes) {
             this.entityBuffer = this.device.createBuffer({
                 label: "Entities",
-                size: Math.max(scratchLen, 1024), // Minimum size to avoid tiny buffers
+                size: entityBytes,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             });
-            bufferRecreated = true;
+            this.renderCallId = 0;
+            this.recreateBufferAndBindGroup(0);
         }
 
         const wasmView = new Uint8Array(
             this.memory.buffer,
             scratchPtr,
-            scratchLen,
+            entityBytes,
         );
         this.device.queue.writeBuffer(this.entityBuffer, 0, wasmView);
 
-        if (bufferRecreated) {
-            this.recreateBufferAndBindGroup(this.tileBuffers[0]?.size || 256);
-        }
-
         this.renderPass!.setPipeline(this.entityPipeline);
         this.renderPass!.setBindGroup(0, this.bindGroups[0], [0]);
-        this.renderPass!.draw(6, scratchLen / 48); // entity size is 48 bytes a piece
+        this.renderPass!.draw(8, entityBytes / 48); // entity size is 48 bytes a piece
+    }
+
+    public setMouseType(type: number) {
+        if (type == 0) (this.canvas.style.cursor as any) = null;
+        else if (type == 1) this.canvas.style.cursor = "pointer";
     }
 
     /** Configures the data in the `scene` used by WGSL. */
@@ -344,8 +348,8 @@ export class GameEngine {
         this.sceneDataF32[2] = this.canvas.width; // canvas res
         this.sceneDataF32[3] = this.canvas.height;
 
-        // Some cycling logic for animations: floating point can become imprecise otherwise
-        const cycleLength = 60000;
+        // Some cycling logic for animations: 32-bit floating point can become imprecise otherwise
+        const cycleLength = 120000;
         const elapsed = performance.now() - this.startTime + this.startDelta;
         const cyclePos = elapsed % (cycleLength * 2);
 
@@ -376,13 +380,20 @@ export class GameEngine {
         );
     }
 
-    /** Creates a new buffer and bind group, if none exists or `tileBuffer`'s size is greater or equal to `neededBytes`. */
+    /**
+     * Creates a new buffer and bind group, if none exists or `tileBuffer`'s size is greater or equal to `neededBytes`.
+     * Forces re-creation of bind groups (ignoring tile buffers) if `neededBytes` is 0.
+     */
     private recreateBufferAndBindGroup(neededBytes: number) {
         const id = this.renderCallId;
-        if (!this.tileBuffers[id] || this.tileBuffers[id]!.size < neededBytes) {
+        if (
+            neededBytes === 0 ||
+            !this.tileBuffers[id] ||
+            this.tileBuffers[id]!.size < neededBytes
+        ) {
             this.tileBuffers[id] = this.device.createBuffer({
                 label: `Tile grid slot ${id}`,
-                size: neededBytes,
+                size: Math.max(neededBytes, 256 * MAX_DRAW_CALLS),
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             });
 
@@ -411,7 +422,7 @@ export class GameEngine {
                     {
                         binding: 5,
                         resource: {
-                            buffer: this.entityBuffer!,
+                            buffer: this.entityBuffer,
                         },
                     },
                 ],
@@ -652,7 +663,7 @@ export class GameEngine {
 
     /** Starts the render logic for a single frame. */
     public renderFrame(timeInterpolated: number, currentTime: number) {
-        this.renderCallId = 0;
+        this.renderCallId = 0; // set to 0 here, as it would otherwise require a (probably non-existent) bind group
         if (this.destroyed !== false) return;
 
         this.updateCanvasStyle(); // in case this was overwritten
@@ -675,7 +686,7 @@ export class GameEngine {
 
         // Draw background (same bind group as chunk drawing)
         this.recreateBufferAndBindGroup(256 * MAX_DRAW_CALLS); // start off with a minimum byte size
-        this.sceneDataF32[7] = 1.0; // set opacity of BG to 1.0, TODO figure out how to allow multiple uniform buffer values in singular draw call!
+        this.sceneDataF32[7] = 1.0; // set opacity of BG to 1.0
         this.device.queue.writeBuffer(
             this.uniformBuffer,
             this.renderCallId * 256,

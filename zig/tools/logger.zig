@@ -137,14 +137,16 @@ fn quickFmt(args: anytype, prefix: []const u8) usize {
     return writer.end;
 }
 
-/// Quickly logs a message for testing. Use .log() with proper arguments for non-temporary logging.
+/// Quickly logs a message for testing.
+/// Use .log() with proper arguments for non-temporary/internal test logging.
 pub inline fn quick(args: anytype) void {
     const prefix = if (root.is_wasm) "]" else "";
     const written = quickFmt(args, prefix);
     message(&logging_buffer, written, .log);
 }
 
-/// Quickly warns a message for testing. Use .log() with proper arguments for non-temporary logging.
+/// Quickly warns a message for testing.
+/// Use .log() with proper arguments for non-temporary/internal test logging.
 pub inline fn quick_warn(args: anytype) void {
     const written = quickFmt(args, "");
     message(&logging_buffer, written, .warn);
@@ -170,8 +172,17 @@ fn write_value(writer: anytype, val: anytype) void {
         .bool => {
             writer.print("{}", .{val}) catch {};
         },
-        .enum_literal, .@"enum" => {
+        .enum_literal => {
             writer.print("{s}", .{@tagName(val)}) catch {};
+        },
+        .@"enum" => {
+            inline for (type_info.@"enum".fields) |field| {
+                if (@intFromEnum(val) == field.value) {
+                    writer.print("{s}", .{field.name}) catch {};
+                    return;
+                }
+            }
+            writer.print("[Invalid/non-exhaustive enum value {d}]", .{@intFromEnum(val)}) catch {};
         },
         .optional => {
             if (val) |v| {

@@ -93,12 +93,12 @@ pub fn find_safe_spawn() void {
             // Scan the chunk for a "safe" spot!
             var y: usize = 0;
             while (y < SPAN - 1) : (y += 1) {
-                const row_idx = y * SPAN;
-                const below_idx = (y + 1) * SPAN;
+                const row = y * SPAN;
+                const column = (y + 1) * SPAN;
 
                 for (0..SPAN) |x| {
-                    const block = chunk.blocks[row_idx + x];
-                    const block_below = chunk.blocks[below_idx + x];
+                    const block = chunk.blocks[row + x];
+                    const block_below = chunk.blocks[column + x];
 
                     if (block.is_empty() and block_below.is_solid()) {
                         // Found a valid floor!

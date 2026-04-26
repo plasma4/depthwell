@@ -254,7 +254,7 @@ pub const Entity = struct {
 These are then passed to WGSL in a large batch. Here is an example of potential usage:
 
 ```zig
-// entity example
+// basic entity example:
 for (0..10) |i| {
     add_entity(.{ // draw shadow of inventory slot by darkening and reducing opacity
         .sprite = if (i == selected_id) .inventory_selected else .inventory,
@@ -270,15 +270,21 @@ for (0..10) |i| {
     });
 }
 
-// number-drawing example
+// number-drawing example:
+// draw selected HP
 const progress = root.mining.selected_hp;
-const pos: v2f32 = .{ 4, 31 };
-const font_size = 12.0;
+const pos: v2f32 = .{ 4, 28 };
+const font_size = 10.0;
 
-if (progress != 255) {
+if (progress != 255 and progress != 0) {
     // draw shadow of text
-    draw_number(progress, pos, .{
-        .lcha = comptime ColorRGBA.hex_to_oklch("#000000bb"),
+    draw_number(progress, pos - v2f32{ 1.5, 1.5 }, .{
+        .lcha = .{
+            0.5, // darken
+            0.4,
+            0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing!
+            0.8,
+        },
         .font_size = font_size,
         .ltr = true,
     });
@@ -288,7 +294,7 @@ if (progress != 255) {
         .lcha = .{
             0.75,
             0.4,
-            0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing!
+            0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing too
             1.0,
         },
         .font_size = font_size,

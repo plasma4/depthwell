@@ -13,7 +13,7 @@ const v2f32 = memory.v2f32;
 
 /// Extra spacing between number characters.
 const spacing = 0.25;
-/// Pre-calculated widths of every number sprite from 0-10.
+/// Pre-calculated widths of every number sprite from 0 to 9.
 const number_widths: [10]f32 = .{
     0.5625 + spacing,
     0.375 + spacing,
@@ -30,27 +30,40 @@ const number_widths: [10]f32 = .{
 // not needed: entities are generated directly in the scratch alloc
 // /// Array of entities.
 // pub var entities: SegmentedList(WGSLEntity, 1024) = .{}; // easiest to do prealloc with larger stack size in case
+
+/// Special variable so that `scratch_alloc_type` adds entities compactly.
 var entity_byte_count_before_end: usize = 0;
 
-/// Updates all entities by adding them to the scratch buffer.
+/// Current number of entities (reset every frame).
+var entity_count: u64 = 0;
+
+/// Updates all entities by adding them to the scratch buffer. Does not actually inform JS.
 pub fn update_entities(time_diff: f64) void {
+    memory.scratch_reset();
+    entity_count = 0;
     entity_byte_count_before_end = 0;
-    // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
-    // Some properties are optional with defaults (size, rotation, LCHA).
 
     inventory.draw_inventory(time_diff);
 
+    // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
+    // Some properties are optional with defaults (size, rotation, LCHA).
+
     // draw selected HP (for testing)
     const progress = root.mining.selected_hp;
-    const pos: v2f32 = .{ 2, 28 };
-    const font_size = 12.0;
+    const pos: v2f32 = .{ 8, 28 };
+    const font_size = 10.0;
 
     if (progress != 255 and progress != 0) {
         // draw shadow of text
-        draw_number(progress, pos, .{
-            .lcha = comptime ColorRGBA.hex_to_oklch("#000000bb"),
+        draw_number(progress, pos - v2f32{ 1.5, 1.5 }, .{
+            .lcha = .{
+                0.5, // darken
+                0.4,
+                0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing!
+                0.8,
+            },
             .font_size = font_size,
-            .ltr = true,
+            .ltr = false,
         });
 
         // draw the actual number now
@@ -58,14 +71,15 @@ pub fn update_entities(time_diff: f64) void {
             .lcha = .{
                 0.75,
                 0.4,
-                0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing!
+                0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing too
                 1.0,
             },
             .font_size = font_size,
-            .ltr = true,
+            .ltr = false,
         });
     }
 
+    memory.set_scratch_prop(0, entity_count);
     // entities are cleared in the render code afterward
 }
 
@@ -221,6 +235,7 @@ fn draw_number_fast(number: u64, position: v2f32, options: TextConfig) void {
 /// Adds a single entity to the `entities` array, changing position to use UV.
 /// Modifies the original entity instance. Does not do anything if the sprite type is `none`.
 pub inline fn add_entity(entity: Entity) void {
+    entity_count += 1;
     const wgsl_entity = memory.scratch_alloc_type(WGSLEntity, &entity_byte_count_before_end);
     wgsl_entity.* = .{
         .lcha = entity.lcha,
@@ -233,5 +248,5 @@ pub inline fn add_entity(entity: Entity) void {
         .rotation = entity.rotation,
         .id = @intFromEnum(entity.sprite),
     };
-    // root.logger.quick(.{@intFromPtr(wgsl_entity) -| @intFromPtr(memory.scratch_buffer.ptr)});
+    // root.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
 }

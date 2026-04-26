@@ -130,6 +130,7 @@ export async function create(
                     engine!.handleVisibleChunks(opacity),
                 js_handle_visible_entities: () =>
                     engine!.handleVisibleEntities(),
+                js_set_mouse_type: (type: number) => engine!.setMouseType(type),
             },
         },
     );
@@ -359,7 +360,7 @@ export async function create(
     });
     engine.entityBuffer = engine.device.createBuffer({
         label: "Entities",
-        size: 4800, // random value, 100 entities here
+        size: 2400, // starting value, 50 entities here
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 

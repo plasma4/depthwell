@@ -4,7 +4,7 @@
 
 // These are sprite sheet constants. Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
 // See zig/state/world.zig's Sprite definitions for sprite type list.
-// These const values values with /* VARIABLE_NAME */ are dynamically patched in from TypeScript, so do not set them here.
+// These const values with /* VARIABLE_NAME */ are dynamically patched in from TypeScript, so do not set them here.
 const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
 const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */;
 const STONE_START: u32 = /* STONE_START */ 1 /* STONE_START */;
@@ -171,11 +171,11 @@ fn vs_tile(
     // add to ID based on pre-determined shifts
     if (id == STONE_START) {
         // 2x2 grid stone pattern (like a 32x32 sprite)
-        let offset = (tile_coords.y % 2u) * 2u + (tile_coords.x % 2u);
+        let offset = ((tile_coords.y & 1u) << 1u) | (tile_coords.x & 1u);
         id += offset;
     } else if (id == 2) { // (IDs here hard-coded, like player)
         // edge stone alternates in a checkerboard pattern
-        let offset = (tile_coords.x % 2u) ^ (tile_coords.y % 2u);
+        let offset = (tile_coords.x & 1u) ^ (tile_coords.y & 1u);
         id += offset;
     } else if (id == DECOR_START + 1u || id == DECOR_START + 3u) {
         // seed-based variation for mushrooms OR ceiling flowers
@@ -220,9 +220,9 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
-    if (in.sprite_id >= 256u && in.sprite_id <= 512u) {
+    if (in.sprite_id >= 65000u && in.sprite_id <= 65256u) {
         // Heatmap logic!
-        let color = (f32(in.sprite_id) - 256.0) / 256.0;
+        let color = (f32(in.sprite_id - 65000u)) / 256.0;
         var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, and hue
         let lab = oklch_to_oklab(lch);
         let final_rgb = oklab_to_linear_srgb(lab);
@@ -256,7 +256,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
         let flip = vec2f(vec2u(extractBits(seed, 25u, 1u), extractBits(seed, 26u, 1u)));
         let flipped_uv = mix(in.local_uv, 1.0 - in.local_uv, flip);
         // Use 2x2 grid logic for the background stone's ID
-        let bg_id = STONE_START + (in.tile_coords.y % 2u) * 2u + (in.tile_coords.x % 2u);
+        let bg_id = STONE_START + (((in.tile_coords.y & 1u) << 1u) | (in.tile_coords.x & 1u));
 
         // Calculate UVs for the background stone
         let bg_grid = vec2f(f32(bg_id % TILES_PER_ROW_U), f32(bg_id / TILES_PER_ROW_U));
@@ -802,8 +802,9 @@ fn vs_entity(
     //     out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
     // }
 
+    // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50) and bits 2, 3, and 5 are set (0b101100 = 44)
     let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
-    let centered_pos = local_pos - 0.5;
+    let centered_pos = local_pos - 0.5f;
 
     // Rotate sprite as needed (in radians)
     let c = cos(entity.rotation);
@@ -813,7 +814,7 @@ fn vs_entity(
         centered_pos.x * s + centered_pos.y * c
     );
 
-    let pixel_pos = entity.position + (rotated_pos * entity.size);
+    let pixel_pos = entity.position + rotated_pos * entity.size;
 
     // Convert to normalized device coords
     let ndc = pixel_pos * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
@@ -892,7 +893,11 @@ fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
 
 fn oklab_to_oklch(lab: vec3f) -> vec3f {
     let chroma = length(lab.yz);
-    let hue = select(atan2(lab.z, lab.y), 0.0, chroma < 0.0001); // prevent invalid numbers
+    var hue = 0.0;
+    // prevent invalid numbers with this check
+    if (chroma > 0.0001) {
+        hue = atan2(lab.z, lab.y);
+    }
     return vec3f(lab.x, chroma, hue);
 }
 
