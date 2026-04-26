@@ -44,7 +44,8 @@ struct SceneUniforms {
     chunk_opacity: f32,
     player_screen_pos: vec2f,
     map_size: vec2u,
-    _extra_padding: array<vec4u, 13>, // Pad to 256 bytes for dynamic offsets
+    flags: vec4u, // .a: is_p3; .b: is_8bit (.b is unused)
+    _extra_padding: array<vec4u, 12>, // Pad to 256 bytes for dynamic offsets
 };
 
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
@@ -246,7 +247,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     // Sample the primary color (the actual original sprite, gem or not)
     var hp_darkness_mult = textureSampleLevel(sprite_atlas, pixel_sampler, hp_uv, 0.0).r;
     var tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
-    tex_color = vec4f(tex_color.rgb * hp_darkness_mult, tex_color.a);
+    tex_color = vec4f(srgb_to_linear(tex_color.rgb) * hp_darkness_mult, tex_color.a);
 
     // ore sampling pixel logic
     if (in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START) {
@@ -275,7 +276,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
 
         // with linear RGB: r component of mask determines mix amount, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
-            tex_stone.rgb * vec3f(0.4 + u_dist * 1.2),
+            srgb_to_linear(tex_stone.rgb) * vec3f(0.4 + u_dist * 1.2),
             tex_color.rgb,
             tex_mask.r + (0.5 - u_dist)
         );
@@ -350,7 +351,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
         final_a = max(final_a, wire_color.a);
     }
 
-    return vec4f(final_rgb, final_a);
+    return vec4f(apply_color_management(final_rgb), final_a);
 }
 
 // Bijective mixer for 32-bit integers
@@ -663,7 +664,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
 
     let f = fbm_4(st + r);
 
-    let mix_blue = mix(0.0, 0.4, in.time);
+    let mix_blue = mix(0.0, 0.2, in.time);
     var color = mix(
         vec3f(0.0, 0.01, mix_blue * mix_blue),
         vec3f(0.1, 0.4, 0.2),
@@ -675,7 +676,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let mix_green = mix(0.0, 1.0, in.time2);
     color = mix(
         color,
-        vec3f(mix_red * mix_red, mix_green * mix_green, 0.8),
+        vec3f(mix_red * mix_red, mix_green * mix_green, 0.3),
         clamp(length(q), 0.0, 1.0)
     );
 
@@ -683,7 +684,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let final_rgb = max(intensity, 0.0) * color;
 
     let opacity = scene.chunk_opacity;
-    return vec4f(final_rgb * opacity, opacity);
+    return vec4f(apply_color_management(final_rgb), opacity);
 }
 
 fn noise(st: vec2f) -> f32 {
@@ -843,9 +844,10 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     // Both the original sprite and the mask are sampled. The mask is pre-made: for many sprites it is white.
     // For gems, there's a special gem mask, and ores have a rounded rectangular mask with darkening.
     // This is multiplied with RGBA instead of OKLCH for simplicity.
-    let tex_color =
-        textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0) *
-        textureSampleLevel(sprite_atlas_mask, pixel_sampler, final_uv, 0.0);
+    let raw_tex = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
+    let raw_mask = textureSampleLevel(sprite_atlas_mask, pixel_sampler, final_uv, 0.0);
+
+    let tex_color = vec4f(srgb_to_linear(raw_tex.rgb), raw_tex.a) * raw_mask;
     // Early discard if the pixel is fully transparent (maybe)
     // if (tex_color.a <= 0.0) {
     //     discard;
@@ -863,14 +865,14 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
 
     // apply alpha after being back to RGB!
     let final_a = tex_color.a * in.lcha.w;
-    return vec4f(final_rgb, final_a);
+    return vec4f(apply_color_management(final_rgb), final_a);
 }
 
 
 
 /*
     ----
-    OKLAB Conversions
+    OKLAB and Color Space Conversions
     ----
 */
 fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
@@ -903,4 +905,40 @@ fn oklab_to_oklch(lab: vec3f) -> vec3f {
 
 fn oklch_to_oklab(lch: vec3f) -> vec3f {
     return vec3f(lch.x, lch.y * cos(lch.z), lch.y * sin(lch.z));
+}
+
+fn srgb_to_linear(c: vec3f) -> vec3f {
+    return select(
+        c / 12.92,
+        pow((c + 0.055) / 1.055, vec3f(2.4)),
+        c > vec3f(0.04045)
+    );
+}
+
+fn linear_to_srgb(c: vec3f) -> vec3f {
+    let safe_c = max(c, vec3f(0.0));
+    return select(
+        1.292 * safe_c,
+        1.055 * pow(safe_c, vec3f(1.0 / 2.4)) - 0.055,
+        safe_c > vec3f(0.0031308)
+    );
+}
+
+fn linear_srgb_to_display_p3(rgb: vec3f) -> vec3f {
+    let m = mat3x3f(
+        0.822462, 0.033194, 0.017083,
+        0.177538, 0.966806, 0.072397,
+        0.000000, 0.000000, 0.910520
+    );
+    return max(m * rgb, vec3f(0.0));
+}
+
+// Change the final RGB value based on color space info.
+fn apply_color_management(linear_rgb: vec3f) -> vec3f {
+    var out = linear_rgb;
+    // Convert color space while still linear
+    if (scene.flags.x == 1u) { // isP3
+        out = linear_srgb_to_display_p3(out);
+    }
+    return linear_to_srgb(out); // always apply transfer function
 }
