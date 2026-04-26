@@ -3,8 +3,12 @@ const std = @import("std");
 const root = @import("root").root;
 const sprite = root.sprite;
 const Sprite = sprite.Sprite;
+const inventory = root.inventory;
 const world = root.world;
 const mouse = root.mouse;
+
+/// Whether to instantly mine blocks or not (effectively infinite strength and speed).
+const INSTANT_MINE = false;
 
 /// How far the player has progressed to increase `hp`.
 pub var mining_progress: u64 = 0;
@@ -31,7 +35,7 @@ pub fn handle_mining_and_placing() void {
         return;
     }
 
-    const sprite_type = root.inventory.selected_sprite;
+    const sprite_type = inventory.selected_sprite;
     if (sprite_type == .unselected) {
         selected_hp = 255;
         return;
@@ -52,32 +56,38 @@ pub fn handle_mining_and_placing() void {
             mining_progress += mining_speed;
             const strength = get_sprite_strength(block.id);
 
-            if (strength != std.math.maxInt(u64) and mining_progress >= strength) {
+            if (INSTANT_MINE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
                 mining_progress = 0;
-                const was_deleted = world.modify_block_hp(
+                // sprite type being none check also prevents unneeded memory waste with ModKey
+                const was_deleted = block.id == .none or world.modify_block_hp(
                     mouse_chunk,
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
                     block,
-                    if (strength > 0) mining_strength else 0,
+                    if (!INSTANT_MINE and strength > 0) mining_strength else 0, // instantly mine (0 value) if block type has no strength
                 );
 
                 if (was_deleted) {
-                    root.inventory.add_to_inventory(block.id);
+                    if (block.id != .none) {
+                        inventory.add_to_inventory(block.id);
 
-                    // Only auto-replace if the block being mined is NOT the same as the held item
-                    // AND we successfully consume the item.
-                    if (sprite_type != .none and sprite_type != .unselected) {
-                        if (root.inventory.remove_from_inventory(sprite_type)) {
-                            world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type);
+                        // Only auto-replace if the block being mined is different from the held item.
+                        if (sprite_type != .none and sprite_type != .unselected) {
+                            if (inventory.remove_from_inventory(sprite_type)) { // make sure it's possible to use
+                                world.modify_block_type(
+                                    mouse_chunk,
+                                    mouse.mouse_block_x,
+                                    mouse.mouse_block_y,
+                                    sprite_type,
+                                );
 
-                            // IMPORTANT: Reset progress and set selected_hp so the next tick
-                            // correctly identifies the new block ID and hits the early-exit return.
-                            mining_progress = 0;
-                            selected_hp = 0;
-                            return;
+                                mining_progress = 0;
+                                selected_hp = 0;
+                                return;
+                            }
                         }
                     }
+
                     selected_hp = 255;
                 } else {
                     selected_hp = block.hp -| mining_strength;
@@ -85,7 +95,7 @@ pub fn handle_mining_and_placing() void {
             }
         } else if (block.id == .none and sprite_type != .none) {
             // placing into empty air!
-            if (root.inventory.remove_from_inventory(sprite_type)) {
+            if (inventory.remove_from_inventory(sprite_type)) {
                 world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type);
                 selected_hp = 0;
                 mining_progress = 0;
@@ -119,5 +129,18 @@ fn get_sprite_strength(s: Sprite) u64 {
             else => 100,
         };
     }
-    return std.math.maxInt(u64);
+    if (root.is_debug) return std.math.maxInt(u64) else unreachable;
+}
+
+comptime {
+    for (@typeInfo(Sprite).@"enum".fields) |field| {
+        const field_sprite: Sprite = @enumFromInt(field.value);
+
+        // If it's a valid, solid block, it MUST have a defined mining strength.
+        if (field_sprite.is_valid() and field_sprite.is_solid()) {
+            if (get_sprite_strength(field_sprite) == std.math.maxInt(u64)) {
+                @compileError("Sprite is valid and solid but missing a strength value in get_sprite_strength: " ++ field.name);
+            }
+        }
+    }
 }

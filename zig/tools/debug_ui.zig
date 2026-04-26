@@ -29,7 +29,7 @@ pub const ButtonDef = struct {
 pub const sliders = [_]SliderDef{
     .{
         .name = "Procedural scale",
-        .min = 0.2,
+        .min = 0.1,
         .max = 5.0,
         .val = &procedural.procedural_cell_size,
         .regen = true,

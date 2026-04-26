@@ -249,7 +249,7 @@ pub const Block = packed struct(u64) {
         return self.id.is_gem();
     }
 
-    /// Determines if the sprite is a heatmap (types 256-512).
+    /// Determines if the sprite is a heatmap (types 65000-65256).
     pub inline fn is_heatmap(self: @This()) bool {
         return self.id.is_heatmap();
     }
@@ -432,13 +432,13 @@ var is_dynamic_scratch: bool = false;
 
 /// The layout structure shared with TypeScript. The MemoryLayout instance will not change locations, but its properties may.
 pub const MemoryLayout = extern struct {
-    /// Pointer to the scratch buffer.
+    /// 64-bit integeric pointer to the scratch buffer.
     scratch_ptr: u64 align(MAIN_ALIGN_BYTES),
     /// The current length or offset used within the scratch buffer.
     scratch_len: u64,
     /// The total capacity of the fixed scratch buffer (starts off at 4 MiB).
     scratch_capacity: u64,
-    /// Pointer to the GameState.
+    /// 64-bit integeric pointer to the GameState.
     game_ptr: u64,
     /// Additional properties for sending additional (numeric, pointer, or short fixed-length) properties. Information in the scratch properties should be assumed to be corrupted as soon as any other function that could modify the scratch buffer is called. This array should be thought of as a temporary "handshake" to trade information between Zig and TypeScript. Consider utilizing function arguments instead when sending data to Zig.
     scratch_properties: [20]u64,

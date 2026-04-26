@@ -72,11 +72,10 @@ pub export fn prepare_visible_data(time_interpolated: f64, time_diff: f64, canva
 }
 
 pub export fn get_tiles_per_row() u32 {
-    // return world.max_sprite_value + 1; // the length is the highest value + 1
-    return 10; // Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
+    return 8; // Sprites are saved as a .png in a sprite sheet 128 pixels wide, and each asset is 16x16.
 }
 pub export fn get_tiles_per_column() u32 {
-    return (sprite.max_sprite_value + 1 + 9) / 10; // act as a ceil
+    return sprite.max_sprite_value / 8 + 1; // works out from 0-indexing
 }
 pub export fn get_stone_start() u32 {
     return @intCast(@intFromEnum(Sprite.stone));
@@ -99,15 +98,15 @@ pub export fn handle_mouse(mouse_x: f64, mouse_y: f64, action: u32) void {
 }
 
 pub export fn tick(speed: u32, iterations: u32) void {
-    var slot_buffer: [sprite.foundation_sprite_count + 1]Sprite = undefined;
-    const active = inventory.get_active_slots(&slot_buffer);
+    var buffer: inventory.SlotBuffer = undefined;
+    const active_slots = inventory.get_active_slots(&buffer);
 
     // handles M and 0 cases, see code in function for details
     const number = KeyBits.get_number(memory.game.keys_held_mask);
     if (number != 255) {
         // Only change selection if the slot actually exists
-        if (number < active.len) {
-            inventory.selected_sprite = active[number];
+        if (number < active_slots.len) {
+            inventory.selected_sprite = active_slots[number];
         }
     }
 
@@ -191,6 +190,10 @@ comptime {
 
         pub export fn test_scratch_allocation() void {
             memory.run_scratch_allocation_tests();
+        }
+
+        pub export fn log_inventory() void {
+            inventory.log_inventory();
         }
     };
 }

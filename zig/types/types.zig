@@ -20,12 +20,12 @@ pub const KeyBits = struct {
     }
 
     /// Returns a number selected, if any.
-    /// Prioritizes smaller numbers, returning 255 for none. Treats `mine` key as 0 and 0 key as 10.
+    /// Prioritizes smaller numbers, returning 255 for none. Treats both 0 and `mine` key as 0.
     pub inline fn get_number(key_mask: u32) u8 {
         if (key_mask & mine != 0) return 0;
         inline for (0..10) |i| { // k0 -> mask(0), k9 -> mask(9)
             if (key_mask & @This().mask(i) != 0) {
-                if (i == 0) return 10;
+                // if (i == 0) return 10; // should also be 0
                 return i;
             }
         }
@@ -77,7 +77,6 @@ pub const KeyBits = struct {
 };
 
 /// Bitmask flags used to identify the presence of neighboring blocks.
-/// TODO use, and also add logic at the edges of SimBuffer(?)
 pub const EdgeFlags = struct {
     /// Helper to map dx/dy offsets to these flags
     pub inline fn get_flag_bit(dx: i32, dy: i32) u8 {

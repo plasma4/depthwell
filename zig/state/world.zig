@@ -40,8 +40,8 @@ pub const ModificationStore = struct {
 
     /// Gets an existing modification for reading.
     pub fn get(self: *const @This(), key: ModKey) ?*const ChunkMod {
-        const idx = self.index.get(key) orelse return null;
-        return &self.history.items[idx];
+        const id = self.index.get(key) orelse return null;
+        return &self.history.items[id];
     }
 };
 
@@ -408,7 +408,7 @@ pub const ChunkCache = struct {
 /// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `ArrayList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `arena`.
 fn carry_path(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
     const new_path = path.clone(arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
-    arena.reset(.retain_capacity); // TODO decide
+    // arena.reset(.retain_capacity);
     var carry: u1 = 1;
 
     for (new_path.items) |*word| {
@@ -419,7 +419,8 @@ fn carry_path(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
         if (carry == 0) break;
     }
 
-    // If we still have a carry after the loop, the coordinate grew. However, this is NOT POSSIBLE because the quadrant logic should specifically disallow this (impl TODO)
+    // If we still have a carry after the loop, the coordinate grew.
+    // However, this is NOT POSSIBLE because the quadrant logic should specifically disallow this.
     if (carry == 1) {
         unreachable;
     }
@@ -675,17 +676,17 @@ fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha
     }
 
     // Get neighbor contexts if existent in SimBuffer
-    const NeighborCtx = struct { coord: ?Coordinate, chunk: ?*Chunk };
-    var neighbors: [9]NeighborCtx = undefined;
+    const NeighborContext = struct { coord: ?Coordinate, chunk: ?*Chunk };
+    var neighbors: [9]NeighborContext = undefined;
     inline for (.{ -1, 0, 1 }) |dy| {
         inline for (.{ -1, 0, 1 }) |dx| {
-            const idx = @as(usize, (dy + 1) * 3 + (dx + 1));
+            const id = @as(usize, (dy + 1) * 3 + (dx + 1));
             if (dx == 0 and dy == 0) {
-                neighbors[idx] = .{ .coord = coord, .chunk = target_chunk };
+                neighbors[id] = .{ .coord = coord, .chunk = target_chunk };
                 continue;
             }
             const nc = coord.move(.{ dx, dy });
-            neighbors[idx] = .{
+            neighbors[id] = .{
                 .coord = nc,
                 .chunk = if (nc) |c| SimBuffer.get(c) else null,
             };
@@ -719,8 +720,8 @@ fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha
                             target_chunk.blocks[@as(usize, @intCast(ny * SPAN + nx))].id
                         else blk: {
                             // Correct neighbor index is based strictly on the SHIFT, not the block coord
-                            const n_idx = @as(usize, (if (ny < 0) @as(usize, 0) else if (ny >= SPAN) @as(usize, 2) else 1) * 3 + (if (nx < 0) @as(usize, 0) else if (nx >= SPAN) @as(usize, 2) else 1));
-                            const n = neighbors[n_idx];
+                            const n_id = @as(usize, (if (ny < 0) @as(usize, 0) else if (ny >= SPAN) @as(usize, 2) else 1) * 3 + (if (nx < 0) @as(usize, 0) else if (nx >= SPAN) @as(usize, 2) else 1));
+                            const n = neighbors[n_id];
 
                             // only get 1 block, instead if naively asking for a whole chunk
                             if (n.chunk) |c| {
@@ -754,18 +755,18 @@ pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) 
     const id: usize = @as(usize, by) * memory.SPAN + bx;
 
     // Ensure entry exists in history
-    const entry_idx = mod_store.index.get(key) orelse blk: {
-        const new_idx = mod_store.history.items.len;
+    const entry_id = mod_store.index.get(key) orelse blk: {
+        const new_id = mod_store.history.items.len;
         // Seed new modification with current generated state if it's the first edit
         var base_chunk: Chunk = undefined;
         write_chunk_modless(&base_chunk, coord);
         mod_store.history.append(alloc, base_chunk.blocks) catch @panic("Failed to add to modification storage!");
-        mod_store.index.put(key, new_idx) catch @panic("Failed to add to modification storage!");
-        break :blk new_idx;
+        mod_store.index.put(key, new_id) catch @panic("Failed to add to modification storage!");
+        break :blk new_id;
     };
 
-    mod_store.history.items[entry_idx][id].id = new_sprite;
-    mod_store.history.items[entry_idx][id].hp = 0;
+    mod_store.history.items[entry_id][id].id = new_sprite;
+    mod_store.history.items[entry_id][id].hp = 0;
 
     // Update caches so changes appear immediately
     if (SimBuffer.get(coord)) |sim_chunk| {
@@ -788,20 +789,20 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
     const id: usize = @as(usize, by) * memory.SPAN + bx;
 
     // Ensure entry exists in history
-    const entry_idx = mod_store.index.get(key) orelse blk: {
-        const new_idx = mod_store.history.items.len;
+    const entry_id = mod_store.index.get(key) orelse blk: {
+        const new_id = mod_store.history.items.len;
         // Seed new modification with current generated state if it's the first edit
         var base_chunk: Chunk = undefined;
         write_chunk_modless(&base_chunk, coord);
         mod_store.history.append(alloc, base_chunk.blocks) catch @panic("Failed to add to modification storage!");
-        mod_store.index.put(key, new_idx) catch @panic("Failed to add to modification storage!");
-        break :blk new_idx;
+        mod_store.index.put(key, new_id) catch @panic("Failed to add to modification storage!");
+        break :blk new_id;
     };
 
     const overflow_hp = @addWithOverflow(hp_to_add, block.hp);
     if (overflow_hp[1] == 1 or hp_to_add == 0 or !block.is_solid()) {
         if (block.id == .none) return true;
-        mod_store.history.items[entry_idx][id].id = .none;
+        mod_store.history.items[entry_id][id].id = .none;
 
         // Update caches so changes appear immediately
         if (SimBuffer.get(coord)) |sim_chunk| {
@@ -814,7 +815,7 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
         return true;
     } else {
         const new_hp: u4 = overflow_hp[0];
-        mod_store.history.items[entry_idx][id].hp = new_hp;
+        mod_store.history.items[entry_id][id].hp = new_hp;
 
         if (SimBuffer.get(coord)) |sim_chunk| {
             sim_chunk.blocks[id].hp = new_hp;
@@ -826,7 +827,8 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
     return false;
 }
 
-/// Recalculates edge flags for a specific block and its 8 neighbors.
+/// Recalculates edge flags for a specific block its 8 neighbors.
+/// Also breaks any non-foundation blocks.
 fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
     for ([_]i32{ -1, 0, 1 }) |dy| {
         for ([_]i32{ -1, 0, 1 }) |dx| {
@@ -842,30 +844,85 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) void {
             const lby: u4 = @intCast(@mod(ny, SPAN));
             const block_id = @as(usize, lby) * SPAN + lbx;
 
-            // Calculate the new flags
             const current_sprite = get_block_id_at(target_coord, lbx, lby);
-            var new_flags: u8 = 0;
 
-            if (current_sprite.is_foundation()) {
-                inline for (.{ -1, 0, 1 }) |ndy| {
-                    inline for (.{ -1, 0, 1 }) |ndx| {
-                        if (ndx == 0 and ndy == 0) continue;
-                        const sprite_id = get_block_id_at(target_coord.move(.{ @divFloor(@as(i32, lbx) + ndx, SPAN), @divFloor(@as(i32, lby) + ndy, SPAN) }) orelse target_coord, @intCast(@mod(@as(i32, lbx) + ndx, SPAN)), @intCast(@mod(@as(i32, lby) + ndy, SPAN)));
-                        if (should_have_edge_flags(sprite_id, current_sprite)) new_flags |= types.EdgeFlags.get_flag_bit(ndx, ndy);
-                    }
+            // Dependency logic: Instantly mine plants if support is lost
+            var broken = false;
+            if (current_sprite == .mushroom) {
+                // Check block directly below (y + 1)
+                const below = if (lby < 15)
+                    get_block_id_at(target_coord, lbx, lby + 1)
+                else
+                    get_block_id_at(target_coord.move(.{ 0, 1 }) orelse target_coord, lbx, 0);
+                if (!below.is_solid()) broken = true;
+            } else if (current_sprite == .ceiling_flower or current_sprite == .spiral_plant) {
+                // Check block directly above (y - 1)
+                const above = if (lby > 0)
+                    get_block_id_at(target_coord, lbx, lby - 1)
+                else
+                    get_block_id_at(target_coord.move(.{ 0, -1 }) orelse target_coord, lbx, 15);
+
+                if (current_sprite == .ceiling_flower) {
+                    if (!above.is_solid()) broken = true;
+                } else { // .spiral_plant
+                    // Breaks if support is neither solid nor another spiral plant
+                    if (!above.is_solid() and above != .spiral_plant) broken = true;
                 }
-            } else {
-                new_flags = 0xFF;
             }
 
-            // Update the live caches
-            if (SimBuffer.get(target_coord)) |c| c.blocks[block_id].edge_flags = new_flags;
-            if (ChunkCache.get(target_coord)) |c| c.blocks[block_id].edge_flags = new_flags;
+            if (broken) {
+                // modify_block_type will recursively call this function to cascade the effect, so this works out!
+                root.inventory.add_to_inventory(current_sprite);
+                modify_block_type(target_coord, lbx, lby, .none);
+                continue;
+            }
 
-            // Finally, update the permanent modification storage!
+            // Only foundation blocks require edge flag calculation and storage
+            if (!current_sprite.is_foundation()) continue;
+
+            var new_flags: u8 = 0;
+            inline for (.{ -1, 0, 1 }) |ndy| {
+                inline for (.{ -1, 0, 1 }) |ndx| {
+                    if (ndx == 0 and ndy == 0) continue;
+                    const neighbor_sprite = get_block_id_at(
+                        target_coord.move(
+                            .{ @divFloor(@as(i32, lbx) + ndx, SPAN), @divFloor(@as(i32, lby) + ndy, SPAN) },
+                        ) orelse target_coord,
+                        @intCast(@mod(@as(i32, lbx) + ndx, SPAN)),
+                        @intCast(@mod(@as(i32, lby) + ndy, SPAN)),
+                    );
+                    if (should_have_edge_flags(neighbor_sprite, current_sprite)) {
+                        new_flags |= types.EdgeFlags.get_flag_bit(ndx, ndy);
+                    }
+                }
+            }
+
+            // Cache and ModStore sync
             const key = ModKey.from(target_coord);
-            if (mod_store.index.get(key)) |idx| {
-                mod_store.history.items[idx][block_id].edge_flags = new_flags;
+            const existing_mod = mod_store.index.get(key);
+
+            const old_flags = blk: {
+                if (SimBuffer.get(target_coord)) |c| break :blk c.blocks[block_id].edge_flags;
+                if (ChunkCache.get(target_coord)) |c| break :blk c.blocks[block_id].edge_flags;
+                break :blk 0;
+            };
+
+            if (new_flags != old_flags) {
+                if (SimBuffer.get(target_coord)) |c| c.blocks[block_id].edge_flags = new_flags;
+                if (ChunkCache.get(target_coord)) |c| c.blocks[block_id].edge_flags = new_flags;
+
+                if (existing_mod) |idx| {
+                    mod_store.history.items[idx][block_id].edge_flags = new_flags;
+                } else {
+                    // Create a new mod entry only if necessary to persist the visual flag change
+                    var base_chunk: Chunk = undefined;
+                    write_chunk_modless(&base_chunk, target_coord);
+                    base_chunk.blocks[block_id].edge_flags = new_flags;
+
+                    const new_id = mod_store.history.items.len;
+                    mod_store.history.append(alloc, base_chunk.blocks) catch @panic("mod_store history alloc failed");
+                    mod_store.index.put(key, new_id) catch @panic("mod_store index put failed");
+                }
             }
         }
     }

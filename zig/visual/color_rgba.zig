@@ -309,8 +309,8 @@ test "ColorRGBA perceptual luminance" {
 }
 
 test "ColorRGBA luminance calculation" {
-    const grey = ColorRGBA.init(100, 100, 100, 255);
-    try std.testing.expectEqual(@as(u8, 100), grey.luminance());
+    const gray = ColorRGBA.init(100, 100, 100, 255);
+    try std.testing.expectEqual(@as(u8, 100), gray.luminance());
 
     const black = ColorRGBA.black;
     try std.testing.expectEqual(@as(u8, 0), black.luminance());
@@ -439,12 +439,12 @@ test "ColorRGBA invert and grayscale" {
     try std.testing.expectEqual(@as(u8, 105), inv.channels.b);
     try std.testing.expectEqual(@as(u8, 200), inv.channels.a);
 
-    const grey = c.to_grayscale();
+    const gray = c.to_grayscale();
     const l = c.luminance();
-    try std.testing.expectEqual(l, grey.channels.r);
-    try std.testing.expectEqual(l, grey.channels.g);
-    try std.testing.expectEqual(l, grey.channels.b);
-    try std.testing.expectEqual(@as(u8, 200), grey.channels.a);
+    try std.testing.expectEqual(l, gray.channels.r);
+    try std.testing.expectEqual(l, gray.channels.g);
+    try std.testing.expectEqual(l, gray.channels.b);
+    try std.testing.expectEqual(@as(u8, 200), gray.channels.a);
 }
 
 test "ColorRGBA composite_over" {

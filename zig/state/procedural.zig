@@ -50,7 +50,10 @@ const BaseTerrainData = struct {
 /// Generates a block for seeding (based on previous procedural generation logic).
 /// The terms moisture/density are used extremely loosely here.
 pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
-    if (root.is_debug and USE_BASE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(density * 256.0))); // sprite IDs from 256-512 create a neat little heatmap
+    // sprite IDs in this range create a heatmap
+    if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(density * 256.0)));
+    // use ore heatmap everywhere
+    if (root.is_debug and USE_ORE_HEATMAP) return .stone;
 
     if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
         return .strange_stone;
@@ -263,8 +266,8 @@ pub fn add_ores(
         },
     );
 
-    // sprite IDs from 256-512 create a neat little heatmap (using only the first value), overriding normal ore logic
-    if (root.is_debug and USE_ORE_HEATMAP) return @enumFromInt(256 + @as(u20, @intFromFloat(v1 * 256.0)));
+    // sprite IDs in this range use a neat heatmap (using only the first variation value), overriding normal ore logic
+    if (root.is_debug and USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(v1 * 256.0)));
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
         // Generate various ore types
@@ -408,12 +411,13 @@ pub fn add_decorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) voi
         }
     }
 
-    for (1..SPAN) |block_y| { // TODO decide if this failing across chunk boundaries really matters or not
+    for (1..SPAN) |block_y| {
         for (0..SPAN) |block_x| {
             const id = block_x + block_y * SPAN;
             var block = &target_chunk.blocks[id];
             if (block.is_foundation() or target_chunk.blocks[id - 16].is_empty()) continue;
             if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() <= odds_num(0.7)) {
+                // TODO: evaluate if this failing across chunk boundaries really matters or not
                 block.id = .spiral_plant;
             } else if (target_chunk.blocks[id - 16].is_foundation() and block.is_empty()) {
                 const val = rng1.next();
