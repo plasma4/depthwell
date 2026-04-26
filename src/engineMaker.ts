@@ -68,13 +68,18 @@ export async function create(
         throw Error("Could not get WebGPU context from canvas.");
     }
 
-    // Firefox is silly and doesn't support the rgba16float texture format for whatever reason
+    // Firefox is silly and doesn't always support the rgba16float texture format for whatever reason
+    // so we just fall back to "bgra8unorm"
+    const supportsP3 = window.matchMedia("(color-gamut: p3)").matches;
     const format = device.features.has("canvas-rgba16float-support")
         ? "rgba16float"
         : "bgra8unorm";
+
     context.configure({
         device,
-        format: format, // Must match the pipeline target below
+        format: format,
+        colorSpace:
+            supportsP3 && format === "rgba16float" ? "display-p3" : "srgb",
         alphaMode: "opaque",
     });
 
@@ -374,6 +379,25 @@ export async function create(
     //     0,
     //     new Uint32Array([tileMap.width, tileMap.height]),
     // );
+
+    // do some media monitoring
+    engine.isP3 = supportsP3 && format === "rgba16float";
+    engine.is8Bit = format === "bgra8unorm";
+
+    // Monitor gamut changes (e.g. dragging window to a different monitor)
+    engine.gamutMediaQuery = window.matchMedia("(color-gamut: p3)");
+    engine.gamutMediaQuery.addEventListener("change", (e) => {
+        const nowP3 = e.matches && format === "rgba16float";
+        if (nowP3 !== engine!.isP3) {
+            engine!.isP3 = nowP3;
+            context.configure({
+                device,
+                format: format,
+                colorSpace: nowP3 ? "display-p3" : "srgb",
+                alphaMode: "opaque",
+            });
+        }
+    });
 
     return engine;
 }

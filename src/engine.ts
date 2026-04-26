@@ -152,6 +152,13 @@ export class GameEngine {
     public readonly encoder = new TextEncoder();
     public readonly decoder = new TextDecoder();
 
+    /** Determines whether the display uses the P3 color space. */
+    public isP3: boolean = false;
+    /** Determines whether 8-bit canvas textures are being used. */
+    public is8Bit: boolean = false;
+    /** Media query to automatically update `isP3`. */
+    public gamutMediaQuery: MediaQueryList | null = null;
+
     /** The prefix used for logging. */
     // public LOGGING_PREFIX = location.origin + "/zig/";
     public LOGGING_PREFIX = "";
@@ -299,6 +306,8 @@ export class GameEngine {
 
     /** Function called from Zig (using the `js_handle_visible_entities` function in `env`) that renders entities. */
     public handleVisibleEntities() {
+        // setting color space flags not needed, piggybacking off of previous calls for color space
+        this.renderCallId = 0;
         const scratchPtr = this.getScratchPtr();
         const entityBytes = this.getScratchProperty(0) * 48; // can't trust length as it's a multiple of 64
         if (entityBytes === 0 || !this.renderPass) return;
@@ -309,7 +318,6 @@ export class GameEngine {
                 size: entityBytes,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             });
-            this.renderCallId = 0;
             this.recreateBufferAndBindGroup(0);
         }
 
@@ -330,7 +338,7 @@ export class GameEngine {
         else if (type == 1) this.canvas.style.cursor = "pointer";
     }
 
-    /** Configures the data in the `scene` used by WGSL. */
+    /** Configures the data in the `SceneUniforms` scene used by WGSL. */
     private setSceneData(
         opacity: number,
         tileDataWidth: number,
@@ -372,6 +380,8 @@ export class GameEngine {
 
         this.sceneDataU32[10] = tileDataWidth; // map size
         this.sceneDataU32[11] = tileDataHeight;
+        this.sceneDataU32[12] = this.isP3 ? 1 : 0; // color space properties
+        this.sceneDataU32[13] = this.is8Bit ? 1 : 0; // (unused currently)
 
         this.device.queue.writeBuffer(
             this.uniformBuffer,
@@ -687,6 +697,9 @@ export class GameEngine {
         // Draw background (same bind group as chunk drawing)
         this.recreateBufferAndBindGroup(256 * MAX_DRAW_CALLS); // start off with a minimum byte size
         this.sceneDataF32[7] = 1.0; // set opacity of BG to 1.0
+        this.sceneDataU32[12] = this.isP3 ? 1 : 0; // color space properties
+        this.sceneDataU32[13] = this.is8Bit ? 1 : 0;
+
         this.device.queue.writeBuffer(
             this.uniformBuffer,
             this.renderCallId * 256,
