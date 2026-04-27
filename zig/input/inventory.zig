@@ -102,7 +102,10 @@ pub fn get_selected_index() u16 {
         }
     }
 
-    unreachable;
+    // This shouldn't be possible, unless something bad happened or `SHOW_ALL_INVENTORY_ITEMS` got toggled!
+    selected_sprite = .none;
+    selected_row = 0;
+    return 0;
 }
 
 /// Returns the sprite being hovered if the mouse is within any inventory slot hitbox.
