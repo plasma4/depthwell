@@ -91,7 +91,7 @@ pub fn get_active_slots(buffer: *SlotBuffer) []Sprite {
 
 /// Gets the index of `selected_sprite` in the active slots.
 pub fn get_selected_index() u16 {
-    if (selected_sprite == .none) return 0;
+    if (selected_sprite == .none or selected_sprite == .unselected) return 0;
     var count: usize = 1;
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.valid_sprites) |s| {
@@ -103,6 +103,42 @@ pub fn get_selected_index() u16 {
     }
 
     unreachable;
+}
+
+/// Returns the sprite being hovered if the mouse is within any inventory slot hitbox.
+pub fn get_hovered_inventory_sprite() ?Sprite {
+    // TODO merge with draw_inventory()?
+    var buffer: SlotBuffer = undefined;
+    const active_slots = get_active_slots(&buffer);
+
+    const base_size = 16.0;
+    const spacing = 1.25 * base_size;
+    const mouse_pos = mouse.uv_position * memory.v2f64{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT };
+
+    for (active_slots, 0..) |active_sprite, i| {
+        const col = @as(f32, @floatFromInt(i % inventory_width));
+        const row = @as(f32, @floatFromInt(i / inventory_width));
+
+        const inventory_pos: v2f32 = .{ 32 + col * spacing, 32 + row * spacing };
+
+        // Match the background sizing logic from the draw_inventory() function
+        const is_mine_type = active_sprite == .none;
+        const is_selected = active_sprite == selected_sprite;
+        const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
+        const bg_pos = inventory_pos - v2f32{ bg_size / 4.0, bg_size / 4.0 };
+
+        const hitbox: root.geometry.Shape = .round_square(
+            bg_pos - v2f32{ bg_size / 2.0, bg_size / 2.0 },
+            bg_size,
+            0.2,
+        );
+
+        if (hitbox.contains(mouse_pos)) {
+            return active_sprite;
+        }
+    }
+
+    return null;
 }
 
 /// Draws the inventory slots, wrapping into new rows every 10 items.
@@ -117,8 +153,9 @@ pub fn draw_inventory(time_diff: f64) void {
     const wobble_animation_length: f32 = 800.0; // controls wobble animation ms length
     const size_animation_length: f32 = 200.0; // item/background size animation change ms length
     const base_size = 16.0; // base size of inventory sprites
-    const spacing = 1.25 * base_size;
+    const spacing = 1.25 * base_size; // spacing between sprites (must be at least base_size)
 
+    var mouse_hovered_sprite: ?Sprite = null;
     for (active_slots, 0..) |active_sprite, i| {
         // For each slot, find the sprite ID, handle animations, and draw sprite and its shadow
         const id = @intFromEnum(active_sprite);
@@ -165,7 +202,7 @@ pub fn draw_inventory(time_diff: f64) void {
             // a little bit of chroma addition and variation here!
             // the shadow is more like the original sprite for stone sprites and much more bland otherwise
             .lcha = .{
-                if (rendered_sprite.is_stone()) 0.8 else 0.4,
+                if (rendered_sprite.is_stone()) 0.5 else 0.3,
                 0.05, // a side effect of this is that perfectly gray sprites' shadows become more red
                 0.0,
                 if (rendered_sprite.is_stone()) 0.9 else 0.6,
@@ -177,6 +214,23 @@ pub fn draw_inventory(time_diff: f64) void {
             .position = pos,
             .size = current_size,
         });
+
+        const hitbox: root.geometry.Shape = .round_square(
+            bg_pos - v2f32{ bg_size / 2.0, bg_size / 2.0 },
+            bg_size,
+            0.2,
+        );
+        if (hitbox.contains(mouse.uv_position * memory.v2f64{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT })) {
+            mouse_hovered_sprite = active_sprite;
+        }
+    }
+
+    if (mouse_hovered_sprite) |s| {
+        if (mouse.just_mouse_down) {
+            selected_sprite = s;
+            mouse.mouse_state = .inventory;
+        }
+        if (mouse.mouse_state == .none or mouse.mouse_state == .inventory) root.mouse.mouse_type = .pointer;
     }
 
     // Second pass for numbers to ensure they are at the top of inventory rendering
@@ -211,11 +265,11 @@ pub fn draw_inventory(time_diff: f64) void {
         const inventory_pos: v2f32 = .{ 32 + col * spacing, 32 + row * spacing };
         const pos = inventory_pos - size_vec / v2f32{ base_size / 4.0, base_size / 4.0 } - v2f32{ base_size / 16.0, base_size / 16.0 };
 
-        // wrap hue to f32
+        // wrap and convert hue to f32
+        // hue is affected by ID in active slots AND wobble angles!
         const color_hue = @as(
             f32,
-            @floatCast(@rem(@as(f64, @floatFromInt(i)) *
-                (std.math.pi / 10.0) - @abs(wobble_angle * 2.0), std.math.pi)),
+            @floatCast(@rem(@as(f64, @floatFromInt(i)) * 0.2 - @abs(wobble_angle * 2.0), std.math.tau)),
         );
 
         // number automatically resizes to be smaller for large values!
@@ -238,7 +292,7 @@ pub fn draw_inventory(time_diff: f64) void {
             count,
             pos + v2f32{ base_size / 3.2, base_size / 3.2 },
             .{
-                .lcha = .{ 1.0, 0.2, color_hue, 1.0 },
+                .lcha = .{ 0.9, 0.2, color_hue, 1.0 },
                 .font_size = number_size,
                 .ltr = false,
                 .rotation = wobble_angle,

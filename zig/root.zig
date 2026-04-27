@@ -64,8 +64,12 @@ pub export fn setup() void {
     };
 
     logger.write(3,
-        \\Use tilde/backquote and number keys to change inventory selection.
-        \\Q moves up a row while E moves down a row. Left-clicking places blocks.
+        \\Left-clicking places blocks; you can also click on inventory slots directly.
+        \\Use the pickaxe icon to mine.
+        \\
+        \\For inventory hotkeys:
+        \\- Use tilde/backquote and number keys to change inventory selection.
+        \\- Q moves up a row while E moves down a row.
     );
 }
 pub export fn init() void {
@@ -101,7 +105,7 @@ pub export fn handle_mouse(mouse_x: f64, mouse_y: f64, action: u32) void {
     mouse.handle_mouse(mouse_x, mouse_y, action);
 }
 
-pub export fn tick(speed: u32, iterations: u32) void {
+pub export fn tick(speed: f64, iterations: u32) void {
     var buffer: inventory.SlotBuffer = undefined;
     const active_slots = inventory.get_active_slots(&buffer);
 
@@ -115,7 +119,7 @@ pub export fn tick(speed: u32, iterations: u32) void {
         const selected_column = KeyBits.get_number(memory.game.keys_held_mask);
         if (!(inventory.selected_sprite == .unselected and selected_column == 65535)) {
             const slot_len = active_slots.len;
-            const current_column = if (inventory.selected_sprite == .unselected) 0 else inventory.get_selected_index() % 10;
+            const current_column = inventory.get_selected_index() % 10;
             inventory.selected_row = @min(
                 @as(u16, @intCast(slot_len / 10)), // zeroth row holds 10 slots, so this works out
                 inventory.selected_row,
@@ -124,12 +128,15 @@ pub export fn tick(speed: u32, iterations: u32) void {
             var selected_id = inventory.selected_row * 10 +
                 if (selected_column == 65535) current_column else selected_column;
 
-            // Only change selection if the slot actually exists
+            // Only allow this selection if the slot actually exists
             if (selected_id >= slot_len) {
-                selected_id -= 10;
-                inventory.selected_row -= 1;
+                if (selected_id >= 10) {
+                    selected_id -= 10;
+                    inventory.selected_row -= 1;
+                }
+            } else {
+                inventory.selected_sprite = active_slots[selected_id];
             }
-            inventory.selected_sprite = active_slots[selected_id];
         }
     }
 

@@ -66,6 +66,8 @@ export class GameEngine {
     /** Gives the pointer to the game state. */
     public readonly GAME_STATE_PTR: Zig.PointerLike;
 
+    /** The mouse type that the canvas element is. */
+    public mouseType!: number;
     /** The canvas where rendering is presented. */
     public readonly canvas: HTMLCanvasElement;
     /** The WebGPU adapter for the system. */
@@ -334,8 +336,16 @@ export class GameEngine {
     }
 
     public setMouseType(type: number) {
-        if (type == 0) (this.canvas.style.cursor as any) = null;
-        else if (type == 1) this.canvas.style.cursor = "pointer";
+        if (type == 0) {
+            if (this.mouseType != 0) {
+                (this.canvas.style.cursor as any) = null;
+            }
+        } else if (type == 1) {
+            if (this.mouseType != 0) {
+                this.canvas.style.cursor = "pointer";
+            }
+        }
+        this.mouseType = type;
     }
 
     /** Configures the data in the `SceneUniforms` scene used by WGSL. */

@@ -13,30 +13,51 @@ const SPAN_SQ = memory.SPAN_SQ;
 const SCREEN_WIDTH = root.SCREEN_WIDTH;
 const SCREEN_HEIGHT = root.SCREEN_HEIGHT;
 
-/// Chunk the mouse is on.
-/// Assume to be invalid if `is_mouse_down` is false.
+/// The possible things the mouse started selecting on mouse down.
+pub const MouseState = enum(u32) {
+    /// Nothing (not even the canvas) was selected.
+    /// If the state is set to this, then `uv_position` should also have negative X and Y values.
+    none = 0,
+    /// The canvas was selected on mouse down.
+    canvas = 1,
+    /// The inventory was selected on mouse down.
+    inventory = 2,
+};
+
+/// The possible mouse cursors to use.
+pub const MouseType = enum(u32) {
+    initial = 0,
+    pointer = 1,
+};
+
+/// The state the mouse is in (based on what it selected on mouse down).
+pub var mouse_state: MouseState = .none;
+/// The type of mouse cursor to use.
+/// Reset at the start of every render tick and dispatched to JS at the end.
+pub var mouse_type: MouseType = .initial;
+
+/// Chunk the mouse is on; only updated when `update_mouse_block()` is called.
+/// Assume to be invalid if null.
 pub var mouse_chunk: ?memory.Coordinate = null;
-/// Subpixel of the chunk the mouse is on.
-/// Assume to be invalid if `is_mouse_down` is false.
+/// Subpixel of the chunk the mouse is on; only updated when `update_mouse_block()` is called.
+/// Assume to be invalid if null.
 pub var mouse_subpixel: ?memory.v2u64 = null;
 /// X block location the mouse is on (within the chunk).
-/// Assume to be invalid if `is_mouse_down` is false.
+/// Assume to be invalid if `mouse_chunk` or `mouse_subpixel` are null.
 pub var mouse_block_x: u4 = 0;
 /// Y block location the mouse is on (within the chunk).
-/// Assume to be invalid if `is_mouse_down` is false.
+/// Assume to be invalid if `mouse_chunk` or `mouse_subpixel` are null.
 pub var mouse_block_y: u4 = 0;
 /// Whether the mouse's block position changed. If coordinate is out of bounds, then set to true.
 /// Is reset in `handle_mining()`, called from `tick()` in zig/root.zig.
 pub var block_position_changed = true;
 
-/// X-coordinate of the mouse (based on the UV).
-/// Assume to be invalid if `is_mouse_down` is false.
-pub var mouse_x: f64 = undefined;
-/// Y-coordinate of the mouse (based on the UV).
-/// Assume to be invalid if `is_mouse_down` is false.
-pub var mouse_y: f64 = undefined;
+/// Point coordinate of the mouse (based on the UV).
+/// Assume to be invalid if values are negative (both will be -1.0 if invalid).
+pub var uv_position: memory.v2f64 = .{ -1.0, -1.0 };
 
-pub var is_mouse_down: bool = false;
+/// Determines if the mouse was just set to be down; reset at the end of a render frame.
+pub var just_mouse_down: bool = false;
 
 /// Handles mouse logic, where `x` and `y` values are between 0-1, acting like a UV over the whole canvas from HTML.
 /// Action 0 (LEFT CLICK) : pointermove
@@ -44,23 +65,29 @@ pub var is_mouse_down: bool = false;
 /// Action 2 (LEFT CLICK) : pointerup
 /// Action 3 (RIGHT CLICK): pointerdown
 /// Action 4 (RIGHT CLICK): pointerup
-/// Action 5 (INVALIDATE) : N/A (blur/resize happened, mouse_down becomes false)
+/// Action 5 (INVALIDATE) : N/A (blur/resize happened, `mouse_state` resets)
 pub fn handle_mouse(x: f64, y: f64, action: u32) void {
-    if (action == 1) is_mouse_down = true;
-    if (action == 2 or action == 5) is_mouse_down = false;
-    mouse_x = x;
-    mouse_y = y;
+    if (action == 1) {
+        just_mouse_down = true;
+        mouse_state = .canvas;
+    } else if (action == 2 or action == 5) {
+        just_mouse_down = false;
+        mouse_state = .none;
+    }
+    uv_position = .{ x, y };
 }
 
 /// Updates the block/chunk the mouse is in.
 pub fn update_mouse_block() void {
-    if (!is_mouse_down) {
-        return;
+    if (uv_position[0] < 0) {
+        mouse_chunk = null;
+        mouse_subpixel = null;
+        return; // position must be invalid!
     }
 
     const game = &memory.game;
-    const screen_dx = (mouse_x - 0.5) * SCREEN_WIDTH;
-    const screen_dy = (mouse_y - 0.5) * SCREEN_HEIGHT;
+    const screen_dx = (uv_position[0] - 0.5) * SCREEN_WIDTH;
+    const screen_dy = (uv_position[1] - 0.5) * SCREEN_HEIGHT;
 
     const world_dx = screen_dx / game.camera_scale * SPAN; // 1 pixel = 16 subpixels
     const world_dy = screen_dy / game.camera_scale * SPAN;

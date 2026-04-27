@@ -224,7 +224,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     if (in.sprite_id >= 65000u && in.sprite_id <= 65256u) {
         // Heatmap logic!
         let color = (f32(in.sprite_id - 65000u)) / 256.0;
-        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, and hue
+        var lch = vec3f(0.2 + color * 0.8, 0.25, 1.0); // lightness, chroma, and hue
         let lab = oklch_to_oklab(lch);
         let final_rgb = oklab_to_linear_srgb(lab);
         return vec4f(final_rgb, 1.0);
@@ -590,7 +590,7 @@ fn popcount8(v: u32) -> u32 {
 // Calculates edge darkening procedurally based on flags calculated in Zig.
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
     let edge_width = 0.40 + f32(extractBits(seed, 9u, 3u)) / 32.0;
-    let edge_strength = 0.25 + f32(extractBits(seed, 12u, 3u)) / 64.0;
+    let edge_strength = 0.5 + f32(extractBits(seed, 12u, 3u)) / 24.0;
 
     let dists = vec4f(local_uv.y, 1.0 - local_uv.y, local_uv.x, 1.0 - local_uv.x);
     let edge_masks = vec4u(edge_flags) & vec4u(EDGE_TOP, EDGE_BOTTOM, EDGE_LEFT, EDGE_RIGHT);

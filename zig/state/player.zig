@@ -26,9 +26,9 @@ pub const CAMERA_MAX_ZOOM = 1.0; // 100%
 /// The base speed of the player.
 pub var PLAYER_BASE_SPEED: f64 = 1.0;
 /// How strong the gravity is.
-pub var GRAVITY: f64 = 0.3;
+pub var GRAVITY: f64 = 0.35;
 /// How high the player jumps.
-pub var JUMP_FORCE: f64 = 7.0;
+pub var JUMP_FORCE: f64 = 8.0;
 /// Friction of player movement (horizontal).
 pub var FRICTION_X: f64 = 0.2;
 /// Friction of player movement (vertical).
@@ -60,64 +60,52 @@ var is_grounded: bool = false;
 /// Moves the player, handling camera changes.
 pub fn move(logic_speed: f64) void {
     const game = &memory.game;
+    const dt = logic_speed;
 
-    const old_camera_scale = game.camera_scale; // handle scaling
+    // handle camera zoom (.pow is safe here despite being inconsistent on different devices)
+    const old_camera_scale = game.camera_scale;
     if (KeyBits.is_set(KeyBits.plus, game.keys_held_mask)) {
-        game.camera_scale = @min(game.camera_scale * std.math.pow(f64, CAMERA_CHANGE_SPEED, logic_speed), CAMERA_MAX_ZOOM);
+        game.camera_scale = @min(game.camera_scale * std.math.pow(f64, CAMERA_CHANGE_SPEED, dt), CAMERA_MAX_ZOOM);
     }
     if (KeyBits.is_set(KeyBits.minus, game.keys_held_mask)) {
-        game.camera_scale = @max(game.camera_scale / std.math.pow(f64, CAMERA_CHANGE_SPEED, logic_speed), CAMERA_MIN_ZOOM);
+        game.camera_scale = @max(game.camera_scale / std.math.pow(f64, CAMERA_CHANGE_SPEED, dt), CAMERA_MIN_ZOOM);
     }
     game.camera_scale_change = game.camera_scale / old_camera_scale;
 
-    // Manage horizontal physics.
+    // Analytical velocity (basic damped linear system)
     var move_input: f64 = 0;
     if (KeyBits.is_set(KeyBits.left, game.keys_held_mask)) move_input -= PLAYER_BASE_SPEED;
     if (KeyBits.is_set(KeyBits.right, game.keys_held_mask)) move_input += PLAYER_BASE_SPEED;
 
-    if (move_input != 0) {
-        game.player_velocity[0] += move_input * logic_speed;
-    }
-    game.player_velocity[0] *= (1.0 - FRICTION_X);
+    const f_x = 1.0 - FRICTION_X;
+    const f_y = 1.0 - FRICTION_Y;
+    const pow_fx = std.math.pow(f64, f_x, dt);
+    const pow_fy = std.math.pow(f64, f_y, dt);
 
-    game.player_velocity[1] = (game.player_velocity[1] + GRAVITY * logic_speed) * (1.0 - FRICTION_Y); // vertical jump!
+    // Update x velocity
+    game.player_velocity[0] = (game.player_velocity[0] * pow_fx) +
+        (move_input * f_x * (1.0 - pow_fx) / FRICTION_X);
+
+    // Update y velocity with gravity
     if (is_grounded and KeyBits.is_set(KeyBits.up, game.keys_held_mask)) {
         game.player_velocity[1] = -JUMP_FORCE;
         is_grounded = false;
+    } else {
+        game.player_velocity[1] = (game.player_velocity[1] * pow_fy) +
+            (GRAVITY * f_y * (1.0 - pow_fy) / FRICTION_Y);
     }
 
-    // Physics accumulation
-    subpixel_accum += game.player_velocity * @as(v2f64, @splat(@floatFromInt(memory.SPAN)));
+    // Physics displacement using average velocity!
+    const displacement = game.player_velocity * @as(v2f64, @splat(dt * memory.SPAN_FLOAT));
+    subpixel_accum += displacement;
+
     const total_move = @as(v2i64, @floor(subpixel_accum));
     subpixel_accum -= @as(v2f64, @floatFromInt(total_move));
 
     game.last_player_pos = game.player_pos;
     var total_chunk_shift: v2i64 = .{ 0, 0 };
 
-    // Horizontal CCD
-    var rem_x = @abs(total_move[0]);
-    const step_x = if (total_move[0] > 0) @as(i64, 1) else -1;
-    while (rem_x > 0) {
-        const move_now = @min(rem_x, CCD_STEP_SIZE);
-        if (!is_colliding(game.player_pos[0] + (step_x * move_now), game.player_pos[1])) {
-            game.player_pos[0] += step_x * move_now;
-            total_chunk_shift[0] += handle_local_wrap(0);
-            rem_x -= move_now;
-        } else {
-            // Perfect snap: Move 1 pixel at a time for the final fraction to hit the edge exactly
-            while (move_now > 0) {
-                if (!is_colliding(game.player_pos[0] + step_x, game.player_pos[1])) {
-                    game.player_pos[0] += step_x;
-                    total_chunk_shift[0] += handle_local_wrap(0);
-                } else break;
-            }
-            game.player_velocity[0] = 0;
-            subpixel_accum[0] = 0;
-            break;
-        }
-    }
-
-    // Vertical CCD
+    // vertical CCD
     is_grounded = false;
     var rem_y = @abs(total_move[1]);
     const step_y = if (total_move[1] > 0) @as(i64, 1) else -1;
@@ -128,8 +116,9 @@ pub fn move(logic_speed: f64) void {
             total_chunk_shift[1] += handle_local_wrap(1);
             rem_y -= move_now;
         } else {
-            // Perfect snap (same as for horizontal)
-            while (move_now > 0) {
+            // Perfect snap: Move 1 pixel at a time until contact
+            var sub_steps = move_now;
+            while (sub_steps > 0) : (sub_steps -= 1) {
                 if (!is_colliding(game.player_pos[0], game.player_pos[1] + step_y)) {
                     game.player_pos[1] += step_y;
                     total_chunk_shift[1] += handle_local_wrap(1);
@@ -142,9 +131,32 @@ pub fn move(logic_speed: f64) void {
         }
     }
 
+    // Now do horizontal CCD
+    var rem_x = @abs(total_move[0]);
+    const step_x = if (total_move[0] > 0) @as(i64, 1) else -1;
+    while (rem_x > 0) {
+        const move_now = @min(rem_x, CCD_STEP_SIZE);
+        if (!is_colliding(game.player_pos[0] + (step_x * move_now), game.player_pos[1])) {
+            game.player_pos[0] += step_x * move_now;
+            total_chunk_shift[0] += handle_local_wrap(0);
+            rem_x -= move_now;
+        } else {
+            var sub_steps = move_now;
+            while (sub_steps > 0) : (sub_steps -= 1) {
+                if (!is_colliding(game.player_pos[0] + step_x, game.player_pos[1])) {
+                    game.player_pos[0] += step_x;
+                    total_chunk_shift[0] += handle_local_wrap(0);
+                } else break;
+            }
+            game.player_velocity[0] = 0;
+            subpixel_accum[0] = 0;
+            break;
+        }
+    }
+
     // Finally, tell SimBuffer and the camera to update.
     world.SimBuffer.sync(game.get_player_coord(), total_chunk_shift);
-    update_camera(logic_speed);
+    update_camera(dt);
 }
 
 /// Updates the player_chunk and returns the chunk carry (displacement).
