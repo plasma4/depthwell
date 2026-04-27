@@ -21,44 +21,6 @@ pub const Shape = struct {
     /// Corner radius (0-0.5+).
     r: f64 = 0.0,
 
-    /// Returns true if the point is inside this shape.
-    pub fn contains(self: Shape, point: v2f64) bool {
-        // Quick AABB
-        if (point[0] < self.start[0] or point[0] > self.start[0] + self.w or
-            point[1] < self.start[1] or point[1] > self.start[1] + self.h) return false;
-
-        // Rectangle already confirmed inside AABB
-        if (self.r <= 0.0) return true;
-
-        // Circle case: r >= 0.5 and the width equals the height
-        if (self.r >= 0.5 and self.w == self.h) {
-            const cx = self.start[0] + self.w * 0.5;
-            const cy = self.start[1] + self.h * 0.5;
-            const rad = self.w * 0.5;
-            const dx = point[0] - cx;
-            const dy = point[1] - cy;
-            return dx * dx + dy * dy <= rad * rad;
-        }
-
-        // Rounded rectangle: clamp radius so it never exceeds half the shorter side
-        const cr = @min(self.r, 0.5) * @min(self.w, self.h);
-        const left = self.start[0] + cr;
-        const right = self.start[0] + self.w - cr;
-        const top = self.start[1] + cr;
-        const bottom = self.start[1] + self.h - cr;
-
-        // Inside the centre cross, so definitely inside
-        if (point[0] >= left and point[0] <= right) return true;
-        if (point[1] >= top and point[1] <= bottom) return true;
-
-        // Must be in a corner region! Check distance from nearest corner center.
-        const cx = if (point[0] < left) left else right;
-        const cy = if (point[1] < top) top else bottom;
-        const dx = point[0] - cx;
-        const dy = point[1] - cy;
-        return dx * dx + dy * dy <= cr * cr;
-    }
-
     /// Circle shape constructor.
     pub inline fn circle(center_point: v2f64, radius: f64) Shape {
         return .{
@@ -87,5 +49,72 @@ pub const Shape = struct {
             .h = side,
             .r = radius,
         };
+    }
+
+    /// Returns true if the point is inside this shape.
+    pub fn contains(self: Shape, point: v2f64) bool {
+        // Quick AABB check
+        if (point[0] < self.start[0] or point[0] > self.start[0] + self.w or
+            point[1] < self.start[1] or point[1] > self.start[1] + self.h) return false;
+
+        if (self.r <= 0.0) return true;
+
+        // Map point to the first quadrant relative to the shape center
+        const half_w = self.w * 0.5;
+        const half_h = self.h * 0.5;
+        const center = self.start + v2f64{ half_w, half_h };
+
+        // Get absolute distance from center
+        const dx = @abs(point[0] - center[0]);
+        const dy = @abs(point[1] - center[1]);
+
+        // Rounded rectangle math (uses signed dist fields)
+        const cr = @min(self.r, 0.5) * @min(self.w, self.h);
+
+        // Find the vector from the inner rectangle corner to the point
+        const qx = dx - (half_w - cr);
+        const qy = dy - (half_h - cr);
+
+        // If both qx and qy are positive, we are in the corner region
+        if (qx > 0.0 and qy > 0.0) {
+            return (qx * qx + qy * qy) <= (cr * cr);
+        }
+
+        // In the center cross, pass!
+        return true;
+    }
+
+    /// Returns true if this shape intersects with another shape.
+    pub fn intersecting(self: Shape, other: Shape) bool {
+        // Quick AABB check
+        if (self.start[0] > other.start[0] + other.w or
+            other.start[0] > self.start[0] + self.w or
+            self.start[1] > other.start[1] + other.h or
+            other.start[1] > self.start[1] + self.h) return false;
+
+        // Calculate absolute corner radius
+        const r1 = if (self.r <= 0.0) 0.0 else @min(self.r, 0.5) * @min(self.w, self.h);
+        const r2 = if (other.r <= 0.0) 0.0 else @min(other.r, 0.5) * @min(other.w, other.h);
+
+        // Not rounded rectangle/circle: exit early!
+        if (r1 == 0.0 and r2 == 0.0) return true;
+
+        // Identify the inner rectangles (the rects formed by the centers of the corner arcs).
+        const inner1_min = self.start + @as(v2f64, @splat(r1));
+        const inner1_max = self.start + v2f64{ self.w - r1, self.h - r1 };
+
+        const inner2_min = other.start + @as(v2f64, @splat(r2));
+        const inner2_max = other.start + v2f64{ other.w - r2, other.h - r2 };
+
+        // Find the distance between these two inner rectangles.
+        // We calculate the 1D distance on each axis.
+        const dx = @max(0.0, @max(inner1_min[0] - inner2_max[0], inner2_min[0] - inner1_max[0]));
+        const dy = @max(0.0, @max(inner1_min[1] - inner2_max[1], inner2_min[1] - inner1_max[1]));
+
+        // If the distance between the inner rects is less than the sum of radii, they hit!
+        const dist_sq = dx * dx + dy * dy;
+        const radius_sum = r1 + r2;
+
+        return dist_sq <= (radius_sum * radius_sum);
     }
 };
