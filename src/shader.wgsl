@@ -590,7 +590,7 @@ fn popcount8(v: u32) -> u32 {
 // Calculates edge darkening procedurally based on flags calculated in Zig.
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
     let edge_width = 0.40 + f32(extractBits(seed, 9u, 3u)) / 32.0;
-    let edge_strength = 0.5 + f32(extractBits(seed, 12u, 3u)) / 24.0;
+    let edge_strength = 0.4 + f32(extractBits(seed, 12u, 3u)) / 32.0;
 
     let dists = vec4f(local_uv.y, 1.0 - local_uv.y, local_uv.x, 1.0 - local_uv.x);
     let edge_masks = vec4u(edge_flags) & vec4u(EDGE_TOP, EDGE_BOTTOM, EDGE_LEFT, EDGE_RIGHT);
