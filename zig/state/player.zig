@@ -26,7 +26,7 @@ pub const CAMERA_MAX_ZOOM = 1.0; // 100%
 /// The base speed of the player.
 pub var PLAYER_BASE_SPEED: f64 = 1.0;
 /// How strong the gravity is.
-pub var GRAVITY: f64 = 0.35;
+pub var GRAVITY: f64 = 0.4;
 /// How high the player jumps.
 pub var JUMP_FORCE: f64 = 8.0;
 /// Friction of player movement (horizontal).
