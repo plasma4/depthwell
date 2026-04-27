@@ -43,7 +43,10 @@ pub fn update_entities(time_diff: f64) void {
     entity_count = 0;
     entity_byte_count_before_end = 0;
 
+    root.mouse.mouse_type = .initial;
     inventory.draw_inventory(time_diff);
+    root.render.dispatch_mouse_type();
+    root.mouse.just_mouse_down = false;
 
     // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
     // Some properties are optional with defaults (size, rotation, LCHA).
@@ -54,12 +57,13 @@ pub fn update_entities(time_diff: f64) void {
     const font_size = 10.0;
 
     if (progress != 255 and progress != 0) {
+        const value_hue = 0.2 + @as(f32, @floatFromInt(progress)) * (std.math.pi / 8.0);
         // draw shadow of text
         draw_number(progress, pos - v2f32{ 1.5, 1.5 }, .{
             .lcha = .{
                 0.5, // darken
                 0.4,
-                0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing!
+                value_hue, // hue changing as progress increases!
                 0.8,
             },
             .font_size = font_size,
@@ -71,7 +75,7 @@ pub fn update_entities(time_diff: f64) void {
             .lcha = .{
                 0.75,
                 0.4,
-                0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing too
+                value_hue, // hue changing too
                 1.0,
             },
             .font_size = font_size,

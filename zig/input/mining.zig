@@ -24,13 +24,17 @@ pub var selected_hp: u8 = 1;
 
 /// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
 pub fn handle_mining_and_placing() void {
+    if (mouse.just_mouse_down and inventory.get_hovered_inventory_sprite() != null) {
+        mouse.mouse_state = .inventory; // prevent mouse block placement issue, TODO figure out if something more robust works too
+    }
+
     mouse.update_mouse_block(); // update to get correct mouse position data
 
     if (mouse.block_position_changed) {
         mouse.block_position_changed = false;
         mining_progress = 0;
     }
-    if (!mouse.is_mouse_down) {
+    if (mouse.mouse_state != .canvas) {
         // mouse must be down for mining actions to occur
         selected_hp = 255;
         return;
@@ -44,7 +48,7 @@ pub fn handle_mining_and_placing() void {
     if (mouse.mouse_chunk) |mouse_chunk| {
         const block = world.get_chunk(mouse_chunk).get_block(mouse.mouse_block_x, mouse.mouse_block_y);
 
-        // Don't mine the block of the same type you're trying to place1
+        // Don't mine a block of the same type you're trying to place!
         if (sprite_type != .none and block.id == sprite_type) {
             selected_hp = 0;
             mining_progress = 0;

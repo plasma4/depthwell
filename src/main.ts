@@ -211,18 +211,32 @@ const past60SlowestZigRenders = Array(60).fill(0);
 // Add custom properties into the engine object (not handled by TypeScript)
 engine.isDebug = !!engine.exports.isDebug(); // This function is only true if Doptimize=Debug (default with zig build).
 engine.renderLoop = function (_t: number) {
-    // TODO back-off logic when frames get skipped, maybe? (due to WebGPU being the bottleneck)
-
     // simulate to a second/tick of logical simulation, whichever is higher (in practice, a tick will be less than a second, so 1 second)
     let tempTime = performance.now();
     let delta = time === Infinity ? 0 : tempTime - time;
-    let newTicks = Math.min(
-        (delta * engine.getFrameRate()) / 1000,
-        engine.getFrameRate(),
-    );
+    time = tempTime;
 
-    engine.logicLoop(Math.max(Math.floor(accumulator + newTicks), 1));
-    accumulator = (accumulator + newTicks) % 1; // calculate new fractional accumulation of ticks
+    // Convert elapsed time (ms) to logical ticks based on the current target frame rate.
+    const tickDurationMs = 1000 / engine.getFrameRate();
+    const newTicks = delta / tickDurationMs;
+
+    // Accumulate fractional ticks until we have at least 1 full tick to process.
+    const totalAvailableTicks = accumulator + newTicks;
+    let ticksToRun = Math.floor(totalAvailableTicks);
+
+    // Enforce the constant cap to prevent logic-heavy frames from lagging the next frame.
+    if (ticksToRun > 5) {
+        ticksToRun = 5;
+    }
+
+    if (ticksToRun > 0) {
+        engine.logicLoop(ticksToRun);
+        // Subtract only the ticks we actually processed to keep the fractional remainder.
+        accumulator = totalAvailableTicks - ticksToRun;
+    } else {
+        // No ticks run this frame; just update the accumulator.
+        accumulator = totalAvailableTicks;
+    }
 
     if (is_dev) {
         past60SlowestRenders.shift();
@@ -265,7 +279,11 @@ Worst (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixe
 engine.logicLoop = function (ticks: number) {
     // Interestingly enough, as ticks becomes large enough, the "imprecision" of the camera (16 possible subpixel positions) results in the player panning being all weird! This only happens past 1000 logical FPS though so it's fine.
     const startTime = performance.now();
-    engine.tick((60 / engine.getFrameRate()) * engine.baseSpeed, ticks); // ticks already capped in renderLoop
+
+    // Scale the 'speed' per iteration so constants designed for 60fps stay consistent.
+    const tickSpeed = (60 / engine.getFrameRate()) * engine.baseSpeed;
+
+    engine.tick(tickSpeed, ticks);
     time = performance.now();
     let delta = time - startTime;
 
@@ -311,6 +329,8 @@ const dispatch = (e: PointerEvent | null, action: number) => {
     if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
         // only allow if within canvas bounds
         engine.exports.handle_mouse(x, y, action);
+    } else {
+        engine.exports.handle_mouse(-1.0, -1.0, action);
     }
 };
 
@@ -320,12 +340,19 @@ window.addEventListener("blur", () => {
 }); // basically, don't let frames when the tab is hidden cause any simulation.
 
 document.addEventListener("pointermove", (e) => {
-    if (e.buttons > 0) dispatch(e, 0); // move while pressing any button
+    dispatch(e, 0);
 });
 
 document.addEventListener("pointerdown", (e) => {
-    // check if the target is actually the canvas
-    if (!e.target || (e.target as any).id === "debugContainer") return;
+    const target = e.target as HTMLElement;
+
+    if (
+        is_dev &&
+        (!target || document.getElementById("debugContainer")!.contains(target))
+    ) {
+        return;
+    }
+
     const action = e.button === 2 ? 3 : 1;
     dispatch(e, action);
 });

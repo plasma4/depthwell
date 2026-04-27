@@ -271,22 +271,23 @@ for (0..10) |i| {
 }
 
 // number-drawing example:
-// draw selected HP
+// draw selected HP (for testing)
 const progress = root.mining.selected_hp;
 const pos: v2f32 = .{ 10, 28 };
 const font_size = 10.0;
 
 if (progress != 255 and progress != 0) {
+    const value_hue = 0.2 + @as(f32, @floatFromInt(progress)) * (std.math.pi / 8.0);
     // draw shadow of text
     draw_number(progress, pos - v2f32{ 1.5, 1.5 }, .{
         .lcha = .{
             0.5, // darken
             0.4,
-            0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing!
+            value_hue, // hue changing as progress increases!
             0.8,
         },
         .font_size = font_size,
-        .ltr = true,
+        .ltr = false,
     });
 
     // draw the actual number now
@@ -294,11 +295,11 @@ if (progress != 255 and progress != 0) {
         .lcha = .{
             0.75,
             0.4,
-            0.2 + @as(f32, @floatFromInt(progress)) * 0.3, // hue changing too
+            value_hue, // hue changing too
             1.0,
         },
         .font_size = font_size,
-        .ltr = true,
+        .ltr = false,
     });
 }
 ```

@@ -92,11 +92,14 @@ pub const Sprite = enum(u16) {
     /// If this code is wrong, invalid (or unnamed) enums may appear and wreak havoc.
     pub inline fn is_valid(self: @This()) bool {
         // do note that heatmap isn't valid
-        const id = @intFromEnum(self);
-        return self == .none or self == .portal or
-            self == .spiral_plant or self == .ceiling_flower or self == .mushroom or self == .torch or
-            (id >= STONE_START and id <= STONE_END) or
-            (id >= ORE_START and id < MASK_START);
+        return switch (self) {
+            .none, .spiral_plant, .ceiling_flower, .mushroom, .torch, .portal => true,
+            else => {
+                const id = @intFromEnum(self);
+                return (id >= STONE_START and id <= STONE_END) or
+                    (id >= ORE_START and id < MASK_START);
+            },
+        };
     }
 
     /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.

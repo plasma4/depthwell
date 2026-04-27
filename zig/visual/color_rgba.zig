@@ -9,9 +9,9 @@ test {
 /// Represents a color. Note that WebGPU processes colors as `rgba16float` by default;
 /// this data is used to determine similarity of blocks and is not color-space compliant.
 pub const ColorRGBA = extern union {
-    /// Single-word access for quick equality checks.
+    /// Single-word access for quick equality checks. Assumes little-endian.
     word: u32,
-    /// SIMD-ready vector access. Subject to different values based on endianness.
+    /// SIMD-ready vector access for RGBA components.
     v: @Vector(4, u8),
     /// Individual RGBA components through color channels.
     channels: packed struct(u32) {
@@ -37,7 +37,7 @@ pub const ColorRGBA = extern union {
     // Fully opaque black.
     pub const black = ColorRGBA.init(0, 0, 0, 255);
 
-    /// Returns (R+G+B) / 3
+    /// Returns an approximation of brightness.
     pub fn luminance(self: *const @This()) u8 {
         // Scaled weights to 256 (approximate)
         const weights = @Vector(4, u32){ 54, 183, 19, 0 };

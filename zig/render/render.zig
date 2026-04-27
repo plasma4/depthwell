@@ -34,18 +34,13 @@ pub inline fn handle_visible_entities() void {
     }
 }
 
-const MouseType = enum(u32) {
-    initial = 0,
-    pointer = 1,
-};
-
 /// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn js_set_mouse_type(mouse_type: MouseType) void;
+extern "env" fn js_set_mouse_type(mouse_type: root.mouse.MouseType) void;
 
-/// Makes a call to `engine.handleVisibleChunks()` in JS.
-pub inline fn set_mouse_type(mouse_type: MouseType) void {
+/// Sets the mouse type of the canvas in JS.
+pub inline fn dispatch_mouse_type() void {
     if (root.is_wasm) {
-        js_set_mouse_type(mouse_type);
+        js_set_mouse_type(root.mouse.mouse_type);
     } else {
         return;
     }
@@ -66,7 +61,6 @@ pub fn prepare_visible_data(dt: f64, time_diff: f64, canvas_w: f64, canvas_h: f6
     // entity.entities.writeToSlice(out_slice, 0);
 
     handle_visible_entities();
-    // set_mouse_type(.pointer);
 
     // from old SegmentedList code:
     // entity.entities.clearRetainingCapacity(); // clear previous sprites
