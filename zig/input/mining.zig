@@ -107,7 +107,8 @@ pub fn handle_mining_and_placing() void {
             if (inventory.remove_from_inventory(sprite_type)) {
                 if (world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type)) {
                     // If TRUE, then the block was NOT successfully modified. Revert selection if so.
-                    // This fixes funny issues involving deselection due to invalid placement
+                    // This fixes funny issues involving instant deselection with invalid placement
+                    // (for example: placing your last ceiling flower in an invalid spot would deselect without this)
                     inventory.selected_sprite = sprite_type;
                 }
                 selected_hp = 0;

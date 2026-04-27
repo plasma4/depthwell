@@ -12,7 +12,7 @@ const add_entity = root.entity.add_entity;
 const draw_number = root.entity.draw_number;
 
 /// Debug option, changing whether to show all inventory item slots and items or not.
-const SHOW_ALL_INVENTORY_ITEMS = false;
+pub var SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is.
 const inventory_width = 10;
 
@@ -228,6 +228,7 @@ pub fn draw_inventory(time_diff: f64) void {
     if (mouse_hovered_sprite) |s| {
         if (mouse.just_mouse_down) {
             selected_sprite = s;
+            selected_row = get_selected_index() / 10; // this works I suppose
             mouse.mouse_state = .inventory;
         }
         if (mouse.mouse_state == .none or mouse.mouse_state == .inventory) root.mouse.mouse_type = .pointer;
