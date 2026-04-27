@@ -114,6 +114,10 @@ pub const buttons = [_]ButtonDef{
         .toggle = &procedural.USE_ORE_HEATMAP,
         .regen = true,
     },
+    .{
+        .name = "Toggle showing all items",
+        .toggle = &root.inventory.SHOW_ALL_INVENTORY_ITEMS,
+    },
 };
 
 /// Teleports to the top left quadrant. Then, tries to find a valid spawn point.

@@ -64,12 +64,12 @@ pub export fn setup() void {
     };
 
     logger.write(3,
-        \\Left-clicking places blocks; you can also click on inventory slots directly.
-        \\Use the pickaxe icon to mine.
+        \\Left-clicking places blocks; click on inventory slots directly to select block types.
+        \\Use the pickaxe icon to mine and WASD/arrow keys to move around.
         \\
         \\For inventory hotkeys:
         \\- Use backquote and 0-9 keys to change inventory selection.
-        \\- Q moves up a row while E moves down a row.
+        \\- Q moves up a row in the inventory while E moves down a row.
     );
 }
 pub export fn init() void {
