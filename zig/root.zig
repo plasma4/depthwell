@@ -68,7 +68,7 @@ pub export fn setup() void {
         \\Use the pickaxe icon to mine.
         \\
         \\For inventory hotkeys:
-        \\- Use tilde/backquote and number keys to change inventory selection.
+        \\- Use backquote and 0-9 keys to change inventory selection.
         \\- Q moves up a row while E moves down a row.
     );
 }

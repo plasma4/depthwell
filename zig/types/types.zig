@@ -21,7 +21,7 @@ pub const KeyBits = struct {
 
     /// Returns a number selected, if any.
     /// Prioritizes smaller numbers, returning 65535 for none.
-    /// Treats 0 key as nine, and shifts 1-9 keys left by one.
+    /// Treats 0 key as nine, and shifts 1-9 keys left by one (so 1 returns zero instead).
     pub inline fn get_number(key_mask: u32) u16 {
         inline for (0..10) |i| { // k0 -> mask(0), k9 -> mask(9)
             if (key_mask & @This().mask(i) != 0) {
@@ -35,7 +35,7 @@ pub const KeyBits = struct {
 
     /// Z key (increases depth, for testing)
     pub const zoom = mask(17);
-    /// Tilde key
+    /// Backquote key
     pub const mine = mask(18);
     /// Q key
     pub const inventory_up = mask(19);
