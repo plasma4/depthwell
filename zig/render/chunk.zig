@@ -6,7 +6,7 @@ const world = root.world;
 const SPAN = memory.SPAN;
 const SPAN_FLOAT = memory.SPAN_FLOAT;
 
-pub fn update_visible_chunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
+pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
     const game = &memory.game;
     // calculate effective zoom
@@ -48,11 +48,11 @@ pub fn update_visible_chunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const wb = cw * SPAN;
     const hb = ch * SPAN;
 
-    memory.scratch_reset(); // scratch allocator always needs to be reset!
-    const out = memory.scratch_alloc_slice(memory.Block, wb * hb);
+    memory.scratchReset(); // scratch allocator always needs to be reset!
+    const out = memory.scratchAllocSlice(memory.Block, wb * hb);
 
     const world_limit: u64 = world.max_possible_suffix;
-    const player_coord = game.get_player_coord();
+    const player_coord = game.getPlayerCoord();
 
     var chunk: memory.Chunk = undefined;
     for (0..ch) |gy| {
@@ -72,7 +72,7 @@ pub fn update_visible_chunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
                     }
                 }
 
-                world.write_chunk(&chunk, target_coord);
+                world.writeChunk(&chunk, target_coord);
                 for (0..SPAN) |ly| {
                     @memcpy(out[(gy * SPAN + ly) * wb + gx * SPAN ..][0..SPAN], chunk.blocks[ly * SPAN ..][0..SPAN]);
                 }
@@ -85,11 +85,11 @@ pub fn update_visible_chunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
         }
     }
 
-    update_render_properties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom);
+    updateRenderProperties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom);
 }
 
 /// Sets scratch properties containing information to TypeScript for renderFrame.
-inline fn update_render_properties(
+inline fn updateRenderProperties(
     game: *memory.GameState,
     interp_cam_x: f64,
     interp_cam_y: f64,
@@ -119,13 +119,13 @@ inline fn update_render_properties(
     const player_render_y = (player_interpolated_y - grid_origin_sub_y - SPAN_FLOAT * SPAN_FLOAT / 2) / SPAN_FLOAT;
 
     // Update scratch properties that JS reads
-    memory.set_scratch_prop(0, wb);
-    memory.set_scratch_prop(1, hb);
-    memory.set_scratch_prop(2, cam_x_shader);
-    memory.set_scratch_prop(3, cam_y_shader);
-    memory.set_scratch_prop(4, effective_zoom);
-    memory.set_scratch_prop(5, player_render_x);
-    memory.set_scratch_prop(6, player_render_y);
+    memory.setScratchProp(0, wb);
+    memory.setScratchProp(1, hb);
+    memory.setScratchProp(2, cam_x_shader);
+    memory.setScratchProp(3, cam_y_shader);
+    memory.setScratchProp(4, effective_zoom);
+    memory.setScratchProp(5, player_render_x);
+    memory.setScratchProp(6, player_render_y);
 
     if (root.is_debug) {
         const qc = world.quad_cache;
@@ -147,13 +147,13 @@ inline fn update_render_properties(
             //     suffix_array_x,
             //     suffix_array_y,
             // });
-            logger.write_once(2, .{
+            logger.writeOnce(2, .{
                 "{mh}Left quadrant path",
                 qc.left_path,
                 "{mh}X suffix array",
                 suffix_array_x,
             });
-            logger.write_once(3, .{
+            logger.writeOnce(3, .{
                 "{mh}Top quadrant path",
                 qc.top_path,
                 "{mh}Y suffix array",
@@ -166,14 +166,14 @@ inline fn update_render_properties(
                 "bottom left quadrant (2)",
                 "bottom right quadrant (3)",
             })[game.player_quadrant];
-            logger.write_once(0, .{
+            logger.writeOnce(0, .{
                 "{mh}Quadrant name",
                 quadrant_name,
                 "{mh}Number of digits in the current (hypothetical) width of the game world",
                 @as(u64, @floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1)))) + 1,
             });
         } else {
-            logger.write_once(0, .{
+            logger.writeOnce(0, .{
                 "{h}Chunk active suffix X/Y",
                 suffix_array_x[0..d],
                 suffix_array_y[0..d],
@@ -185,7 +185,7 @@ inline fn update_render_properties(
             .{ game.depth, game.player_pos },
         });
 
-        logger.write_once(1, .{
+        logger.writeOnce(1, .{
             "{h}Velocity",
             game.player_velocity,
         });

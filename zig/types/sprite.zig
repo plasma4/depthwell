@@ -81,7 +81,7 @@ pub const Sprite = enum(u16) {
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
     /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
-    pub inline fn is_foundation(self: @This()) bool {
+    pub inline fn isFoundation(self: @This()) bool {
         const id = @intFromEnum(self);
         return id >= STONE_START and id < MASK_START;
     }
@@ -90,7 +90,7 @@ pub const Sprite = enum(u16) {
     /// Includes the empty block, and excludes entities.
     ///
     /// If this code is wrong, invalid (or unnamed) enums may appear and wreak havoc.
-    pub inline fn is_valid(self: @This()) bool {
+    pub inline fn isValid(self: @This()) bool {
         // do note that heatmap isn't valid
         return switch (self) {
             .none, .spiral_plant, .ceiling_flower, .mushroom, .torch, .portal => true,
@@ -104,7 +104,7 @@ pub const Sprite = enum(u16) {
 
     /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
     /// This returns true for edge stone, unlike `is_solid`.
-    pub inline fn is_solid(self: @This()) bool {
+    pub inline fn isSolid(self: @This()) bool {
         if (self == Sprite.none or self == .player) return false;
 
         const id = @intFromEnum(self);
@@ -123,50 +123,50 @@ pub const Sprite = enum(u16) {
     }
 
     /// Determines if the sprite's type is `none` (air/void).
-    pub inline fn is_empty(self: @This()) bool {
+    pub inline fn isEmpty(self: @This()) bool {
         return self == .none;
     }
 
     /// Determines if the sprite is stone (or a variation). Excludes edge stone.
-    pub inline fn is_stone(self: @This()) bool {
+    pub inline fn isStone(self: @This()) bool {
         const id = @intFromEnum(self);
         return id >= STONE_START and id <= STONE_END;
     }
 
     /// Determines if the sprite is an ore.
-    pub inline fn is_ore(self: @This()) bool {
+    pub inline fn isOre(self: @This()) bool {
         const id = @intFromEnum(self);
         return id >= ORE_START and id < GEM_START;
     }
 
     /// Determines if the sprite is a gem.
-    pub inline fn is_gem(self: @This()) bool {
+    pub inline fn isGem(self: @This()) bool {
         const id = @intFromEnum(self);
         return id >= GEM_START and id < MASK_START;
     }
 
     /// Determines if the sprite is a heatmap (between types 65000-60256).
-    pub inline fn is_heatmap(self: @This()) bool {
+    pub inline fn isHeatmap(self: @This()) bool {
         const id = @intFromEnum(self);
         return root.is_debug and procedural.USE_BASE_HEATMAP and id >= 65000 and id <= 60256;
     }
 };
 
-/// The total number of valid sprites that are considered valid (according to `is_valid()`).
+/// The total number of valid sprites that are considered valid (according to `isValid()`).
 pub const valid_sprite_count: usize = blk: {
     @setEvalBranchQuota(1e6);
     const fields = @typeInfo(Sprite).@"enum".fields;
     var count: usize = 0;
     for (fields) |field| {
         const sprite: Sprite = @enumFromInt(field.value);
-        if (sprite.is_valid()) {
+        if (sprite.isValid()) {
             count += 1;
         }
     }
     break :blk count;
 };
 
-/// An array of all `Sprite` values that are considered valid (according to `is_valid()`).
+/// An array of all `Sprite` values that are considered valid (according to `isValid()`).
 pub const valid_sprites = blk: {
     @setEvalBranchQuota(1e6);
     const fields = @typeInfo(Sprite).@"enum".fields;
@@ -176,7 +176,7 @@ pub const valid_sprites = blk: {
     // Populate the array!
     for (fields) |field| {
         const sprite: Sprite = @enumFromInt(field.value);
-        if (sprite.is_valid()) {
+        if (sprite.isValid()) {
             result[index] = sprite;
             index += 1;
         }
@@ -212,11 +212,11 @@ pub const AIR_BLOCK: memory.Block = .{
 
 comptime {
     @setEvalBranchQuota(1e6);
-    // Check if is_valid() is being reasonable and isn't producing unmapped results.
+    // Check if isValid() is being reasonable and isn't producing unmapped results.
     // Mapped but invalid results can be checked by setting `SHOW_ALL_INVENTORY_ITEMS` to true in the zig/input/inventory.zig file.
     var i: u16 = 0;
     var wentToHeatmap = false;
-    if (@as(Sprite, @enumFromInt(65535)).is_valid()) @compileError("is_valid() returned true for the unselected type! Ranges are wrong.");
+    if (@as(Sprite, @enumFromInt(65535)).isValid()) @compileError("isValid() returned true for the unselected type! Ranges are wrong.");
     while (i < 65535) : (i += 1) {
         if (!wentToHeatmap and i == max_sprite_value + 256) {
             // skip some checking
@@ -224,7 +224,7 @@ comptime {
             wentToHeatmap = true;
         }
         const s: Sprite = @enumFromInt(i);
-        if (s.is_valid()) {
+        if (s.isValid()) {
             var is_mapped = false;
             for (@typeInfo(Sprite).@"enum".fields) |field| {
                 if (field.value == i) {
@@ -233,7 +233,7 @@ comptime {
                 }
             }
             if (!is_mapped) {
-                @compileError("is_valid() returned true for an unmapped sprite ID! Ranges are wrong.");
+                @compileError("isValid() returned true for an unmapped sprite ID! Ranges are wrong.");
             }
         }
     }

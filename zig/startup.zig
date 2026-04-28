@@ -26,7 +26,7 @@ pub fn init() void {
         alreadyStarted = true;
         logger.log(@src(), "Hello from Zig!", .{});
     }
-    var temp_seed = seeding.ChaCha12.init(seeding.mix_base_seed(&memory.game.seed, 1));
+    var temp_seed = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 1));
     memory.game.seed2 = .{
         temp_seed.next(),
         temp_seed.next(),
@@ -46,33 +46,33 @@ pub fn init() void {
         temp_seed.next(),
     };
     // Start off by determining where the player starts off exactly with layer pushing
-    var rng = seeding.ChaCha12.init(seeding.mix_base_seed(&memory.game.seed, 2));
+    var rng = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 2));
     for (0..STARTING_ZOOM_TIMES) |_| {
         // Set the player position to somewhere random in the current chunk
-        if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.set_player_pos(.{
+        if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.setPlayerPosDumb(.{
             @intCast(rng.next() & (memory.SUBPIXELS_IN_CHUNK - 1)),
             @intCast(rng.next() & (memory.SUBPIXELS_IN_CHUNK - 1)),
         });
 
-        world.push_layer(
+        world.pushLayer(
             .none,
-            memory.game.get_player_coord(),
-            memory.game.get_block_x_in_chunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
-            memory.game.get_block_y_in_chunk(),
+            memory.game.getPlayerCoord(),
+            memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
+            memory.game.getBlockYInChunk(),
         );
     }
 
     if (SET_PLAYER_SPAWN_RANDOMLY) {
-        find_safe_spawn();
-        // world.SimBuffer.sync(memory.game.get_player_coord(), .{ 16, 16 });
+        findSafeSpawn();
+        // world.SimBuffer.sync(memory.game.getPlayerCoord(), .{ 16, 16 });
     }
 }
 
 /// Searches for a safe grounded spawn point by spiraling through CHUNKS
 /// and scanning all blocks within those chunks.
-pub fn find_safe_spawn() void {
+pub fn findSafeSpawn() void {
     const game = &memory.game;
-    const start_coord = game.get_player_coord();
+    const start_coord = game.getPlayerCoord();
 
     var chunk: memory.Chunk = undefined; // temp buffer for performance
 
@@ -88,7 +88,7 @@ pub fn find_safe_spawn() void {
     var i: u32 = 0;
     while (i < 500) {
         if (start_coord.move(.{ cx, cy })) |nc| {
-            world.write_chunk(&chunk, nc);
+            world.writeChunk(&chunk, nc);
 
             // Scan the chunk for a "safe" spot!
             var y: usize = 0;
@@ -100,17 +100,17 @@ pub fn find_safe_spawn() void {
                     const block = chunk.blocks[row + x];
                     const block_below = chunk.blocks[column + x];
 
-                    if (block.is_empty() and block_below.is_solid()) {
+                    if (block.isEmpty() and block_below.isSolid()) {
                         // Found a valid floor!
                         game.player_quadrant = nc.quadrant;
                         game.player_chunk = nc.suffix;
 
-                        game.set_player_pos(.{
+                        game.setPlayerPosDumb(.{
                             @as(i64, @intCast(x)) * SPAN_SQ + (SPAN_SQ / 2),
                             @as(i64, @intCast(y)) * SPAN_SQ + (SPAN_SQ / 2) - 1, // -1 or you have to jump to move
                         });
 
-                        game.set_camera_pos(game.player_pos);
+                        game.setCameraPosDumb(game.player_pos);
                         return;
                     }
                 }
@@ -133,5 +133,5 @@ pub fn find_safe_spawn() void {
     }
 
     // Fallback: If no ground found in nearby chunks, center in current chunk
-    game.set_player_pos(.{ 2048, 2048 });
+    game.setPlayerPosDumb(.{ 2048, 2048 });
 }

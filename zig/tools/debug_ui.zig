@@ -35,41 +35,41 @@ pub const sliders = [_]SliderDef{
         .regen = true,
     },
     .{
-        .name = "FBM power",
+        .name = "FBM (random domain warping) power",
         .min = 0.0,
         .max = 5.0,
         .val = &procedural.fbm_power,
         .regen = true,
     },
     .{
-        .name = "Min density",
+        .name = "Minimum stone density cutoff",
         .min = 0.0,
         .max = 1.0,
         .val = &procedural.density_min,
         .regen = true,
     },
     .{
-        .name = "Max density",
+        .name = "Maximum stone density cutoff",
         .min = 0.0,
         .max = 1.0,
         .val = &procedural.density_max,
         .regen = true,
     },
     .{
-        .name = "Gem odds",
+        .name = "Odds for gems to spawn",
         .min = 0.0,
         .max = 1.0,
         .val = &procedural.base_gem_odds,
         .regen = true,
     },
     .{
-        .name = "Base speed",
+        .name = "Base player speed",
         .min = 0.1,
         .max = 10.0,
         .val = &player.PLAYER_BASE_SPEED,
     },
     .{
-        .name = "Gravity",
+        .name = "Base player gravity",
         .min = 0.01,
         .max = 2.0,
         .val = &player.GRAVITY,
@@ -81,13 +81,13 @@ pub const sliders = [_]SliderDef{
         .val = &player.JUMP_FORCE,
     },
     .{
-        .name = "Friction X",
+        .name = "Friction (x-axis)",
         .min = 0.0,
         .max = 1.0,
         .val = &player.FRICTION_X,
     },
     .{
-        .name = "Friction Y",
+        .name = "Friction (y-axis)",
         .min = 0.0,
         .max = 1.0,
         .val = &player.FRICTION_Y,
@@ -98,11 +98,11 @@ pub const sliders = [_]SliderDef{
 pub const buttons = [_]ButtonDef{
     .{
         .name = "Teleport to edge",
-        .action = teleport_to_edge,
+        .action = teleportToEdge,
     },
     .{
         .name = "Teleport randomly",
-        .action = teleport_randomly,
+        .action = teleportRandomly,
     },
     .{
         .name = "Toggle base heatmap",
@@ -121,23 +121,23 @@ pub const buttons = [_]ButtonDef{
 };
 
 /// Teleports to the top left quadrant. Then, tries to find a valid spawn point.
-fn teleport_to_edge() void {
+fn teleportToEdge() void {
     memory.game.teleport(
         .{ .quadrant = 0, .suffix = .{ 0, 0 } },
         .{ memory.SPAN_SQ * 5 / 2, memory.SPAN_SQ * 5 / 2 },
     );
-    main.find_safe_spawn();
+    main.findSafeSpawn();
 }
 
 /// Teleports to a random valid coordinate (chunk) within the same quadrant. Then, tries to find a valid spawn point.
-fn teleport_randomly() void {
+fn teleportRandomly() void {
     const game = &memory.game;
-    const h1 = seeding.FastHash.hash_2d(
+    const h1 = seeding.FastHash.hash2d(
         game.player_chunk & memory.v2u64{ game.seed2[0], game.seed2[1] },
         @intCast(game.player_pos[0]),
         @intCast(game.player_pos[1]),
     );
-    const h2 = seeding.FastHash.hash_2d(
+    const h2 = seeding.FastHash.hash2d(
         game.player_chunk & memory.v2u64{ game.seed2[2], game.seed2[3] },
         @intCast(game.player_pos[0]),
         @intCast(game.player_pos[1]),
@@ -149,10 +149,10 @@ fn teleport_randomly() void {
         } },
         .{ 2048, 2048 },
     );
-    main.find_safe_spawn();
+    main.findSafeSpawn();
 }
 
-pub fn slider_change(id: u32, val: f64) void {
+pub fn changeSlider(id: u32, val: f64) void {
     if (id >= sliders.len and id < 0) @panic("Slider ID invalid!");
     const s = sliders[id];
     s.val.* = val;
@@ -160,11 +160,11 @@ pub fn slider_change(id: u32, val: f64) void {
         func(val);
     }
     if (s.regen) {
-        world.clear_caches();
+        world.clearCaches();
     }
 }
 
-pub fn button_click(id: u32) void {
+pub fn clickButton(id: u32) void {
     if (id >= buttons.len and id < 0) @panic("Button ID invalid!");
 
     const b = buttons[id];
@@ -175,12 +175,12 @@ pub fn button_click(id: u32) void {
         value.* = !value.*;
     }
     if (b.regen) {
-        world.clear_caches();
+        world.clearCaches();
     }
 }
 
-pub fn build_metadata() void {
-    var arena = memory.make_arena();
+pub fn buildMetadata() void {
+    var arena = memory.makeArena();
     defer arena.deinit();
 
     var out: std.Io.Writer.Allocating = .init(arena.allocator());
@@ -235,7 +235,7 @@ pub fn build_metadata() void {
     ws.endObject() catch return; // Finish!
 
     const written = out.written();
-    memory.scratch_reset();
-    const scratch_ptr = memory.scratch_alloc(written.len);
+    memory.scratchReset();
+    const scratch_ptr = memory.scratchAlloc(written.len);
     @memcpy(scratch_ptr[0..written.len], written);
 }

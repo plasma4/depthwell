@@ -13,7 +13,7 @@ const v2u64 = memory.v2u64;
 test "basic usage example" {
     // Start with an arbitrary seed (NOTE: seed_from_bytes fails for WASM builds)
     var world_seed: Seed = undefined;
-    seed_from_bytes("my-game-seed", &world_seed);
+    seedFromBytes("my-game-seed", &world_seed);
 
     var rng: Xoshiro512 = .{ .state = world_seed };
     // change to quickWarn to see result from ZLS
@@ -25,7 +25,7 @@ test "basic usage example" {
 pub const Seed = [8]u64;
 
 // /// A fast 64-bit to 64-bit generator for avalanching the X/Y offsets.
-// inline fn split_mix_64(state: *u64) u64 {
+// inline fn splitMix64(state: *u64) u64 {
 //     state.* +%= 0x9E3779B97F4A7C15;
 //     var z = state.*;
 //     z = (z ^ (z >> 30)) *% 0xBF58476D1CE4E5B9;
@@ -34,7 +34,7 @@ pub const Seed = [8]u64;
 // }
 
 /// Mixes a base seed with some values. Since BLAKE3 is cryptographic this will yield high-quality results. It may be more useful to use a custom nonce with `ChaCha12` instead.
-pub fn mix_base_seed(layer_seed: *const Seed, number: u64) Seed {
+pub fn mixBaseSeed(layer_seed: *const Seed, number: u64) Seed {
     const PackedInput = extern struct { // temporary struct for faster mixing :)
         // Using packed here does NOT work. It must be extern or else asBytes will be corrupted.
         seed: Seed,
@@ -51,7 +51,7 @@ pub fn mix_base_seed(layer_seed: *const Seed, number: u64) Seed {
 }
 
 /// Mixes in the layer seed with X/Y values. Used when appending on part of a seed to a quadrant.
-pub fn mix_coordinate_seed(layer_seed: *const Seed, x: u64, y: u64) Seed {
+pub fn mixCoordinateSeed(layer_seed: *const Seed, x: u64, y: u64) Seed {
     const PackedInput = extern struct { // temporary struct for faster mixing :)
         seed: Seed,
         x: u64,
@@ -71,7 +71,7 @@ pub fn mix_coordinate_seed(layer_seed: *const Seed, x: u64, y: u64) Seed {
 }
 
 /// Generates 4 sets of seeds for every chunk when combining X/Y active suffix coordinates with the seed of a quadrant.
-pub fn mix_chunk_seeds(quadrant_seed: *const Seed, coord_vector: v2u64) [4]Seed {
+pub fn mixChunkSeeds(quadrant_seed: *const Seed, coord_vector: v2u64) [4]Seed {
     const PackedInput = extern struct { // do the packing thing again
         seed: Seed,
         c1: u64,
@@ -91,7 +91,7 @@ pub fn mix_chunk_seeds(quadrant_seed: *const Seed, coord_vector: v2u64) [4]Seed 
 }
 
 /// Multiplies a float by 2^64, returning an integer `x` such that a random 64-bit integer has its probability to be less than `x` equal `chance`.
-pub inline fn odds_num(chance: comptime_float) u64 {
+pub inline fn oddsNum(chance: comptime_float) u64 {
     return @intFromFloat(chance * POW_2_64);
 }
 
@@ -113,7 +113,7 @@ pub const FastHash = struct {
     }
 
     /// Returns a 64-bit hash value, assuming `seed_vector` is securely generated from BLAKE3 already.
-    pub inline fn hash_2d(seed_vector: v2u64, x: u64, y: u64) u64 {
+    pub inline fn hash2d(seed_vector: v2u64, x: u64, y: u64) u64 {
         var v = v2u64{ x, y } ^ seed_vector; // diffuse X and Y using vectors
         v *%= v2u64{ secret[0], secret[1] }; // wrapping multiply
 
@@ -122,8 +122,8 @@ pub const FastHash = struct {
     }
 
     /// Returns a float value (64-bit), assuming `seed_vector` is securely generated from BLAKE3 already.
-    pub inline fn float_2d(seed_vector: v2u64, x: u64, y: u64) f64 {
-        const h = hash_2d(seed_vector, x, y);
+    pub inline fn float2d(seed_vector: v2u64, x: u64, y: u64) f64 {
+        const h = hash2d(seed_vector, x, y);
         return @as(f64, @floatFromInt(h)) / POW_2_64;
     }
 };
@@ -157,7 +157,7 @@ pub const ChaCha12 = struct {
     }
 
     /// Creates a new instance of ChaCha12, with a custom nonce (utilizing the first 384 seed bits).
-    pub fn init_with_nonce(seed_data: Seed, nonce: [2]u32) ChaCha12 {
+    pub fn initWithNonce(seed_data: Seed, nonce: [2]u32) ChaCha12 {
         const s: [16]u32 = @bitCast(seed_data);
         return ChaCha12{
             .row0 = @as(v4u32, @bitCast(s[0..4].*)),
@@ -238,7 +238,7 @@ pub const ChaCha12 = struct {
 
     /// High-performance stateless 2D hash (using the first 384 seed bits), returning 128 bits of data.
     /// Treats X and Y as the `ChaCha12` nonce/counter to return a random value.
-    pub fn hash_2d_128(comptime T: type, seed_data: *const Seed, x: u64, y: u64) @Vector(2, T) {
+    pub fn hash2d128(comptime T: type, seed_data: *const Seed, x: u64, y: u64) @Vector(2, T) {
         const s: [16]u32 = @bitCast(seed_data);
 
         var x0 = @as(v4u32, @bitCast(s[0..4].*));
@@ -286,7 +286,7 @@ pub const ChaCha12 = struct {
 
     /// High-performance stateless 2D hash (using the first 384 seed bits), returning 512 bits of data.
     /// Treats X and Y as the `ChaCha12` nonce/counter to return a random value.
-    pub fn hash_2d_512(comptime T: type, seed_data: *const Seed, x: u64, y: u64) [8]T {
+    pub fn hash2d512(comptime T: type, seed_data: *const Seed, x: u64, y: u64) [8]T {
         const s: [16]u32 = @bitCast(seed_data);
         var x0 = @as(v4u32, @bitCast(s[0..4].*));
         var x1 = @as(v4u32, @bitCast(s[4..8].*));
@@ -474,7 +474,7 @@ test "skip forward matches sequential" {
 
 test "cross-block boundary skip" {
     var seed = std.mem.zeroes(Seed);
-    seed_from_bytes("my-game-seed", &seed);
+    seedFromBytes("my-game-seed", &seed);
 
     var rng = ChaCha12.init(seed);
 
@@ -491,7 +491,7 @@ test "cross-block boundary skip" {
 
 test "float range" {
     var seed = std.mem.zeroes(Seed);
-    seed_from_bytes("my-game-seed", &seed);
+    seedFromBytes("my-game-seed", &seed);
 
     var rng = ChaCha12.init(seed);
 
@@ -556,14 +556,14 @@ pub const Xoshiro512 = struct {
 };
 
 /// Stafford Mix 13 for 64-bit entropy avalanching. No long used.
-pub inline fn stafford_mix_13(value: u64) u64 {
+pub inline fn staffordMix13(value: u64) u64 {
     var z = (value ^ (value >> 30)) *% 0xbf58476d1ce4e5b9;
     z = (z ^ (z >> 27)) *% 0x94d049bb133111eb;
     return z ^ (z >> 31);
 }
 
 /// BROKEN WHEN EXPORTING, DO NOT USE FOR WASM, AS JS LOGIC EXISTS ALREADY. Converts a base-26 [a-z]-only string to 64 bytes. Input should  too no larger than 100 characters.
-pub fn seed_from_base26(noalias input: []const u8, noalias out_seed: *Seed) void {
+pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {
     // Initialize out_seed to 0
     @memset(out_seed, 0);
 
@@ -595,26 +595,26 @@ pub fn seed_from_base26(noalias input: []const u8, noalias out_seed: *Seed) void
 }
 
 /// Bridge to WASM, creates seed data from a string using bijective mapping
-pub fn wasm_seed_from_string(str_ptr: [*]const u8, str_len: u64, output_ptr: *Seed) void {
+pub fn wasmSeedFromString(str_ptr: [*]const u8, str_len: u64, output_ptr: *Seed) void {
     const temp: usize = @intCast(str_len);
     const input = str_ptr[0..temp];
-    seed_from_base26(input, output_ptr);
+    seedFromBase26(input, output_ptr);
 }
 
 test "bijective seeding uniqueness" {
     var s1: Seed = undefined;
     var s2: Seed = undefined;
     var s3: Seed = undefined;
-    seed_from_base26("a", &s1);
-    seed_from_base26("b", &s2);
-    seed_from_base26("c", &s3);
+    seedFromBase26("a", &s1);
+    seedFromBase26("b", &s2);
+    seedFromBase26("c", &s3);
     try testing.expect(!std.mem.eql(u64, &s1, &s2));
     try testing.expect(!std.mem.eql(u64, &s2, &s3));
 }
 
 test "Xoshiro512** initialization/consistency" {
     var seed: Seed = undefined;
-    seed_from_bytes("test_seed", &seed);
+    seedFromBytes("test_seed", &seed);
     var rng1 = Xoshiro512.init(&seed);
     var rng2 = Xoshiro512.init(&seed);
 
@@ -626,7 +626,7 @@ test "Xoshiro512** initialization/consistency" {
 
 test "branching check" {
     var seed: Seed = undefined;
-    seed_from_bytes("test", &seed);
+    seedFromBytes("test", &seed);
     const rng_main = Xoshiro512.init(&seed);
 
     // Make value copies of the state
@@ -646,7 +646,7 @@ test "branching check" {
 
 /// Hashes an arbitrary string into a 512-bit seed directly into the destination (using Sha512).
 /// Used for testing only; actual seeding uses a string with only [a-z] characters and using Sha512 would be too slow for practical use.
-fn seed_from_bytes(noalias input: []const u8, noalias out_seed: *Seed) void {
+fn seedFromBytes(noalias input: []const u8, noalias out_seed: *Seed) void {
     var hash_out: [64]u8 = undefined;
     std.crypto.hash.sha2.Sha512.hash(input, &hash_out, .{});
 

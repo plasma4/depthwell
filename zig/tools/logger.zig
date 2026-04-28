@@ -29,18 +29,18 @@ const text_4 = text_buffer[3072..4096];
 var text_lengths: [4]usize = .{ 0, 0, 0, 0 };
 
 /// Logging bridge between JS and WASM.
-extern "env" fn js_message(ptr: [*]const u8, len: usize, message_type: LogCategory) void;
+extern "env" fn jsMessage(ptr: [*]const u8, len: usize, message_type: LogCategory) void;
 
 /// Logging bridge between JS and WASM for writing to specific text elements.
-extern "env" fn js_write_text(id: u8, ptr: [*]const u8, len: usize) void;
+extern "env" fn jsWriteText(id: u8, ptr: [*]const u8, len: usize) void;
 
 /// Returns the current time (calling `performance.now()` in JS)
-extern "env" fn js_get_time() f64;
+extern "env" fn jsGetTime() f64;
 
 /// Gets a time in milliseconds. Time is not guaranteed to start from 0 or standard UNIX timestamp when program execution begins.
-pub inline fn get_time() f64 {
+pub inline fn getTime() f64 {
     if (root.is_wasm) {
-        return js_get_time();
+        return jsGetTime();
     } else {
         const ns = std.time.nanoTimestamp();
         return @as(f64, @floatFromInt(ns)) / 1_000_000.0; // wow, fancy _ symbol!
@@ -50,7 +50,7 @@ pub inline fn get_time() f64 {
 // Sends a message (with pointer and length, as well as a message type) to either std.log with the appropriate category or JS.
 inline fn message(ptr: [*]const u8, len: usize, message_type: LogCategory) void {
     if (root.is_wasm) {
-        js_message(ptr, len, message_type);
+        jsMessage(ptr, len, message_type);
     } else {
         const msg_slice = ptr[0..len];
         switch (message_type) {
@@ -64,22 +64,22 @@ inline fn message(ptr: [*]const u8, len: usize, message_type: LogCategory) void 
 
 /// Logs a message in JS.
 pub inline fn log(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
-    write_log(src, fmt, args, .log);
+    writeLog(src, fmt, args, .log);
 }
 /// Logs an info message in JS.
 pub inline fn info(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
-    write_log(src, fmt, args, .info);
+    writeLog(src, fmt, args, .info);
 }
 /// Logs a warning message in JS.
 pub inline fn warn(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
-    write_log(src, fmt, args, .warn);
+    writeLog(src, fmt, args, .warn);
 }
 /// Logs an error message in JS.
 pub inline fn err(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype) void {
-    write_log(src, fmt, args, .err);
+    writeLog(src, fmt, args, .err);
 }
 
-inline fn write_log(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype, log_category: LogCategory) void {
+inline fn writeLog(comptime src: std.builtin.SourceLocation, fmt: []const u8, args: anytype, log_category: LogCategory) void {
     // Add source as comptime. WASM handles the [...url... part of the string
     const prefix_fmt = if (root.is_wasm) "{s}:{d}:{d}] " else "[zig/{s}:{d}:{d}] ";
     const prefix = std.fmt.comptimePrint(prefix_fmt, .{ src.file, src.line, src.column });
@@ -99,7 +99,7 @@ inline fn write_log(comptime src: std.builtin.SourceLocation, fmt: []const u8, a
 }
 
 /// A test function for logging, testing all four logging types and truncation. (See root.zig for export logic.)
-pub inline fn test_logs(skipError: bool) void {
+pub inline fn testLogs(skipError: bool) void {
     const logger = @import("logger.zig");
     logger.log(@src(), "This is a {s}.", .{"normal log"});
     logger.info(@src(), "This is an info log.", .{});
@@ -109,7 +109,7 @@ pub inline fn test_logs(skipError: bool) void {
     } else {
         logger.log(@src(), "Skipping error test.", .{});
     }
-    var arena = memory.make_arena();
+    var arena = memory.makeArena();
     const allocator = arena.allocator();
     defer arena.deinit();
     var list: std.ArrayList(u8) = .empty;
@@ -133,7 +133,7 @@ fn quickFmt(args: anytype, prefix: []const u8) usize {
     var writer: std.Io.Writer = .fixed(&logging_buffer);
 
     writer.print("{s}", .{prefix}) catch {};
-    format_args(&writer, args) catch {};
+    formatArgs(&writer, args) catch {};
     return writer.end;
 }
 
@@ -147,13 +147,13 @@ pub inline fn quick(args: anytype) void {
 
 /// Quickly warns a message for testing.
 /// Use .log() with proper arguments for non-temporary/internal test logging.
-pub inline fn quick_warn(args: anytype) void {
+pub inline fn quickWarn(args: anytype) void {
     const written = quickFmt(args, "");
     message(&logging_buffer, written, .warn);
 }
 
 /// Internal helper to convert an argument of various types to consistent strings.
-fn write_value(writer: anytype, val: anytype) void {
+fn writeValue(writer: anytype, val: anytype) void {
     const T = @TypeOf(val);
     const type_info = @typeInfo(T);
 
@@ -186,7 +186,7 @@ fn write_value(writer: anytype, val: anytype) void {
         },
         .optional => {
             if (val) |v| {
-                write_value(writer, v);
+                writeValue(writer, v);
             } else {
                 writer.writeAll("null") catch {};
             }
@@ -195,7 +195,7 @@ fn write_value(writer: anytype, val: anytype) void {
             writer.writeAll("(") catch {};
             inline for (0..vector_info.len) |i| {
                 if (i > 0) writer.writeAll(", ") catch {};
-                write_value(writer, val[i]);
+                writeValue(writer, val[i]);
             }
             writer.writeAll(")") catch {};
         },
@@ -203,7 +203,7 @@ fn write_value(writer: anytype, val: anytype) void {
             writer.writeAll("[") catch {};
             for (0..ptr_info.len) |i| {
                 if (i > 0) writer.writeAll(", ") catch {};
-                write_value(writer, val[i]);
+                writeValue(writer, val[i]);
             }
             writer.writeAll("]") catch {};
         },
@@ -219,13 +219,13 @@ fn write_value(writer: anytype, val: anytype) void {
                     return;
                 }
 
-                write_value(writer, val.*);
+                writeValue(writer, val.*);
             } else if (ptr_info.size == .slice) {
                 // This handles your resultX[0..d] slices!
                 writer.writeAll("[") catch {};
                 for (val, 0..) |item, i| {
                     if (i > 0) writer.writeAll(", ") catch {};
-                    write_value(writer, item);
+                    writeValue(writer, item);
                 }
                 writer.writeAll("]") catch {};
             } else {
@@ -242,7 +242,7 @@ fn write_value(writer: anytype, val: anytype) void {
                     return;
                 } else {
                     // It's an ArrayList of something else:
-                    write_value(writer, items_val);
+                    writeValue(writer, items_val);
                     return;
                 }
             }
@@ -253,7 +253,7 @@ fn write_value(writer: anytype, val: anytype) void {
                 var i: usize = 0;
                 while (i < val.len) : (i += 1) {
                     if (i > 0) writer.writeAll(", ") catch {};
-                    write_value(writer, val.at(i).*);
+                    writeValue(writer, val.at(i).*);
                 }
                 writer.writeAll("]") catch {};
                 return;
@@ -268,7 +268,7 @@ fn write_value(writer: anytype, val: anytype) void {
                     break :blk true;
                 };
                 if (!is_tuple_index) writer.print(".{s} = ", .{field.name}) catch {};
-                write_value(writer, @field(val, field.name));
+                writeValue(writer, @field(val, field.name));
             }
             writer.writeAll(" }") catch {};
         },
@@ -292,12 +292,12 @@ fn isString(comptime T: type) bool {
 }
 
 /// Internal helper to format arguments. Contains logic for {h} and {mh} headers.
-fn format_args(writer: anytype, args: anytype) !void {
+fn formatArgs(writer: anytype, args: anytype) !void {
     const ArgsType = @TypeOf(args);
     const type_info = @typeInfo(ArgsType);
 
     if (type_info != .@"struct") {
-        write_value(writer, args);
+        writeValue(writer, args);
         return;
     }
 
@@ -335,7 +335,7 @@ fn format_args(writer: anytype, args: anytype) !void {
                 const sep = if (has_header) ": " else (if (multi_line) "\n" else " | ");
                 try writer.writeAll(sep);
             }
-            write_value(writer, val);
+            writeValue(writer, val);
 
             // Once a value is written, it's no longer "immediately after a header"
             has_header = false;
@@ -357,43 +357,43 @@ pub inline fn write(buffer_id: u2, args: anytype) void {
     writer.end = text_lengths[buffer_id];
 
     // Attempt to write. If it fails, clear and try again.
-    if (attempt_write(&writer, args)) {
+    if (attemptWrite(&writer, args)) {
         text_lengths[buffer_id] = writer.end;
     } else {
         // Overflow! Clear the buffer and write a single line.
         writer.end = 0;
         _ = writer.writeAll("[BUFFER CLEARED]\n") catch {};
 
-        if (attempt_write(&writer, args)) {
+        if (attemptWrite(&writer, args)) {
             text_lengths[buffer_id] = writer.end;
         } else {
             // Truncate to fit this extremely long line
             writer.end = 0;
-            _ = writer_truncate(&writer, args);
+            _ = writerTruncate(&writer, args);
             text_lengths[buffer_id] = writer.end;
         }
     }
 
     if (root.is_wasm) {
-        js_write_text(@intCast(buffer_id), buf.ptr, text_lengths[buffer_id]);
+        jsWriteText(@intCast(buffer_id), buf.ptr, text_lengths[buffer_id]);
     }
 }
 
 /// Same as write(), but clears the buffer beforehand.
-pub inline fn write_once(buffer_id: u2, args: anytype) void {
+pub inline fn writeOnce(buffer_id: u2, args: anytype) void {
     clear(buffer_id);
     write(buffer_id, args);
 }
 
-fn attempt_write(writer: *std.Io.Writer, args: anytype) bool {
-    format_args(writer, args) catch return false;
+fn attemptWrite(writer: *std.Io.Writer, args: anytype) bool {
+    formatArgs(writer, args) catch return false;
     writer.writeByte('\n') catch return false;
     return true;
 }
 
 /// Fallback for large logs by truncating.
-fn writer_truncate(writer: *std.Io.Writer, args: anytype) bool {
-    format_args(writer, args) catch {};
+fn writerTruncate(writer: *std.Io.Writer, args: anytype) bool {
+    formatArgs(writer, args) catch {};
     _ = writer.writeAll("... [remaining log truncated]\n") catch {};
     return true;
 }
@@ -404,10 +404,10 @@ pub inline fn clear(id: u2) void {
     text_lengths[id] = 0;
     if (root.is_wasm) {
         const targets = [4][]u8{ text_1, text_2, text_3, text_4 };
-        js_write_text(@intCast(id), targets[id].ptr, 0);
+        jsWriteText(@intCast(id), targets[id].ptr, 0);
     }
 }
 
 test "native logging output" {
-    test_logs(false);
+    testLogs(false);
 }

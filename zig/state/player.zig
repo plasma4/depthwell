@@ -64,18 +64,18 @@ pub fn move(logic_speed: f64) void {
 
     // handle camera zoom (.pow is safe here despite being inconsistent on different devices)
     const old_camera_scale = game.camera_scale;
-    if (KeyBits.is_set(KeyBits.plus, game.keys_held_mask)) {
+    if (KeyBits.isSet(KeyBits.plus, game.keys_held_mask)) {
         game.camera_scale = @min(game.camera_scale * std.math.pow(f64, CAMERA_CHANGE_SPEED, dt), CAMERA_MAX_ZOOM);
     }
-    if (KeyBits.is_set(KeyBits.minus, game.keys_held_mask)) {
+    if (KeyBits.isSet(KeyBits.minus, game.keys_held_mask)) {
         game.camera_scale = @max(game.camera_scale / std.math.pow(f64, CAMERA_CHANGE_SPEED, dt), CAMERA_MIN_ZOOM);
     }
     game.camera_scale_change = game.camera_scale / old_camera_scale;
 
     // Analytical velocity (basic damped linear system)
     var move_input: f64 = 0;
-    if (KeyBits.is_set(KeyBits.left, game.keys_held_mask)) move_input -= PLAYER_BASE_SPEED;
-    if (KeyBits.is_set(KeyBits.right, game.keys_held_mask)) move_input += PLAYER_BASE_SPEED;
+    if (KeyBits.isSet(KeyBits.left, game.keys_held_mask)) move_input -= PLAYER_BASE_SPEED;
+    if (KeyBits.isSet(KeyBits.right, game.keys_held_mask)) move_input += PLAYER_BASE_SPEED;
 
     const f_x = 1.0 - FRICTION_X;
     const f_y = 1.0 - FRICTION_Y;
@@ -87,7 +87,7 @@ pub fn move(logic_speed: f64) void {
         (move_input * f_x * (1.0 - pow_fx) / FRICTION_X);
 
     // Update y velocity with gravity
-    if (is_grounded and KeyBits.is_set(KeyBits.up, game.keys_held_mask)) {
+    if (is_grounded and KeyBits.isSet(KeyBits.up, game.keys_held_mask)) {
         game.player_velocity[1] = -JUMP_FORCE;
         is_grounded = false;
     } else {
@@ -111,17 +111,17 @@ pub fn move(logic_speed: f64) void {
     const step_y = if (total_move[1] > 0) @as(i64, 1) else -1;
     while (rem_y > 0) {
         const move_now = @min(rem_y, CCD_STEP_SIZE);
-        if (!is_colliding(game.player_pos[0], game.player_pos[1] + (step_y * move_now))) {
+        if (!isColliding(game.player_pos[0], game.player_pos[1] + (step_y * move_now))) {
             game.player_pos[1] += step_y * move_now;
-            total_chunk_shift[1] += handle_local_wrap(1);
+            total_chunk_shift[1] += handleLocalWrap(1);
             rem_y -= move_now;
         } else {
             // Perfect snap: Move 1 pixel at a time until contact
             var sub_steps = move_now;
             while (sub_steps > 0) : (sub_steps -= 1) {
-                if (!is_colliding(game.player_pos[0], game.player_pos[1] + step_y)) {
+                if (!isColliding(game.player_pos[0], game.player_pos[1] + step_y)) {
                     game.player_pos[1] += step_y;
-                    total_chunk_shift[1] += handle_local_wrap(1);
+                    total_chunk_shift[1] += handleLocalWrap(1);
                 } else break;
             }
             if (step_y > 0) is_grounded = true;
@@ -136,16 +136,16 @@ pub fn move(logic_speed: f64) void {
     const step_x = if (total_move[0] > 0) @as(i64, 1) else -1;
     while (rem_x > 0) {
         const move_now = @min(rem_x, CCD_STEP_SIZE);
-        if (!is_colliding(game.player_pos[0] + (step_x * move_now), game.player_pos[1])) {
+        if (!isColliding(game.player_pos[0] + (step_x * move_now), game.player_pos[1])) {
             game.player_pos[0] += step_x * move_now;
-            total_chunk_shift[0] += handle_local_wrap(0);
+            total_chunk_shift[0] += handleLocalWrap(0);
             rem_x -= move_now;
         } else {
             var sub_steps = move_now;
             while (sub_steps > 0) : (sub_steps -= 1) {
-                if (!is_colliding(game.player_pos[0] + step_x, game.player_pos[1])) {
+                if (!isColliding(game.player_pos[0] + step_x, game.player_pos[1])) {
                     game.player_pos[0] += step_x;
-                    total_chunk_shift[0] += handle_local_wrap(0);
+                    total_chunk_shift[0] += handleLocalWrap(0);
                 } else break;
             }
             game.player_velocity[0] = 0;
@@ -155,23 +155,23 @@ pub fn move(logic_speed: f64) void {
     }
 
     // Finally, tell SimBuffer and the camera to update.
-    world.SimBuffer.sync(game.get_player_coord(), total_chunk_shift);
-    update_camera(dt);
+    world.SimBuffer.sync(game.getPlayerCoord(), total_chunk_shift);
+    updateCamera(dt);
 }
 
 /// Updates the player_chunk and returns the chunk carry (displacement).
 /// This keeps game.player_pos normalized and updates fractal quadrant logic.
-fn handle_local_wrap(comptime axis: u1) i64 {
+fn handleLocalWrap(comptime axis: u1) i64 {
     const game = &memory.game;
     const val = game.player_pos[axis];
     if (val < 0 or val >= memory.SUBPIXELS_IN_CHUNK) {
         const carry = @divFloor(val, memory.SUBPIXELS_IN_CHUNK);
-        const current_coord = game.get_player_coord();
+        const current_coord = game.getPlayerCoord();
 
         const new_coord = if (axis == 0)
-            current_coord.move_x(carry)
+            current_coord.moveX(carry)
         else
-            current_coord.move_y(carry);
+            current_coord.moveY(carry);
 
         if (new_coord) |c| {
             game.player_quadrant = c.quadrant;
@@ -192,7 +192,7 @@ fn handle_local_wrap(comptime axis: u1) i64 {
 }
 
 /// Performs an AABB check (for the player's position) against the world grid.
-pub fn is_colliding(px: i64, py: i64) bool {
+pub fn isColliding(px: i64, py: i64) bool {
     const game = &memory.game;
     const corners = [4][2]i64{
         .{ px - PLAYER_HITBOX_WIDTH / 2, py + SPAN_SQ / 2 - PLAYER_HITBOX_HEIGHT },
@@ -201,7 +201,7 @@ pub fn is_colliding(px: i64, py: i64) bool {
         .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + SPAN_SQ / 2 },
     };
 
-    const player_coord = game.get_player_coord();
+    const player_coord = game.getPlayerCoord();
     var last_coord: ?memory.Coordinate = null;
     var cached_chunk: memory.Chunk = undefined;
 
@@ -211,19 +211,19 @@ pub fn is_colliding(px: i64, py: i64) bool {
         const target_coord = player_coord.move(.{ cx_shift, cy_shift }) orelse return true;
 
         if (last_coord == null or !target_coord.eql(last_coord.?)) {
-            cached_chunk = world.get_chunk(target_coord);
+            cached_chunk = world.getChunk(target_coord);
             last_coord = target_coord;
         }
 
         const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[0], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));
         const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[1], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));
-        if (cached_chunk.blocks[@as(usize, ly) * SPAN + @as(usize, lx)].is_solid()) return true;
+        if (cached_chunk.blocks[@as(usize, ly) * SPAN + @as(usize, lx)].isSolid()) return true;
     }
     return false;
 }
 
 /// Updates the camera, handling deadzone and gradual panning.
-fn update_camera(logic_speed: f64) void {
+fn updateCamera(logic_speed: f64) void {
     const game = &memory.game;
     game.last_camera_pos = game.camera_pos;
 

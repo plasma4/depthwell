@@ -89,7 +89,7 @@ export async function create(
         {
             env: {
                 // See how logging works in logger.zig. Logging is guaranteed to return valid arguments.
-                js_message: (
+                jsMessage: (
                     ptr: Zig.Pointer,
                     len: Zig.LengthLike,
                     category: number,
@@ -113,7 +113,7 @@ export async function create(
                         ][category](str);
                     }
                 },
-                js_write_text: (
+                jsWriteText: (
                     id: number,
                     ptr: Zig.Pointer,
                     len: Zig.Pointer,
@@ -130,12 +130,11 @@ export async function create(
                     ) as HTMLSpanElement;
                     el.textContent = str;
                 },
-                js_get_time: () => performance.now(),
-                js_handle_visible_chunks: (opacity: number) =>
+                jsGetTime: () => performance.now(),
+                jsHandleVisibleChunks: (opacity: number) =>
                     engine!.handleVisibleChunks(opacity),
-                js_handle_visible_entities: () =>
-                    engine!.handleVisibleEntities(),
-                js_set_mouse_type: (type: number) => engine!.setMouseType(type),
+                jsHandleVisibleEntities: () => engine!.handleVisibleEntities(),
+                jsSetMouseType: (type: number) => engine!.setMouseType(type),
             },
         },
     );
@@ -148,31 +147,31 @@ export async function create(
         // constant patching, basically override keyword in WGSL
         code: SHADER_SOURCE.replace(
             "/* TILES_PER_ROW */ 1 /* TILES_PER_ROW */",
-            "" + exports.get_tiles_per_row(),
+            "" + exports.getTilesPerRow(),
         )
             .replace(
                 "/* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */",
-                "" + exports.get_tiles_per_column(),
+                "" + exports.getTilesPerColumn(),
             )
             .replace(
                 "/* STONE_START */ 1 /* STONE_START */",
-                "" + exports.get_stone_start(),
+                "" + exports.getStoneStart(),
             )
             .replace(
                 "/* ORE_START */ 1 /* ORE_START */",
-                "" + exports.get_ore_start(),
+                "" + exports.getOreStart(),
             )
             .replace(
                 "/* GEM_START */ 1 /* GEM_START */",
-                "" + exports.get_gem_start(),
+                "" + exports.getGemStart(),
             )
             .replace(
                 "/* GEM_MASK_START */ 1 /* GEM_MASK_START */",
-                "" + exports.get_gem_mask_start(),
+                "" + exports.getGemMaskStart(),
             )
             .replace(
                 "/* DECOR_START */ 1 /* DECOR_START */",
-                "" + exports.get_decor_start(),
+                "" + exports.getDecorStart(),
             ),
     });
 
@@ -310,7 +309,7 @@ export async function create(
     );
     engine.exports.setup();
     await engine.setSeed(Seeding.makeSeed(100));
-    engine.startDelta = Number(exports.mix_seed(60n) % 120000n); // use a random seed mixing value here
+    engine.startDelta = Number(exports.mixSeed(60n) % 120000n); // use a random seed mixing value here
     engine.exports.init();
 
     const resizeObserver = new ResizeObserver(engine.onResize);

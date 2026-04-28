@@ -157,7 +157,7 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
         break :blk b.allocator.alloc(u8, 0) catch "";
     };
 
-    // @import("zig/logger.zig").quick_warn(.{ current_hash_hex, old_hash_hex, std.mem.eql(u8, current_hash_hex, old_hash_hex) });
+    // @import("zig/logger.zig").quickWarn(.{ current_hash_hex, old_hash_hex, std.mem.eql(u8, current_hash_hex, old_hash_hex) });
     defer if (old_hash_hex.len > 0) b.allocator.free(old_hash_hex);
 
     // compare array to slice and update content hash if necessary in generate_types.zig

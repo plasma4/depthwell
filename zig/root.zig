@@ -75,51 +75,51 @@ pub export fn setup() void {
 pub export fn init() void {
     startup.init();
 }
-pub export fn prepare_visible_data(time_interpolated: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
-    render.prepare_visible_data(time_interpolated, time_diff, canvas_w, canvas_h);
+pub export fn prepareVisibleData(time_interpolated: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
+    render.prepareVisibleData(time_interpolated, time_diff, canvas_w, canvas_h);
 }
 
-pub export fn get_tiles_per_row() u32 {
+pub export fn getTilesPerRow() u32 {
     return 8; // Sprites are saved as a .png in a sprite sheet 128 pixels wide, and each asset is 16x16.
 }
-pub export fn get_tiles_per_column() u32 {
+pub export fn getTilesPerColumn() u32 {
     return sprite.max_sprite_value / 8 + 1; // works out from 0-indexing
 }
-pub export fn get_stone_start() u32 {
+pub export fn getStoneStart() u32 {
     return @intCast(@intFromEnum(Sprite.stone));
 }
-pub export fn get_ore_start() u32 {
+pub export fn getOreStart() u32 {
     return @intCast(@intFromEnum(Sprite.copper));
 }
-pub export fn get_gem_start() u32 {
+pub export fn getGemStart() u32 {
     return @intCast(@intFromEnum(Sprite.amethyst));
 }
-pub export fn get_gem_mask_start() u32 {
+pub export fn getGemMaskStart() u32 {
     return @intCast(@intFromEnum(Sprite.gem_mask));
 }
-pub export fn get_decor_start() u32 {
+pub export fn getDecorStart() u32 {
     return @intCast(@intFromEnum(Sprite.spiral_plant));
 }
 
-pub export fn handle_mouse(mouse_x: f64, mouse_y: f64, action: u32) void {
-    mouse.handle_mouse(mouse_x, mouse_y, action);
+pub export fn handleMouse(mouse_x: f64, mouse_y: f64, action: u32) void {
+    mouse.handleMouse(mouse_x, mouse_y, action);
 }
 
 pub export fn tick(speed: f64, iterations: u32) void {
     var buffer: inventory.SlotBuffer = undefined;
-    const active_slots = inventory.get_active_slots(&buffer);
+    const active_slots = inventory.getActiveSlots(&buffer);
 
     // handles M and 0 cases, see code in function for details
-    if (KeyBits.is_set(KeyBits.inventory_up, memory.game.keys_pressed_mask)) inventory.selected_row -|= 1;
-    if (KeyBits.is_set(KeyBits.inventory_down, memory.game.keys_pressed_mask)) inventory.selected_row += 1;
-    if (KeyBits.is_set(KeyBits.mine, memory.game.keys_pressed_mask)) {
+    if (KeyBits.isSet(KeyBits.inventory_up, memory.game.keys_pressed_mask)) inventory.selected_row -|= 1;
+    if (KeyBits.isSet(KeyBits.inventory_down, memory.game.keys_pressed_mask)) inventory.selected_row += 1;
+    if (KeyBits.isSet(KeyBits.mine, memory.game.keys_pressed_mask)) {
         inventory.selected_row = 0;
         inventory.selected_sprite = .none;
     } else {
-        const selected_column = KeyBits.get_number(memory.game.keys_held_mask);
+        const selected_column = KeyBits.getNumber(memory.game.keys_held_mask);
         if (!(inventory.selected_sprite == .unselected and selected_column == 65535)) {
             const slot_len = active_slots.len;
-            const current_column = inventory.get_selected_index() % 10;
+            const current_column = inventory.getSelectedIndex() % 10;
             inventory.selected_row = @min(
                 @as(u16, @intCast(slot_len / 10)), // zeroth row holds 10 slots, so this works out
                 inventory.selected_row,
@@ -141,20 +141,20 @@ pub export fn tick(speed: f64, iterations: u32) void {
     }
 
     // increase the depth (testing hotkey)
-    if (KeyBits.is_set(KeyBits.zoom, memory.game.keys_pressed_mask)) {
+    if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
         // if (in_debug_mode) {
-        world.push_layer(
+        world.pushLayer(
             Sprite.none,
-            memory.game.get_player_coord(),
-            memory.game.get_block_x_in_chunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
-            memory.game.get_block_y_in_chunk(),
+            memory.game.getPlayerCoord(),
+            memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
+            memory.game.getBlockYInChunk(),
         );
         // }
         mining.selected_hp = 255;
         mouse.mouse_chunk = null;
     } else {
         // mouse block and mining/placing logic all updated in this function
-        mining.handle_mining_and_placing();
+        mining.handleMiningAndPlacing();
     }
 
     for (0..iterations) |_| { // iterations is guaranteed to be positive
@@ -163,49 +163,49 @@ pub export fn tick(speed: f64, iterations: u32) void {
     }
 
     // Generate chunks around the SimBuffer in the background.
-    world.SimBuffer.background_generation_tick(
-        memory.game.get_player_coord(),
+    world.SimBuffer.generateChunkCaches(
+        memory.game.getPlayerCoord(),
         memory.game.player_velocity,
         2,
         4,
     );
 }
 
-pub export fn mix_seed(number: u64) i64 {
+pub export fn mixSeed(number: u64) i64 {
     // IMPORTANT! For some reason, it appears that this returns an `i64` even with `u64` return type.
     // Therefore, that's the type we return.
-    return @intCast(seeding.mix_base_seed(&memory.game.seed, number)[0] >> 1);
+    return @intCast(seeding.mixBaseSeed(&memory.game.seed, number)[0] >> 1);
 }
-pub export fn mix_seed_f64(number: u64) f64 { // same thing as mix_seed but f64
-    return @as(f64, @floatFromInt(seeding.mix_base_seed(&memory.game.seed, number)[0] >> 1)) / seeding.POW_2_64;
+pub export fn mixSeedF64(number: u64) f64 { // same thing as mix_seed but f64
+    return @as(f64, @floatFromInt(seeding.mixBaseSeed(&memory.game.seed, number)[0] >> 1)) / seeding.POW_2_64;
 }
 
-pub export fn wasm_seed_from_string() void {
-    seeding.wasm_seed_from_string(memory.scratch_buffer.ptr, memory.mem.scratch_len, &memory.game.seed);
+pub export fn wasmSeedFromString() void {
+    seeding.wasmSeedFromString(memory.scratch_buffer.ptr, memory.mem.scratch_len, &memory.game.seed);
 }
 
 // Layout logic
-pub export fn get_memory_layout_ptr() u64 { // pointer-like *const memory.MemoryLayout, Memory64 hack
-    return @intFromPtr(memory.get_memory_layout_ptr());
+pub export fn getMemoryLayoutPtr() u64 { // pointer-like *const memory.MemoryLayout, Memory64 hack
+    return @intFromPtr(memory.getMemoryLayoutPtr());
 }
-pub export fn scratch_alloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
-    return @intFromPtr(memory.scratch_alloc(len));
+pub export fn scratchAlloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
+    return @intFromPtr(memory.scratchAlloc(len));
 }
-pub export fn wasm_alloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
-    return @intFromPtr(memory.wasm_alloc(len));
+pub export fn wasmAlloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
+    return @intFromPtr(memory.wasmAlloc(len));
 }
-pub export fn wasm_free(ptr: u64, len: usize) void {
-    memory.wasm_free(@ptrFromInt(@as(usize, @intCast(ptr))), len); // Memory64 hack
+pub export fn wasmFree(ptr: u64, len: usize) void {
+    memory.wasmFree(@ptrFromInt(@as(usize, @intCast(ptr))), len); // Memory64 hack
 }
 
-pub export fn debug_build_ui_metadata() void {
-    if (is_debug) debug_ui.build_metadata();
+pub export fn debugBuildUiMetadata() void {
+    if (is_debug) debug_ui.buildMetadata();
 }
-pub export fn debug_ui_slider_change(id: u32, val: f32) void {
-    if (is_debug) debug_ui.slider_change(id, val);
+pub export fn changeDebugUiSlider(id: u32, val: f32) void {
+    if (is_debug) debug_ui.changeSlider(id, val);
 }
-pub export fn debug_ui_button_click(id: u32) void {
-    if (is_debug) debug_ui.button_click(id);
+pub export fn clickDebugUiButton(id: u32) void {
+    if (is_debug) debug_ui.clickButton(id);
 }
 
 /// Returns if code is in debugging mode for JS to see.
@@ -216,16 +216,16 @@ pub export fn isDebug() bool {
 // Import debugging API if optimization level is Debug.
 comptime {
     _ = if (is_debug) struct {
-        pub export fn test_logs() void {
-            logger.test_logs(true);
+        pub export fn testLogs() void {
+            logger.testLogs(true);
         }
 
-        pub export fn test_scratch_allocation() void {
-            memory.run_scratch_allocation_tests();
+        pub export fn testScratchAlloc() void {
+            memory.runScratchAllocTests();
         }
 
-        pub export fn log_inventory() void {
-            inventory.log_inventory();
+        pub export fn logInventory() void {
+            inventory.logInventory();
         }
     };
 }

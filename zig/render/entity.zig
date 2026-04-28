@@ -38,14 +38,14 @@ var entity_byte_count_before_end: usize = 0;
 var entity_count: u64 = undefined;
 
 /// Updates all entities by adding them to the scratch buffer. Does not actually inform JS.
-pub fn update_entities(time_diff: f64) void {
-    memory.scratch_reset();
+pub fn updateEntities(time_diff: f64) void {
+    memory.scratchReset();
     entity_count = 0;
     entity_byte_count_before_end = 0;
 
     root.mouse.mouse_type = .initial;
-    inventory.draw_inventory(time_diff);
-    root.render.dispatch_mouse_type();
+    inventory.drawInventory(time_diff);
+    root.render.dispatchMouseType();
     root.mouse.just_mouse_down = false;
 
     // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
@@ -59,7 +59,7 @@ pub fn update_entities(time_diff: f64) void {
     if (progress != 255 and progress != 0) {
         const value_hue = 0.2 + @as(f32, @floatFromInt(progress)) * (std.math.pi / 8.0);
         // draw shadow of text
-        draw_number(progress, pos - v2f32{ 1.5, 1.5 }, .{
+        drawNumber(progress, pos - v2f32{ 1.5, 1.5 }, .{
             .lcha = .{
                 0.5, // darken
                 0.4,
@@ -71,7 +71,7 @@ pub fn update_entities(time_diff: f64) void {
         });
 
         // draw the actual number now
-        draw_number(progress, pos, .{
+        drawNumber(progress, pos, .{
             .lcha = .{
                 0.75,
                 0.4,
@@ -83,7 +83,7 @@ pub fn update_entities(time_diff: f64) void {
         });
     }
 
-    memory.set_scratch_prop(0, entity_count);
+    memory.setScratchProp(0, entity_count);
     // entities are cleared in the render code afterward
 }
 
@@ -100,8 +100,8 @@ pub const TextConfig = struct {
     ltr: bool = true,
 };
 
-/// Draws an unsigned integer by creating entities; should NEVER be called outside of `update_entities()`.
-pub fn draw_number(
+/// Draws an unsigned integer by creating entities; should NEVER be called outside of `updateEntities()`.
+pub fn drawNumber(
     number: u64,
     position: v2f32,
     options: TextConfig,
@@ -113,12 +113,12 @@ pub fn draw_number(
 
     // Fast path for zero-rotation cases
     if (rotation == 0.0) {
-        draw_number_fast(number, position, options);
+        drawNumberFast(number, position, options);
         return;
     }
 
     if (number == 0) {
-        add_entity(.{
+        addEntity(.{
             .sprite = @enumFromInt(sprite.NUMBER_START),
             .lcha = lcha,
             .position = position,
@@ -157,7 +157,7 @@ pub fn draw_number(
             // Rotate the relative offset vector (rel_x, 0)
             const rotated_offset = v2f32{ rel_x * cos_r, rel_x * sin_r };
 
-            add_entity(.{
+            addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
                 .lcha = lcha,
                 .position = position + rotated_offset,
@@ -169,7 +169,7 @@ pub fn draw_number(
         for (digits[0..count]) |digit| {
             const rotated_offset = v2f32{ rel_x * cos_r, rel_x * sin_r };
 
-            add_entity(.{
+            addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
                 .lcha = lcha,
                 .position = position + rotated_offset,
@@ -182,13 +182,13 @@ pub fn draw_number(
 }
 
 /// Optimized version of draw_number for when rotation is exactly 0.
-fn draw_number_fast(number: u64, position: v2f32, options: TextConfig) void {
+fn drawNumberFast(number: u64, position: v2f32, options: TextConfig) void {
     const lcha = options.lcha;
     const font_size = options.font_size;
     const ltr = options.ltr;
 
     if (number == 0) {
-        add_entity(.{
+        addEntity(.{
             .sprite = @enumFromInt(sprite.NUMBER_START),
             .lcha = lcha,
             .position = position,
@@ -216,7 +216,7 @@ fn draw_number_fast(number: u64, position: v2f32, options: TextConfig) void {
             const digit = digits[i];
             current_pos[0] += number_widths[@intCast(digit)] * font_size;
 
-            add_entity(.{
+            addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
                 .lcha = lcha,
                 .position = current_pos,
@@ -225,7 +225,7 @@ fn draw_number_fast(number: u64, position: v2f32, options: TextConfig) void {
         }
     } else {
         for (digits[0..count]) |digit| {
-            add_entity(.{
+            addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
                 .lcha = lcha,
                 .position = current_pos,
@@ -238,9 +238,9 @@ fn draw_number_fast(number: u64, position: v2f32, options: TextConfig) void {
 
 /// Adds a single entity to the `entities` array, changing position to use UV.
 /// Modifies the original entity instance. Does not do anything if the sprite type is `none`.
-pub inline fn add_entity(entity: Entity) void {
+pub inline fn addEntity(entity: Entity) void {
     entity_count += 1;
-    const wgsl_entity = memory.scratch_alloc_type(WGSLEntity, &entity_byte_count_before_end);
+    const wgsl_entity = memory.scratchAllocType(WGSLEntity, &entity_byte_count_before_end);
     wgsl_entity.* = .{
         .lcha = entity.lcha,
         .position = entity.position /

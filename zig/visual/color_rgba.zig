@@ -62,7 +62,7 @@ pub const ColorRGBA = extern union {
     }
 
     /// Determines similarity between two colors.
-    pub fn get_color_distance(color_1: ColorRGBA, color_2: ColorRGBA) f32 {
+    pub fn getColorDistance(color_1: ColorRGBA, color_2: ColorRGBA) f32 {
         const v1: @Vector(4, f32) = @floatFromInt(color_1.v);
         const v2: @Vector(4, f32) = @floatFromInt(color_2.v);
 
@@ -113,7 +113,7 @@ pub const ColorRGBA = extern union {
     }
 
     /// Value (simply the maximum channel).
-    pub fn max_channel(self: *const @This()) u8 {
+    pub fn maxChannel(self: *const @This()) u8 {
         const rgb = @as(@Vector(4, u8), self.v) * @Vector(4, u8){ 1, 1, 1, 0 };
         return @reduce(.Max, rgb);
     }
@@ -138,12 +138,12 @@ pub const ColorRGBA = extern union {
     }
 
     /// Is fully opaque?
-    pub fn is_opaque(self: *const @This()) bool {
+    pub fn isOpaque(self: *const @This()) bool {
         return self.channels.a == 255;
     }
 
     /// Is fully transparent?
-    pub fn is_transparent(self: *const @This()) bool {
+    pub fn isTransparent(self: *const @This()) bool {
         return self.channels.a == 0;
     }
 
@@ -155,13 +155,13 @@ pub const ColorRGBA = extern union {
     }
 
     /// Convert to grayscale using luminance while keeping alpha.
-    pub fn to_grayscale(self: *const @This()) ColorRGBA {
+    pub fn toGrayscale(self: *const @This()) ColorRGBA {
         const l = self.luminance();
         return ColorRGBA.init(l, l, l, self.channels.a);
     }
 
     /// Alpha-composite src over self (Porter-Duff "over" operator).
-    pub fn composite_over(self: *const @This(), src: ColorRGBA) ColorRGBA {
+    pub fn compositeOver(self: *const @This(), src: ColorRGBA) ColorRGBA {
         const sa: u32 = src.channels.a;
         const da: u32 = self.channels.a;
         const inv_sa: u32 = 255 - sa;
@@ -178,7 +178,7 @@ pub const ColorRGBA = extern union {
     }
 
     /// Return color with modified alpha.
-    pub fn with_alpha(self: *const @This(), a: u8) ColorRGBA {
+    pub fn withAlpha(self: *const @This(), a: u8) ColorRGBA {
         var res: ColorRGBA = self.*; // this makes a copy!
         res.channels.a = a;
         return res;
@@ -193,7 +193,7 @@ pub const ColorRGBA = extern union {
     }
 
     /// Converts a comptime hex code into a ColorRGBA (as #ffffff or #ffffffff)
-    pub fn from_hex(comptime html_hex: []const u8) ColorRGBA {
+    pub fn fromHex(comptime html_hex: []const u8) ColorRGBA {
         const hex = if (html_hex[0] == '#') html_hex[1..] else html_hex;
 
         if (hex.len != 6 and hex.len != 8) {
@@ -214,19 +214,19 @@ pub const ColorRGBA = extern union {
     }
 
     /// Helper for converting an sRGB channel (0.0 - 1.0) to Linear sRGB.
-    fn srgb_to_linear(c: f32) f32 {
+    fn srgbToLinear(c: f32) f32 {
         if (c <= 0.04045) return c / 12.92;
         return std.math.pow(f32, (c + 0.055) / 1.055, 2.4);
     }
 
-    /// Converts a hex code directly into OKLCH. Use like `comptime ColorRGBA.hex_to_oklch("#ffffff")`.
-    pub fn hex_to_oklch(comptime html_hex: []const u8) @Vector(4, f32) {
+    /// Converts a hex code directly into OKLCH. Use like `comptime ColorRGBA.hexToOklch("#ffffff")`.
+    pub fn hexToOklch(comptime html_hex: []const u8) @Vector(4, f32) {
         comptime {
-            const rgba = ColorRGBA.from_hex(html_hex);
+            const rgba = ColorRGBA.fromHex(html_hex);
 
-            const r_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.r)) / 255.0);
-            const g_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.g)) / 255.0);
-            const b_lin = srgb_to_linear(@as(f32, @floatFromInt(rgba.channels.b)) / 255.0);
+            const r_lin = srgbToLinear(@as(f32, @floatFromInt(rgba.channels.r)) / 255.0);
+            const g_lin = srgbToLinear(@as(f32, @floatFromInt(rgba.channels.g)) / 255.0);
+            const b_lin = srgbToLinear(@as(f32, @floatFromInt(rgba.channels.b)) / 255.0);
 
             // convert to LMS
             const l_ = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin;
@@ -253,37 +253,37 @@ pub const ColorRGBA = extern union {
 
 test "ColorRGBA hex codes" {
     // Standard 6-character hex (no #)
-    const c1 = comptime ColorRGBA.from_hex("123456");
+    const c1 = comptime ColorRGBA.fromHex("123456");
     try std.testing.expectEqual(@as(u8, 0x12), c1.channels.r);
     try std.testing.expectEqual(@as(u8, 0x34), c1.channels.g);
     try std.testing.expectEqual(@as(u8, 0x56), c1.channels.b);
     try std.testing.expectEqual(@as(u8, 255), c1.channels.a);
 
     // 6-character hex
-    const c2 = comptime ColorRGBA.from_hex("#ff0000");
+    const c2 = comptime ColorRGBA.fromHex("#ff0000");
     try std.testing.expectEqual(@as(u8, 255), c2.channels.r);
     try std.testing.expectEqual(@as(u8, 0), c2.channels.g);
     try std.testing.expectEqual(@as(u8, 0), c2.channels.b);
     try std.testing.expectEqual(@as(u8, 255), c2.channels.a);
 
     // 8-character hex
-    const c3 = comptime ColorRGBA.from_hex("#00fF0080");
+    const c3 = comptime ColorRGBA.fromHex("#00fF0080");
     try std.testing.expectEqual(@as(u8, 0), c3.channels.r);
     try std.testing.expectEqual(@as(u8, 255), c3.channels.g);
     try std.testing.expectEqual(@as(u8, 0), c3.channels.b);
     try std.testing.expectEqual(@as(u8, 128), c3.channels.a);
 
     // Standard black and white hex strings against constants
-    const white = comptime ColorRGBA.from_hex("#fFfFfF");
+    const white = comptime ColorRGBA.fromHex("#fFfFfF");
     try std.testing.expect(white.eql(ColorRGBA.white));
 
-    const black = comptime ColorRGBA.from_hex("000000");
+    const black = comptime ColorRGBA.fromHex("000000");
     try std.testing.expect(black.eql(ColorRGBA.black));
 }
 
 test "ColorRGBA color modification" {
     // A color equal to rgb(8, 240, 0).
-    var test_color = comptime ColorRGBA.from_hex("#08f000");
+    var test_color = comptime ColorRGBA.fromHex("#08f000");
     test_color.channels.a -|= 16; // saturating subtraction
     try std.testing.expectEqual(0xef, test_color.channels.a);
 
@@ -341,9 +341,9 @@ test "ColorRGBA color distance" {
     const c1 = ColorRGBA.init(255, 0, 0, 255);
     const c2 = ColorRGBA.init(255, 0, 0, 255);
     // Distance to self should ALWAYS be 0
-    try std.testing.expectEqual(0.0, ColorRGBA.get_color_distance(c1, c2));
+    try std.testing.expectEqual(0.0, ColorRGBA.getColorDistance(c1, c2));
     const c3 = ColorRGBA.init(0, 0, 0, 255);
-    const dist = ColorRGBA.get_color_distance(c1, c3);
+    const dist = ColorRGBA.getColorDistance(c1, c3);
 
     // Distance should be quite large here
     try std.testing.expect(dist > 100000.0 and dist < 1000000.0);
@@ -397,15 +397,15 @@ test "ColorRGBA value and lightness" {
     const c = ColorRGBA.init(50, 128, 10, 255);
 
     // Value = max channel
-    try std.testing.expectEqual(@as(u8, 128), c.max_channel());
+    try std.testing.expectEqual(@as(u8, 128), c.maxChannel());
 
     // Lightness = (max + min) / 2 = (128 + 10) / 2 = 69
     try std.testing.expectEqual(@as(u8, 69), c.lightness());
 
-    try std.testing.expectEqual(@as(u8, 255), ColorRGBA.white.max_channel());
+    try std.testing.expectEqual(@as(u8, 255), ColorRGBA.white.maxChannel());
     try std.testing.expectEqual(@as(u8, 255), ColorRGBA.white.lightness());
 
-    try std.testing.expectEqual(@as(u8, 0), ColorRGBA.black.max_channel());
+    try std.testing.expectEqual(@as(u8, 0), ColorRGBA.black.maxChannel());
     try std.testing.expectEqual(@as(u8, 0), ColorRGBA.black.lightness());
 }
 
@@ -418,16 +418,16 @@ test "ColorRGBA brightness" {
 }
 
 test "ColorRGBA opacity checks" {
-    try std.testing.expect(ColorRGBA.white.is_opaque());
-    try std.testing.expect(!ColorRGBA.white.is_transparent());
+    try std.testing.expect(ColorRGBA.white.isOpaque());
+    try std.testing.expect(!ColorRGBA.white.isTransparent());
 
     const trans = ColorRGBA.init(0, 0, 0, 0);
-    try std.testing.expect(trans.is_transparent());
-    try std.testing.expect(!trans.is_opaque());
+    try std.testing.expect(trans.isTransparent());
+    try std.testing.expect(!trans.isOpaque());
 
     const partial = ColorRGBA.init(0, 0, 0, 128);
-    try std.testing.expect(!partial.is_opaque());
-    try std.testing.expect(!partial.is_transparent());
+    try std.testing.expect(!partial.isOpaque());
+    try std.testing.expect(!partial.isTransparent());
 }
 
 test "ColorRGBA invert and grayscale" {
@@ -439,7 +439,7 @@ test "ColorRGBA invert and grayscale" {
     try std.testing.expectEqual(@as(u8, 105), inv.channels.b);
     try std.testing.expectEqual(@as(u8, 200), inv.channels.a);
 
-    const gray = c.to_grayscale();
+    const gray = c.toGrayscale();
     const l = c.luminance();
     try std.testing.expectEqual(l, gray.channels.r);
     try std.testing.expectEqual(l, gray.channels.g);
@@ -451,7 +451,7 @@ test "ColorRGBA composite_over" {
     const bg = ColorRGBA.init(255, 0, 0, 255); // Solid red
     const fg = ColorRGBA.init(0, 0, 255, 127); // Semi-transparent blue
 
-    const blended = bg.composite_over(fg);
+    const blended = bg.compositeOver(fg);
     try std.testing.expectEqual(@as(u8, 128), blended.channels.r);
     try std.testing.expectEqual(@as(u8, 0), blended.channels.g);
     try std.testing.expectEqual(@as(u8, 127), blended.channels.b);
@@ -459,7 +459,7 @@ test "ColorRGBA composite_over" {
 
     // Solid foreground over solid background
     const fg_solid = ColorRGBA.init(0, 255, 0, 255);
-    const blended_solid = bg.composite_over(fg_solid);
+    const blended_solid = bg.compositeOver(fg_solid);
     try std.testing.expectEqual(fg_solid.channels.r, blended_solid.channels.r);
     try std.testing.expectEqual(fg_solid.channels.g, blended_solid.channels.g);
     try std.testing.expectEqual(fg_solid.channels.b, blended_solid.channels.b);
@@ -467,13 +467,13 @@ test "ColorRGBA composite_over" {
 
     // Foreground over transparent background
     const bg_transparent = ColorRGBA.init(0, 0, 0, 0);
-    const blended_over_transparent = bg_transparent.composite_over(fg_solid);
+    const blended_over_transparent = bg_transparent.compositeOver(fg_solid);
     try std.testing.expectEqual(fg_solid.channels.r, blended_over_transparent.channels.r);
 }
 
 test "ColorRGBA with_alpha and average" {
     const c1 = ColorRGBA.white;
-    const c2 = c1.with_alpha(128);
+    const c2 = c1.withAlpha(128);
     try std.testing.expectEqual(@as(u8, 255), c2.channels.r);
     try std.testing.expectEqual(@as(u8, 128), c2.channels.a);
 

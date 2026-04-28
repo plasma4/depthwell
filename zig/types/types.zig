@@ -15,14 +15,14 @@ pub const KeyBits = struct {
     }
 
     /// Checks if a specific key KeyBit is set within the bitfield.
-    pub inline fn is_set(comptime bitfield: u32, key_mask: u32) bool {
+    pub inline fn isSet(comptime bitfield: u32, key_mask: u32) bool {
         return (bitfield & key_mask) != 0;
     }
 
     /// Returns a number selected, if any.
     /// Prioritizes smaller numbers, returning 65535 for none.
     /// Treats 0 key as nine, and shifts 1-9 keys left by one (so 1 returns zero instead).
-    pub inline fn get_number(key_mask: u32) u16 {
+    pub inline fn getNumber(key_mask: u32) u16 {
         inline for (0..10) |i| { // k0 -> mask(0), k9 -> mask(9)
             if (key_mask & @This().mask(i) != 0) {
                 if (i == 0) return 9;
@@ -81,7 +81,7 @@ pub const KeyBits = struct {
 /// Bitmask flags used to identify the presence of neighboring blocks.
 pub const EdgeFlags = struct {
     /// Helper to map dx/dy offsets to these flags
-    pub inline fn get_flag_bit(dx: i32, dy: i32) u8 {
+    pub inline fn getFlagBit(dx: i32, dy: i32) u8 {
         if (dy == -1) {
             if (dx == -1) return TOP_LEFT;
             if (dx == 0) return TOP;

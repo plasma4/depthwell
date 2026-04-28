@@ -186,7 +186,7 @@ export class GameEngine {
         this.exports = engineModule.instance.exports as Zig.EngineExports;
         this.memory = engineModule.instance.exports
             .memory as WebAssembly.Memory;
-        this.LAYOUT_PTR = Number(this.exports.get_memory_layout_ptr());
+        this.LAYOUT_PTR = Number(this.exports.getMemoryLayoutPtr());
         this.GAME_STATE_PTR = Number(this.getScratchView()[3]);
         this.inputState = InputManager.initInput();
     }
@@ -241,7 +241,7 @@ export class GameEngine {
     /** Processes all chunks from Zig and uploads them to WGSL. */
     public uploadVisibleChunks(timeInterpolated: number = 1.0): void {
         const start_time = performance.now();
-        this.exports.prepare_visible_data(
+        this.exports.prepareVisibleData(
             timeInterpolated,
             start_time - this.last_upload_visible_chunks_time,
             this.canvas.width,
@@ -604,7 +604,7 @@ export class GameEngine {
         const len = str.length;
         if (len === 0) return null;
         if (resetScratchBuffer) this.setScratchLen(0);
-        const ptr = this.exports.scratch_alloc(len);
+        const ptr = this.exports.scratchAlloc(len);
         if (ptr === 0n) return null;
 
         const bytes = new Uint8Array(this.memory.buffer, Number(ptr), len);
