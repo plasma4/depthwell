@@ -10,8 +10,8 @@ const SPAN = memory.SPAN;
 const SPAN_SQ = memory.SPAN_SQ;
 const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
 
-const v2i64 = memory.v2i64;
-const v2f64 = memory.v2f64;
+const Vec2i = memory.Vec2i;
+const Vec2f = memory.Vec2f;
 
 /// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
 /// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
@@ -51,8 +51,8 @@ const CAMERA_DEADZONE_X = 10 * memory.SPAN_SQ; // memory.SPAN_SQ means 1 block, 
 /// How far the player has to move before actually panning the camera in sub-pixels (y-axis).
 const CAMERA_DEADZONE_Y = 3 * memory.SPAN_SQ;
 
-const pixel_mult: v2f64 = .{ @floatFromInt(SPAN), @floatFromInt(SPAN) };
-pub var subpixel_accum: v2f64 = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
+const pixel_mult: Vec2f = .{ @floatFromInt(SPAN), @floatFromInt(SPAN) };
+pub var subpixel_accum: Vec2f = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
 
 /// Determines if the player is on the ground.
 var is_grounded: bool = false;
@@ -96,14 +96,14 @@ pub fn move(logic_speed: f64) void {
     }
 
     // Physics displacement using average velocity!
-    const displacement = game.player_velocity * @as(v2f64, @splat(dt * memory.SPAN_FLOAT));
+    const displacement = game.player_velocity * @as(Vec2f, @splat(dt * memory.SPAN_FLOAT));
     subpixel_accum += displacement;
 
-    const total_move = @as(v2i64, @floor(subpixel_accum));
-    subpixel_accum -= @as(v2f64, @floatFromInt(total_move));
+    const total_move = @as(Vec2i, @floor(subpixel_accum));
+    subpixel_accum -= @as(Vec2f, @floatFromInt(total_move));
 
     game.last_player_pos = game.player_pos;
-    var total_chunk_shift: v2i64 = .{ 0, 0 };
+    var total_chunk_shift: Vec2i = .{ 0, 0 };
 
     // vertical CCD
     is_grounded = false;

@@ -7,7 +7,7 @@ const sprite = root.sprite;
 const Sprite = sprite.Sprite;
 const mouse = root.mouse;
 
-const v2f32 = memory.v2f32;
+const Vec2f32 = memory.Vec2f32;
 const addEntity = root.entity.addEntity;
 const drawNumber = root.entity.drawNumber;
 
@@ -116,22 +116,22 @@ pub fn getHoveredInventorySprite() ?Sprite {
 
     const base_size = 16.0;
     const spacing = 1.25 * base_size;
-    const mouse_pos = mouse.uv_position * memory.v2f64{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT };
+    const mouse_pos = mouse.uv_position * memory.Vec2f{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT };
 
     for (active_slots, 0..) |active_sprite, i| {
         const col = @as(f32, @floatFromInt(i % inventory_width));
         const row = @as(f32, @floatFromInt(i / inventory_width));
 
-        const inventory_pos: v2f32 = .{ 32 + col * spacing, 32 + row * spacing };
+        const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
         // Match the background sizing logic from the drawInventory() function
         const is_mine_type = active_sprite == .none;
         const is_selected = active_sprite == selected_sprite;
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
-        const bg_pos = inventory_pos - v2f32{ bg_size / 4.0, bg_size / 4.0 };
+        const bg_pos = inventory_pos - Vec2f32{ bg_size / 4.0, bg_size / 4.0 };
 
         const hitbox: root.geometry.Shape = .roundSquare(
-            bg_pos - v2f32{ bg_size / 2.0, bg_size / 2.0 },
+            bg_pos - Vec2f32{ bg_size / 2.0, bg_size / 2.0 },
             bg_size,
             0.2,
         );
@@ -181,13 +181,13 @@ pub fn drawInventory(time_diff: f64) void {
         const col = @as(f32, @floatFromInt(i % inventory_width));
         const row = @as(f32, @floatFromInt(i / inventory_width));
 
-        const inventory_pos: v2f32 = .{ 32 + col * spacing, 32 + row * spacing };
+        const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
         const is_mine_type = active_sprite == .none;
 
         // Background sizing (using is_selected directly for instant feedback on bg)
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
-        const bg_pos = inventory_pos - v2f32{ bg_size / 4.0, bg_size / 4.0 };
+        const bg_pos = inventory_pos - Vec2f32{ bg_size / 4.0, bg_size / 4.0 };
 
         // replace with pickaxe for UI
         const rendered_sprite = if (is_mine_type) Sprite.pickaxe else active_sprite;
@@ -197,11 +197,11 @@ pub fn drawInventory(time_diff: f64) void {
             .size = bg_size,
         });
 
-        const pos = inventory_pos - v2f32{ current_size / 4.0, current_size / 4.0 } - v2f32{ 1.0, 1.0 };
+        const pos = inventory_pos - Vec2f32{ current_size / 4.0, current_size / 4.0 } - Vec2f32{ 1.0, 1.0 };
         inline for (.{ 0, 1 }) |shadow_i| { // use array literal to make it comptime
             addEntity(.{ // item shadow
                 .sprite = rendered_sprite,
-                .position = pos - v2f32{
+                .position = pos - Vec2f32{
                     @cos(std.math.pi / 4.5 - 0.05 * col) * (shadow_i + 1) * 0.8,
                     @sin(std.math.pi / 4.5 - 0.05 * col) * (shadow_i + 1) * 0.8,
                 },
@@ -224,11 +224,11 @@ pub fn drawInventory(time_diff: f64) void {
         });
 
         const hitbox: root.geometry.Shape = .roundSquare(
-            bg_pos - v2f32{ bg_size / 2.0, bg_size / 2.0 },
+            bg_pos - Vec2f32{ bg_size / 2.0, bg_size / 2.0 },
             bg_size,
             0.2,
         );
-        if (hitbox.contains(mouse.uv_position * memory.v2f64{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT })) {
+        if (hitbox.contains(mouse.uv_position * memory.Vec2f{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT })) {
             mouse_hovered_sprite = active_sprite;
         }
     }
@@ -266,13 +266,13 @@ pub fn drawInventory(time_diff: f64) void {
         const size_normal: f32 = 10.0 / 16.0 * base_size;
         const size_selected: f32 = 12.0 / 16.0 * base_size;
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
-        const size_vec = v2f32{ current_size, current_size };
+        const size_vec = Vec2f32{ current_size, current_size };
 
         const col = @as(f32, @floatFromInt(i % inventory_width));
         const row = @as(f32, @floatFromInt(i / inventory_width));
 
-        const inventory_pos: v2f32 = .{ 32 + col * spacing, 32 + row * spacing };
-        const pos = inventory_pos - size_vec / v2f32{ base_size / 4.0, base_size / 4.0 } - v2f32{ base_size / 16.0, base_size / 16.0 };
+        const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
+        const pos = inventory_pos - size_vec / Vec2f32{ base_size / 4.0, base_size / 4.0 } - Vec2f32{ base_size / 16.0, base_size / 16.0 };
 
         // wrap and convert hue to f32
         // hue is affected by ID in active slots AND wobble angles!
@@ -288,7 +288,7 @@ pub fn drawInventory(time_diff: f64) void {
 
         drawNumber( // shadow of inventory number
             count,
-            pos + v2f32{ base_size / 3.5, base_size / 3.5 },
+            pos + Vec2f32{ base_size / 3.5, base_size / 3.5 },
             .{
                 .lcha = .{ 0.5, 0.2, color_hue, 0.8 },
                 .font_size = number_size,
@@ -299,7 +299,7 @@ pub fn drawInventory(time_diff: f64) void {
 
         drawNumber( // actual value
             count,
-            pos + v2f32{ base_size / 3.2, base_size / 3.2 },
+            pos + Vec2f32{ base_size / 3.2, base_size / 3.2 },
             .{
                 .lcha = .{ 0.9, 0.2, color_hue, 1.0 },
                 .font_size = number_size,

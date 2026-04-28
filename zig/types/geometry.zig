@@ -3,7 +3,7 @@ const std = @import("std");
 const root = @import("root").root;
 const memory = root.memory;
 
-const v2f64 = memory.v2f64;
+const Vec2f = memory.Vec2f;
 
 /// An axis-aligned shape; assumed to be in internal viewport coordinates, not UV.
 ///
@@ -13,7 +13,7 @@ const v2f64 = memory.v2f64;
 /// - Otherwise, it produces a rounded rectangle.
 pub const Shape = struct {
     /// Top-left X and Y coordinate of the shape.
-    start: v2f64,
+    start: Vec2f,
     /// Width of the shape.
     w: f64,
     /// Height of the shape.
@@ -22,9 +22,9 @@ pub const Shape = struct {
     r: f64 = 0.0,
 
     /// Circle shape constructor.
-    pub inline fn circle(center_point: v2f64, radius: f64) Shape {
+    pub inline fn circle(center_point: Vec2f, radius: f64) Shape {
         return .{
-            .start = center_point - @as(v2f64, @splat(radius)),
+            .start = center_point - @as(Vec2f, @splat(radius)),
             .w = radius * 2.0,
             .h = radius * 2.0,
             .r = 0.5,
@@ -32,7 +32,7 @@ pub const Shape = struct {
     }
 
     /// Rectangle shape constructor (from a top-left position and uniform side length).
-    pub inline fn square(point: v2f64, side: f64) Shape {
+    pub inline fn square(point: Vec2f, side: f64) Shape {
         return .{
             .start = point,
             .w = side,
@@ -42,7 +42,7 @@ pub const Shape = struct {
     }
 
     /// Rounded rectangle shape constructor (from a top-left position and uniform side length).
-    pub inline fn roundSquare(point: v2f64, side: f64, radius: comptime_float) Shape {
+    pub inline fn roundSquare(point: Vec2f, side: f64, radius: comptime_float) Shape {
         return .{
             .start = point,
             .w = side,
@@ -52,7 +52,7 @@ pub const Shape = struct {
     }
 
     /// Returns true if the point is inside this shape.
-    pub fn contains(self: Shape, point: v2f64) bool {
+    pub fn contains(self: Shape, point: Vec2f) bool {
         // Quick AABB check
         if (point[0] < self.start[0] or point[0] > self.start[0] + self.w or
             point[1] < self.start[1] or point[1] > self.start[1] + self.h) return false;
@@ -62,7 +62,7 @@ pub const Shape = struct {
         // Map point to the first quadrant relative to the shape center
         const half_w = self.w * 0.5;
         const half_h = self.h * 0.5;
-        const center = self.start + v2f64{ half_w, half_h };
+        const center = self.start + Vec2f{ half_w, half_h };
 
         // Get absolute distance from center
         const dx = @abs(point[0] - center[0]);
@@ -100,11 +100,11 @@ pub const Shape = struct {
         if (r1 == 0.0 and r2 == 0.0) return true;
 
         // Identify the inner rectangles (the rects formed by the centers of the corner arcs).
-        const inner1_min = self.start + @as(v2f64, @splat(r1));
-        const inner1_max = self.start + v2f64{ self.w - r1, self.h - r1 };
+        const inner1_min = self.start + @as(Vec2f, @splat(r1));
+        const inner1_max = self.start + Vec2f{ self.w - r1, self.h - r1 };
 
-        const inner2_min = other.start + @as(v2f64, @splat(r2));
-        const inner2_max = other.start + v2f64{ other.w - r2, other.h - r2 };
+        const inner2_min = other.start + @as(Vec2f, @splat(r2));
+        const inner2_max = other.start + Vec2f{ other.w - r2, other.h - r2 };
 
         // Find the distance between these two inner rectangles.
         // We calculate the 1D distance on each axis.

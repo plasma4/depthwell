@@ -11,9 +11,9 @@ const seeding = root.seeding;
 const procedural = root.procedural;
 const player = root.player;
 
-const v2i64 = memory.v2i64;
-const v2u64 = memory.v2u64;
-const v2f64 = memory.v2f64;
+const Vec2i = memory.Vec2i;
+const Vec2u = memory.Vec2u;
+const Vec2f = memory.Vec2f;
 const Chunk = memory.Chunk;
 const Block = memory.Block;
 const Coordinate = memory.Coordinate;
@@ -50,7 +50,7 @@ pub var mod_store: ModificationStore = undefined;
 /// Stores where a modification is, as well as its depth to easily identify it.
 pub const ModKey = extern struct {
     // Active suffix (stored as a vector). You can think of the active suffix like 16 u4s packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see `README.md` for more details).
-    suffix: v2u64,
+    suffix: Vec2u,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u32,
     /// The depth of the modification.
@@ -99,7 +99,7 @@ pub const SimBuffer = struct {
     /// Size of the outside ring `background_generation_tick` uses.
     const RING_SIZE = 68;
     const RING_OFFSETS = blk: {
-        var offs: [RING_SIZE]v2i64 = undefined;
+        var offs: [RING_SIZE]Vec2i = undefined;
         var i: usize = 0;
         // Top and bottom rows (18 chunks each)
         var x: i64 = -9;
@@ -197,7 +197,7 @@ pub const SimBuffer = struct {
 
     /// Synchronizes the buffer to center on the provided coordinate/position.
     /// Safely handles shifts exceeding 1 chunk per frame via `shift`.
-    pub fn sync(coord: Coordinate, shift: v2i64) void {
+    pub fn sync(coord: Coordinate, shift: Vec2i) void {
         const og = origin orelse {
             fullRefresh(getClampedMove(coord, -8, -8));
             return;
@@ -290,7 +290,7 @@ pub const SimBuffer = struct {
     ///
     /// Fairly naive, generating `default_amount` chunks when called (suggested value of 1-2).
     /// It is recommended to set a higher `max_amount` (so more budget is available in high-velocity falling situations).
-    pub fn generateChunkCaches(player_coord: Coordinate, velocity: v2f64, default_amount: comptime_int, max_amount: comptime_int) void {
+    pub fn generateChunkCaches(player_coord: Coordinate, velocity: Vec2f, default_amount: comptime_int, max_amount: comptime_int) void {
         if (default_amount < 1 or max_amount < 1) {
             @compileError("Amount of chunks to generate in the background must be positive!");
         }
@@ -308,9 +308,9 @@ pub const SimBuffer = struct {
 
         // Check the three chunks in the primary direction of travel
         const targets = if (@abs(vy) > @abs(vx))
-            [_]v2i64{ .{ 0, ty }, .{ -1, ty }, .{ 1, ty } } // Vertical lead
+            [_]Vec2i{ .{ 0, ty }, .{ -1, ty }, .{ 1, ty } } // Vertical lead
         else
-            [_]v2i64{ .{ tx, 0 }, .{ tx, -1 }, .{ tx, 1 } }; // Horizontal lead
+            [_]Vec2i{ .{ tx, 0 }, .{ tx, -1 }, .{ tx, 1 } }; // Horizontal lead
 
         for (targets) |off| {
             if (generated_count >= budget) break;
@@ -584,12 +584,12 @@ pub inline fn getChunk(coord: Coordinate) Chunk {
 fn generateChunk(chunk: *Chunk, coord: Coordinate) void {
     const chunk_seeds = quad_cache.getChunkSeeds(coord);
 
-    const seed_vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
-    const seed_vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
-    const seed_vec3: v2u64 = .{ memory.game.seed2[4], memory.game.seed2[5] };
-    const seed_vec4: v2u64 = .{ memory.game.seed2[6], memory.game.seed2[6] };
-    const seed_vec5: v2u64 = .{ memory.game.seed2[7], memory.game.seed2[8] };
-    const seed_vec6: v2u64 = .{ memory.game.seed2[9], memory.game.seed2[10] };
+    const seed_vec1: Vec2u = .{ memory.game.seed2[0], memory.game.seed2[1] };
+    const seed_vec2: Vec2u = .{ memory.game.seed2[2], memory.game.seed2[3] };
+    const seed_vec3: Vec2u = .{ memory.game.seed2[4], memory.game.seed2[5] };
+    const seed_vec4: Vec2u = .{ memory.game.seed2[6], memory.game.seed2[6] };
+    const seed_vec5: Vec2u = .{ memory.game.seed2[7], memory.game.seed2[8] };
+    const seed_vec6: Vec2u = .{ memory.game.seed2[9], memory.game.seed2[10] };
 
     var rng1 = seeding.ChaCha12.init(chunk_seeds[0]); // Block generation.
     var rng4 = seeding.ChaCha12.init(chunk_seeds[3]); // Visual touches only.
@@ -651,8 +651,8 @@ fn generateChunk(chunk: *Chunk, coord: Coordinate) void {
 
 /// Adds edge flags to an already generated chunk. Utilizes `get_base_sprite_type` to prevent a chunk creation dependency loop.
 fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha12) void {
-    const vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
-    const vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
+    const vec1: Vec2u = .{ memory.game.seed2[0], memory.game.seed2[1] };
+    const vec2: Vec2u = .{ memory.game.seed2[2], memory.game.seed2[3] };
     _ = rng1;
 
     // Interior (easy)
@@ -693,12 +693,12 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha12
         }
     }
 
-    // 3. Perimeter: 4 linear passes to avoid the "if (interior) continue" branch.
+    // Use four linear passes to avoid the "if (interior) continue" branch.
     const edge_rects = [4][4]usize{
-        .{ 0, SPAN, 0, 1 }, // Top Row (incl. corners)
-        .{ 0, SPAN, SPAN - 1, SPAN }, // Bottom Row (incl. corners)
-        .{ 0, 1, 1, SPAN - 1 }, // Left Column (sans corners)
-        .{ SPAN - 1, SPAN, 1, SPAN - 1 }, // Right Column (sans corners)
+        .{ 0, SPAN, 0, 1 }, // Top row (with corners)
+        .{ 0, SPAN, SPAN - 1, SPAN }, // Bottom row (with corners)
+        .{ 0, 1, 1, SPAN - 1 }, // Left column (no corners)
+        .{ SPAN - 1, SPAN, 1, SPAN - 1 }, // Right column (no corners)
     };
 
     inline for (edge_rects) |r| {
@@ -944,8 +944,8 @@ pub fn getBlockIdAt(coord: Coordinate, lx: u4, ly: u4) Sprite {
         return mod_blocks[@as(usize, ly) * SPAN + lx].id;
     }
 
-    const vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
-    const vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
+    const vec1: Vec2u = .{ memory.game.seed2[0], memory.game.seed2[1] };
+    const vec2: Vec2u = .{ memory.game.seed2[2], memory.game.seed2[3] };
     return procedural.getBaseSpriteType(
         vec1,
         vec2,
@@ -1000,7 +1000,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
     // Mask the last 12 bits (0-4095)
     const player_mask: i64 = SPAN * SPAN * SPAN - 1;
-    const new_pos: memory.v2i64 = .{
+    const new_pos: memory.Vec2i = .{
         (memory.game.player_pos[0] << SPAN_LOG2) & player_mask,
         (memory.game.player_pos[1] << SPAN_LOG2) & player_mask,
     };
