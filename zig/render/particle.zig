@@ -22,7 +22,7 @@ pub const ParticleSystem = struct {
     }
 
     /// Updates physics and culls dead particles using Swap-and-Pop
-    pub fn update_and_cull(self: *@This(), dt: f32) void {
+    pub fn updateAndCull(self: *@This(), dt: f32) void {
         const times = self.list.items(.time);
         const positions = self.list.items(.position);
         const d_positions = self.list.items(.d_position);
@@ -48,12 +48,12 @@ pub const ParticleSystem = struct {
     }
 
     /// Packs the active particles directly into the scratch buffer as WGSLEntities.
-    pub fn export_to_scratch_as_entities(self: *@This()) void {
+    pub fn exportToScratchAsEntities(self: *@This()) void {
         const count = self.list.len;
         if (count == 0) return;
 
         // Allocate the exact slice size needed in the scratch buffer
-        const slice = memory.scratch_alloc_slice(memory.WGSLEntity, count) orelse return;
+        const slice = memory.scratchAllocSlice(memory.WGSLEntity, count) orelse return;
 
         const times = self.list.items(.time);
         const times_end = self.list.items(.time_end);

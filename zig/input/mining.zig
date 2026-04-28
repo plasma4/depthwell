@@ -23,12 +23,12 @@ pub var mining_strength: u4 = 1;
 pub var selected_hp: u8 = 1;
 
 /// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
-pub fn handle_mining_and_placing() void {
-    if (mouse.just_mouse_down and inventory.get_hovered_inventory_sprite() != null) {
+pub fn handleMiningAndPlacing() void {
+    if (mouse.just_mouse_down and inventory.getHoveredInventorySprite() != null) {
         mouse.mouse_state = .inventory; // prevent mouse block placement issue, TODO figure out if something more robust works too
     }
 
-    mouse.update_mouse_block(); // update to get correct mouse position data
+    mouse.updateMouseBlock(); // update to get correct mouse position data
 
     if (mouse.block_position_changed) {
         mouse.block_position_changed = false;
@@ -46,7 +46,7 @@ pub fn handle_mining_and_placing() void {
         return;
     }
     if (mouse.mouse_chunk) |mouse_chunk| {
-        const block = world.get_chunk(mouse_chunk).get_block(mouse.mouse_block_x, mouse.mouse_block_y);
+        const block = world.getChunk(mouse_chunk).getBlock(mouse.mouse_block_x, mouse.mouse_block_y);
 
         // Don't mine a block of the same type you're trying to place!
         if (sprite_type != .none and block.id == sprite_type) {
@@ -59,12 +59,12 @@ pub fn handle_mining_and_placing() void {
         if (sprite_type == .none or block.id != .none) {
             // mining or replacing case
             mining_progress += mining_speed;
-            const strength = get_sprite_strength(block.id);
+            const strength = getSpriteStrength(block.id);
 
             if (INSTANT_MINE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
                 mining_progress = 0;
                 // sprite type being none check also prevents unneeded memory waste with ModKey
-                const was_deleted = block.id == .none or world.modify_block_hp(
+                const was_deleted = block.id == .none or world.modifyBlockHp(
                     mouse_chunk,
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
@@ -74,12 +74,12 @@ pub fn handle_mining_and_placing() void {
 
                 if (was_deleted) {
                     if (block.id != .none) {
-                        inventory.add_to_inventory(block.id);
+                        inventory.addToInventory(block.id);
 
                         // Only auto-replace if the block being mined is different from the held item.
                         if (sprite_type != .none and sprite_type != .unselected) {
-                            if (inventory.remove_from_inventory(sprite_type)) { // make sure it's possible to use
-                                if (world.modify_block_type(
+                            if (inventory.removeFromInventory(sprite_type)) { // make sure it's possible to use
+                                if (world.modifyBlockType(
                                     mouse_chunk,
                                     mouse.mouse_block_x,
                                     mouse.mouse_block_y,
@@ -104,8 +104,8 @@ pub fn handle_mining_and_placing() void {
             }
         } else if (block.id == .none and sprite_type != .none) {
             // placing into empty air!
-            if (inventory.remove_from_inventory(sprite_type)) {
-                if (world.modify_block_type(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type)) {
+            if (inventory.removeFromInventory(sprite_type)) {
+                if (world.modifyBlockType(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type)) {
                     // If TRUE, then the block was NOT successfully modified. Revert selection if so.
                     // This fixes funny issues involving instant deselection with invalid placement
                     // (for example: placing your last ceiling flower in an invalid spot would deselect without this)
@@ -121,12 +121,12 @@ pub fn handle_mining_and_placing() void {
 }
 
 /// Returns how "strong" a `Sprite` is; how much mining_progress must be contributed to increase `hp` of a block.
-fn get_sprite_strength(s: Sprite) u64 {
-    if (!s.is_solid()) {
+fn getSpriteStrength(s: Sprite) u64 {
+    if (!s.isSolid()) {
         return 0;
-    } else if (s.is_stone()) {
+    } else if (s.isStone()) {
         return 15;
-    } else if (s.is_ore()) {
+    } else if (s.isOre()) {
         return switch (s) {
             .copper => 30,
             .iron => 35,
@@ -134,7 +134,7 @@ fn get_sprite_strength(s: Sprite) u64 {
             .gold => 60,
             else => 80,
         };
-    } else if (s.is_gem()) {
+    } else if (s.isGem()) {
         return switch (s) {
             .amethyst => 75,
             .sapphire => 85,
@@ -150,8 +150,8 @@ comptime {
         const field_sprite: Sprite = @enumFromInt(field.value);
 
         // If it's a valid, solid block, it MUST have a defined mining strength.
-        if (field_sprite.is_valid() and field_sprite.is_solid()) {
-            if (get_sprite_strength(field_sprite) == std.math.maxInt(u64)) {
+        if (field_sprite.isValid() and field_sprite.isSolid()) {
+            if (getSpriteStrength(field_sprite) == std.math.maxInt(u64)) {
                 @compileError("Sprite is valid and solid but missing a strength value in get_sprite_strength: " ++ field.name);
             }
         }

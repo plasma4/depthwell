@@ -5,9 +5,11 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 > [!WARNING]
 > The current `README` is **incomplete**, as this game is still in the pre-demo stage; more details will be added in the future and details might currently be out of date. Read the code for specific implementation details.
 
-#### Images
+### Images
 
-![Terrain example](images/sample.png)
+![Basic terrain example](images/sample.png)
+
+![Inventory example](images/inventory.png)
 
 ![Sprite sheet](src/assets/main.png)
 
@@ -256,17 +258,17 @@ These are then passed to WGSL in a large batch. Here is an example of potential 
 ```zig
 // basic entity example:
 for (0..10) |i| {
-    add_entity(.{ // draw shadow of inventory slot by darkening and reducing opacity
+    addEntity(.{ // draw shadow of inventory slot by darkening and reducing opacity
         .sprite = if (i == selected_id) .inventory_selected else .inventory,
-        .position = get_inventory_pos(i) - v2f32{ 2, 2 },
+        .position = getInventoryPos(i) - v2f32{ 2, 2 },
         .lcha = .{ if (i == 0) 0.8 else 0.7, 0.0, 0.0, 0.9 },
     });
 }
 
 for (0..10) |i| {
-    add_entity(.{ // draw inventory slot
+    addEntity(.{ // draw inventory slot
         .sprite = if (i == selected_id) .inventory_selected else .inventory,
-        .position = get_inventory_pos(i),
+        .position = getInventoryPos(i),
     });
 }
 
@@ -279,7 +281,7 @@ const font_size = 10.0;
 if (progress != 255 and progress != 0) {
     const value_hue = 0.2 + @as(f32, @floatFromInt(progress)) * (std.math.pi / 8.0);
     // draw shadow of text
-    draw_number(progress, pos - v2f32{ 1.5, 1.5 }, .{
+    drawNumber(progress, pos - v2f32{ 1.5, 1.5 }, .{
         .lcha = .{
             0.5, // darken
             0.4,
@@ -291,7 +293,7 @@ if (progress != 255 and progress != 0) {
     });
 
     // draw the actual number now
-    draw_number(progress, pos, .{
+    drawNumber(progress, pos, .{
         .lcha = .{
             0.75,
             0.4,
@@ -425,7 +427,9 @@ The algorithm does this each frame (with a budget of 2, meaning 2 chunks):
 
 This system prevents frame spikes (as you may normally have to generate a whole 16 chunks/frame to keep `SimBuffer` happy)! Note that this logic doesn't at all change the _logic_: the player could still teleport trillions of chunks away in a frame: these would just get gradually neglected by the `ChunkCache` naturally.
 
-A little bit on the `ChunkCache`: it has 256 slots by default. When the cache is full and a new chunk needs to be stored, a "hand" sweeps through the slots. If a chunk's "reference bit" is 1 (meaning it was recently accessed), the bit is flipped to 0 and the hand moves on. If the bit is already 0, the chunk is evicted. This provides a highly efficient approximation of "Least Recently Used" (LRU) logic without the overhead of tracking timestamps for every single block access (perfect here!).
+A little bit on the `ChunkCache`: it has 256 slots by default (in a 16x16 area around the player). When the cache is full and a new chunk needs to be stored, a "hand" sweeps through the slots. If a chunk's "reference bit" is 1 (meaning it was recently accessed), the bit is flipped to 0 and the hand moves on. If the bit is already 0, the chunk is evicted.
+
+This provides a highly efficient approximation of "Least Recently Used" (LRU) logic without the overhead of tracking timestamps for every single block access (perfect here!).
 
 #### Memory transfer
 
@@ -446,7 +450,7 @@ Compared to using something like the native JS canvas manipulation, the use of G
 
 While Zig handles the logic, the visual fidelity of Depthwell is achieved through high-precision WGSL shaders. To maintain high performance on integrated GPUs while allowing for infinite variety, the shader employs several "expensive-looking" tricks that are actually quite cheap.
 
-#### Bit-Packed Tile Unpacking
+#### Bit-packed tiles
 
 To minimize the data sent to the GPU, each tile is packed into two 32-bit unsigned integers (`word0` and `word1`). The shader uses `extractBits` to reconstruct the `UnpackedTile` struct on the fly:
 

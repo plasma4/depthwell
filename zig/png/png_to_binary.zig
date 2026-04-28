@@ -502,7 +502,7 @@ test "indexed 2x2" {
     try std.testing.expect(bmp.getPixel(0, 0).eql(ColorRGBA.init(255, 0, 0, 255)));
     try std.testing.expect(bmp.getPixel(1, 0).eql(ColorRGBA.init(0, 255, 0, 255)));
     try std.testing.expect(bmp.getPixel(0, 1).eql(ColorRGBA.init(0, 0, 255, 255)));
-    try std.testing.expect(bmp.getPixel(1, 1).is_transparent());
+    try std.testing.expect(bmp.getPixel(1, 1).isTransparent());
 }
 
 test "alpha weighted average" {

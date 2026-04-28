@@ -42,7 +42,7 @@ pub const Shape = struct {
     }
 
     /// Rounded rectangle shape constructor (from a top-left position and uniform side length).
-    pub inline fn round_square(point: v2f64, side: f64, radius: comptime_float) Shape {
+    pub inline fn roundSquare(point: v2f64, side: f64, radius: comptime_float) Shape {
         return .{
             .start = point,
             .w = side,

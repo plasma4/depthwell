@@ -149,7 +149,7 @@ pub const SimBuffer = struct {
         const dy = coord.suffix[1] -% og.suffix[1];
 
         if (dx < SIM_BUFFER_WIDTH and dy < SIM_BUFFER_WIDTH) {
-            const id = get_index(@intCast(dx), @intCast(dy));
+            const id = getIndex(@intCast(dx), @intCast(dy));
             if (keys[id]) |k| {
                 if (k.eql(coord)) return &sim_buffer_ptr[id];
             }
@@ -158,7 +158,7 @@ pub const SimBuffer = struct {
     }
 
     /// Returns the internal index into the chunk array.
-    pub inline fn get_index(cx: u4, cy: u4) usize {
+    pub inline fn getIndex(cx: u4, cy: u4) usize {
         const rx = (ring_x +% cx) & SIM_MASK;
         const ry = (ring_y +% cy) & SIM_MASK;
         return (@as(usize, ry) << LOG_2_MASK) | rx;
@@ -175,7 +175,7 @@ pub const SimBuffer = struct {
 
     /// Helper to safely step an origin coordinate, returning the furthest possible coordinate
     /// if a game boundary is hit (when Coordinate.move returns null).
-    fn get_clamped_move(coord: Coordinate, dx: i64, dy: i64) Coordinate {
+    fn getClampedMove(coord: Coordinate, dx: i64, dy: i64) Coordinate {
         // Fast path: attempt direct move
         if (coord.move(.{ dx, dy })) |target| return target;
 
@@ -185,7 +185,7 @@ pub const SimBuffer = struct {
             var remaining = if (axis == 0) dx else dy;
             while (remaining != 0) {
                 const step = std.math.sign(remaining);
-                const next = if (axis == 0) curr.move_x(step) else curr.move_y(step);
+                const next = if (axis == 0) curr.moveX(step) else curr.moveY(step);
                 if (next) |n| {
                     curr = n;
                     remaining -= step;
@@ -199,24 +199,24 @@ pub const SimBuffer = struct {
     /// Safely handles shifts exceeding 1 chunk per frame via `shift`.
     pub fn sync(coord: Coordinate, shift: v2i64) void {
         const og = origin orelse {
-            full_refresh(get_clamped_move(coord, -8, -8));
+            fullRefresh(getClampedMove(coord, -8, -8));
             return;
         };
 
         // Use shift directly for incremental updates if distance is small
         if (@abs(shift[0]) < SIM_BUFFER_WIDTH and @abs(shift[1]) < SIM_BUFFER_WIDTH) {
             if (shift[0] != 0 or shift[1] != 0) {
-                incremental_refresh(shift[0], shift[1]);
+                incrementalRefresh(shift[0], shift[1]);
             }
             return;
         }
 
         // Teleport or large jump fallback
-        const target_origin = get_clamped_move(coord, -8, -8);
-        if (!og.eql(target_origin)) full_refresh(target_origin);
+        const target_origin = getClampedMove(coord, -8, -8);
+        if (!og.eql(target_origin)) fullRefresh(target_origin);
     }
 
-    fn full_refresh(new_origin: Coordinate) void {
+    fn fullRefresh(new_origin: Coordinate) void {
         origin = new_origin;
         ring_x = 0;
         ring_y = 0;
@@ -226,7 +226,7 @@ pub const SimBuffer = struct {
                 const id = (cy << LOG_2_MASK) | cx;
                 if (new_origin.move(.{ @intCast(cx), @intCast(cy) })) |cell_coord| {
                     keys[id] = cell_coord;
-                    write_chunk_skip(&sim_buffer_ptr[id], cell_coord);
+                    writeChunkSkip(&sim_buffer_ptr[id], cell_coord);
                 } else {
                     keys[id] = null;
                 }
@@ -234,9 +234,9 @@ pub const SimBuffer = struct {
         }
     }
 
-    fn incremental_refresh(dx: i64, dy: i64) void {
+    fn incrementalRefresh(dx: i64, dy: i64) void {
         const old_origin = origin.?;
-        const new_origin = get_clamped_move(old_origin, dx, dy);
+        const new_origin = getClampedMove(old_origin, dx, dy);
         origin = new_origin;
 
         ring_x = @intCast((@as(u32, ring_x) +% @as(u32, @bitCast(@as(i32, @intCast(dx))))) & SIM_MASK);
@@ -254,10 +254,10 @@ pub const SimBuffer = struct {
                         @intCast(SIM_BUFFER_WIDTH - adx + i)
                     else
                         @intCast(i);
-                    const id = get_index(@intCast(cx_log), @intCast(cy_log));
+                    const id = getIndex(@intCast(cx_log), @intCast(cy_log));
                     if (new_origin.move(.{ @intCast(cx_log), @intCast(cy_log) })) |cell_coord| {
                         keys[id] = cell_coord;
-                        write_chunk_skip(&sim_buffer_ptr[id], cell_coord);
+                        writeChunkSkip(&sim_buffer_ptr[id], cell_coord);
                     } else {
                         keys[id] = null;
                     }
@@ -273,10 +273,10 @@ pub const SimBuffer = struct {
                         @intCast(SIM_BUFFER_WIDTH - ady + i)
                     else
                         @intCast(i);
-                    const id = get_index(@intCast(cx_log), @intCast(cy_log));
+                    const id = getIndex(@intCast(cx_log), @intCast(cy_log));
                     if (new_origin.move(.{ @intCast(cx_log), @intCast(cy_log) })) |cell_coord| {
                         keys[id] = cell_coord;
-                        write_chunk_skip(&sim_buffer_ptr[id], cell_coord);
+                        writeChunkSkip(&sim_buffer_ptr[id], cell_coord);
                     } else {
                         keys[id] = null;
                     }
@@ -290,7 +290,7 @@ pub const SimBuffer = struct {
     ///
     /// Fairly naive, generating `default_amount` chunks when called (suggested value of 1-2).
     /// It is recommended to set a higher `max_amount` (so more budget is available in high-velocity falling situations).
-    pub fn background_generation_tick(player_coord: Coordinate, velocity: v2f64, default_amount: comptime_int, max_amount: comptime_int) void {
+    pub fn generateChunkCaches(player_coord: Coordinate, velocity: v2f64, default_amount: comptime_int, max_amount: comptime_int) void {
         if (default_amount < 1 or max_amount < 1) {
             @compileError("Amount of chunks to generate in the background must be positive!");
         }
@@ -316,8 +316,8 @@ pub const SimBuffer = struct {
             if (generated_count >= budget) break;
             if (player_coord.move(off)) |c| {
                 if (get(c) == null and ChunkCache.get(c) == null) {
-                    const slot = ChunkCache.allocate_slot(c);
-                    generate_chunk(slot, c);
+                    const slot = ChunkCache.allocateSlot(c);
+                    generateChunk(slot, c);
                     generated_count += 1;
                 }
             }
@@ -330,8 +330,8 @@ pub const SimBuffer = struct {
             bg_scan_id = (bg_scan_id + 1) % RING_SIZE;
             if (player_coord.move(off)) |c| {
                 if (get(c) == null and ChunkCache.get(c) == null) {
-                    const slot = ChunkCache.allocate_slot(c);
-                    generate_chunk(slot, c);
+                    const slot = ChunkCache.allocateSlot(c);
+                    generateChunk(slot, c);
                     generated_count += 1;
                 }
             }
@@ -360,7 +360,7 @@ pub const ChunkCache = struct {
         return null;
     }
 
-    pub fn allocate_slot(coord: Coordinate) *Chunk {
+    pub fn allocateSlot(coord: Coordinate) *Chunk {
         while (true) {
             const id = cache_hand;
             cache_hand = (cache_hand + 1) % CHUNK_CACHE_SIZE;
@@ -406,7 +406,7 @@ pub const ChunkCache = struct {
 };
 
 /// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `ArrayList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `arena`.
-fn carry_path(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
+fn carryPath(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
     const new_path = path.clone(arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
     // arena.reset(.retain_capacity);
     var carry: u1 = 1;
@@ -456,17 +456,17 @@ pub const QuadCache = struct {
     most_right: bool = true,
 
     // /// Returns the X-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16). Call `cleanup_path` afterward.
-    // pub inline fn get_quadrant_path_x(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
-    //     return if (quadrant % 2 == 0) self.left_path else carry_path(&self.left_path);
+    // pub inline fn getQuadrantPathX(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
+    //     return if (quadrant % 2 == 0) self.left_path else carryPath(&self.left_path);
     // }
 
     // /// Returns the Y-coordinate path of a specific quadrant. Unreachable call if path is empty (if depth is not > 16). Call `cleanup_path` afterward.
-    // pub inline fn get_quadrant_path_y(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
-    //     return if (quadrant < 2) self.top_path else carry_path(&self.top_path);
+    // pub inline fn getQuadrantPathY(self: *const @This(), quadrant: u2) std.ArrayList(u64) {
+    //     return if (quadrant < 2) self.top_path else carryPath(&self.top_path);
     // }
 
     // /// Deallocates a temporary instance of a QuadCache path. (THIS DOESN'T WORK WITH ARENA)
-    // pub inline fn cleanup_path(self: *const @This(), path: std.ArrayList(u64)) void {
+    // pub inline fn cleanupPath(self: *const @This(), path: std.ArrayList(u64)) void {
     //     // Memory comparison is safe because QuadCache will never be de-initialized, top_left_path is always non-empty (so nothing weird), and there's no multicore/async shenanigans here.
     //     if (self.left_path.items.ptr != path.items.ptr and self.top_path.items.ptr != path.items.ptr) {
     //         path.deinit(arena);
@@ -474,18 +474,18 @@ pub const QuadCache = struct {
     // }
 
     /// Returns the 512-bit seed of a specified quadrant (or the global seed if the current depth is <= 16).
-    pub inline fn get_quadrant_seed(self: *const @This(), quadrant: u2) seeding.Seed {
+    pub inline fn getQuadrantSeed(self: *const @This(), quadrant: u2) seeding.Seed {
         if (memory.game.depth <= 16) return memory.game.seed;
         return self.path_hashes[quadrant];
     }
 
     /// Resolves the chunk seeds. If depth > 16, uses the quadrant seeds.
-    pub inline fn get_chunk_seeds(self: *const @This(), coord: Coordinate) [4]seeding.Seed {
-        return seeding.mix_chunk_seeds(&self.get_quadrant_seed(coord.quadrant), coord.suffix);
+    pub inline fn getChunkSeeds(self: *const @This(), coord: Coordinate) [4]seeding.Seed {
+        return seeding.mixChunkSeeds(&self.getQuadrantSeed(coord.quadrant), coord.suffix);
     }
 
     /// Returns details on a specific quadrant and what "edges" of the world it touches.
-    pub inline fn get_quadrant_edge_details(self: *const @This(), quadrant: u2) QuadrantEdgeDetails {
+    pub inline fn getQuadrantEdgeDetails(self: *const @This(), quadrant: u2) QuadrantEdgeDetails {
         // Quadrant IDs for reference: 00: NW, 1: NE, 2: SW, 3: SE
         if (memory.game.depth <= 16) {
             return .{
@@ -511,12 +511,12 @@ pub var quad_cache: QuadCache = undefined;
 pub var max_possible_suffix: u64 = 0;
 
 /// `ArenaAllocator` instance used for the world.
-pub var arena = memory.make_arena();
+pub var arena = memory.makeArena();
 /// Allocator used for the world.
 pub var alloc = arena.allocator();
 
 /// Creates a new instance of a `Chunk` where specified, given a coordinate. Copies over from cache if possible.
-pub fn write_chunk(chunk: *Chunk, coord: Coordinate) void {
+pub fn writeChunk(chunk: *Chunk, coord: Coordinate) void {
     if (SimBuffer.get(coord)) |cached_ptr| {
         chunk.* = cached_ptr.*;
         return;
@@ -527,62 +527,62 @@ pub fn write_chunk(chunk: *Chunk, coord: Coordinate) void {
         return;
     }
 
-    const new_slot_ptr = ChunkCache.allocate_slot(coord);
+    const new_slot_ptr = ChunkCache.allocateSlot(coord);
     const key = ModKey.from(coord);
 
     if (mod_store.get(key)) |modified_chunk| {
         // Modified state!
         new_slot_ptr.blocks = modified_chunk.*;
     } else { // generate procedurally
-        generate_chunk(new_slot_ptr, coord);
+        generateChunk(new_slot_ptr, coord);
     }
 
     chunk.* = new_slot_ptr.*;
 }
 
 /// Same as `write_chunk`, but avoids checking `SimBuffer` first.
-pub fn write_chunk_skip(chunk: *Chunk, coord: Coordinate) void {
+pub fn writeChunkSkip(chunk: *Chunk, coord: Coordinate) void {
     if (ChunkCache.get(coord)) |cached_ptr| {
         chunk.* = cached_ptr.*;
         return;
     }
 
-    const new_slot_ptr = ChunkCache.allocate_slot(coord);
+    const new_slot_ptr = ChunkCache.allocateSlot(coord);
     const key = ModKey.from(coord);
 
     if (mod_store.get(key)) |modified_chunk| {
         // Modified state!
         new_slot_ptr.blocks = modified_chunk.*;
     } else { // generate procedurally
-        generate_chunk(new_slot_ptr, coord);
+        generateChunk(new_slot_ptr, coord);
     }
 
     chunk.* = new_slot_ptr.*;
 }
 
 /// Same as `write_chunk`, but avoids checking `mod_store`.
-pub fn write_chunk_modless(chunk: *Chunk, coord: Coordinate) void {
+pub fn writeChunkModless(chunk: *Chunk, coord: Coordinate) void {
     if (ChunkCache.get(coord)) |cached_ptr| {
         chunk.* = cached_ptr.*;
         return;
     }
 
-    const new_slot_ptr = ChunkCache.allocate_slot(coord);
-    generate_chunk(new_slot_ptr, coord);
+    const new_slot_ptr = ChunkCache.allocateSlot(coord);
+    generateChunk(new_slot_ptr, coord);
     chunk.* = new_slot_ptr.*;
 }
 
 /// Creates a new instance of a `Chunk`. Does not update edge flags.
-pub inline fn get_chunk(coord: Coordinate) Chunk {
+pub inline fn getChunk(coord: Coordinate) Chunk {
     var chunk: Chunk = undefined;
-    write_chunk(&chunk, coord);
+    writeChunk(&chunk, coord);
     return chunk;
 }
 
 /// Internal function to generate a whole chunk (considering modifications), given a pointer to where the chunk should be stored and coordinates.
 /// Does not go through the cache; use `write_chunk` to create a chunk at a specified location and `get_chunk` for a new one.
-fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
-    const chunk_seeds = quad_cache.get_chunk_seeds(coord);
+fn generateChunk(chunk: *Chunk, coord: Coordinate) void {
+    const chunk_seeds = quad_cache.getChunkSeeds(coord);
 
     const seed_vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
     const seed_vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
@@ -596,7 +596,7 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
 
     const cx = coord.suffix[0];
     const cy = coord.suffix[1];
-    const quadrant_edge_details = quad_cache.get_quadrant_edge_details(coord.quadrant);
+    const quadrant_edge_details = quad_cache.getQuadrantEdgeDetails(coord.quadrant);
 
     for (0..SPAN) |block_y| {
         for (0..SPAN) |block_x| {
@@ -606,7 +606,7 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
             const is_absolute_edge_x = (cx == 0 and block_x < 2 and quadrant_edge_details.most_left) or (cx == max_possible_suffix and block_x >= (SPAN - 2) and quadrant_edge_details.most_right);
             const is_absolute_edge_y = (cy == 0 and block_y < 2 and quadrant_edge_details.most_top) or (cy == max_possible_suffix and block_y >= (SPAN - 2) and quadrant_edge_details.most_bottom);
             if (is_absolute_edge_x or is_absolute_edge_y) {
-                chunk.blocks[id] = Block.make_basic_block(
+                chunk.blocks[id] = Block.makeBasicBlock(
                     // drawing sprite change in WGSL now after tile unpacking, quite silly to be here
                     // if ((block_x % 2) + (block_y % 2) == 1) ._edge_stone else .edge_stone,
                     .edge_stone,
@@ -619,7 +619,7 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
             // TODO finish for higher depths with some cubic bezier-like upscaling method
 
             // BASE CASE: depth = 3.
-            const base_data = procedural.get_base_sprite_type(
+            const base_data = procedural.getBaseSpriteType(
                 seed_vec1,
                 seed_vec2,
                 @intCast(cx),
@@ -628,7 +628,7 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
                 @intCast(block_y),
             );
             var sprite = base_data.sprite;
-            if (sprite.is_stone() or sprite.is_heatmap()) sprite = procedural.add_ores(
+            if (sprite.isStone() or sprite.isHeatmap()) sprite = procedural.addOres(
                 base_data,
                 seed_vec3,
                 seed_vec4,
@@ -638,19 +638,19 @@ fn generate_chunk(chunk: *Chunk, coord: Coordinate) void {
                 @intCast(cy * 16 + block_y),
             );
 
-            chunk.blocks[id] = Block.make_basic_block(
+            chunk.blocks[id] = Block.makeBasicBlock(
                 sprite,
                 rng4.next(),
             ); // edge flags updated in second pass
         }
     }
 
-    add_edge_flags(chunk, coord, &rng1);
-    procedural.add_decorations(chunk, &rng1);
+    addEdgeFlags(chunk, coord, &rng1);
+    procedural.addDecorations(chunk, &rng1);
 }
 
 /// Adds edge flags to an already generated chunk. Utilizes `get_base_sprite_type` to prevent a chunk creation dependency loop.
-fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha12) void {
+fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha12) void {
     const vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
     const vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
     _ = rng1;
@@ -666,8 +666,8 @@ fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha
                     if (dx == 0 and dy == 0) continue;
                     const nx = block_x +% @as(usize, @bitCast(@as(isize, dx)));
                     const ny = block_y +% @as(usize, @bitCast(@as(isize, dy)));
-                    if (should_have_edge_flags(target_chunk.blocks[ny * SPAN + nx].id, current_sprite)) {
-                        flags |= types.EdgeFlags.get_flag_bit(dx, dy);
+                    if (shouldHaveEdgeFlags(target_chunk.blocks[ny * SPAN + nx].id, current_sprite)) {
+                        flags |= types.EdgeFlags.getFlagBit(dx, dy);
                     }
                 }
             }
@@ -727,13 +727,13 @@ fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha
                             if (n.chunk) |c| {
                                 break :blk c.blocks[@as(usize, @intCast(ny & 15)) * SPAN + @as(usize, @intCast(nx & 15))].id;
                             } else if (n.coord) |c| {
-                                break :blk procedural.get_base_sprite_type(vec1, vec2, @intCast(c.suffix[0]), @intCast(c.suffix[1]), @intCast(nx & 15), @intCast(ny & 15)).sprite;
+                                break :blk procedural.getBaseSpriteType(vec1, vec2, @intCast(c.suffix[0]), @intCast(c.suffix[1]), @intCast(nx & 15), @intCast(ny & 15)).sprite;
                             }
                             break :blk .none;
                         };
 
-                        if (should_have_edge_flags(sprite, current_sprite)) {
-                            flags |= types.EdgeFlags.get_flag_bit(dx, dy);
+                        if (shouldHaveEdgeFlags(sprite, current_sprite)) {
+                            flags |= types.EdgeFlags.getFlagBit(dx, dy);
                         }
                     }
                 }
@@ -743,16 +743,16 @@ fn add_edge_flags(target_chunk: *Chunk, coord: Coordinate, rng1: *seeding.ChaCha
     }
 }
 
-inline fn should_have_edge_flags(sprite: Sprite, current_sprite: Sprite) bool {
+inline fn shouldHaveEdgeFlags(sprite: Sprite, current_sprite: Sprite) bool {
     _ = .{current_sprite};
-    // return (sprite.is_foundation() and !sprite.is_ore() and current_sprite.is_foundation() and !current_sprite.is_ore()) or sprite == current_sprite;
-    return sprite.is_foundation();
+    // return (sprite.isFoundation() and !sprite.isOre() and current_sprite.isFoundation() and !current_sprite.isOre()) or sprite == current_sprite;
+    return sprite.isFoundation();
 }
 
 /// Applies a block modification, changing the `Sprite` type and resetting `hp`.
 /// Mutates ModStore and caches in-place.
 /// Returns whether `update_local_edge_flags` instantly removed the current block due to being in an invalid position.
-pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bool {
+pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bool {
     const key = ModKey.from(coord);
     const id: usize = @as(usize, by) * memory.SPAN + bx;
 
@@ -761,7 +761,7 @@ pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) 
         const new_id = mod_store.history.items.len;
         // Seed new modification with current generated state if it's the first edit
         var base_chunk: Chunk = undefined;
-        write_chunk_modless(&base_chunk, coord);
+        writeChunkModless(&base_chunk, coord);
         mod_store.history.append(alloc, base_chunk.blocks) catch @panic("Failed to add to modification storage!");
         mod_store.index.put(key, new_id) catch @panic("Failed to add to modification storage!");
         break :blk new_id;
@@ -780,13 +780,13 @@ pub fn modify_block_type(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) 
         cache_chunk.blocks[id].hp = 0;
     }
 
-    return update_local_edge_flags(coord, bx, by);
+    return updateLocalEdgeFlags(coord, bx, by);
 }
 
 /// Increases a block's `hp` by a specified amount (making it more mined).
 /// If the new `hp` becomes larger than 15, the sprite is mined.
 /// If `hp_to_add` is 0, the sprite is instantly mined. Returns if the block became/was type `none`.
-pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add: u4) bool {
+pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add: u4) bool {
     const key = ModKey.from(coord);
     const id: usize = @as(usize, by) * memory.SPAN + bx;
 
@@ -795,14 +795,14 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
         const new_id = mod_store.history.items.len;
         // Seed new modification with current generated state if it's the first edit
         var base_chunk: Chunk = undefined;
-        write_chunk_modless(&base_chunk, coord);
+        writeChunkModless(&base_chunk, coord);
         mod_store.history.append(alloc, base_chunk.blocks) catch @panic("Failed to add to modification storage!");
         mod_store.index.put(key, new_id) catch @panic("Failed to add to modification storage!");
         break :blk new_id;
     };
 
     const overflow_hp = @addWithOverflow(hp_to_add, block.hp); // overflows past 15
-    if (overflow_hp[1] == 1 or hp_to_add == 0 or !block.is_solid()) {
+    if (overflow_hp[1] == 1 or hp_to_add == 0 or !block.isSolid()) {
         if (block.id == .none) return true;
         mod_store.history.items[entry_id][id].id = .none;
 
@@ -813,7 +813,7 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
         if (ChunkCache.get(coord)) |cache_chunk| {
             cache_chunk.blocks[id].id = .none;
         }
-        _ = update_local_edge_flags(coord, bx, by);
+        _ = updateLocalEdgeFlags(coord, bx, by);
         return true;
     } else {
         const new_hp: u4 = overflow_hp[0];
@@ -832,7 +832,7 @@ pub fn modify_block_hp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_ad
 /// Recalculates edge flags for a specific block its 8 neighbors.
 /// Also breaks any non-foundation blocks.
 /// Returns whether the current block was removed due to being in an invalid position.
-fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) bool {
+fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
     var return_value = false;
     for ([_]i32{ -1, 0, 1 }) |dy| {
         for ([_]i32{ -1, 0, 1 }) |dx| {
@@ -848,56 +848,56 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) bool {
             const lby: u4 = @intCast(@mod(ny, SPAN));
             const block_id = @as(usize, lby) * SPAN + lbx;
 
-            const current_sprite = get_block_id_at(target_coord, lbx, lby);
+            const current_sprite = getBlockIdAt(target_coord, lbx, lby);
 
             // Dependency logic: Instantly mine plants if support is lost
             var broken = false;
             if (current_sprite == .mushroom) {
                 // Check block directly below (y + 1)
                 const below = if (lby < 15)
-                    get_block_id_at(target_coord, lbx, lby + 1)
+                    getBlockIdAt(target_coord, lbx, lby + 1)
                 else
-                    get_block_id_at(target_coord.move(.{ 0, 1 }) orelse target_coord, lbx, 0);
-                if (!below.is_solid()) broken = true;
+                    getBlockIdAt(target_coord.move(.{ 0, 1 }) orelse target_coord, lbx, 0);
+                if (!below.isSolid()) broken = true;
             } else if (current_sprite == .ceiling_flower or current_sprite == .spiral_plant) {
                 // Check block directly above (y - 1)
                 const above = if (lby > 0)
-                    get_block_id_at(target_coord, lbx, lby - 1)
+                    getBlockIdAt(target_coord, lbx, lby - 1)
                 else
-                    get_block_id_at(target_coord.move(.{ 0, -1 }) orelse target_coord, lbx, 15);
+                    getBlockIdAt(target_coord.move(.{ 0, -1 }) orelse target_coord, lbx, 15);
 
                 if (current_sprite == .ceiling_flower) {
-                    if (!above.is_solid()) broken = true;
+                    if (!above.isSolid()) broken = true;
                 } else { // .spiral_plant
                     // Breaks if support is neither solid nor another spiral plant
-                    if (!above.is_solid() and above != .spiral_plant) broken = true;
+                    if (!above.isSolid() and above != .spiral_plant) broken = true;
                 }
             }
 
             if (broken) {
                 if (dy == 0 and dx == 0) return_value = true;
                 // modify_block_type will recursively call this function to cascade the effect, so this works out!
-                root.inventory.add_to_inventory(current_sprite);
-                _ = modify_block_type(target_coord, lbx, lby, .none);
+                root.inventory.addToInventory(current_sprite);
+                _ = modifyBlockType(target_coord, lbx, lby, .none);
                 continue;
             }
 
             // Only foundation blocks require edge flag calculation and storage
-            if (!current_sprite.is_foundation()) continue;
+            if (!current_sprite.isFoundation()) continue;
 
             var new_flags: u8 = 0;
             inline for (.{ -1, 0, 1 }) |ndy| {
                 inline for (.{ -1, 0, 1 }) |ndx| {
                     if (ndx == 0 and ndy == 0) continue;
-                    const neighbor_sprite = get_block_id_at(
+                    const neighbor_sprite = getBlockIdAt(
                         target_coord.move(
                             .{ @divFloor(@as(i32, lbx) + ndx, SPAN), @divFloor(@as(i32, lby) + ndy, SPAN) },
                         ) orelse target_coord,
                         @intCast(@mod(@as(i32, lbx) + ndx, SPAN)),
                         @intCast(@mod(@as(i32, lby) + ndy, SPAN)),
                     );
-                    if (should_have_edge_flags(neighbor_sprite, current_sprite)) {
-                        new_flags |= types.EdgeFlags.get_flag_bit(ndx, ndy);
+                    if (shouldHaveEdgeFlags(neighbor_sprite, current_sprite)) {
+                        new_flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
                     }
                 }
             }
@@ -921,7 +921,7 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) bool {
                 } else {
                     // Create a new mod entry only if necessary to persist the visual flag change
                     var base_chunk: Chunk = undefined;
-                    write_chunk_modless(&base_chunk, target_coord);
+                    writeChunkModless(&base_chunk, target_coord);
                     base_chunk.blocks[block_id].edge_flags = new_flags;
 
                     const new_id = mod_store.history.items.len;
@@ -936,7 +936,7 @@ fn update_local_edge_flags(coord: Coordinate, bx: u4, by: u4) bool {
 
 /// Highly optimized lookup to find a block's Sprite ID for flag calculation.
 /// Checks caches, then modifications, then falls back to procedural.
-pub fn get_block_id_at(coord: Coordinate, lx: u4, ly: u4) Sprite {
+pub fn getBlockIdAt(coord: Coordinate, lx: u4, ly: u4) Sprite {
     if (SimBuffer.get(coord)) |chunk| return chunk.blocks[@as(usize, ly) * SPAN + lx].id;
     if (ChunkCache.get(coord)) |chunk| return chunk.blocks[@as(usize, ly) * SPAN + lx].id;
 
@@ -946,7 +946,7 @@ pub fn get_block_id_at(coord: Coordinate, lx: u4, ly: u4) Sprite {
 
     const vec1: v2u64 = .{ memory.game.seed2[0], memory.game.seed2[1] };
     const vec2: v2u64 = .{ memory.game.seed2[2], memory.game.seed2[3] };
-    return procedural.get_base_sprite_type(
+    return procedural.getBaseSpriteType(
         vec1,
         vec2,
         @intCast(coord.suffix[0]),
@@ -958,7 +958,7 @@ pub fn get_block_id_at(coord: Coordinate, lx: u4, ly: u4) Sprite {
 
 // /// The 16-step ascendent projection read loop thingy
 // /// Called when the SimBuffer generates a chunk.
-// pub fn get_effective_modification(self: *@This(), cx: u64, cy: u64) ?*ChunkMod {
+// pub fn getEffectiveModification(self: *@This(), cx: u64, cy: u64) ?*ChunkMod {
 //     var search_cx = cx;
 //     var search_cy = cy;
 
@@ -984,14 +984,14 @@ pub fn get_block_id_at(coord: Coordinate, lx: u4, ly: u4) Sprite {
 //     return null;
 // }
 
-pub fn clear_caches() void {
+pub fn clearCaches() void {
     SimBuffer.clear();
     ChunkCache.clear();
 }
 
 /// Handles increasing the depth.
 /// `coord` is the chunk the portal is in. `bx` and `by` represent the specific block within a chunk the zoom should be in.
-pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
+pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
     memory.game.depth += 1;
     const depth = memory.game.depth;
@@ -1007,8 +1007,8 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
     memory.game.teleport(null, new_pos);
     // TODO migrate to this logic when implementing portals instead
-    // memory.game.set_player_pos(.{ 2048, 2048 });
-    // memory.game.set_camera_pos(.{ 2048, 2048 });
+    // memory.game.setPlayerPos(.{ 2048, 2048 });
+    // memory.game.setCameraPos(.{ 2048, 2048 });
 
     if (depth <= 16) {
         // Just filling up the 64-bit suffix. No rebasing needed yet.
@@ -1062,7 +1062,7 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     left_cell_x = @min(left_cell_x, highest_possible_top_left_cell); // clamp (explained above in the big comment section)
     top_cell_y = @min(top_cell_y, highest_possible_top_left_cell);
 
-    // update edge flags used in generate_chunk()
+    // update edge flags used in generateChunk()
     quad_cache.most_left = quad_cache.most_left and left_cell_x == 0;
     quad_cache.most_right = quad_cache.most_right and left_cell_x == highest_possible_top_left_cell;
     quad_cache.most_top = quad_cache.most_top and top_cell_y == 0;
@@ -1077,7 +1077,7 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         // map this cell back to the specific parent quadrant (0-3)
         const old_q_id = utils.intFromBool(usize, cell_x >= SPAN) + utils.intFromBool(usize, cell_y >= SPAN) * 2;
 
-        quad_cache.path_hashes[q_id] = seeding.mix_coordinate_seed(
+        quad_cache.path_hashes[q_id] = seeding.mixCoordinateSeed(
             &old_hashes[old_q_id],
             cell_x % SPAN,
             cell_y % SPAN,
@@ -1108,7 +1108,7 @@ pub fn push_layer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 }
 
 // /// Convert screen pixels to a world block coordinate
-// pub fn screen_to_world(screen_x: f64, screen_y: f64, viewport_w: f64, viewport_h: f64, cam_x: f64, cam_y: f64, zoom: f64) @Vector(2, f64) {
+// pub fn screenToWorld(screen_x: f64, screen_y: f64, viewport_w: f64, viewport_h: f64, cam_x: f64, cam_y: f64, zoom: f64) @Vector(2, f64) {
 //     const target_chunk_offset_x = @divFloor(world_subpixel_x, 4096);
 //     const target_chunk_offset_y = @divFloor(world_subpixel_y, 4096);
 

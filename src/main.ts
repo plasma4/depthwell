@@ -321,16 +321,16 @@ const dispatch = (e: PointerEvent | null, action: number) => {
     // get canvas position relative to the viewport
     const rect = engine.canvas.getBoundingClientRect();
     if (e == null) {
-        engine.exports.handle_mouse(-1.0, -1.0, 5);
+        engine.exports.handleMouse(-1.0, -1.0, 5);
         return;
     }
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
     if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
         // only allow if within canvas bounds
-        engine.exports.handle_mouse(x, y, action);
+        engine.exports.handleMouse(x, y, action);
     } else {
-        engine.exports.handle_mouse(-1.0, -1.0, action);
+        engine.exports.handleMouse(-1.0, -1.0, action);
     }
 };
 
@@ -369,10 +369,8 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Build the fancy debug UI in the corner!
 if (is_dev) {
-    const exports = engine.exports as any;
-
     // Populate scratch buffer with JSON data and parse it
-    exports.debug_build_ui_metadata();
+    engine.exports.debugBuildUiMetadata();
     const jsonStr = engine.readStr();
 
     const meta = JSON.parse(jsonStr);
@@ -383,7 +381,7 @@ if (is_dev) {
     meta.buttons.forEach((b: any) => {
         const btn = document.createElement("button");
         btn.textContent = b.name;
-        btn.onclick = () => exports.debug_ui_button_click(b.id);
+        btn.onclick = () => engine.exports.clickDebugUiButton(b.id);
         container.appendChild(btn);
     });
 
@@ -406,7 +404,7 @@ if (is_dev) {
         input.oninput = (e) => {
             const val = parseFloat((e.target as HTMLInputElement).value);
             label.textContent = `${s.name}: ${val.toFixed(2)}`;
-            exports.debug_ui_slider_change(s.id, val);
+            engine.exports.changeDebugUiSlider(s.id, val);
         };
 
         wrapper.appendChild(label);

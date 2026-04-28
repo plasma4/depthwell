@@ -36,10 +36,10 @@ pub var mouse_state: MouseState = .none;
 /// Reset at the start of every render tick and dispatched to JS at the end.
 pub var mouse_type: MouseType = .initial;
 
-/// Chunk the mouse is on; only updated when `update_mouse_block()` is called.
+/// Chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
 pub var mouse_chunk: ?memory.Coordinate = null;
-/// Subpixel of the chunk the mouse is on; only updated when `update_mouse_block()` is called.
+/// Subpixel of the chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
 pub var mouse_subpixel: ?memory.v2u64 = null;
 /// X block location the mouse is on (within the chunk).
@@ -49,7 +49,7 @@ pub var mouse_block_x: u4 = 0;
 /// Assume to be invalid if `mouse_chunk` or `mouse_subpixel` are null.
 pub var mouse_block_y: u4 = 0;
 /// Whether the mouse's block position changed. If coordinate is out of bounds, then set to true.
-/// Is reset in `handle_mining()`, called from `tick()` in zig/root.zig.
+/// Is reset in `handleMining()`, called from `tick()` in zig/root.zig.
 pub var block_position_changed = true;
 
 /// Point coordinate of the mouse (based on the UV).
@@ -66,7 +66,7 @@ pub var just_mouse_down: bool = false;
 /// Action 3 (RIGHT CLICK): pointerdown
 /// Action 4 (RIGHT CLICK): pointerup
 /// Action 5 (INVALIDATE) : N/A (blur/resize happened, `mouse_state` resets)
-pub fn handle_mouse(x: f64, y: f64, action: u32) void {
+pub fn handleMouse(x: f64, y: f64, action: u32) void {
     if (action == 1) {
         just_mouse_down = true;
         mouse_state = .canvas;
@@ -78,7 +78,7 @@ pub fn handle_mouse(x: f64, y: f64, action: u32) void {
 }
 
 /// Updates the block/chunk the mouse is in.
-pub fn update_mouse_block() void {
+pub fn updateMouseBlock() void {
     if (uv_position[0] < 0) {
         mouse_chunk = null;
         mouse_subpixel = null;
@@ -99,7 +99,7 @@ pub fn update_mouse_block() void {
     const chunk_offset_x = @divFloor(target_sx, memory.SUBPIXELS_IN_CHUNK);
     const chunk_offset_y = @divFloor(target_sy, memory.SUBPIXELS_IN_CHUNK);
 
-    const player_coord = game.get_player_coord();
+    const player_coord = game.getPlayerCoord();
     if (player_coord.move(.{ chunk_offset_x, chunk_offset_y })) |coord| {
         mouse_chunk = coord;
 

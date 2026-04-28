@@ -14,7 +14,7 @@ const SPAN = memory.SPAN;
 
 const Sprite = root.Sprite;
 const EdgeFlags = types.EdgeFlags;
-const odds_num = seeding.odds_num;
+const oddsNum = seeding.oddsNum;
 const FastHash = seeding.FastHash;
 const Seed = seeding.Seed;
 const v2f64 = memory.v2f64;
@@ -49,7 +49,7 @@ const BaseTerrainData = struct {
 
 /// Generates a block for seeding (based on previous procedural generation logic).
 /// The terms moisture/density are used extremely loosely here.
-pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
+pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
     // sprite IDs in this range create a heatmap
     if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(density * 256.0)));
     // use ore heatmap everywhere
@@ -77,8 +77,8 @@ pub inline fn generate_sprite_from_values(moisture: f64, density: f64) Sprite {
 /// 1. Generate an initial terrain density+moisture value using the seed vectors.
 /// 2. Generate a block from those values.
 /// 3. Generates larger structures with FBM Worley and valid placement checks.
-pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) BaseTerrainData {
-    const moisture = get_fbm_worley_value( // acts as a biome
+pub fn getBaseSpriteType(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) BaseTerrainData {
+    const moisture = getFbmWorleyValue( // acts as a biome
         vec2,
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
@@ -88,7 +88,7 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
             .horizontally_wide = false,
         },
     );
-    const density = get_fbm_worley_value(
+    const density = getFbmWorleyValue(
         vec1,
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
@@ -99,7 +99,7 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
         },
     );
 
-    const sprite = generate_sprite_from_values(moisture, density);
+    const sprite = generateSpriteFromValues(moisture, density);
 
     // drawing sprite change in WGSL now after tile unpacking, quite silly to be here
     // if (sprite == .stone) {
@@ -122,7 +122,7 @@ pub fn get_base_sprite_type(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32
 ///
 /// This function uses fractal brownian motion with value noise in an initial pass for domain warping,
 /// then Worley noise to generate terrain.
-fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: TerrainOptions) f32 {
+fn getFbmWorleyValue(seed_vector: v2u64, x: u32, y: u32, comptime options: TerrainOptions) f32 {
     const fx = @as(f32, @floatFromInt(x));
     const fy = @as(f32, @floatFromInt(if (options.horizontally_wide) y * 2 else y)); // scaled Y
 
@@ -137,7 +137,7 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
     if (amp > 0) {
         // FBM warping
         inline for (0..fbm_octaves) |_| {
-            const noise = get_dual_value_noise(seed_vector, x * freq, y * freq); // make shifting smooth!
+            const noise = getDualValueNoise(seed_vector, x * freq, y * freq); // make shifting smooth!
             warp_x += noise[0] * amp;
             warp_y += noise[1] * amp;
             amp *= 0.5;
@@ -165,7 +165,7 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
             const cur_y = @as(u64, @bitCast(cy_i + oy));
 
             // Hash once for both offsets
-            const h = FastHash.hash_2d(seed_vector, cur_x, cur_y);
+            const h = FastHash.hash2d(seed_vector, cur_x, cur_y);
             const off_x = @as(f32, @floatFromInt(h % POW_2_32)) / POW_2_32;
             const off_y = @as(f32, @floatFromInt(h / POW_2_32)) / POW_2_32;
 
@@ -193,7 +193,7 @@ fn get_fbm_worley_value(seed_vector: v2u64, x: u32, y: u32, comptime options: Te
 }
 
 /// Returns two independent noise values (32-bit float) based on the classic Value Noise algorithm.
-fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
+fn getDualValueNoise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
     const scale: f32 = 16.0;
     const fx_raw = @as(f32, @floatFromInt(x)) / scale;
     const fy_raw = @as(f32, @floatFromInt(y)) / scale;
@@ -207,10 +207,10 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
     const u = tx * tx * tx * (tx * (tx * 6 - 15) + 10);
     const v = ty * ty * ty * (ty * (ty * 6 - 15) + 10);
 
-    const h00 = FastHash.hash_2d(seed, x0, y0); // ChaCha12 is too slow ):
-    const h10 = FastHash.hash_2d(seed, x0 +% 1, y0);
-    const h01 = FastHash.hash_2d(seed, x0, y0 +% 1);
-    const h11 = FastHash.hash_2d(seed, x0 +% 1, y0 +% 1);
+    const h00 = FastHash.hash2d(seed, x0, y0); // ChaCha12 is too slow ):
+    const h10 = FastHash.hash2d(seed, x0 +% 1, y0);
+    const h01 = FastHash.hash2d(seed, x0, y0 +% 1);
+    const h11 = FastHash.hash2d(seed, x0 +% 1, y0 +% 1);
 
     var res: memory.v2f32 = .{ 0, 0 };
     inline for (0..2) |i| {
@@ -228,10 +228,10 @@ fn get_dual_value_noise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
 }
 
 /// Generates ores over certain types of blocks, returning a sprite type (possibly changed to an ore type).
-/// Continues from steps 1-3 in `get_base_sprite_type()`.
+/// Continues from steps 1-3 in `getBaseSpriteType()`.
 ///
-/// 4. Disperses ores using Worley noise. Assumes that `is_stone()` was checked before calling.
-pub fn add_ores(
+/// 4. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
+pub fn addOres(
     base_data: BaseTerrainData,
     seed_vector_1: v2u64,
     seed_vector_2: v2u64,
@@ -242,8 +242,8 @@ pub fn add_ores(
 ) Sprite {
     var sprite = base_data.sprite;
 
-    // Generate new density for ores: the seed vector should be different from the `get_fbm_worley_density()` vector.
-    const v1 = get_fbm_worley_value( // smaller cells, less FBM variation
+    // Generate new density for ores: the seed vector should be different from the `getFbmWorleyDensity()` vector.
+    const v1 = getFbmWorleyValue( // smaller cells, less FBM variation
         seed_vector_1,
         x,
         y,
@@ -254,7 +254,7 @@ pub fn add_ores(
             .use_f2_f1 = false,
         },
     );
-    const v2 = get_fbm_worley_value( // larger cells, much more FBM variation
+    const v2 = getFbmWorleyValue( // larger cells, much more FBM variation
         seed_vector_2,
         x,
         y,
@@ -271,33 +271,33 @@ pub fn add_ores(
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
         // Generate various ore types
-        sprite = select_sprite(
+        sprite = selectSprite(
             .{ sprite, .copper },
             true,
             .{ v2, 0.0, 0.2 },
         );
         if (sprite == .copper or v2 >= 0.7) return sprite;
 
-        sprite = select_sprite(
+        sprite = selectSprite(
             .{ sprite, .iron },
             true,
             .{ v1, 0.55, 0.65 },
         );
         if (sprite == .iron and base_data.sprite != .strange_stone) return sprite;
 
-        sprite = select_sprite(
+        sprite = selectSprite(
             .{ sprite, .silver },
             base_data.density <= 0.55,
             .{ v1, 0.2, 0.26 },
         );
-        sprite = select_sprite(
+        sprite = selectSprite(
             .{ sprite, .silver },
             base_data.sprite == .strange_stone,
             .{ v1, 0.18, 0.2 },
         );
         if (sprite == .iron or sprite == .silver) return sprite;
 
-        sprite = select_sprite(
+        sprite = selectSprite(
             .{ sprite, .gold },
             base_data.density >= 0.62 or (base_data.density >= 0.58 and base_data.sprite == .lava_stone),
             .{ v2, 0.3, 0.4 },
@@ -307,10 +307,10 @@ pub fn add_ores(
         // Logic for generating gems
         const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.4 else 0.3;
         if (base_data.density >= 0.3 and base_data.density <= 0.5 and v2 >= 0.1 and v2 <= gem_v2_bound) {
-            const random_value = FastHash.float_2d(seed_vector_3, @intCast(x), @intCast(y));
+            const random_value = FastHash.float2d(seed_vector_3, @intCast(x), @intCast(y));
 
             if (random_value <= base_gem_odds) {
-                const v3 = get_fbm_worley_value(
+                const v3 = getFbmWorleyValue(
                     seed_vector_4,
                     y,
                     x,
@@ -322,28 +322,28 @@ pub fn add_ores(
                     },
                 );
 
-                sprite = select_sprite(
+                sprite = selectSprite(
                     .{ sprite, .amethyst },
                     v3 <= 0.4 and random_value <= 0.4 * base_gem_odds,
                     null,
                 );
                 if (sprite == .amethyst) return sprite;
 
-                sprite = select_sprite(
+                sprite = selectSprite(
                     .{ sprite, .sapphire },
                     v3 >= 0.75 and random_value <= 0.65 * base_gem_odds,
                     null,
                 );
                 if (sprite == .sapphire) return sprite;
 
-                sprite = select_sprite(
+                sprite = selectSprite(
                     .{ sprite, .emerald },
                     v3 >= 0.45 and v3 <= 0.65 and random_value <= 0.86 * base_gem_odds,
                     null,
                 );
                 if (sprite == .emerald) return sprite;
 
-                sprite = select_sprite(
+                sprite = selectSprite(
                     .{ sprite, .ruby },
                     v3 >= 0.22 and v3 <= 0.3,
                     null,
@@ -371,7 +371,7 @@ const SpritePair = struct { Sprite, Sprite };
 /// // Returns iron if density is larger than 0.6 AND my_value is between 0.6 and 0.7 (inclusive), and stone otherwise.
 /// Sprite sprite = cw(.iron, my_density >= 0.6, my_value, 0.6, 0.7, .stone);
 /// ```
-pub inline fn select_sprite(sprites: SpritePair, condition: bool, range: ?ValueRange) Sprite {
+pub inline fn selectSprite(sprites: SpritePair, condition: bool, range: ?ValueRange) Sprite {
     const old_sprite = sprites[0];
     const new_sprite = sprites[1];
     if (range) |r| {
@@ -385,26 +385,26 @@ pub inline fn select_sprite(sprites: SpritePair, condition: bool, range: ?ValueR
 }
 
 /// Returns true if `v` is between `min` and `max` (inclusive).
-pub inline fn is_within(v: f32, min: comptime_float, max: comptime_float) bool {
+pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
     if (max <= min) @compileError("Maximum value must be larger than minimum value.");
     return v >= min and v <= max; // inclusive may mean more aggressive LLVM optimizations when inlining, for free
 }
 
 /// Generates decorative blocks (such as mushrooms or ceiling plants).
-/// Continues from step 4 in `add_ores()`.
+/// Continues from step 4 in `addOres()`.
 ///
 /// 5. Adds decorative blocks.
-/// 6. Critically, sets `edge_flags` of all blocks that are not `is_foundation()` blocks to `0xFF` to prevent erosion.
-pub fn add_decorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void {
+/// 6. Critically, sets `edge_flags` of all blocks that are not `isFoundation()` blocks to `0xFF` to prevent erosion.
+pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void {
     // Extra decor passes (doesn't worry about cross-chunk sadly)
     for (0..SPAN) |block_y| {
         for (0..SPAN) |block_x| {
             const id = block_x + block_y * SPAN;
             var block = &target_chunk.blocks[id];
-            if (!block.is_empty()) continue;
-            if (block.is_adjacent_block_solid(EdgeFlags.BOTTOM)) {
+            if (!block.isEmpty()) continue;
+            if (block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
                 const val = rng1.next();
-                if (val <= odds_num(0.3)) {
+                if (val <= oddsNum(0.3)) {
                     block.id = .mushroom;
                 }
             }
@@ -415,15 +415,15 @@ pub fn add_decorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) voi
         for (0..SPAN) |block_x| {
             const id = block_x + block_y * SPAN;
             var block = &target_chunk.blocks[id];
-            if (block.is_foundation() or target_chunk.blocks[id - 16].is_empty()) continue;
-            if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() <= odds_num(0.7)) {
+            if (block.isFoundation() or target_chunk.blocks[id - 16].isEmpty()) continue;
+            if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() <= oddsNum(0.7)) {
                 // TODO: evaluate if this failing across chunk boundaries really matters or not
                 block.id = .spiral_plant;
-            } else if (target_chunk.blocks[id - 16].is_foundation() and block.is_empty()) {
+            } else if (target_chunk.blocks[id - 16].isFoundation() and block.isEmpty()) {
                 const val = rng1.next();
-                if (val <= odds_num(0.3)) {
+                if (val <= oddsNum(0.3)) {
                     block.id = .ceiling_flower;
-                } else if (val <= odds_num(0.35)) {
+                } else if (val <= oddsNum(0.35)) {
                     block.id = .spiral_plant;
                 }
             }
@@ -433,7 +433,7 @@ pub fn add_decorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) voi
     // final pass to reset edge flags for blocks that should NOT be eroded
     for (0..memory.SPAN_SQ) |id| {
         var block = &target_chunk.blocks[id];
-        if (!block.is_foundation()) block.edge_flags = 0xFF;
+        if (!block.isFoundation()) block.edge_flags = 0xFF;
     }
 }
 
@@ -448,7 +448,7 @@ inline fn fade(t: f64) f64 {
 }
 
 /// Simple noise for testing. Unused.
-pub fn get_test_noise(seed: *const Seed, x: f64, y: f64) f64 {
+pub fn getTestNoise(seed: *const Seed, x: f64, y: f64) f64 {
     _ = .{ x, y };
     var prng = seeding.ChaCha12.init(seed);
     return @as(f64, @floatFromInt(prng.next() & 127)) / 128;

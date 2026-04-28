@@ -88,16 +88,16 @@ pub const GameState = extern struct {
     seed2: [16]u64 align(16) = std.mem.zeroes([16]u64),
 
     /// Gets the player's current chunk location as a `Coordinate`.
-    pub inline fn get_player_coord(self: *const @This()) Coordinate {
+    pub inline fn getPlayerCoord(self: *const @This()) Coordinate {
         return .{ .quadrant = @intCast(self.player_quadrant), .suffix = self.player_chunk };
     }
 
     /// Gets which (x-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
-    pub inline fn get_block_x_in_chunk(self: *const @This()) u4 {
+    pub inline fn getBlockXInChunk(self: *const @This()) u4 {
         return @intCast(@divTrunc(self.player_pos[0], SPAN_SQ));
     }
     /// Gets which (y-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
-    pub inline fn get_block_y_in_chunk(self: *const @This()) u4 {
+    pub inline fn getBlockYInChunk(self: *const @This()) u4 {
         return @intCast(@divTrunc(self.player_pos[1], SPAN_SQ));
     }
 
@@ -114,15 +114,15 @@ pub const GameState = extern struct {
         self.player_pos = new_position;
         self.last_player_pos = new_position;
         self.camera_pos = .{ 0.0, 0.0 };
-        world.clear_caches();
+        world.clearCaches();
     }
 
     /// Sets the player position within a chunk, teleporting the previous position as well. Also clears subpixel accumulation/velocity.
-    /// Do not use for movement, as this neither does frame interpolation nor takes `Coordinate` input for correct quadrant changes.
+    /// Considered dumb. Do not use for movement, as this neither does frame interpolation nor takes `Coordinate` input for correct quadrant changes.
     ///
     /// It is probably better to use `teleport()`, unless you need the player position to change but not the camera.
     /// This function also fails to handle caches properly.
-    pub inline fn set_player_pos(self: *@This(), new_position: v2i64) void {
+    pub inline fn setPlayerPosDumb(self: *@This(), new_position: v2i64) void {
         player.subpixel_accum = .{ 0.0, 0.0 };
         self.player_velocity = .{ 0.0, 0.0 };
         self.player_pos = new_position;
@@ -134,7 +134,7 @@ pub const GameState = extern struct {
     ///
     /// It is probably better to use `teleport()`, unless you need the camera position to change but not the player.
     /// This function also fails to handle caches properly.
-    pub inline fn set_camera_pos(self: *@This(), new_position: v2i64) void {
+    pub inline fn setCameraPosDumb(self: *@This(), new_position: v2i64) void {
         player.subpixel_accum = .{ 0.0, 0.0 };
         self.camera_pos = new_position;
         self.last_camera_pos = new_position;
@@ -149,20 +149,20 @@ pub var game: GameState = undefined;
 pub const page_allocator = if (builtin.is_test) std.testing.allocator else std.heap.page_allocator;
 
 /// An instance of the general-purpose allocator (or testing allocator when running tests).
-/// Use `make_arena()` to create an `ArenaAllocator` around this (WASM has no SMP allocator support).
+/// Use `makeArena()` to create an `ArenaAllocator` around this (WASM has no SMP allocator support).
 const main_allocator = if (builtin.is_test) std.testing.allocator else if (builtin.single_threaded) std.heap.brk_allocator else std.heap.smp_allocator; // use .allocator() for instance
 
 /// Creates an `ArenaAllocator` around either the WASM allocator, testing allocator, or GPA, as necessary. It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
 ///
 /// Example:
 /// ```zig
-/// var arena = memory.make_arena();
+/// var arena = memory.makeArena();
 /// const allocator = arena.allocator();
 /// defer arena.deinit();
 /// var list: std.ArrayList(u64) = .empty;
 /// list.append(allocator, 12345) catch {};
 /// ```
-pub fn make_arena() std.heap.ArenaAllocator {
+pub fn makeArena() std.heap.ArenaAllocator {
     return std.heap.ArenaAllocator.init(page_allocator);
 }
 
@@ -207,7 +207,7 @@ pub const Block = packed struct(u64) {
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
     /// Using the BOTTOM 28 bits from `seed_bits` to place into `seed`.
-    pub inline fn make_basic_block(sprite_type: Sprite, seed_bits: u64) Block {
+    pub inline fn makeBasicBlock(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
             .hp = 0,
@@ -220,42 +220,42 @@ pub const Block = packed struct(u64) {
     }
 
     /// Determines if the block's type is one that should interact with the edge flags and procedural generation. This returns false for edge stone, unlike `is_solid`.
-    pub inline fn is_foundation(self: @This()) bool {
-        return self.id.is_foundation();
+    pub inline fn isFoundation(self: @This()) bool {
+        return self.id.isFoundation();
     }
 
     /// Determines if the block's type is considered solid, and should interact with the physics, player, and edge flags. This returns true for edge stone, unlike `is_solid`.
-    pub inline fn is_solid(self: @This()) bool {
-        return self.id.is_solid();
+    pub inline fn isSolid(self: @This()) bool {
+        return self.id.isSolid();
     }
 
     /// Determines if the block's type is `none` (air/void).
-    pub inline fn is_empty(self: @This()) bool {
-        return self.id.is_empty();
+    pub inline fn isEmpty(self: @This()) bool {
+        return self.id.isEmpty();
     }
 
     /// Determines if the sprite is stone (or a variation). Excludes edge stone.
-    pub inline fn is_stone(self: @This()) bool {
-        return self.id.is_stone();
+    pub inline fn isStone(self: @This()) bool {
+        return self.id.isStone();
     }
 
     /// Determines if the sprite is an ore.
-    pub inline fn is_ore(self: @This()) bool {
-        return self.id.is_ore();
+    pub inline fn isOre(self: @This()) bool {
+        return self.id.isOre();
     }
 
     /// Determines if the sprite is a gem.
-    pub inline fn is_gem(self: @This()) bool {
-        return self.id.is_gem();
+    pub inline fn isGem(self: @This()) bool {
+        return self.id.isGem();
     }
 
     /// Determines if the sprite is a heatmap (types 65000-65256).
-    pub inline fn is_heatmap(self: @This()) bool {
-        return self.id.is_heatmap();
+    pub inline fn isHeatmap(self: @This()) bool {
+        return self.id.isHeatmap();
     }
 
     /// Determines if there is a solid block adjacent based on edge flags.
-    pub inline fn is_adjacent_block_solid(self: @This(), direction: comptime_int) bool {
+    pub inline fn isAdjacentBlockSolid(self: @This(), direction: comptime_int) bool {
         return (self.edge_flags & direction) != 0;
     }
 };
@@ -264,7 +264,7 @@ pub const Block = packed struct(u64) {
 pub const Chunk = struct {
     blocks: [SPAN_SQ]Block align(MAIN_ALIGN_BYTES),
 
-    pub inline fn get_block(self: @This(), x: u4, y: u4) Block {
+    pub inline fn getBlock(self: @This(), x: u4, y: u4) Block {
         return self.blocks[(@as(usize, y) << SPAN_LOG2) | @as(usize, x)];
     }
 };
@@ -324,13 +324,13 @@ pub const Coordinate = struct {
 
     /// Adds a certain X value, creating a new Coordinate and handling quadrants.
     /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub inline fn move_x(self: @This(), x: i64) ?Coordinate {
+    pub inline fn moveX(self: @This(), x: i64) ?Coordinate {
         return self.move(.{ x, 0 });
     }
 
     /// Adds a certain Y value, creating a new Coordinate and handling quadrants.
     /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub inline fn move_y(self: @This(), y: i64) ?Coordinate {
+    pub inline fn moveY(self: @This(), y: i64) ?Coordinate {
         return self.move(.{ 0, y });
     }
 };
@@ -344,7 +344,7 @@ pub const ModifiedChunk = struct {
     blocks: [SPAN_SQ]Sprite,
 
     /// Helper to check if a specific local block is modified
-    pub inline fn is_modified(self: *const @This(), lx: u4, ly: u4) bool {
+    pub inline fn isModified(self: *const @This(), lx: u4, ly: u4) bool {
         const index = (@as(u8, ly) << SPAN_LOG2) | @as(u8, lx);
         const slot = index >> 6;
         const bit = @as(u6, @truncate(index));
@@ -454,27 +454,27 @@ pub var mem: MemoryLayout align(MAIN_ALIGN_BYTES) = .{
 };
 
 /// Returns the pointer to the memory layout for TypeScript to consume.
-pub fn get_memory_layout_ptr() *align(MAIN_ALIGN_BYTES) const MemoryLayout {
+pub fn getMemoryLayoutPtr() *align(MAIN_ALIGN_BYTES) const MemoryLayout {
     mem.scratch_ptr = @intFromPtr(&scratch_buffer);
     mem.game_ptr = @intFromPtr(&game);
     return &mem;
 }
 
 /// Allocates memory in WASM that JS can write to.
-pub fn wasm_alloc(len: usize) ?[*]u8 {
+pub fn wasmAlloc(len: usize) ?[*]u8 {
     const slice = main_allocator.alloc(u8, len) catch return null;
     return slice.ptr;
 }
 
 /// Frees memory allocated via wasm_alloc.
-pub fn wasm_free(ptr: [*]u8, len: usize) void {
+pub fn wasmFree(ptr: [*]u8, len: usize) void {
     main_allocator.free(ptr[0..len]);
 }
 
 /// Determines if scratch_buffer has at least `len` additional available capacity while aligning with `MAIN_ALIGN`.
 /// If not, expands with the system's page allocator.
 /// Does NOT set the `scratch_len` property; only allocates sufficiently (using `scratch_capacity`).
-pub fn scratch_alloc(len: usize) [*]u8 {
+pub fn scratchAlloc(len: usize) [*]u8 {
     const base_addr = @intFromPtr(scratch_buffer.ptr);
     const current_used: usize = @intCast(mem.scratch_len);
     const current_addr = base_addr + current_used;
@@ -483,7 +483,7 @@ pub fn scratch_alloc(len: usize) [*]u8 {
 
     if (!is_dynamic_scratch or new_scratch_len > scratch_buffer.len) {
         @branchHint(.cold);
-        return grow_scratch_buffer(len, new_scratch_len);
+        return growScratchBuffer(len, new_scratch_len);
     }
 
     // Fits in existing buffer already, fast!
@@ -492,7 +492,7 @@ pub fn scratch_alloc(len: usize) [*]u8 {
 }
 
 /// Internal function to grow the scratch buffer.
-fn grow_scratch_buffer(len: usize, new_scratch_len: usize) [*]u8 {
+fn growScratchBuffer(len: usize, new_scratch_len: usize) [*]u8 {
     const current_used: usize = @intCast(mem.scratch_len);
 
     // Final capacity becomes 256KiB, 1.5x growth, or the requested length, whichever is largest.
@@ -524,11 +524,11 @@ fn grow_scratch_buffer(len: usize, new_scratch_len: usize) [*]u8 {
 ///
 /// The `byte_count_before_end` property, if `null`, makes the data aligned to `MAIN_ALIGN_BYTES`.
 /// If unaligned, it is required to start the data at an aligned location (such as right after `scratch_reset` or `mem.scratch_len` set).
-pub inline fn scratch_alloc_type(comptime T: type, byte_count_before_end: ?*usize) *T {
+pub inline fn scratchAllocType(comptime T: type, byte_count_before_end: ?*usize) *T {
     const type_size: usize = @sizeOf(T);
     const mod = type_size % MAIN_ALIGN_BYTES;
     if (byte_count_before_end == null or mod == 0) {
-        const ptr = scratch_alloc(type_size);
+        const ptr = scratchAlloc(type_size);
         return @as(T, @ptrCast(@alignCast(ptr)));
     }
 
@@ -541,7 +541,7 @@ pub inline fn scratch_alloc_type(comptime T: type, byte_count_before_end: ?*usiz
     const ptr: [*]u8 = @ptrFromInt(
         @as(usize, @intCast(mem.scratch_ptr + mem.scratch_len)),
     );
-    if (type_size < MAIN_ALIGN_BYTES and diff > 0) _ = scratch_alloc(diff);
+    if (type_size < MAIN_ALIGN_BYTES and diff > 0) _ = scratchAlloc(diff);
     mem.scratch_len = old_len + type_size;
 
     byte_count_before_end.?.* = (before_end + MAIN_ALIGN_BYTES - type_size) % MAIN_ALIGN_BYTES;
@@ -550,9 +550,9 @@ pub inline fn scratch_alloc_type(comptime T: type, byte_count_before_end: ?*usiz
 
 /// Allocates a typed slice in the scratch buffer (aligned).
 /// This is the ideal fast way to write structural data (like chunks) directly into the buffer if length is known up front.
-pub inline fn scratch_alloc_slice(comptime T: type, count: usize) []T {
+pub inline fn scratchAllocSlice(comptime T: type, count: usize) []T {
     const byte_count = count * @sizeOf(T);
-    const ptr = scratch_alloc(byte_count);
+    const ptr = scratchAlloc(byte_count);
     return @as([*]T, @ptrCast(@alignCast(ptr)))[0..count];
 }
 
@@ -560,18 +560,18 @@ pub inline fn scratch_alloc_slice(comptime T: type, count: usize) []T {
 /// Note: This will error if `mem.scratch_len` is not an exact multiple of `@sizeOf(T)`.
 ///
 /// Only use this if the entire frame's scratch buffer contains a single data type.
-pub inline fn scratch_as_slice(comptime T: type) []T {
+pub inline fn scratchAsSlice(comptime T: type) []T {
     const bytes = scratch_buffer[0..mem.scratch_len];
     return std.mem.bytesAsSlice(T, bytes);
 }
 
 /// Runs a set of tests (which should be called from JS) for the scratch allocation. (See root.zig for export logic.)
-pub fn run_scratch_allocation_tests() void {
-    scratch_reset();
+pub fn runScratchAllocTests() void {
+    scratchReset();
 
     // Force starting scratch allocation (if it hadn't existed already).
     const len1 = 100;
-    _ = scratch_alloc(len1);
+    _ = scratchAlloc(len1);
 
     const heap_cap = scratch_buffer.len;
     const current_used = std.mem.alignForward(usize, @intCast(mem.scratch_len), MAIN_ALIGN_BYTES);
@@ -581,28 +581,28 @@ pub fn run_scratch_allocation_tests() void {
     const rem = heap_cap - current_used;
 
     // Fill to the exact amount of capacity
-    _ = scratch_alloc(rem);
+    _ = scratchAlloc(rem);
     if (scratch_buffer.len != heap_cap) @panic("Buffer expanded before reaching capacity");
     logger.log(@src(), "Requested {d} bytes successfully without buffer expansion.", .{rem});
 
     // force expansion and reallocate
     const len_exp = 64;
-    _ = scratch_alloc(len_exp);
+    _ = scratchAlloc(len_exp);
 
     if (scratch_buffer.len <= heap_cap) @panic("Buffer failed to grow after exceeding capacity");
     if (mem.scratch_ptr != @intFromPtr(scratch_buffer.ptr)) @panic("JS pointer desync");
 
-    scratch_reset();
+    scratchReset();
     logger.log(@src(), "Scratch tests passed! Final capacity: {d} bytes.", .{scratch_buffer.len});
 }
 
 /// Resets the scratch offset for the next frame/operation. (JS doesn't call this and instead uses handy functions in engine.ts.)
-pub inline fn scratch_reset() void {
+pub inline fn scratchReset() void {
     mem.scratch_len = 0;
 }
 
 /// Sets a scratch property (uses generic compile-time inferences).
-pub inline fn set_scratch_prop(index: usize, value: anytype) void {
+pub inline fn setScratchProp(index: usize, value: anytype) void {
     const T = @TypeOf(value);
     switch (@typeInfo(T)) {
         .float => mem.scratch_properties[index] = @bitCast(@as(f64, @floatCast(value))),
@@ -620,17 +620,17 @@ pub inline fn set_scratch_prop(index: usize, value: anytype) void {
 }
 
 /// Gets a scratch property as u64.
-pub inline fn get_scratch_prop(index: usize) u64 {
+pub inline fn getScratchProp(index: usize) u64 {
     return mem.scratch_properties[index];
 }
 
 /// Gets a scratch property as i64.
-pub inline fn get_scratch_prop_signed(index: usize) i64 {
+pub inline fn getSignedScratchProp(index: usize) i64 {
     return @bitCast(mem.scratch_properties[index]);
 }
 
 /// Gets a scratch property as f64.
-pub inline fn get_scratch_prop_float(index: usize) f64 {
+pub inline fn getFloatScratchProp(index: usize) f64 {
     return @bitCast(mem.scratch_properties[index]);
 }
 

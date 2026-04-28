@@ -8,8 +8,8 @@ const Sprite = sprite.Sprite;
 const mouse = root.mouse;
 
 const v2f32 = memory.v2f32;
-const add_entity = root.entity.add_entity;
-const draw_number = root.entity.draw_number;
+const addEntity = root.entity.addEntity;
+const drawNumber = root.entity.drawNumber;
 
 /// Debug option, changing whether to show all inventory item slots and items or not.
 pub var SHOW_ALL_INVENTORY_ITEMS = false;
@@ -36,14 +36,14 @@ pub var inventory_anim_progress = [_]f32{0.0} ** (sprite.max_sprite_value + 1);
 pub var inventory_wobble_progress = [_]f32{0.0} ** (sprite.max_sprite_value + 1);
 
 /// Logs data on what is inside the inventory.
-pub fn log_inventory() void {
+pub fn logInventory() void {
     // .quick and {h} work best here as you don't have to do a bunch of work figuring out formatting
     logger.quick(.{ "{h}Inventory counts", inventory_counts });
     logger.quick(.{ "{h}Selected sprite", selected_sprite });
 }
 
 /// Increments the count for a mined block.
-pub fn add_to_inventory(id: Sprite) void {
+pub fn addToInventory(id: Sprite) void {
     const idx = @intFromEnum(id);
     if (idx < inventory_counts.len) {
         inventory_counts[idx] += 1;
@@ -52,7 +52,7 @@ pub fn add_to_inventory(id: Sprite) void {
 }
 
 /// Decrements the count for a block. Returns whether successful.
-pub fn remove_from_inventory(id: Sprite) bool {
+pub fn removeFromInventory(id: Sprite) bool {
     if (id == .none or id == .unselected) return false;
 
     const idx = @intFromEnum(id);
@@ -72,7 +72,7 @@ pub fn remove_from_inventory(id: Sprite) bool {
 /// Helper to get the list of sprites currently in the inventory. Creates a temporary buffer in the stack.
 /// Always starts with .none, followed by owned foundation sprites sorted by ID.
 /// Requires a buffer to prevent dangling pointer (from local array) issues.
-pub fn get_active_slots(buffer: *SlotBuffer) []Sprite {
+pub fn getActiveSlots(buffer: *SlotBuffer) []Sprite {
     var count: usize = 1;
     buffer[0] = .none; // slot 0 (pickaxe) must always exist
 
@@ -90,7 +90,7 @@ pub fn get_active_slots(buffer: *SlotBuffer) []Sprite {
 }
 
 /// Gets the index of `selected_sprite` in the active slots.
-pub fn get_selected_index() u16 {
+pub fn getSelectedIndex() u16 {
     if (selected_sprite == .none or selected_sprite == .unselected) return 0;
     var count: usize = 1;
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
@@ -109,10 +109,10 @@ pub fn get_selected_index() u16 {
 }
 
 /// Returns the sprite being hovered if the mouse is within any inventory slot hitbox.
-pub fn get_hovered_inventory_sprite() ?Sprite {
-    // TODO merge with draw_inventory()?
+pub fn getHoveredInventorySprite() ?Sprite {
+    // TODO merge with drawInventory()?
     var buffer: SlotBuffer = undefined;
-    const active_slots = get_active_slots(&buffer);
+    const active_slots = getActiveSlots(&buffer);
 
     const base_size = 16.0;
     const spacing = 1.25 * base_size;
@@ -124,13 +124,13 @@ pub fn get_hovered_inventory_sprite() ?Sprite {
 
         const inventory_pos: v2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
-        // Match the background sizing logic from the draw_inventory() function
+        // Match the background sizing logic from the drawInventory() function
         const is_mine_type = active_sprite == .none;
         const is_selected = active_sprite == selected_sprite;
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
         const bg_pos = inventory_pos - v2f32{ bg_size / 4.0, bg_size / 4.0 };
 
-        const hitbox: root.geometry.Shape = .round_square(
+        const hitbox: root.geometry.Shape = .roundSquare(
             bg_pos - v2f32{ bg_size / 2.0, bg_size / 2.0 },
             bg_size,
             0.2,
@@ -145,9 +145,9 @@ pub fn get_hovered_inventory_sprite() ?Sprite {
 }
 
 /// Draws the inventory slots, wrapping into new rows every 10 items.
-pub fn draw_inventory(time_diff: f64) void {
+pub fn drawInventory(time_diff: f64) void {
     var buffer: SlotBuffer = undefined;
-    const active_slots = get_active_slots(&buffer);
+    const active_slots = getActiveSlots(&buffer);
     // logger.quick(.{ root.mining.selected_hp, inventory_counts });
 
     const wobble_decay_speed: f32 = 2.0; // controls wobble decay speed
@@ -173,7 +173,7 @@ pub fn draw_inventory(time_diff: f64) void {
             inventory_anim_progress[id] = @max(target, inventory_anim_progress[id] - animation_speed);
         }
 
-        const t_eased = ease_back(inventory_anim_progress[id]);
+        const t_eased = easeBack(inventory_anim_progress[id]);
         const size_normal: f32 = 10.0 / 16.0 * base_size;
         const size_selected: f32 = 12.0 / 16.0 * base_size;
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
@@ -191,34 +191,39 @@ pub fn draw_inventory(time_diff: f64) void {
 
         // replace with pickaxe for UI
         const rendered_sprite = if (is_mine_type) Sprite.pickaxe else active_sprite;
-        add_entity(.{
+        addEntity(.{
             .sprite = if (is_selected) .inventory_selected else .inventory,
             .position = bg_pos,
             .size = bg_size,
         });
 
         const pos = inventory_pos - v2f32{ current_size / 4.0, current_size / 4.0 } - v2f32{ 1.0, 1.0 };
-        add_entity(.{ // item shadow
-            .sprite = rendered_sprite,
-            .position = pos - v2f32{ 1.0, 1.0 },
-            .size = current_size,
-            // a little bit of chroma addition and variation here!
-            // the shadow is more like the original sprite for stone sprites and much more bland otherwise
-            .lcha = .{
-                if (rendered_sprite.is_stone()) 0.5 else 0.3,
-                0.05, // a side effect of this is that perfectly gray sprites' shadows become more red
-                0.0,
-                if (rendered_sprite.is_stone()) 0.9 else 0.6,
-            },
-        });
+        inline for (.{ 0, 1 }) |shadow_i| { // use array literal to make it comptime
+            addEntity(.{ // item shadow
+                .sprite = rendered_sprite,
+                .position = pos - v2f32{
+                    @cos(std.math.pi / 4.5 - 0.05 * col) * (shadow_i + 1) * 0.8,
+                    @sin(std.math.pi / 4.5 - 0.05 * col) * (shadow_i + 1) * 0.8,
+                },
+                .size = current_size,
+                // a little bit of chroma addition and variation here!
+                // the shadow is more like the original sprite for stone sprites and much more bland otherwise
+                .lcha = .{
+                    (if (rendered_sprite.isStone()) (0.9 - shadow_i * 0.15) else (0.7 - shadow_i * 0.15)), // lightness mult
+                    0.03 + 0.02 * shadow_i, // a side effect of this is that perfectly gray sprites' shadows become more red
+                    0.0, // no hue shift
+                    0.4, // opacity
+                },
+            });
+        }
 
-        add_entity(.{ // actual item
+        addEntity(.{ // actual item
             .sprite = rendered_sprite,
             .position = pos,
             .size = current_size,
         });
 
-        const hitbox: root.geometry.Shape = .round_square(
+        const hitbox: root.geometry.Shape = .roundSquare(
             bg_pos - v2f32{ bg_size / 2.0, bg_size / 2.0 },
             bg_size,
             0.2,
@@ -231,7 +236,7 @@ pub fn draw_inventory(time_diff: f64) void {
     if (mouse_hovered_sprite) |s| {
         if (mouse.just_mouse_down) {
             selected_sprite = s;
-            selected_row = get_selected_index() / 10; // this works I suppose
+            selected_row = getSelectedIndex() / 10; // this works I suppose
             mouse.mouse_state = .inventory;
         }
         if (mouse.mouse_state == .none or mouse.mouse_state == .inventory) root.mouse.mouse_type = .pointer;
@@ -242,7 +247,7 @@ pub fn draw_inventory(time_diff: f64) void {
         if (active_sprite == .none) continue;
 
         const id = @intFromEnum(active_sprite);
-        const t_eased = ease_back(inventory_anim_progress[id]);
+        const t_eased = easeBack(inventory_anim_progress[id]);
 
         const dt = @as(f32, @floatCast(time_diff)) / wobble_animation_length; // delta time in ms
         const wobble_progress = inventory_wobble_progress[id];
@@ -281,7 +286,7 @@ pub fn draw_inventory(time_diff: f64) void {
         const digit_count_minus_one: f32 = if (count == 0) 1 else std.math.log10_int(count);
         const number_size = base_size * (1.0 + 0.3 * wobble_progress) / (@max(3.0, digit_count_minus_one + 0.5));
 
-        draw_number( // shadow of inventory number
+        drawNumber( // shadow of inventory number
             count,
             pos + v2f32{ base_size / 3.5, base_size / 3.5 },
             .{
@@ -292,7 +297,7 @@ pub fn draw_inventory(time_diff: f64) void {
             },
         );
 
-        draw_number( // actual value
+        drawNumber( // actual value
             count,
             pos + v2f32{ base_size / 3.2, base_size / 3.2 },
             .{
@@ -306,7 +311,7 @@ pub fn draw_inventory(time_diff: f64) void {
 }
 
 /// Back easing function: provides a slight negative dip before smoothing to the target.
-fn ease_back(target: f32) f32 {
+fn easeBack(target: f32) f32 {
     const a = 1.70158;
     const b = a + 1.0;
     return b * target * target * target - a * target * target; // cubic func
