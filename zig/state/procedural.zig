@@ -17,8 +17,8 @@ const EdgeFlags = types.EdgeFlags;
 const oddsNum = seeding.oddsNum;
 const FastHash = seeding.FastHash;
 const Seed = seeding.Seed;
-const v2f64 = memory.v2f64;
-const v2u64 = memory.v2u64;
+const Vec2f = memory.Vec2f;
+const Vec2u = memory.Vec2u;
 
 // Lots of values controlled by debug sliders here!
 pub var base_gem_odds: f64 = 0.1;
@@ -77,7 +77,7 @@ pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
 /// 1. Generate an initial terrain density+moisture value using the seed vectors.
 /// 2. Generate a block from those values.
 /// 3. Generates larger structures with FBM Worley and valid placement checks.
-pub fn getBaseSpriteType(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) BaseTerrainData {
+pub fn getBaseSpriteType(vec1: Vec2u, vec2: Vec2u, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) BaseTerrainData {
     const moisture = getFbmWorleyValue( // acts as a biome
         vec2,
         chunk_x * 16 + block_x,
@@ -122,7 +122,7 @@ pub fn getBaseSpriteType(vec1: v2u64, vec2: v2u64, chunk_x: u32, chunk_y: u32, b
 ///
 /// This function uses fractal brownian motion with value noise in an initial pass for domain warping,
 /// then Worley noise to generate terrain.
-fn getFbmWorleyValue(seed_vector: v2u64, x: u32, y: u32, comptime options: TerrainOptions) f32 {
+fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: TerrainOptions) f32 {
     const fx = @as(f32, @floatFromInt(x));
     const fy = @as(f32, @floatFromInt(if (options.horizontally_wide) y * 2 else y)); // scaled Y
 
@@ -193,7 +193,7 @@ fn getFbmWorleyValue(seed_vector: v2u64, x: u32, y: u32, comptime options: Terra
 }
 
 /// Returns two independent noise values (32-bit float) based on the classic Value Noise algorithm.
-fn getDualValueNoise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
+fn getDualValueNoise(seed: Vec2u, x: u64, y: u64) memory.Vec2f32 {
     const scale: f32 = 16.0;
     const fx_raw = @as(f32, @floatFromInt(x)) / scale;
     const fy_raw = @as(f32, @floatFromInt(y)) / scale;
@@ -212,7 +212,7 @@ fn getDualValueNoise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
     const h01 = FastHash.hash2d(seed, x0, y0 +% 1);
     const h11 = FastHash.hash2d(seed, x0 +% 1, y0 +% 1);
 
-    var res: memory.v2f32 = .{ 0, 0 };
+    var res: memory.Vec2f32 = .{ 0, 0 };
     inline for (0..2) |i| {
         const shift = @as(u6, @intCast(i * 32));
         const v00 = @as(f32, @floatFromInt(@as(u32, @truncate(h00 >> shift)))) / POW_2_32;
@@ -233,10 +233,10 @@ fn getDualValueNoise(seed: v2u64, x: u64, y: u64) memory.v2f32 {
 /// 4. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
 pub fn addOres(
     base_data: BaseTerrainData,
-    seed_vector_1: v2u64,
-    seed_vector_2: v2u64,
-    seed_vector_3: v2u64,
-    seed_vector_4: v2u64,
+    seed_vector_1: Vec2u,
+    seed_vector_2: Vec2u,
+    seed_vector_3: Vec2u,
+    seed_vector_4: Vec2u,
     x: u32,
     y: u32,
 ) Sprite {

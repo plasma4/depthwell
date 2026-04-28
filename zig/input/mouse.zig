@@ -41,7 +41,7 @@ pub var mouse_type: MouseType = .initial;
 pub var mouse_chunk: ?memory.Coordinate = null;
 /// Subpixel of the chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
-pub var mouse_subpixel: ?memory.v2u64 = null;
+pub var mouse_subpixel: ?memory.Vec2u = null;
 /// X block location the mouse is on (within the chunk).
 /// Assume to be invalid if `mouse_chunk` or `mouse_subpixel` are null.
 pub var mouse_block_x: u4 = 0;
@@ -54,7 +54,7 @@ pub var block_position_changed = true;
 
 /// Point coordinate of the mouse (based on the UV).
 /// Assume to be invalid if values are negative (both will be -1.0 if invalid).
-pub var uv_position: memory.v2f64 = .{ -1.0, -1.0 };
+pub var uv_position: memory.Vec2f = .{ -1.0, -1.0 };
 
 /// Determines if the mouse was just set to be down; reset at the end of a render frame.
 pub var just_mouse_down: bool = false;

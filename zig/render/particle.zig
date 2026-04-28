@@ -38,7 +38,7 @@ pub const ParticleSystem = struct {
                 self.list.swapRemove(i);
             } else {
                 // Alive: Update physics
-                const dt_splat: memory.v2f32 = @splat(dt);
+                const dt_splat: memory.Vec2f32 = @splat(dt);
                 positions[i] += d_positions[i] * dt_splat;
                 rotations[i] += d_rotations[i] * dt;
 

@@ -133,12 +133,12 @@ fn teleportToEdge() void {
 fn teleportRandomly() void {
     const game = &memory.game;
     const h1 = seeding.FastHash.hash2d(
-        game.player_chunk & memory.v2u64{ game.seed2[0], game.seed2[1] },
+        game.player_chunk & memory.Vec2u{ game.seed2[0], game.seed2[1] },
         @intCast(game.player_pos[0]),
         @intCast(game.player_pos[1]),
     );
     const h2 = seeding.FastHash.hash2d(
-        game.player_chunk & memory.v2u64{ game.seed2[2], game.seed2[3] },
+        game.player_chunk & memory.Vec2u{ game.seed2[2], game.seed2[3] },
         @intCast(game.player_pos[0]),
         @intCast(game.player_pos[1]),
     );

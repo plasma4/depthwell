@@ -23,28 +23,28 @@ pub const SPAN_FLOAT_SQ: comptime_float = SPAN_FLOAT * SPAN_FLOAT;
 /// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
 pub const SUBPIXELS_IN_CHUNK: comptime_int = SPAN * SPAN * SPAN;
 
-pub const v2i64 = @Vector(2, i64);
-pub const v2u64 = @Vector(2, u64);
-pub const v2f64 = @Vector(2, f64);
-pub const v2f32 = @Vector(2, f32);
+pub const Vec2i = @Vector(2, i64);
+pub const Vec2u = @Vector(2, u64);
+pub const Vec2f = @Vector(2, f64);
+pub const Vec2f32 = @Vector(2, f32);
 
 /// Non-pointer data (short known length) representing part of the game state.
 /// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
 /// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the -Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
 pub const GameState = extern struct {
     /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095), from the CENTER of the sprite.
-    player_pos: v2i64 align(MAIN_ALIGN_BYTES) = .{ 0, 0 },
+    player_pos: Vec2i align(MAIN_ALIGN_BYTES) = .{ 0, 0 },
     /// Represents the player's previous subpixel position.
     /// Importantly, this is not necessarily equal to the player's velocity, as this handles teleports!
-    last_player_pos: v2i64 = .{ 0, 0 },
+    last_player_pos: Vec2i = .{ 0, 0 },
     /// Represents the player's active chunk coordinate.
-    player_chunk: v2u64 = .{ 0, 0 },
+    player_chunk: Vec2u = .{ 0, 0 },
     /// Represents the player's current movement velocity.
-    player_velocity: v2f64 = .{ 0, 0 },
+    player_velocity: Vec2f = .{ 0, 0 },
     /// Represents the camera's position.
-    camera_pos: v2i64 = .{ 0, 0 },
+    camera_pos: Vec2i = .{ 0, 0 },
     /// Represents the camera's movement in a frame (derivative of `camera_pos`).
-    last_camera_pos: v2i64 = .{ 0, 0 },
+    last_camera_pos: Vec2i = .{ 0, 0 },
     /// Represents the camera's zoom scale.
     camera_scale: f64 = player.CAMERA_MAX_ZOOM,
     /// Represents the camera's zoom scale change rate (multiplier, acts as derivative of camera_scale change).
@@ -104,7 +104,7 @@ pub const GameState = extern struct {
     /// Teleports the player, resetting the player position and camera position, as well as movement constants such as gravity.
     ///
     /// Also fully clears caches.
-    pub inline fn teleport(self: *@This(), coord: ?Coordinate, new_position: v2i64) void {
+    pub inline fn teleport(self: *@This(), coord: ?Coordinate, new_position: Vec2i) void {
         player.subpixel_accum = .{ 0.0, 0.0 };
         self.player_velocity = .{ 0.0, 0.0 };
         if (coord) |c| {
@@ -122,7 +122,7 @@ pub const GameState = extern struct {
     ///
     /// It is probably better to use `teleport()`, unless you need the player position to change but not the camera.
     /// This function also fails to handle caches properly.
-    pub inline fn setPlayerPosDumb(self: *@This(), new_position: v2i64) void {
+    pub inline fn setPlayerPosDumb(self: *@This(), new_position: Vec2i) void {
         player.subpixel_accum = .{ 0.0, 0.0 };
         self.player_velocity = .{ 0.0, 0.0 };
         self.player_pos = new_position;
@@ -134,7 +134,7 @@ pub const GameState = extern struct {
     ///
     /// It is probably better to use `teleport()`, unless you need the camera position to change but not the player.
     /// This function also fails to handle caches properly.
-    pub inline fn setCameraPosDumb(self: *@This(), new_position: v2i64) void {
+    pub inline fn setCameraPosDumb(self: *@This(), new_position: Vec2i) void {
         player.subpixel_accum = .{ 0.0, 0.0 };
         self.camera_pos = new_position;
         self.last_camera_pos = new_position;
@@ -272,7 +272,7 @@ pub const Chunk = struct {
 /// Represents a "coordinate", relative to a quad-cache. Stores an "active suffix" as well as the quadrant this coordinate belongs to.
 pub const Coordinate = struct {
     // Active suffix (stored as a vector). You can think of the active suffix like 16 u4s packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see `README.md` for more details).
-    suffix: v2u64,
+    suffix: Vec2u,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u2,
 
@@ -287,7 +287,7 @@ pub const Coordinate = struct {
 
     /// Adds both an X and Y value, creating a new Coordinate and handling quadrants.
     /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub fn move(self: @This(), shift: v2i64) ?Coordinate {
+    pub fn move(self: @This(), shift: Vec2i) ?Coordinate {
         const dx = shift[0];
         const dy = shift[1];
         if (dx == 0 and dy == 0) return self;
@@ -355,10 +355,10 @@ pub const ModifiedChunk = struct {
 /// Data for a single particle (converted to `WGSLEntity` before sending to WGSL).
 pub const Particle = struct {
     /// Current position (based on internal viewport).
-    position: v2f32,
+    position: Vec2f32,
 
     /// Velocity vector for position.
-    d_position: v2f32,
+    d_position: Vec2f32,
 
     /// The color of the particle (alpha is multiplied by time and how long the particle lasts).
     color: ColorRGBA,
@@ -390,7 +390,7 @@ pub const Entity = struct {
     lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
 
     /// Current position (based on internal viewport).
-    position: v2f32,
+    position: Vec2f32,
 
     /// The size of the entity (based on internal viewport).
     size: f32 = 16.0,
@@ -411,10 +411,10 @@ pub const WGSLEntity = extern struct {
     lcha: @Vector(4, f32) align(16),
 
     /// Current position (based on UV, not the internal viewport).
-    position: v2f32,
+    position: Vec2f32,
 
     /// The width and height of the entity (based on UV, not the internal viewport).
-    size: v2f32,
+    size: Vec2f32,
 
     /// The rotation of the entity (radians).
     rotation: f32,

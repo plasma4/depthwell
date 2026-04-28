@@ -9,7 +9,7 @@ const inventory = root.inventory;
 const Entity = memory.Entity;
 const WGSLEntity = memory.WGSLEntity;
 
-const v2f32 = memory.v2f32;
+const Vec2f32 = memory.Vec2f32;
 
 /// Extra spacing between number characters.
 const spacing = 0.25;
@@ -53,13 +53,13 @@ pub fn updateEntities(time_diff: f64) void {
 
     // draw selected HP (for testing)
     const progress = root.mining.selected_hp;
-    const pos: v2f32 = .{ 10, 28 };
+    const pos: Vec2f32 = .{ 10, 28 };
     const font_size = 10.0;
 
     if (progress != 255 and progress != 0) {
         const value_hue = 0.2 + @as(f32, @floatFromInt(progress)) * (std.math.pi / 8.0);
         // draw shadow of text
-        drawNumber(progress, pos - v2f32{ 1.5, 1.5 }, .{
+        drawNumber(progress, pos - Vec2f32{ 1.5, 1.5 }, .{
             .lcha = .{
                 0.5, // darken
                 0.4,
@@ -103,7 +103,7 @@ pub const TextConfig = struct {
 /// Draws an unsigned integer by creating entities; should NEVER be called outside of `updateEntities()`.
 pub fn drawNumber(
     number: u64,
-    position: v2f32,
+    position: Vec2f32,
     options: TextConfig,
 ) void {
     const lcha = options.lcha;
@@ -155,7 +155,7 @@ pub fn drawNumber(
             rel_x += number_widths[@intCast(digit)] * font_size;
 
             // Rotate the relative offset vector (rel_x, 0)
-            const rotated_offset = v2f32{ rel_x * cos_r, rel_x * sin_r };
+            const rotated_offset = Vec2f32{ rel_x * cos_r, rel_x * sin_r };
 
             addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
@@ -167,7 +167,7 @@ pub fn drawNumber(
         }
     } else {
         for (digits[0..count]) |digit| {
-            const rotated_offset = v2f32{ rel_x * cos_r, rel_x * sin_r };
+            const rotated_offset = Vec2f32{ rel_x * cos_r, rel_x * sin_r };
 
             addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
@@ -182,7 +182,7 @@ pub fn drawNumber(
 }
 
 /// Optimized version of draw_number for when rotation is exactly 0.
-fn drawNumberFast(number: u64, position: v2f32, options: TextConfig) void {
+fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
     const lcha = options.lcha;
     const font_size = options.font_size;
     const ltr = options.ltr;
@@ -244,8 +244,8 @@ pub inline fn addEntity(entity: Entity) void {
     wgsl_entity.* = .{
         .lcha = entity.lcha,
         .position = entity.position /
-            v2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
-        .size = v2f32{
+            Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
+        .size = Vec2f32{
             entity.size / root.SCREEN_WIDTH,
             entity.size / root.SCREEN_HEIGHT,
         },

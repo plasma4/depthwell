@@ -8,7 +8,7 @@ const testing = std.testing;
 
 /// Represents 2^64.
 pub const POW_2_64 = 18446744073709551616;
-const v2u64 = memory.v2u64;
+const Vec2u = memory.Vec2u;
 
 test "basic usage example" {
     // Start with an arbitrary seed (NOTE: seed_from_bytes fails for WASM builds)
@@ -71,7 +71,7 @@ pub fn mixCoordinateSeed(layer_seed: *const Seed, x: u64, y: u64) Seed {
 }
 
 /// Generates 4 sets of seeds for every chunk when combining X/Y active suffix coordinates with the seed of a quadrant.
-pub fn mixChunkSeeds(quadrant_seed: *const Seed, coord_vector: v2u64) [4]Seed {
+pub fn mixChunkSeeds(quadrant_seed: *const Seed, coord_vector: Vec2u) [4]Seed {
     const PackedInput = extern struct { // do the packing thing again
         seed: Seed,
         c1: u64,
@@ -113,16 +113,16 @@ pub const FastHash = struct {
     }
 
     /// Returns a 64-bit hash value, assuming `seed_vector` is securely generated from BLAKE3 already.
-    pub inline fn hash2d(seed_vector: v2u64, x: u64, y: u64) u64 {
-        var v = v2u64{ x, y } ^ seed_vector; // diffuse X and Y using vectors
-        v *%= v2u64{ secret[0], secret[1] }; // wrapping multiply
+    pub inline fn hash2d(seed_vector: Vec2u, x: u64, y: u64) u64 {
+        var v = Vec2u{ x, y } ^ seed_vector; // diffuse X and Y using vectors
+        v *%= Vec2u{ secret[0], secret[1] }; // wrapping multiply
 
-        v ^= v >> @as(v2u64, @splat(32)); // fold the vector for more variance
+        v ^= v >> @as(Vec2u, @splat(32)); // fold the vector for more variance
         return mix(v[0] ^ secret[2], v[1] ^ secret[3]); // combine lanes and mix
     }
 
     /// Returns a float value (64-bit), assuming `seed_vector` is securely generated from BLAKE3 already.
-    pub inline fn float2d(seed_vector: v2u64, x: u64, y: u64) f64 {
+    pub inline fn float2d(seed_vector: Vec2u, x: u64, y: u64) f64 {
         const h = hash2d(seed_vector, x, y);
         return @as(f64, @floatFromInt(h)) / POW_2_64;
     }
