@@ -5,16 +5,15 @@
 const is_dev = true; // TODO use the other def in production
 
 /**
- * Debug/testing options. Set all values to false in production.
- * TODO set to false for prod :P
+ * Debug/testing options. Automatically based on the development mode.
  */
 export const CONFIG = {
     /** Whether to expose engine to globalThis or not. */
-    exportEngine: true,
+    exportEngine: import.meta.env.DEV,
     /** Whether to use verbose logging or not. */
-    verbose: true,
+    verbose: import.meta.env.DEV,
     /** If set to true, disables alerting on error. Error will always show in console regardless of what this value is set to. */
-    noAlertOnError: true,
+    noAlertOnError: import.meta.env.DEV,
 };
 
 if ("file:" === location.protocol) {
@@ -195,7 +194,7 @@ engine.getFrameRate = function () {
 
 engine.baseSpeed = 1;
 
-let time = performance.now(),
+let lastFrameTime = performance.now(),
     accumulator = 0,
     frame = 0;
 if (CONFIG.exportEngine) (globalThis as any).engine = engine;
@@ -213,21 +212,16 @@ engine.isDebug = !!engine.exports.isDebug(); // This function is only true if Do
 engine.renderLoop = function (_t: number) {
     // simulate to a second/tick of logical simulation, whichever is higher (in practice, a tick will be less than a second, so 1 second)
     let tempTime = performance.now();
-    let delta = time === Infinity ? 0 : tempTime - time;
-    time = tempTime;
+    let delta = lastFrameTime === Infinity ? 0 : tempTime - lastFrameTime;
+    lastFrameTime = tempTime;
 
     // Convert elapsed time (ms) to logical ticks based on the current target frame rate.
     const tickDurationMs = 1000 / engine.getFrameRate();
     const newTicks = delta / tickDurationMs;
 
     // Accumulate fractional ticks until we have at least 1 full tick to process.
-    const totalAvailableTicks = accumulator + newTicks;
+    const totalAvailableTicks = Math.min(accumulator + newTicks, 5); // no more than 5 frames!
     let ticksToRun = Math.floor(totalAvailableTicks);
-
-    // Enforce the constant cap to prevent logic-heavy frames from lagging the next frame.
-    if (ticksToRun > 5) {
-        ticksToRun = 5;
-    }
 
     if (ticksToRun > 0) {
         engine.logicLoop(ticksToRun);
@@ -270,7 +264,7 @@ Worst (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixe
     }
 
     let timeInterpolated = Math.min(accumulator - 1, 0);
-    engine.renderFrame(timeInterpolated, time);
+    engine.renderFrame(timeInterpolated, lastFrameTime);
 
     requestAnimationFrame(engine.renderLoop);
     // setTimeout(engine.renderLoop, 100);
@@ -284,8 +278,7 @@ engine.logicLoop = function (ticks: number) {
     const tickSpeed = (60 / engine.getFrameRate()) * engine.baseSpeed;
 
     engine.tick(tickSpeed, ticks);
-    time = performance.now();
-    let delta = time - startTime;
+    let delta = performance.now() - startTime;
 
     if (is_dev) {
         past60SlowestLogicLoops.shift();
@@ -335,7 +328,7 @@ const dispatch = (e: PointerEvent | null, action: number) => {
 };
 
 window.addEventListener("blur", () => {
-    time = Infinity;
+    lastFrameTime = Infinity;
     dispatch(null, 0);
 }); // basically, don't let frames when the tab is hidden cause any simulation.
 
