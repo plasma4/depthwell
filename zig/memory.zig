@@ -10,18 +10,29 @@ const ColorRGBA = root.ColorRGBA;
 const seeding = root.seeding;
 const world = root.world;
 
-/// Represents log2(SPAN).
-pub const SPAN_LOG2: comptime_int = 4;
+/// Represents log2(CHUNK_SIZE).
+pub const CHUNK_SIZE_LOG2: comptime_int = 4;
 /// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel. (Note that changing these values WILL break the code!)
-pub const SPAN: comptime_int = 16;
+pub const CHUNK_SIZE: comptime_int = 16;
 /// The main number (as a float) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
-pub const SPAN_FLOAT: comptime_float = @floatFromInt(SPAN);
+pub const CHUNK_SIZE_FLOAT: comptime_float = @floatFromInt(CHUNK_SIZE);
 /// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
-pub const SPAN_SQ: comptime_int = SPAN * SPAN;
+pub const CHUNK_SIZE_SQ: comptime_int = CHUNK_SIZE * CHUNK_SIZE;
 /// A float representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
-pub const SPAN_FLOAT_SQ: comptime_float = SPAN_FLOAT * SPAN_FLOAT;
+pub const CHUNK_SIZE_FLOAT_SQ: comptime_float = CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT;
 /// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
-pub const SUBPIXELS_IN_CHUNK: comptime_int = SPAN * SPAN * SPAN;
+pub const SUBPIXELS_IN_CHUNK: comptime_int = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+
+/// Represents log2(ZOOM_FACTOR).
+pub const ZOOM_LOG2: comptime_int = 2;
+/// The factor for zooming, increasing the depth by 1. (So, 4 times means that the world will get 4 times wider and taller when depth increases.)
+pub const ZOOM_FACTOR: comptime_int = 4;
+/// The highest possible depth value where all coordinates can be represented in 1 quadrant.
+/// Equivalent to the highest depth value where ZOOM_FACTOR * QUADRANTLESS_DEPTH is <= 64.
+pub const QUADRANTLESS_DEPTH: comptime_int = 16;
+/// Represents how many blocks in a child chunk map to ONE parent block.
+/// (16 / 4 = 4). A 4x4 area of child blocks = 1 parent block.
+pub const BLOCKS_PER_PARENT: comptime_int = CHUNK_SIZE / ZOOM_FACTOR;
 
 pub const Vec2i = @Vector(2, i64);
 pub const Vec2u = @Vector(2, u64);
@@ -94,11 +105,11 @@ pub const GameState = extern struct {
 
     /// Gets which (x-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
     pub inline fn getBlockXInChunk(self: *const @This()) u4 {
-        return @intCast(@divTrunc(self.player_pos[0], SPAN_SQ));
+        return @intCast(@divTrunc(self.player_pos[0], CHUNK_SIZE_SQ));
     }
     /// Gets which (y-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
     pub inline fn getBlockYInChunk(self: *const @This()) u4 {
-        return @intCast(@divTrunc(self.player_pos[1], SPAN_SQ));
+        return @intCast(@divTrunc(self.player_pos[1], CHUNK_SIZE_SQ));
     }
 
     /// Teleports the player, resetting the player position and camera position, as well as movement constants such as gravity.
@@ -152,7 +163,8 @@ pub const page_allocator = if (builtin.is_test) std.testing.allocator else std.h
 /// Use `makeArena()` to create an `ArenaAllocator` around this (WASM has no SMP allocator support).
 const main_allocator = if (builtin.is_test) std.testing.allocator else if (builtin.single_threaded) std.heap.brk_allocator else std.heap.smp_allocator; // use .allocator() for instance
 
-/// Creates an `ArenaAllocator` around either the WASM allocator, testing allocator, or GPA, as necessary. It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
+/// Creates an `ArenaAllocator` around the `page_allocator`.
+/// It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
 ///
 /// Example:
 /// ```zig
@@ -262,10 +274,10 @@ pub const Block = packed struct(u64) {
 
 /// 16x16 fixed grid of blocks. Each chunk is 2KiB in size.
 pub const Chunk = struct {
-    blocks: [SPAN_SQ]Block align(MAIN_ALIGN_BYTES),
+    blocks: [CHUNK_SIZE_SQ]Block align(MAIN_ALIGN_BYTES),
 
     pub inline fn getBlock(self: @This(), x: u4, y: u4) Block {
-        return self.blocks[(@as(usize, y) << SPAN_LOG2) | @as(usize, x)];
+        return self.blocks[(@as(usize, y) << CHUNK_SIZE_LOG2) | @as(usize, x)];
     }
 };
 
@@ -300,10 +312,11 @@ pub const Coordinate = struct {
             const delta: u64 = if (is_pos) @intCast(dx) else @intCast(-%dx);
             const ov = if (is_pos) @addWithOverflow(res.suffix[0], delta) else @subWithOverflow(res.suffix[0], delta);
             if (ov[1] != 0) {
-                if (depth <= 16) return null;
+                if (depth <= QUADRANTLESS_DEPTH) return null;
                 if (is_pos == ((res.quadrant & 1) != 0)) return null;
                 res.quadrant ^= 1;
             }
+            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.max_possible_suffix) return null;
             res.suffix[0] = ov[0];
         }
 
@@ -313,10 +326,12 @@ pub const Coordinate = struct {
             const delta: u64 = if (is_pos) @intCast(dy) else @intCast(-%dy);
             const ov = if (is_pos) @addWithOverflow(res.suffix[1], delta) else @subWithOverflow(res.suffix[1], delta);
             if (ov[1] != 0) {
-                if (depth <= 16) return null;
+                if (depth <= QUADRANTLESS_DEPTH) return null;
                 if (is_pos == ((res.quadrant & 2) != 0)) return null;
                 res.quadrant ^= 2;
             }
+
+            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.max_possible_suffix) return null;
             res.suffix[1] = ov[0];
         }
         return res;
@@ -341,11 +356,11 @@ pub const ModifiedChunk = struct {
     /// Bit index corresponds to (y * 16 + x).
     modified_mask: [4]u64,
     /// The specific modified block IDs. Only indices with a 1 in `modified_mask` are valid.
-    blocks: [SPAN_SQ]Sprite,
+    blocks: [CHUNK_SIZE_SQ]Sprite align(MAIN_ALIGN_BYTES),
 
     /// Helper to check if a specific local block is modified
     pub inline fn isModified(self: *const @This(), lx: u4, ly: u4) bool {
-        const index = (@as(u8, ly) << SPAN_LOG2) | @as(u8, lx);
+        const index = (@as(u8, ly) << CHUNK_SIZE_LOG2) | @as(u8, lx);
         const slot = index >> 6;
         const bit = @as(u6, @truncate(index));
         return (self.modified_mask[slot] & (@as(u64, 1) << bit)) != 0;

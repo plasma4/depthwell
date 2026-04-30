@@ -7,8 +7,8 @@ const chunks = root.chunks;
 const sprite = root.sprite;
 const logger = root.logger;
 
-const SPAN = memory.SPAN;
-const SPAN_FLOAT = memory.SPAN_FLOAT;
+const CHUNK_SIZE = memory.CHUNK_SIZE;
+const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
 extern "env" fn jsHandleVisibleChunks(opacity: f64) void;

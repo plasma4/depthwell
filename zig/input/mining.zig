@@ -8,7 +8,7 @@ const world = root.world;
 const mouse = root.mouse;
 
 /// Whether to instantly mine blocks or not (effectively infinite strength and speed).
-const INSTANT_MINE = false;
+const INSTANT_MINE = true;
 
 /// How far the player has progressed to increase `hp`.
 pub var mining_progress: u64 = 0;
@@ -28,7 +28,7 @@ pub fn handleMiningAndPlacing() void {
         mouse.mouse_state = .inventory; // prevent mouse block placement issue, TODO figure out if something more robust works too
     }
 
-    mouse.updateMouseBlock(); // update to get correct mouse position data
+    mouse.updateMouseLocation(); // update to get correct mouse position data
 
     if (mouse.block_position_changed) {
         mouse.block_position_changed = false;
@@ -45,8 +45,9 @@ pub fn handleMiningAndPlacing() void {
         selected_hp = 255;
         return;
     }
-    if (mouse.mouse_chunk) |mouse_chunk| {
-        const block = world.getChunk(mouse_chunk).getBlock(mouse.mouse_block_x, mouse.mouse_block_y);
+
+    const mouse_block = mouse.getMouseBlock();
+    if (mouse_block) |block| {
 
         // Don't mine a block of the same type you're trying to place!
         if (sprite_type != .none and block.id == sprite_type) {
@@ -65,11 +66,12 @@ pub fn handleMiningAndPlacing() void {
                 mining_progress = 0;
                 // sprite type being none check also prevents unneeded memory waste with ModKey
                 const was_deleted = block.id == .none or world.modifyBlockHp(
-                    mouse_chunk,
+                    mouse.mouse_chunk.?, // mouse block successful, this must be valid then!
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
                     block,
-                    if (!INSTANT_MINE and strength > 0) mining_strength else 0, // instantly mine (0 value) if block type has no strength
+                    // instantly mine (0 value special-case in modifyBlockHp) if block type has no strength
+                    if (!INSTANT_MINE and strength > 0) mining_strength else 0,
                 );
 
                 if (was_deleted) {
@@ -80,7 +82,7 @@ pub fn handleMiningAndPlacing() void {
                         if (sprite_type != .none and sprite_type != .unselected) {
                             if (inventory.removeFromInventory(sprite_type)) { // make sure it's possible to use
                                 if (world.modifyBlockType(
-                                    mouse_chunk,
+                                    mouse.mouse_chunk.?, // mouse block successful already
                                     mouse.mouse_block_x,
                                     mouse.mouse_block_y,
                                     sprite_type,
@@ -105,7 +107,12 @@ pub fn handleMiningAndPlacing() void {
         } else if (block.id == .none and sprite_type != .none) {
             // placing into empty air!
             if (inventory.removeFromInventory(sprite_type)) {
-                if (world.modifyBlockType(mouse_chunk, mouse.mouse_block_x, mouse.mouse_block_y, sprite_type)) {
+                if (world.modifyBlockType(
+                    mouse.mouse_chunk.?,
+                    mouse.mouse_block_x,
+                    mouse.mouse_block_y,
+                    sprite_type,
+                )) {
                     // If TRUE, then the block was NOT successfully modified. Revert selection if so.
                     // This fixes funny issues involving instant deselection with invalid placement
                     // (for example: placing your last ceiling flower in an invalid spot would deselect without this)

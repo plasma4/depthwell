@@ -8,8 +8,8 @@ const sprite = root.sprite;
 const world = root.world;
 const inventory = root.inventory;
 
-const SPAN = memory.SPAN;
-const SPAN_SQ = memory.SPAN_SQ;
+const CHUNK_SIZE = memory.CHUNK_SIZE;
+const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
 const SCREEN_WIDTH = root.SCREEN_WIDTH;
 const SCREEN_HEIGHT = root.SCREEN_HEIGHT;
 
@@ -77,8 +77,8 @@ pub fn handleMouse(x: f64, y: f64, action: u32) void {
     uv_position = .{ x, y };
 }
 
-/// Updates the block/chunk the mouse is in.
-pub fn updateMouseBlock() void {
+/// Updates the block/chunk the mouse is in for logic.
+pub fn updateMouseLocation() void {
     if (uv_position[0] < 0) {
         mouse_chunk = null;
         mouse_subpixel = null;
@@ -89,8 +89,8 @@ pub fn updateMouseBlock() void {
     const screen_dx = (uv_position[0] - 0.5) * SCREEN_WIDTH;
     const screen_dy = (uv_position[1] - 0.5) * SCREEN_HEIGHT;
 
-    const world_dx = screen_dx / game.camera_scale * SPAN; // 1 pixel = 16 subpixels
-    const world_dy = screen_dy / game.camera_scale * SPAN;
+    const world_dx = screen_dx / game.camera_scale * CHUNK_SIZE; // 1 pixel = 16 subpixels
+    const world_dy = screen_dy / game.camera_scale * CHUNK_SIZE;
 
     const target_sx = game.camera_pos[0] + @as(i64, @round(world_dx));
     const target_sy = game.camera_pos[1] + @as(i64, @round(world_dy));
@@ -103,19 +103,50 @@ pub fn updateMouseBlock() void {
     if (player_coord.move(.{ chunk_offset_x, chunk_offset_y })) |coord| {
         mouse_chunk = coord;
 
-        const lx = @mod(target_sx, memory.SUBPIXELS_IN_CHUNK);
+        const lx = @mod(target_sx, memory.SUBPIXELS_IN_CHUNK); // no need to use % trick, @mod optimizes down to & instruction
         const ly = @mod(target_sy, memory.SUBPIXELS_IN_CHUNK);
+        mouse_subpixel = .{ @intCast(lx), @intCast(ly) };
 
         const old_x = mouse_block_x;
         const old_y = mouse_block_y;
-        mouse_block_x = @intCast(@divFloor(lx, SPAN_SQ));
-        mouse_block_y = @intCast(@divFloor(ly, SPAN_SQ));
+        mouse_block_x = @intCast(@divFloor(lx, CHUNK_SIZE_SQ));
+        mouse_block_y = @intCast(@divFloor(ly, CHUNK_SIZE_SQ));
         block_position_changed =
             mouse_block_x != old_x or
             mouse_block_y != old_y or
             !memory.Coordinate.eql(coord, old_coord);
     } else {
         mouse_chunk = null;
-        block_position_changed = true; // doesn't matter
+        mouse_subpixel = null;
+        block_position_changed = true; // prevent funny edge cases
     }
+}
+
+/// Gets what block the mouse is over (assuming `updateMouseLocation()` has been called).
+/// Returns null if no block is being hovered over. Takes into account sprite hitbox sizes such as for mushrooms.
+pub fn getMouseBlock() ?memory.Block {
+    if (mouse_chunk) |chunk| {
+        const block = world.getChunk(chunk).getBlock(mouse_block_x, mouse_block_y);
+        const s = block.id;
+
+        // get more intuitive pixel location of the mouse within a sprite, from 0-15
+        const loc = (mouse_subpixel.? / memory.Vec2u{ memory.CHUNK_SIZE, memory.CHUNK_SIZE }) %
+            memory.Vec2u{ memory.CHUNK_SIZE, memory.CHUNK_SIZE };
+
+        // create smaller hitboxes for some decor sprites (with a little bit of leniency involved)
+        if (s == .mushroom and loc[1] <= 10) {
+            // If your mouse is over the TOP PART of the mushroom block then that's not part of its "hitbox"
+            return null;
+        } else if (s == .ceiling_flower and loc[1] >= 9) {
+            // for ceiling flower, it's invalid if your mouse is over the BOTTOM PART
+            return null;
+        } else if (s == .spiral_plant and (loc[0] <= 4 or loc[0] >= 12)) {
+            // plant is fully vertical
+            return null;
+        }
+
+        // any other type of block returns true by default!
+        return block;
+    }
+    return null;
 }

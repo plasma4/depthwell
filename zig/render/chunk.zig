@@ -3,8 +3,8 @@ const root = @import("root").root;
 const memory = root.memory;
 const logger = root.logger;
 const world = root.world;
-const SPAN = memory.SPAN;
-const SPAN_FLOAT = memory.SPAN_FLOAT;
+const CHUNK_SIZE = memory.CHUNK_SIZE;
+const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
 pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
@@ -18,8 +18,8 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
 
     // calculate the screen's half-extents in world sub-pixels (as floats to preserve zoom precision)
     const subpixels_per_chunk: f64 = @floatFromInt(memory.SUBPIXELS_IN_CHUNK);
-    const half_w_sp = (@as(f64, root.SCREEN_WIDTH_HALF) / interpolated_zoom) * SPAN;
-    const half_h_sp = (@as(f64, root.SCREEN_HEIGHT_HALF) / interpolated_zoom) * SPAN;
+    const half_w_sp = (@as(f64, root.SCREEN_WIDTH_HALF) / interpolated_zoom) * CHUNK_SIZE;
+    const half_h_sp = (@as(f64, root.SCREEN_HEIGHT_HALF) / interpolated_zoom) * CHUNK_SIZE;
 
     // calculate the interpolated camera
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
@@ -45,8 +45,8 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const ch: u32 = @intCast(max_cy - min_cy + 1);
 
     // how many render tiles on each side?
-    const wb = cw * SPAN;
-    const hb = ch * SPAN;
+    const wb = cw * CHUNK_SIZE;
+    const hb = ch * CHUNK_SIZE;
 
     memory.scratchReset(); // scratch allocator always needs to be reset!
     const out = memory.scratchAllocSlice(memory.Block, wb * hb);
@@ -62,24 +62,24 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
             const offset_x: i64 = @as(i64, @intCast(min_cx)) + @as(i64, @intCast(gx));
 
             if (player_coord.move(.{ offset_x, offset_y })) |target_coord| {
-                if (game.depth <= 16) {
+                if (game.depth <= memory.QUADRANTLESS_DEPTH) {
                     if (target_coord.suffix[0] > world_limit or target_coord.suffix[1] > world_limit) {
-                        for (0..SPAN) |ly| {
-                            const row_start = (gy * SPAN + ly) * wb + gx * SPAN;
-                            @memset(out[row_start .. row_start + SPAN], root.sprite.AIR_BLOCK);
+                        for (0..CHUNK_SIZE) |ly| {
+                            const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
+                            @memset(out[row_start .. row_start + CHUNK_SIZE], root.sprite.AIR_BLOCK);
                         }
                         continue;
                     }
                 }
 
                 world.writeChunk(&chunk, target_coord);
-                for (0..SPAN) |ly| {
-                    @memcpy(out[(gy * SPAN + ly) * wb + gx * SPAN ..][0..SPAN], chunk.blocks[ly * SPAN ..][0..SPAN]);
+                for (0..CHUNK_SIZE) |ly| {
+                    @memcpy(out[(gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE ..][0..CHUNK_SIZE], chunk.blocks[ly * CHUNK_SIZE ..][0..CHUNK_SIZE]);
                 }
             } else {
-                for (0..SPAN) |ly| {
-                    const row_start = (gy * SPAN + ly) * wb + gx * SPAN;
-                    @memset(out[row_start .. row_start + SPAN], root.sprite.AIR_BLOCK);
+                for (0..CHUNK_SIZE) |ly| {
+                    const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
+                    @memset(out[row_start .. row_start + CHUNK_SIZE], root.sprite.AIR_BLOCK);
                 }
             }
         }
@@ -105,8 +105,8 @@ inline fn updateRenderProperties(
     const grid_origin_sub_y = @as(f64, @floatFromInt(min_cy)) * @as(f64, @floatFromInt(memory.SUBPIXELS_IN_CHUNK));
 
     // Final camera position (in pixels this time, relative to the grid)
-    const cam_x_shader = (interp_cam_x - grid_origin_sub_x) / SPAN_FLOAT;
-    const cam_y_shader = (interp_cam_y - grid_origin_sub_y) / SPAN_FLOAT;
+    const cam_x_shader = (interp_cam_x - grid_origin_sub_x) / CHUNK_SIZE_FLOAT;
+    const cam_y_shader = (interp_cam_y - grid_origin_sub_y) / CHUNK_SIZE_FLOAT;
 
     // Find the player's position, interpolated with dt
     const player_vel_x = game.player_pos[0] - game.last_player_pos[0];
@@ -115,8 +115,8 @@ inline fn updateRenderProperties(
     const player_interpolated_y = @as(f64, @floatFromInt(game.player_pos[1])) + @as(f64, @floatFromInt(player_vel_y)) * dt;
 
     // Position player in the middle of the screen plus their offset from the camera center
-    const player_render_x = (player_interpolated_x - grid_origin_sub_x - SPAN_FLOAT * SPAN_FLOAT / 2) / SPAN_FLOAT;
-    const player_render_y = (player_interpolated_y - grid_origin_sub_y - SPAN_FLOAT * SPAN_FLOAT / 2) / SPAN_FLOAT;
+    const player_render_x = (player_interpolated_x - grid_origin_sub_x - CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT / 2) / CHUNK_SIZE_FLOAT;
+    const player_render_y = (player_interpolated_y - grid_origin_sub_y - CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT / 2) / CHUNK_SIZE_FLOAT;
 
     // Update scratch properties that JS reads
     memory.setScratchProp(0, wb);
@@ -130,15 +130,16 @@ inline fn updateRenderProperties(
     if (root.is_debug) {
         const qc = world.quad_cache;
         const d = @min(memory.game.depth, 16);
-        var suffix_array_x = std.mem.zeroes([16]u4); // or [_]u4{0} ** 16 :)
-        var suffix_array_y = std.mem.zeroes([16]u4);
+        if (memory.ZOOM_LOG2 != 2) @compileError("Logging logic for suffixes is incorrect!");
+        var suffix_array_x = std.mem.zeroes([memory.QUADRANTLESS_DEPTH]u2); // or [_]u2{0} ** 32 :)
+        var suffix_array_y = std.mem.zeroes([memory.QUADRANTLESS_DEPTH]u2);
         for (0..d) |i| {
-            const shift = @as(u6, @intCast(((d - 1) - i) * 4)); // un-backwards the array
-            suffix_array_x[i] = @intCast((game.player_chunk[0] >> shift) & 0xF); // mask from 0-15
-            suffix_array_y[i] = @intCast((game.player_chunk[1] >> shift) & 0xF);
+            const shift: u6 = @intCast(((d - 1) - i) * 4); // un-backwards the array
+            suffix_array_x[i] = @intCast((game.player_chunk[0] >> shift) % memory.ZOOM_FACTOR);
+            suffix_array_y[i] = @intCast((game.player_chunk[1] >> shift) % memory.ZOOM_FACTOR);
         }
 
-        if (game.depth > 16) {
+        if (game.depth > memory.QUADRANTLESS_DEPTH) {
             // logger.write(0, .{
             //     "{h}Top left quadrant X, Y, current quadrant, and active suffix",
             //     qc.left_path,

@@ -124,7 +124,7 @@ pub const buttons = [_]ButtonDef{
 fn teleportToEdge() void {
     memory.game.teleport(
         .{ .quadrant = 0, .suffix = .{ 0, 0 } },
-        .{ memory.SPAN_SQ * 5 / 2, memory.SPAN_SQ * 5 / 2 },
+        .{ memory.CHUNK_SIZE_SQ * 5 / 2, memory.CHUNK_SIZE_SQ * 5 / 2 },
     );
     main.findSafeSpawn();
 }

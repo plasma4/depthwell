@@ -6,8 +6,8 @@ const logger = root.logger;
 const KeyBits = root.KeyBits;
 const main = root.startup;
 const world = root.world;
-const SPAN = memory.SPAN;
-const SPAN_SQ = memory.SPAN_SQ;
+const CHUNK_SIZE = memory.CHUNK_SIZE;
+const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
 const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
 
 const Vec2i = memory.Vec2i;
@@ -39,7 +39,7 @@ pub const PLAYER_HITBOX_WIDTH = 64;
 /// The size of the player's height. The player is assumed to be centered at the bottom as a rectangle.
 pub const PLAYER_HITBOX_HEIGHT = 160;
 /// Prevent block-skipping with collisions when travelling quickly.
-const CCD_STEP_SIZE = SPAN_SQ;
+const CCD_STEP_SIZE = CHUNK_SIZE_SQ;
 
 /// The zoom in/out keys change the zoom multiplier this fast per frame.
 const CAMERA_CHANGE_SPEED = 1.02;
@@ -47,11 +47,11 @@ const CAMERA_CHANGE_SPEED = 1.02;
 const CAMERA_SMOOTHING = 0.25;
 
 /// How far the player has to move before actually panning the camera in sub-pixels (x-axis).
-const CAMERA_DEADZONE_X = 10 * memory.SPAN_SQ; // memory.SPAN_SQ means 1 block, basically
+const CAMERA_DEADZONE_X = 10 * memory.CHUNK_SIZE_SQ; // memory.CHUNK_SIZE_SQ means 1 block, basically
 /// How far the player has to move before actually panning the camera in sub-pixels (y-axis).
-const CAMERA_DEADZONE_Y = 3 * memory.SPAN_SQ;
+const CAMERA_DEADZONE_Y = 3 * memory.CHUNK_SIZE_SQ;
 
-const pixel_mult: Vec2f = .{ @floatFromInt(SPAN), @floatFromInt(SPAN) };
+const pixel_mult: Vec2f = .{ @floatFromInt(CHUNK_SIZE), @floatFromInt(CHUNK_SIZE) };
 pub var subpixel_accum: Vec2f = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
 
 /// Determines if the player is on the ground.
@@ -82,21 +82,28 @@ pub fn move(logic_speed: f64) void {
     const pow_fx = std.math.pow(f64, f_x, dt);
     const pow_fy = std.math.pow(f64, f_y, dt);
 
-    // Update x velocity
-    game.player_velocity[0] = (game.player_velocity[0] * pow_fx) +
-        (move_input * f_x * (1.0 - pow_fx) / FRICTION_X);
+    // Update x-velocity
+    game.player_velocity[0] = game.player_velocity[0] * pow_fx;
+    if (FRICTION_X < 1e-4) {
+        // maybe there's a better alternative to this? to find in the future, maybe
+        game.player_velocity[0] +=
+            move_input * f_x;
+    } else {
+        game.player_velocity[0] +=
+            (move_input * f_x * (1.0 - pow_fx) / FRICTION_X);
+    }
 
     // Update y velocity with gravity
     if (is_grounded and KeyBits.isSet(KeyBits.up, game.keys_held_mask)) {
         game.player_velocity[1] = -JUMP_FORCE;
         is_grounded = false;
     } else {
-        game.player_velocity[1] = (game.player_velocity[1] * pow_fy) +
-            (GRAVITY * f_y * (1.0 - pow_fy) / FRICTION_Y);
+        game.player_velocity[1] = game.player_velocity[1] * pow_fy;
+        game.player_velocity[1] += if (FRICTION_Y < 1e-4) GRAVITY * f_y else ((GRAVITY * f_y * (1.0 - pow_fy) / FRICTION_Y));
     }
 
     // Physics displacement using average velocity!
-    const displacement = game.player_velocity * @as(Vec2f, @splat(dt * memory.SPAN_FLOAT));
+    const displacement = game.player_velocity * @as(Vec2f, @splat(dt * memory.CHUNK_SIZE_FLOAT));
     subpixel_accum += displacement;
 
     const total_move = @as(Vec2i, @floor(subpixel_accum));
@@ -195,10 +202,10 @@ fn handleLocalWrap(comptime axis: u1) i64 {
 pub fn isColliding(px: i64, py: i64) bool {
     const game = &memory.game;
     const corners = [4][2]i64{
-        .{ px - PLAYER_HITBOX_WIDTH / 2, py + SPAN_SQ / 2 - PLAYER_HITBOX_HEIGHT },
-        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + SPAN_SQ / 2 - PLAYER_HITBOX_HEIGHT },
-        .{ px - PLAYER_HITBOX_WIDTH / 2, py + SPAN_SQ / 2 },
-        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + SPAN_SQ / 2 },
+        .{ px - PLAYER_HITBOX_WIDTH / 2, py + CHUNK_SIZE_SQ / 2 - PLAYER_HITBOX_HEIGHT },
+        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + CHUNK_SIZE_SQ / 2 - PLAYER_HITBOX_HEIGHT },
+        .{ px - PLAYER_HITBOX_WIDTH / 2, py + CHUNK_SIZE_SQ / 2 },
+        .{ px + PLAYER_HITBOX_WIDTH / 2 - 1, py + CHUNK_SIZE_SQ / 2 },
     };
 
     const player_coord = game.getPlayerCoord();
@@ -215,9 +222,9 @@ pub fn isColliding(px: i64, py: i64) bool {
             last_coord = target_coord;
         }
 
-        const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[0], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));
-        const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[1], SUBPIXELS_IN_CHUNK), memory.SPAN_SQ))));
-        if (cached_chunk.blocks[@as(usize, ly) * SPAN + @as(usize, lx)].isSolid()) return true;
+        const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[0], SUBPIXELS_IN_CHUNK), memory.CHUNK_SIZE_SQ))));
+        const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[1], SUBPIXELS_IN_CHUNK), memory.CHUNK_SIZE_SQ))));
+        if (cached_chunk.blocks[@as(usize, ly) * CHUNK_SIZE + @as(usize, lx)].isSolid()) return true;
     }
     return false;
 }

@@ -56,7 +56,9 @@ pub const ColorRGBA = extern union {
         const v1: @Vector(4, u16) = self.v;
         const v2: @Vector(4, u16) = other.v;
 
-        const mixed = (v1 * @as(@Vector(4, u16), @splat(rev)) + v2 * @as(@Vector(4, u16), @splat(amt))) >> @as(@Vector(4, u16), @splat(8));
+        const mixed = (v1 * @as(@Vector(4, u16), @splat(rev)) +
+            v2 * @as(@Vector(4, u16), @splat(amt))) >>
+            @as(@Vector(4, u16), @splat(8));
 
         return .{ .v = @intCast(mixed) };
     }

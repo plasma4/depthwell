@@ -47,7 +47,7 @@ export const MAX_DRAW_CALLS = 4;
 
 // Note: constants where most of the game logic resides are in Zig. These are currently unused in JS.
 // /* The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel. */
-// const SPAN = 16;
+// const CHUNK_SIZE = 16;
 
 // /** The logical internal width (scaled with WebGPU). */
 // const INTERNAL_WIDTH = 480;

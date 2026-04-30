@@ -10,7 +10,7 @@ const world = root.world;
 /// Represents 2^32.
 const POW_2_32 = 4294967296;
 const POW_2_64 = seeding.POW_2_64;
-const SPAN = memory.SPAN;
+const CHUNK_SIZE = memory.CHUNK_SIZE;
 
 const Sprite = root.Sprite;
 const EdgeFlags = types.EdgeFlags;
@@ -50,10 +50,10 @@ const BaseTerrainData = struct {
 /// Generates a block for seeding (based on previous procedural generation logic).
 /// The terms moisture/density are used extremely loosely here.
 pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
+    // check is_debug because these will always be off in non-dev
     // sprite IDs in this range create a heatmap
     if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(density * 256.0)));
-    // use ore heatmap everywhere
-    if (root.is_debug and USE_ORE_HEATMAP) return .stone;
+    if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
     if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
         return .strange_stone;
@@ -397,27 +397,27 @@ pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
 /// 6. Critically, sets `edge_flags` of all blocks that are not `isFoundation()` blocks to `0xFF` to prevent erosion.
 pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void {
     // Extra decor passes (doesn't worry about cross-chunk sadly)
-    for (0..SPAN) |block_y| {
-        for (0..SPAN) |block_x| {
-            const id = block_x + block_y * SPAN;
+    for (0..CHUNK_SIZE) |block_y| {
+        for (0..CHUNK_SIZE) |block_x| {
+            const id = block_x + block_y * CHUNK_SIZE;
             var block = &target_chunk.blocks[id];
             if (!block.isEmpty()) continue;
             if (block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
                 const val = rng1.next();
-                if (val <= oddsNum(0.3)) {
+                if (val <= oddsNum(0.2)) {
                     block.id = .mushroom;
                 }
             }
         }
     }
 
-    for (1..SPAN) |block_y| {
-        for (0..SPAN) |block_x| {
-            const id = block_x + block_y * SPAN;
+    for (1..CHUNK_SIZE) |block_y| {
+        for (0..CHUNK_SIZE) |block_x| {
+            const id = block_x + block_y * CHUNK_SIZE;
             var block = &target_chunk.blocks[id];
             if (block.isFoundation() or target_chunk.blocks[id - 16].isEmpty()) continue;
             if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() <= oddsNum(0.7)) {
-                // TODO: evaluate if this failing across chunk boundaries really matters or not
+                // TODO: evaluate if this not functioning across chunk boundaries really matters or not
                 block.id = .spiral_plant;
             } else if (target_chunk.blocks[id - 16].isFoundation() and block.isEmpty()) {
                 const val = rng1.next();
@@ -431,7 +431,7 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void
     }
 
     // final pass to reset edge flags for blocks that should NOT be eroded
-    for (0..memory.SPAN_SQ) |id| {
+    for (0..memory.CHUNK_SIZE_SQ) |id| {
         var block = &target_chunk.blocks[id];
         if (!block.isFoundation()) block.edge_flags = 0xFF;
     }
