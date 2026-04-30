@@ -48,7 +48,7 @@ Here are the basic terms (note that there are, for example, 16 possible subpixel
 - 1 Pixel = 16 Subpixels
 - 1 Block = 16 Pixels
 - 1 Chunk = 16 Blocks = 256 Pixels = 4,096 Subpixels
-- Depth = how "deep" the player is. Starts off at $3$, and we say the player is at depth $D$ at any given time. You can think of depth $D-1$ as having "16x16-chunk-level precision" while depth $D$ represents individual chunks. To the player, depth $D-1$ (where $D$ is the current depth) would be what the game was such as right _before_ entering a portal. (The portal would make everything look 16 times larger and increment $D$.)
+- Depth = how "deep" the player is. Starts off at $2$, and we say the player is at depth $D$ at any given time. You can think of depth $D-1$ as having "16x16-chunk-level precision" while depth $D$ represents individual chunks. To the player, depth $D-1$ (where $D$ is the current depth) would be what the game was such as right _before_ entering a portal. (The portal would make everything look 4 times larger and increment $D$.)
 
 The camera and the player work with (integeric) subpixels, while entities are considered in terms of (floating-point) pixels. Seeding of specific blocks in chunks and modifications concern themselves with blocks. Asking something "where" it is involves just chunks (see later).
 
@@ -82,7 +82,7 @@ You can imagine the actual location of something as a "smashed together version"
 
 To clarify, `[4]u4` isn't some weird Zig magic, it just represents an array (or collection) of 4 values, between 0-15. So, `[1, 2, 3, 4]` would be an example of the `[4]u4` type.
 
-(Technical note: in the actual game, this data would act like a `[16]u4`, but be stored as `u64`s, and the game would read the depth value to "truncate" the last `u64` appropriately.)
+(Technical note: in the actual game, this data would act like a `[32]u2`, but be stored as `u64`s, and the game would read the depth value to "truncate" the last `u64` appropriately.)
 
 Now, the "raw coordinate" of a player (or anything we want to represent, such as the chunk an NPC is in or what chunk has been modified) might be `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, plus an X/Y from 0-4096 representing where the player is in that chunk.
 
@@ -161,11 +161,11 @@ pub const Block = packed struct(u64) {
 
 Well, now you know what a block contains.
 
-The most complex part of Depthwell's architecture, though, is ensuring that a hole mined at Depth 0 results in an empty 16x16 chunk at Depth 1, Depth 2, and so on. This is handled through a neat little **lineage check** during chunk generation.
+The most complex part of Depthwell's architecture, though, is ensuring that a hole mined at Depth 0 results in an empty 4-by-4 region at Depth 1, 16-by-16 at Depth 2, and so on. This is handled through a neat little **lineage check** during chunk generation.
 
-When the generator builds a chunk at Depth $D$, it iterates backward through the prefix stack from $D-1$ down to $0$. ($D$ is larger the "more zoomed in" the game is, and starts at $3$. It represents how many `u2`s need to represent where a chunk is, to put it another way.)
+When the generator builds a chunk at Depth $D$, it iterates backward through the prefix stack from $D-1$ down to $0$. ($D$ is larger the "more zoomed in" the game is, and starts at $2$. It represents how many `u2`s need to represent where a chunk is, to put it another way.)
 
-The reason the game starts at depth $3$ specifically is that depth $0$ would mean that the entire world is a single chunk in size. By starting at depth $3$ you ensure that the world is $2^{16}$-by-$2^{16}$ blocks (4,096-by-4,096 chunks), which is a neat size and ties into the whole idea of $16$ being an important number.
+The reason the game starts at depth $2$ specifically is that depth $0$ would mean that the entire world is a single chunk in size. By starting at depth $2$, the world is $2^8$-by-$2^8$ blocks (16-by-16 chunks), which is a neat size and ties into the whole idea of $16$ being an important number.
 
 For each ancestor level, it asks the `ModificationStore`: _"Was the portal block at this specific path modified?"_ The `ModificationStore` finds all modifications that _could_ impact this block, starting with higher depths (and it eventually asks a whole quad-cache, which stores a base type). Note that the `ModificationStore` deals with whole chunks (256 `Block`s) at a time.
 
@@ -185,7 +185,7 @@ By storing the resulting 512-bit `seed` at every level of the stack, the game no
 
 #### Storing chunks with a simulation distance
 
-The "simulation distance" is 16x16 chunks, so a dedicated buffer of 256 chunks exists at all times (stored in the `SimBuffer`. This buffer basically follows the player around with an algorithm that maximizes the distance (the "above/below" average algorithm), and if something is in it such as an enemy then it is simulated.
+The "simulation distance" is 16-by-16 chunks, and is a dedicated buffer of 256 chunks that exists at all times (stored in the `SimBuffer`). This buffer basically follows the player around with an algorithm that maximizes the distance (the "above/below" average algorithm), and if something is in it such as an enemy then it is simulated.
 
 It's possible, however, that the camera might move super fast in a frame and temporarily cause renders outside the standard `SimBuffer` (which is around the player, and the only existing chunk buffer), so the game will first try to find if a chunk is in the array of simulation chunks, and if it isn't then it will dynamically generate it temporarily (which is still fairly fast, since we're using data-oriented design).
 
@@ -414,13 +414,13 @@ See the big chunk of comments in `push_layer` for specific details on zoom logic
 
 #### More rebasing explanation
 
-Because the coordinate tracking suffix uses a 64-bit integer, and each depth traversal consumes exactly 4 bits (a nibble), a player can natively traverse exactly 16 depths ($2^{64}$ chunks) without exceeding standard integer bounds.
+Because the coordinate tracking suffix uses a 64-bit integer, and each depth traversal consumes exactly 2 bits (a nibble), a player can natively traverse exactly 16 depths ($2^{64}$ chunks) without exceeding standard integer bounds.
 
 To manage near-infinite zoom, Depthwell utilizes a **16-level sliding active suffix and seed data** attached to the 4 instances of the `QuadCache`! The `layer_seed_history` isn't a single global history. Instead it's split into 4 independent arrays of length 16, with each quadrant of the QuadCache containing its own `Seed` history (4 because the code generates 4 BLAKE3 hashes for various parts of seeding, from cave terrain to WGSL decoration seeding).
 
-When zooming past Depth 16, the engine executes a "rebase." The player is re-centered inside the 64-bit bounds, and the highest 4 bits (the overflow nibble) "fall off" the top of the suffix.
+Once increasing the depth past 32, the engine executes a "rebase" each time. The player is re-centered inside the 64-bit bounds, and the highest 2 bits (the overflow nibble) "fall off" the top of the suffix.
 
-Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 16 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-16$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-15$. [TODO in the future, actually implement this.]
+Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 32 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-16$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-15$. [TODO in the future, actually implement this.]
 
 Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.) [TODO in the future, actually implement this.]
 
