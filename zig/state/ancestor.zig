@@ -263,25 +263,25 @@ pub fn getAncestorNeighborhood(target_depth: u64, coord_d: Coordinate) [6][6]Spr
             const nx: i32 = @as(i32, p_info.bx) + dx;
             const ny: i32 = @as(i32, p_info.by) + dy;
 
-            var neighbor_coord = p_info.coord;
-            var out_of_bounds = false;
+            const neighbor_coord = p_info.coord;
+            // var out_of_bounds = false;
 
-            // Handle neighbor crossing chunk boundaries at Depth D-1
-            if (nx < 0 or nx >= memory.CHUNK_SIZE or ny < 0 or ny >= memory.CHUNK_SIZE) {
-                if (p_info.coord.move(.{ @divFloor(nx, memory.CHUNK_SIZE), @divFloor(ny, memory.CHUNK_SIZE) })) |nc| {
-                    neighbor_coord = nc;
-                } else {
-                    out_of_bounds = true;
-                }
-            }
+            // // Handle neighbor crossing chunk boundaries at Depth D-1
+            // if (nx < 0 or nx >= memory.CHUNK_SIZE or ny < 0 or ny >= memory.CHUNK_SIZE) {
+            //     if (p_info.coord.move(.{ @divFloor(nx, memory.CHUNK_SIZE), @divFloor(ny, memory.CHUNK_SIZE) })) |nc| {
+            //         neighbor_coord = nc;
+            //     } else {
+            //         out_of_bounds = true;
+            //     }
+            // }
 
-            if (out_of_bounds) {
-                result[y_id][x_id] = .edge_stone; // Hard edge of the simulation
-            } else {
-                const lbx: u4 = @intCast(@mod(nx, memory.CHUNK_SIZE));
-                const lby: u4 = @intCast(@mod(ny, memory.CHUNK_SIZE));
-                result[y_id][x_id] = getInheritedMaterial(parent_depth, neighbor_coord, lbx, lby);
-            }
+            // if (out_of_bounds) {
+            result[y_id][x_id] = .edge_stone; // Hard edge of the simulation
+            // } else {
+            const lbx: u4 = @intCast(@mod(nx, memory.CHUNK_SIZE));
+            const lby: u4 = @intCast(@mod(ny, memory.CHUNK_SIZE));
+            result[y_id][x_id] = getInheritedMaterial(parent_depth, neighbor_coord, lbx, lby);
+            // }
         }
     }
     return result;

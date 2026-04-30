@@ -189,8 +189,6 @@ The "simulation distance" is 16-by-16 chunks, and is a dedicated buffer of 256 c
 
 It's possible, however, that the camera might move super fast in a frame and temporarily cause renders outside the standard `SimBuffer` (which is around the player, and the only existing chunk buffer), so the game will first try to find if a chunk is in the array of simulation chunks, and if it isn't then it will dynamically generate it temporarily (which is still fairly fast, since we're using data-oriented design).
 
-Groups of objects such as enemies are stored in a `MultiArrayList` with properties and a `Coordinate` for ideal performance.
-
 #### Procedural generation
 
 Generating a world that is statistically infinite yet perfectly consistent across billions of chunks requires a multi-pass approach. While the math might look like a bunch of magic numbers, it’s actually a carefully layered sequence of domain warping and noise functions.
@@ -390,7 +388,7 @@ pub const ModKeyContext = struct {
 ```zig
 /// A static 2x2 grid of seeds only updated on entering a portal/game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
-    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15).
+    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-31).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
     /// The block IDs for each of the 4 places the QuadCache represents.
@@ -416,28 +414,28 @@ See the big chunk of comments in `push_layer` for specific details on zoom logic
 
 Because the coordinate tracking suffix uses a 64-bit integer, and each depth traversal consumes exactly 2 bits (a nibble), a player can natively traverse exactly 16 depths ($2^{64}$ chunks) without exceeding standard integer bounds.
 
-To manage near-infinite zoom, Depthwell utilizes a **16-level sliding active suffix and seed data** attached to the 4 instances of the `QuadCache`! The `layer_seed_history` isn't a single global history. Instead it's split into 4 independent arrays of length 16, with each quadrant of the QuadCache containing its own `Seed` history (4 because the code generates 4 BLAKE3 hashes for various parts of seeding, from cave terrain to WGSL decoration seeding).
+To manage near-infinite zoom, Depthwell stores seeds for each quadrant in `path_hashes`(4 because the code generates 4 BLAKE3 hashes for various parts of seeding, from terrain to WGSL decoration).
 
 Once increasing the depth past 32, the engine executes a "rebase" each time. The player is re-centered inside the 64-bit bounds, and the highest 2 bits (the overflow nibble) "fall off" the top of the suffix.
 
-Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 32 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-16$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-15$. [TODO in the future, actually implement this.]
+Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 32 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-16$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-31$. [TODO in the future, actually implement this.]
 
 Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.) [TODO in the future, actually implement this.]
 
 (Modifications are not culled in order to allow for a spectating/history once the player dies, and perhaps even be a main/custom mode where you can re-spawn, although this may might encounter its own set of difficult struggles in the future!)
 
-- Reading performance is an amortized O(1) due only needing to consider block sizes between depth D-15 to D.
+- Reading performance is an amortized O(1) due only needing to consider block sizes between depth $D-31$ to $D$.
 - Writing performance is an amortized O(1) due to needing to find a `HashMap.
 - Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `ModKey` and assuming that collisions are impossible.
-- Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 2KiB in history.
+- Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 2KiB in history. However, this is stored as a `SegmentedList` to prevent large unused gaps in WASM memory.
 
 #### Smart chunk loading
 
 Despite the fact that chunks are procedural and written in Zig (you'd think that means blazing fast), there's a lot of heavy computation internally due to needing to calculate several FBM+Worley passes, _per block_. This optimization improves performance by 8 times in practice.
 
-That's why the code tries as hard as possible to only generate 2 chunks per frame (except on startup or depth increase, as that will use different logic). By doing this, the code can easily extract these chunks from `ChunkCache` lazily when the player moves in a way that requires the `SimBuffer` to pull chunks near the edge.
+That's why the code tries as hard as possible to only generate two chunks per frame (except on startup or depth increase, as that will use different logic). By doing this, the code can easily extract these chunks from `ChunkCache` lazily when the player moves in a way that requires the `SimBuffer` to pull chunks near the edge.
 
-The algorithm does this each frame (with a budget of 2, meaning 2 chunks):
+The algorithm does this each frame (with a budget of 2-4; budget increases if the player's velocity is high):
 
 1. The player's current velocity creates a "leading edge." Smart chunk loading here prioritizes generating chunks in the direction the player is currently heading. This is done by not considering diagonals, and only considering cardinal directions.
 2. Budget is spent on a 68-chunk ring outside the simulation window (based on the leading edge from the first part), using a persistent cursor.

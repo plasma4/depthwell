@@ -55,6 +55,7 @@ pub const ModKey = extern struct {
     /// The depth of the modification.
     depth: u64,
 
+    /// Converts any `Coordinate` to a `ModKey`.
     pub inline fn from(coord: Coordinate) @This() {
         return .{
             .suffix = coord.suffix,
@@ -66,6 +67,7 @@ pub const ModKey = extern struct {
 
 /// Context for the `ModKey` (providing hashing and equality checks).
 pub const ModKeyContext = struct {
+    /// Basic hash function for modifications. Equality is checked if hashes are identical as a fallback.
     pub inline fn hash(self: @This(), key: ModKey) u64 {
         _ = self;
         var hasher = std.hash.Wyhash.init(key.depth);
@@ -75,6 +77,7 @@ pub const ModKeyContext = struct {
         return hasher.final();
     }
 
+    /// Checks for equality between two `ModKey` instances.
     pub inline fn eql(self: @This(), a: ModKey, b: ModKey) bool {
         _ = self;
         return a.depth == b.depth and a.quadrant == b.quadrant and @reduce(.And, a.suffix == b.suffix);
@@ -83,10 +86,11 @@ pub const ModKeyContext = struct {
 
 /// Width of the simulation buffer.
 const SIM_BUFFER_WIDTH = 16;
-/// Size of the simulation buffer (`SIM_BUFFER_WIDTH` squared).
-const SIM_BUFFER_SIZE = SIM_BUFFER_WIDTH * SIM_BUFFER_WIDTH;
 /// Size of the chunk cache (can be arbitrarily adjusted).
 const CHUNK_CACHE_SIZE = 256;
+
+/// Size of the simulation buffer (`SIM_BUFFER_WIDTH` squared).
+const SIM_BUFFER_SIZE = SIM_BUFFER_WIDTH * SIM_BUFFER_WIDTH;
 /// Total size of the chunk pool, which is in one contiguous memory block (simulation and cache buffer size added together).
 const CHUNK_POOL_SIZE = SIM_BUFFER_SIZE + CHUNK_CACHE_SIZE;
 
@@ -123,7 +127,7 @@ pub const SimBuffer = struct {
     const sim_buffer_ptr: *[SIM_BUFFER_SIZE]Chunk = chunk_pool[CHUNK_CACHE_SIZE..][0..SIM_BUFFER_SIZE];
     var keys: [SIM_BUFFER_SIZE]?Coordinate = [_]?Coordinate{null} ** SIM_BUFFER_SIZE;
 
-    /// The coordinate corresponding to the chunk at the "logical" (0,0) of the 16x16 window.
+    /// The coordinate corresponding to the chunk at the "logical" (0, 0) of the 16x16 window.
     var origin: ?Coordinate = null;
     var ring_x: u4 = 0;
     var ring_y: u4 = 0;
@@ -436,7 +440,7 @@ const QuadrantEdgeDetails = struct {
 
 /// A static 2x2 grid of seeds only updated on entering a portal/game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
-    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15).
+    /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-31).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
     /// The block IDs for each of the 4 places the QuadCache represents.

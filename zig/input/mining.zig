@@ -7,8 +7,8 @@ const inventory = root.inventory;
 const world = root.world;
 const mouse = root.mouse;
 
-/// Whether to instantly mine blocks or not (effectively infinite strength and speed).
-const INSTANT_MINE = true;
+/// Whether to instantly mine blocks or not (acting as infinite strength and speed).
+const INSTANT_MINE = false;
 
 /// How far the player has progressed to increase `hp`.
 pub var mining_progress: u64 = 0;

@@ -455,7 +455,9 @@ pub const MemoryLayout = extern struct {
     scratch_capacity: u64,
     /// 64-bit integeric pointer to the GameState.
     game_ptr: u64,
-    /// Additional properties for sending additional (numeric, pointer, or short fixed-length) properties. Information in the scratch properties should be assumed to be corrupted as soon as any other function that could modify the scratch buffer is called. This array should be thought of as a temporary "handshake" to trade information between Zig and TypeScript. Consider utilizing function arguments instead when sending data to Zig.
+    /// Additional properties for sending additional (numeric, pointer, or short fixed-length) properties.
+    /// Information in the scratch properties should be assumed to be corrupted as soon as any other function that could modify the scratch buffer is called.
+    /// This array should be thought of as a temporary "handshake" to trade information between Zig and TypeScript. Consider utilizing function arguments instead when sending data to Zig.
     scratch_properties: [20]u64,
 };
 
