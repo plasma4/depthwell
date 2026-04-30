@@ -54,23 +54,23 @@ The camera and the player work with (integeric) subpixels, while entities are co
 
 Now, bear with me here, because you might be freaking out over the fact a code segment just appeared. But don't fret, I'll break things down! This code is just those interested in specific details on what these numbers _could_ mean, because there are a lot of definitions
 
-Basically, all the code below is doing is declaring some constants in Zig, a fancy low-level language. The `SPAN` variable just represents 16; you don't really need to understand the code blocks so feel free to skip these. From `zig/memory.zig`:
+Basically, all the code below is doing is declaring some constants in Zig, a fancy low-level language. The `CHUNK_SIZE` variable just represents 16; you don't really need to understand the code blocks so feel free to skip these. From `zig/memory.zig`:
 
 ```zig
 /// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel. (Note that changing these values WILL break the code!)
-pub const SPAN: comptime_int = 16;
+pub const CHUNK_SIZE: comptime_int = 16;
 // ...
 /// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
-pub const SPAN_SQ: comptime_int = SPAN * SPAN;
+pub const CHUNK_SIZE_SQ: comptime_int = CHUNK_SIZE * CHUNK_SIZE;
 // ...
 /// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
-pub const SUBPIXELS_IN_CHUNK: comptime_int = SPAN * SPAN * SPAN;
+pub const SUBPIXELS_IN_CHUNK: comptime_int = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 ```
 
 Now, we move on to locations (which also has some technical jargon, but I'll explain). Locations (named `Coordinate` internally) are addressed via a struct like this:
 
 - There is a globally shared **prefix stack**, which is a memoized history of the path (not stored individually for each `Coordinate`, but in the `QuadCache`.
-- Each coordinate has an **active suffix** (2 `u64` values, stored as a `@Vector`), representing chunk's coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[16]u4` (16 numbers between 0-15) squashed together. This is **always relative to a quadrant**.
+- Each coordinate has an **active suffix** (2 `u64` values, stored as a `@Vector`), representing chunk's coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[32]u2` (32 numbers between 0-4) squashed together. This is **always relative to a quadrant**.
 - Finally, a **Quadrant ID** is stored as a `u2` integer from 0-3. This identifies which of the 4 static $2^{64}$-wide quad-caches we are "using" for the prefix stack. Each Quad-Cache (QC) references a specific Prefix Stack.
 
 > [!NOTE]
@@ -78,7 +78,7 @@ Now, we move on to locations (which also has some technical jargon, but I'll exp
 
 The reason all this quadrant logic works is because of one essential fact: **_The `depth` can only INCREASE!_** The player can't zoom out, which is the main reason this quad-cache assumption is safe.
 
-You can imagine the actual location of something as a "smashed together version" of the specific QC's prefix stack. Consider an example where the maximum active suffix length is 4 (so like `[4]u4`).
+You can imagine the actual location of something as a "smashed together version" of the specific QC's prefix stack. Consider an example where the maximum active suffix length is 4, and the zoom multiplier is 16 rather than 4 (so like `[4]u4` rather than `[32]u2`).
 
 To clarify, `[4]u4` isn't some weird Zig magic, it just represents an array (or collection) of 4 values, between 0-15. So, `[1, 2, 3, 4]` would be an example of the `[4]u4` type.
 
@@ -109,7 +109,9 @@ This explanation also highlights why we need 4 quad-caches: the player might be 
 
 #### Depths
 
-There's some details the previous explanation glossed over. You might have wondered how exactly that cached X and Y is stored, and it's internally stored as a `u64`, plus a length (`usize`, although the meaning of this isn't important) representing how large the cache is. And going back to this example: `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, the `depth` would equal 6. If the active suffix was a `u16` instead of a `u64`, this would technically be stored as this:
+There's some details the previous explanation glossed over. You might have wondered how exactly that cached X and Y is stored, and it's internally stored as a `u64`, plus a length (`usize`, although the meaning of this isn't important) representing how large the cache is. And going back to this example: `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, the `depth` would equal 6.
+
+If the active suffix was a `u16` instead of a `u64`, this would technically be stored as this:
 
 **In the `QuadCache`:**
 
@@ -126,6 +128,8 @@ There's some details the previous explanation glossed over. You might have wonde
     - Coordinate X: `false` (boolean representing which cached value to use), representing the **first** QC.
     - Coordinate Y: `true`, representing the **second** QC.
     - What happens is you encode this into a value between 0-3 (hence the `u2`), so if we consider false = 0 and true = 1, then the result is $C_x+2\times C_y$ (where $C_x$ is coordinate X and $C_y$ is coordinate Y). Then you can "extract" the boolean out from this quadrant ID with bitwise logic, for example.
+
+Again, it's important to note that this is an example with the depth multiplier being 16 and not 4.
 
 #### Storing modifications
 
@@ -159,7 +163,7 @@ Well, now you know what a block contains.
 
 The most complex part of Depthwell's architecture, though, is ensuring that a hole mined at Depth 0 results in an empty 16x16 chunk at Depth 1, Depth 2, and so on. This is handled through a neat little **lineage check** during chunk generation.
 
-When the generator builds a chunk at Depth $D$, it iterates backward through the prefix stack from $D-1$ down to $0$. ($D$ is larger the "more zoomed in" the game is, and starts at $3$. It represents how many `u4`s need to represent where a chunk is, to put it another way.)
+When the generator builds a chunk at Depth $D$, it iterates backward through the prefix stack from $D-1$ down to $0$. ($D$ is larger the "more zoomed in" the game is, and starts at $3$. It represents how many `u2`s need to represent where a chunk is, to put it another way.)
 
 The reason the game starts at depth $3$ specifically is that depth $0$ would mean that the entire world is a single chunk in size. By starting at depth $3$ you ensure that the world is $2^{16}$-by-$2^{16}$ blocks (4,096-by-4,096 chunks), which is a neat size and ties into the whole idea of $16$ being an important number.
 
@@ -322,36 +326,35 @@ The _goal_ with modifications is to ensure the following:
 4. Minimize heap fragmentation and "allocation churn."
 5. The entire state can be stored inside RAM.
 
-Therefore, the current solution is to hash a Coordinate and the current depth together using `std.hash.autoHash`. A `std.AutoHashMap` stores these hashes and a dynamically allocated array of `[memory.SPAN_SQ]BlockMod` (the dense data representing a chunk's entire modifications). See some definitions and more details:
+Therefore, the current solution is to hash a Coordinate and the current depth together using `std.hash.autoHash`. A `std.AutoHashMap` stores these hashes and a dynamically allocated array of `[memory.CHUNK_SIZE_SQ]BlockMod` (the dense data representing a chunk's entire modifications). See some definitions and more details:
 
 ```zig
-/// A full 256-block (chunk) of modifications.
-pub const ChunkMod = [SPAN_SQ]Block;
-
+/// Stores and handles modifications of chunks; stores values across depths.
 pub const ModificationStore = struct {
     index: std.HashMap(ModKey, usize, ModKeyContext, std.hash_map.default_max_load_percentage),
-    history: std.ArrayList(ChunkMod),
+    history: SegmentedList(Chunk, 128) = .{},
 
-    pub fn init(allocator: std.mem.Allocator, starting_capacity: comptime_int) ModificationStore {
+    pub fn init(allocator: std.mem.Allocator) ModificationStore {
         return .{
-            .index = std.HashMap(ModKey, usize, ModKeyContext, std.hash_map.default_max_load_percentage).init(allocator),
-            .history = std.ArrayList(ChunkMod).initCapacity(allocator, starting_capacity) catch @panic("modification history creation failed!"),
+            .index =
+            std.HashMap(ModKey, usize, ModKeyContext, std.hash_map.default_max_load_percentage).init(allocator),
         };
     }
 
     /// Gets an existing modification for reading.
-    pub fn get(self: *const @This(), key: ModKey) ?*const ChunkMod {
-        const idx = self.index.get(key) orelse return null;
-        return &self.history.items[idx];
+    pub fn get(self: *const @This(), key: ModKey) ?*const Chunk {
+        const id = self.index.get(key) orelse return null;
+        return self.history.at(id);
     }
 };
 
 pub var mod_store: ModificationStore = undefined;
 
-/// Stores where a modification is, as well as its depth to easily identify it.
+/// Stores what location a modification with an active suffix and quadrant, as well as its depth, to easily identify it.
 pub const ModKey = extern struct {
-    // Active suffix (stored as a vector). You can think of the active suffix like 16 u4s packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see `README.md` for more details).
-    suffix: v2u64,
+    /// Active suffix (stored as a vector).
+    /// You can think of the active suffix like 32 `u2` values packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see `README.md` for more details).
+    suffix: Vec2u,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u32,
     /// The depth of the modification.
@@ -365,6 +368,23 @@ pub const ModKey = extern struct {
         };
     }
 };
+
+/// Context for the `ModKey` (providing hashing and equality checks).
+pub const ModKeyContext = struct {
+    pub inline fn hash(self: @This(), key: ModKey) u64 {
+        _ = self;
+        var hasher = std.hash.Wyhash.init(key.depth);
+        // Hash exact fields explicitly to avoid padding ambiguities
+        std.hash.autoHash(&hasher, key.quadrant);
+        std.hash.autoHash(&hasher, key.suffix);
+        return hasher.final();
+    }
+
+    pub inline fn eql(self: @This(), a: ModKey, b: ModKey) bool {
+        _ = self;
+        return a.depth == b.depth and a.quadrant == b.quadrant and @reduce(.And, a.suffix == b.suffix);
+    }
+};
 ```
 
 ```zig
@@ -373,8 +393,6 @@ pub const QuadCache = struct {
     /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-15).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
-    /// TODO actual logic
-    hash_cache_1: [4]seeding.Seed,
     /// The block IDs for each of the 4 places the QuadCache represents.
     ancestor_materials: [4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
@@ -427,9 +445,9 @@ The algorithm does this each frame (with a budget of 2, meaning 2 chunks):
 
 This system prevents frame spikes (as you may normally have to generate a whole 16 chunks/frame to keep `SimBuffer` happy)! Note that this logic doesn't at all change the _logic_: the player could still teleport trillions of chunks away in a frame: these would just get gradually neglected by the `ChunkCache` naturally.
 
-A little bit on the `ChunkCache`: it has 256 slots by default (in a 16x16 area around the player). When the cache is full and a new chunk needs to be stored, a "hand" sweeps through the slots. If a chunk's "reference bit" is 1 (meaning it was recently accessed), the bit is flipped to 0 and the hand moves on. If the bit is already 0, the chunk is evicted.
+A little bit on the `ChunkCache`: it has 256 slots by default. When the cache is full and a new chunk needs to be stored, a "hand" sweeps through the slots. If a chunk's "reference bit" is 1 (meaning it was recently accessed), the bit is flipped to 0 and the hand moves on. If the bit is already 0, the chunk is evicted.
 
-This provides a highly efficient approximation of "Least Recently Used" (LRU) logic without the overhead of tracking timestamps for every single block access (perfect here!).
+Chunks that get accessed from the `SimBuffer` do not update the `ChunkCache`, although chunks generated for the purpose of being placed into `SimBuffer` do get placed into the cache. This provides a highly efficient approximation of "Least Recently Used" (LRU) logic without the overhead of tracking timestamps for every single block access (perfect here!).
 
 #### Memory transfer
 

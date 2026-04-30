@@ -43,6 +43,7 @@ pub const seeding = @import("state/seeding.zig");
 pub const procedural = @import("state/procedural.zig");
 pub const player = @import("state/player.zig");
 pub const world = @import("state/world.zig");
+pub const ancestor = @import("state/ancestor.zig");
 
 pub const logger = @import("tools/logger.zig");
 pub const debug_ui = @import("tools/debug_ui.zig");
@@ -54,10 +55,9 @@ pub const mouse = @import("input/mouse.zig");
 pub export fn setup() void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
     memory.game = .{}; // initialize GameState
-    world.mod_store = world.ModificationStore.init(world.alloc, 64);
+    world.mod_store = world.ModificationStore.init(world.alloc);
     world.quad_cache = .{
         .path_hashes = undefined,
-        .hash_cache_1 = undefined,
         .left_path = SegmentedList(u64, 1024){}, // easiest to do prealloc with larger stack size in case
         .top_path = SegmentedList(u64, 1024){},
         .ancestor_materials = .{.none} ** 4,

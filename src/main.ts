@@ -5,14 +5,17 @@
 const is_dev = true; // TODO use the other def in production
 
 /**
- * Debug/testing options. Automatically based on the development mode.
+ * Debug/testing options. Some options are automatically based on the development mode.
  */
 export const CONFIG = {
     /** Whether to expose engine to globalThis or not. */
-    exportEngine: import.meta.env.DEV,
+    exportEngine: true,
     /** Whether to use verbose logging or not. */
     verbose: import.meta.env.DEV,
-    /** If set to true, disables alerting on error. Error will always show in console regardless of what this value is set to. */
+    /**
+     * If set to true, disables alerting on error.
+     * Error will always show in console regardless of what this value is set to.
+     */
     noAlertOnError: import.meta.env.DEV,
 };
 
@@ -361,7 +364,7 @@ engine.canvas.style.touchAction = "none"; // prevent touch gesture interception
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Build the fancy debug UI in the corner!
-if (is_dev) {
+if (engine.isDebug) {
     // Populate scratch buffer with JSON data and parse it
     engine.exports.debugBuildUiMetadata();
     const jsonStr = engine.readStr();

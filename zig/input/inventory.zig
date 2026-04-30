@@ -146,6 +146,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
 
 /// Draws the inventory slots, wrapping into new rows every 10 items.
 pub fn drawInventory(time_diff: f64) void {
+    @setFloatMode(.optimized); // safe here, tis all rendering/mouse logic
     var buffer: SlotBuffer = undefined;
     const active_slots = getActiveSlots(&buffer);
     // logger.quick(.{ root.mining.selected_hp, inventory_counts });
@@ -158,7 +159,7 @@ pub fn drawInventory(time_diff: f64) void {
     const base_size = 16.0; // base size of inventory sprites
     const spacing = 1.25 * base_size; // spacing between sprites (must be at least base_size)
 
-    var mouse_hovered_sprite: ?Sprite = null;
+    var hovered_inventory_sprite: ?Sprite = null;
     for (active_slots, 0..) |active_sprite, i| {
         // For each slot, find the sprite ID, handle animations, and draw sprite and its shadow
         const id = @intFromEnum(active_sprite);
@@ -229,11 +230,11 @@ pub fn drawInventory(time_diff: f64) void {
             0.2,
         );
         if (hitbox.contains(mouse.uv_position * memory.Vec2f{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT })) {
-            mouse_hovered_sprite = active_sprite;
+            hovered_inventory_sprite = active_sprite;
         }
     }
 
-    if (mouse_hovered_sprite) |s| {
+    if (hovered_inventory_sprite) |s| {
         if (mouse.just_mouse_down) {
             selected_sprite = s;
             selected_row = getSelectedIndex() / 10; // this works I suppose
@@ -258,11 +259,6 @@ pub fn drawInventory(time_diff: f64) void {
                 inventory_wobble_progress[id] = @min(0.0, inventory_wobble_progress[id] + dt * wobble_decay_speed);
             }
         }
-
-        // calculate wobble angle with sine wave (angle is in radians)
-        const item_wobble = inventory_wobble_progress[id];
-        const wobble_angle = std.math.sin(item_wobble * wobble_speed) * item_wobble * wobble_size;
-
         const size_normal: f32 = 10.0 / 16.0 * base_size;
         const size_selected: f32 = 12.0 / 16.0 * base_size;
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
@@ -274,17 +270,22 @@ pub fn drawInventory(time_diff: f64) void {
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
         const pos = inventory_pos - size_vec / Vec2f32{ base_size / 4.0, base_size / 4.0 } - Vec2f32{ base_size / 16.0, base_size / 16.0 };
 
+        // number automatically resizes to be smaller for large values!
+        const count = inventory_counts[@intFromEnum(active_sprite)];
+        const digit_count_minus_one: f32 = if (count == 0) 1 else std.math.log10_int(count);
+        const number_size = base_size * (1.0 + 0.3 * wobble_progress) / (@max(3.0, digit_count_minus_one + 0.5));
+
+        // calculate wobble angle with sine wave (angle is in radians)
+        // if the item is implied to be more common (more digit count in the number), then wobble less!
+        const item_wobble = inventory_wobble_progress[id];
+        const wobble_angle = std.math.sin(item_wobble * wobble_speed) * item_wobble * wobble_size / (digit_count_minus_one + 1.0);
+
         // wrap and convert hue to f32
         // hue is affected by ID in active slots AND wobble angles!
         const color_hue = @as(
             f32,
             @floatCast(@rem(@as(f64, @floatFromInt(i)) * 0.2 - @abs(wobble_angle * 2.0), std.math.tau)),
         );
-
-        // number automatically resizes to be smaller for large values!
-        const count = inventory_counts[@intFromEnum(active_sprite)];
-        const digit_count_minus_one: f32 = if (count == 0) 1 else std.math.log10_int(count);
-        const number_size = base_size * (1.0 + 0.3 * wobble_progress) / (@max(3.0, digit_count_minus_one + 0.5));
 
         drawNumber( // shadow of inventory number
             count,

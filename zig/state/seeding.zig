@@ -92,6 +92,7 @@ pub fn mixChunkSeeds(quadrant_seed: *const Seed, coord_vector: Vec2u) [4]Seed {
 
 /// Multiplies a float by 2^64, returning an integer `x` such that a random 64-bit integer has its probability to be less than `x` equal `chance`.
 pub inline fn oddsNum(chance: comptime_float) u64 {
+    if (chance == 1.0) return std.math.maxInt(u64);
     return @intFromFloat(chance * POW_2_64);
 }
 

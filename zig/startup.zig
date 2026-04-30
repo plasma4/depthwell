@@ -8,15 +8,22 @@ const seeding = root.seeding;
 const world = root.world;
 const player = root.player;
 
-const SPAN = memory.SPAN;
-const SPAN_SQ = memory.SPAN_SQ;
-const SPAN_FLOAT = memory.SPAN_FLOAT;
+const CHUNK_SIZE = memory.CHUNK_SIZE;
+const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
+const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
 
-/// Sets the number of times the push_layer function is called at the start. (If set to 3 (default), the game will start off by being 4096x4096 chunks. If set to 1, for example, it will be 1 chunk with 16x16 blocks instead.)
-pub const STARTING_ZOOM_TIMES = 3;
-/// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` > 0).
+/// Sets the number of times the push_layer function is called at the start.
+/// If set to n, the game will start off by being n ** ZOOM_FACTOR chunks in either dimension.
+pub const STARTING_ZOOM_TIMES = 2;
+/// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` is positive).
 const SET_PLAYER_SPAWN_RANDOMLY = true;
+
+const _ = {
+    if (STARTING_ZOOM_TIMES < 1 or STARTING_ZOOM_TIMES > 4) {
+        @compileError("STARTING_ZOOM_TIMES must be between 1 and 4 to prevent floating point or logic issues!");
+    }
+};
 
 var alreadyStarted = false;
 
@@ -92,11 +99,11 @@ pub fn findSafeSpawn() void {
 
             // Scan the chunk for a "safe" spot!
             var y: usize = 0;
-            while (y < SPAN - 1) : (y += 1) {
-                const row = y * SPAN;
-                const column = (y + 1) * SPAN;
+            while (y < CHUNK_SIZE - 1) : (y += 1) {
+                const row = y * CHUNK_SIZE;
+                const column = (y + 1) * CHUNK_SIZE;
 
-                for (0..SPAN) |x| {
+                for (0..CHUNK_SIZE) |x| {
                     const block = chunk.blocks[row + x];
                     const block_below = chunk.blocks[column + x];
 
@@ -106,8 +113,8 @@ pub fn findSafeSpawn() void {
                         game.player_chunk = nc.suffix;
 
                         game.setPlayerPosDumb(.{
-                            @as(i64, @intCast(x)) * SPAN_SQ + (SPAN_SQ / 2),
-                            @as(i64, @intCast(y)) * SPAN_SQ + (SPAN_SQ / 2) - 1, // -1 or you have to jump to move
+                            @as(i64, @intCast(x)) * CHUNK_SIZE_SQ + (CHUNK_SIZE_SQ / 2),
+                            @as(i64, @intCast(y)) * CHUNK_SIZE_SQ + (CHUNK_SIZE_SQ / 2) - 1, // -1 or you have to jump to move
                         });
 
                         game.setCameraPosDumb(game.player_pos);
