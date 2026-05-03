@@ -151,10 +151,10 @@ pub const Sprite = enum(u16) {
         return id >= GEM_START and id < MASK_START;
     }
 
-    /// Determines if the sprite is a heatmap (between types 65000-60256).
+    /// Determines if the sprite is a heatmap (between types 65000-65256).
     pub inline fn isHeatmap(self: @This()) bool {
         const id = @intFromEnum(self);
-        return root.is_debug and procedural.USE_BASE_HEATMAP and id >= 65000 and id <= 60256;
+        return root.is_debug and id >= 65000 and id <= 65256;
     }
 };
 

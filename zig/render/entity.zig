@@ -44,8 +44,8 @@ pub fn updateEntities(time_diff: f64) void {
     entity_count = 0;
     entity_byte_count_before_end = 0;
 
-    if (root.debug_ui.SHOW_CHUNK_PREVIEW) {
-        // draw a rectangle background for preview
+    if (root.is_debug and root.debug_ui.SHOW_CHUNK_PREVIEW) {
+        // draw a rectangle background for preview, and then the chunk inside!
         const preview_x_origin: f32 = 30.0;
         const preview_y_origin: f32 = 50.0;
         const preview_tile_size: f32 = 4.0; // Scale of tiles in the preview
@@ -70,17 +70,41 @@ pub fn updateEntities(time_diff: f64) void {
                 const block = chunk.getBlock(@intCast(x), @intCast(y));
                 if (block.id == .none) continue;
 
-                addEntity(.{
-                    .sprite = block.id,
-                    .position = .{
-                        preview_x_origin + (@as(f32, @floatFromInt(x)) * preview_tile_size),
-                        preview_y_origin + (@as(f32, @floatFromInt(y)) * preview_tile_size),
-                    },
-                    .size = preview_tile_size,
-                    .lcha = memory.DEFAULT_ENTITY_LCHA,
-                });
+                if (block.isHeatmap()) {
+                    // special case! draw grayscale particle instead
+                    addEntity(.{
+                        .sprite = .particle,
+                        .position = .{
+                            preview_x_origin + (@as(f32, @floatFromInt(x)) * preview_tile_size),
+                            preview_y_origin + (@as(f32, @floatFromInt(y)) * preview_tile_size),
+                        },
+                        .size = preview_tile_size,
+                        .lcha = .{ (@as(f32, @intFromEnum(block.id)) - 65000.0) / 256.0, 0.0, 0.0, 1.0 },
+                    });
+                } else {
+                    addEntity(.{
+                        .sprite = block.id,
+                        .position = .{
+                            preview_x_origin + (@as(f32, @floatFromInt(x)) * preview_tile_size),
+                            preview_y_origin + (@as(f32, @floatFromInt(y)) * preview_tile_size),
+                        },
+                        .size = preview_tile_size,
+                        .lcha = memory.DEFAULT_ENTITY_LCHA,
+                    });
+                }
             }
         }
+
+        // render the player now!
+        addEntity(.{
+            .sprite = .player,
+            .position = .{
+                preview_x_origin + (@as(f32, @floatFromInt(memory.game.player_pos[0] - 128)) / memory.CHUNK_SIZE_SQ * preview_tile_size),
+                preview_y_origin + (@as(f32, @floatFromInt(memory.game.player_pos[1] - 128)) / memory.CHUNK_SIZE_SQ * preview_tile_size),
+            },
+            .size = preview_tile_size,
+            .lcha = memory.DEFAULT_ENTITY_LCHA,
+        });
     }
 
     root.mouse.mouse_type = .initial;

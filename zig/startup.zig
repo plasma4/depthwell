@@ -91,9 +91,9 @@ pub fn findSafeSpawn() void {
     var cx: i64 = 0;
     var cy: i64 = 0;
 
-    // check up to 500 chunks, in case there's some weird issues
+    // check a diamond area, in case there's some weird issues
     var i: u32 = 0;
-    while (i < 500) {
+    while (@abs(cx) + @abs(cy) < 64) {
         if (start_coord.move(.{ cx, cy })) |nc| {
             world.writeChunk(&chunk, nc);
 

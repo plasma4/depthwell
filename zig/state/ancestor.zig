@@ -189,7 +189,7 @@ fn getBaseProceduralSprite(cx: u32, cy: u32, bx: u4, by: u4) Sprite {
     const seed_vec6: memory.Vec2u = .{ memory.game.seed2[9], memory.game.seed2[10] };
 
     const base_data = procedural.getBaseSpriteType(seed_vec1, seed_vec2, cx, cy, bx, by);
-    if (base_data.sprite.isStone() or base_data.sprite.isHeatmap()) {
+    if (base_data.sprite.isStone()) {
         return procedural.addOres(base_data, seed_vec3, seed_vec4, seed_vec5, seed_vec6, cx * 16 + bx, cy * 16 + by);
     }
     return base_data.sprite;

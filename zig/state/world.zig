@@ -710,7 +710,7 @@ fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
                 @intCast(block_y),
             );
             var sprite = base_data.sprite;
-            if (sprite.isStone() or sprite.isHeatmap()) sprite = procedural.addOres(
+            if (sprite.isStone()) sprite = procedural.addOres(
                 base_data,
                 seed_vec3,
                 seed_vec4,
