@@ -1,6 +1,6 @@
 //! Handles the main player movement and camera logic.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const logger = root.logger;
 const KeyBits = root.KeyBits;

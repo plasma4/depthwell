@@ -1,13 +1,13 @@
 //! Geometric primitives for hit-testing UI and world elements.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 
 const Vec2f = memory.Vec2f;
 
 /// An axis-aligned shape; assumed to be in internal viewport coordinates, not UV.
 ///
-/// Behaviour is determined by `r`:
+/// Behavior is determined by `r`:
 /// - If zero, then it produces an axis-aligned rectangle.
 /// - If `r` >= 0.5 and `w` == `h`, then a circle is produced. Functionally identical to a rounded rectangle.
 /// - Otherwise, it produces a rounded rectangle.

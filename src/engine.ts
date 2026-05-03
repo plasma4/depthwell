@@ -252,7 +252,8 @@ export class GameEngine {
     }
 
     /** Function called from Zig (using the `js_handle_visible_chunks` function in `env`) that actually draws the chunks. */
-    public handleVisibleChunks(opacity: number) {
+    public handleVisibleChunks(opacity: number, wireframeOpacity: number) {
+        this.wireframeOpacity = wireframeOpacity;
         // Ensure we have an active encoder from renderFrame to satisfy TS
         if (
             !this.currentEncoder ||

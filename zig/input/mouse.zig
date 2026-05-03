@@ -1,6 +1,6 @@
 //! Updates public values describing the mouse's position for other parts of the game, such as mining.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const main = root.startup;
 const logger = root.logger;
@@ -140,8 +140,9 @@ pub fn getMouseBlock() ?memory.Block {
         } else if (s == .ceiling_flower and loc[1] >= 9) {
             // for ceiling flower, it's invalid if your mouse is over the BOTTOM PART
             return null;
-        } else if (s == .spiral_plant and (loc[0] <= 4 or loc[0] >= 12)) {
+        } else if (s == .spiral_plant and (loc[0] < 4 or loc[0] >= 12)) {
             // plant is fully vertical
+            // x=0,1,2,3 or 12,13,14,15
             return null;
         }
 

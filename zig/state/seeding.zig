@@ -1,7 +1,7 @@
 //! Manages seeding calculations for the game.
 // seeding yippeeeeee
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const logger = root.logger;
 const memory = root.memory;
 const testing = std.testing;

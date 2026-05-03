@@ -1,5 +1,5 @@
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const logger = root.logger;
 const world = root.world;
@@ -129,14 +129,13 @@ inline fn updateRenderProperties(
 
     if (root.is_debug) {
         const qc = world.quad_cache;
-        const d = @min(memory.game.depth, 16);
+        const d: usize = @intCast(memory.game.depth);
         if (memory.ZOOM_LOG2 != 2) @compileError("Logging logic for suffixes is incorrect!");
         var suffix_array_x = std.mem.zeroes([memory.QUADRANTLESS_DEPTH]u2); // or [_]u2{0} ** 32 :)
         var suffix_array_y = std.mem.zeroes([memory.QUADRANTLESS_DEPTH]u2);
         for (0..d) |i| {
-            const shift: u6 = @intCast(((d - 1) - i) * 4); // un-backwards the array
-            suffix_array_x[i] = @intCast((game.player_chunk[0] >> shift) % memory.ZOOM_FACTOR);
-            suffix_array_y[i] = @intCast((game.player_chunk[1] >> shift) % memory.ZOOM_FACTOR);
+            suffix_array_x[d - i] = @intCast((game.player_chunk[0] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
+            suffix_array_y[d - i] = @intCast((game.player_chunk[1] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
         }
 
         if (game.depth > memory.QUADRANTLESS_DEPTH) {
@@ -168,10 +167,10 @@ inline fn updateRenderProperties(
                 "bottom right quadrant (3)",
             })[game.player_quadrant];
             logger.writeOnce(0, .{
-                "{mh}Quadrant name",
+                "{h}Quadrant name",
                 quadrant_name,
-                "{mh}Number of digits in the current (hypothetical) width of the game world",
-                @as(u64, @floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1)))) + 1,
+                // "{mh}Number of digits in the current (hypothetical) width of the game world",
+                // @as(u64, @floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1)))) + 1,
             });
         } else {
             logger.writeOnce(0, .{

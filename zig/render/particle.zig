@@ -1,6 +1,6 @@
 //! Handles particle storage for the game. Particles are technically entities.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const Particle = memory.Particle;
 

@@ -1,5 +1,5 @@
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const procedural = root.procedural;
 
@@ -93,7 +93,13 @@ pub const Sprite = enum(u16) {
     pub inline fn isValid(self: @This()) bool {
         // do note that heatmap isn't valid
         return switch (self) {
-            .none, .spiral_plant, .ceiling_flower, .mushroom, .torch, .portal => true,
+            .none,
+            .spiral_plant,
+            .ceiling_flower,
+            .mushroom,
+            .torch,
+            .portal,
+            => true,
             else => {
                 const id = @intFromEnum(self);
                 return (id >= STONE_START and id <= STONE_END) or

@@ -1,14 +1,15 @@
 //! Handles entities and stores functions relating on how to add them.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const SegmentedList = root.SegmentedList;
 const memory = root.memory;
 const sprite = root.sprite;
 const ColorRGBA = root.ColorRGBA;
 const inventory = root.inventory;
+
+const CHUNK_SIZE = memory.CHUNK_SIZE;
 const Entity = memory.Entity;
 const WGSLEntity = memory.WGSLEntity;
-
 const Vec2f32 = memory.Vec2f32;
 
 /// Extra spacing between number characters.
@@ -42,6 +43,45 @@ pub fn updateEntities(time_diff: f64) void {
     memory.scratchReset();
     entity_count = 0;
     entity_byte_count_before_end = 0;
+
+    if (root.debug_ui.SHOW_CHUNK_PREVIEW) {
+        // draw a rectangle background for preview
+        const preview_x_origin: f32 = 30.0;
+        const preview_y_origin: f32 = 50.0;
+        const preview_tile_size: f32 = 4.0; // Scale of tiles in the preview
+        const background_margins: f32 = 6.0;
+        var bg: Entity = .{
+            .sprite = .particle,
+            .position = .{
+                preview_x_origin - 2 + preview_tile_size * CHUNK_SIZE / 2,
+                preview_y_origin - 2 + preview_tile_size * CHUNK_SIZE / 2,
+            },
+            .size = preview_tile_size * CHUNK_SIZE + background_margins * 2,
+            .lcha = .{ 1.0, 0.5, 1.2, 0.6 }, // translucent orange!
+        };
+        addEntity(bg);
+        bg.size *= 1.01; // a tad larger!
+        bg.lcha = .{ 1.0, 0.5, 0.3, 0.5 }; // redder
+        addEntity(bg);
+
+        const chunk = root.world.getChunk(memory.game.getPlayerCoord());
+        for (0..CHUNK_SIZE) |y| {
+            for (0..CHUNK_SIZE) |x| {
+                const block = chunk.getBlock(@intCast(x), @intCast(y));
+                if (block.id == .none) continue;
+
+                addEntity(.{
+                    .sprite = block.id,
+                    .position = .{
+                        preview_x_origin + (@as(f32, @floatFromInt(x)) * preview_tile_size),
+                        preview_y_origin + (@as(f32, @floatFromInt(y)) * preview_tile_size),
+                    },
+                    .size = preview_tile_size,
+                    .lcha = memory.DEFAULT_ENTITY_LCHA,
+                });
+            }
+        }
+    }
 
     root.mouse.mouse_type = .initial;
     inventory.drawInventory(time_diff);

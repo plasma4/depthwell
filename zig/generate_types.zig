@@ -2,7 +2,7 @@
 const std = @import("std");
 
 /// Points to definitions from zig/root.zig.
-pub const root = @import("depthwell");
+pub const root = @import("root.zig");
 
 const types = root.types; // Get types through the game root
 

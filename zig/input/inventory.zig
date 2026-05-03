@@ -1,6 +1,6 @@
 //! Handles logic for inventory management.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const logger = root.logger;
 const sprite = root.sprite;

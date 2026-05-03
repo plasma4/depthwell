@@ -131,8 +131,10 @@ export async function create(
                     el.textContent = str;
                 },
                 jsGetTime: () => performance.now(),
-                jsHandleVisibleChunks: (opacity: number) =>
-                    engine!.handleVisibleChunks(opacity),
+                jsHandleVisibleChunks: (
+                    opacity: number,
+                    wireframeOpacity: number,
+                ) => engine!.handleVisibleChunks(opacity, wireframeOpacity),
                 jsHandleVisibleEntities: () => engine!.handleVisibleEntities(),
                 jsSetMouseType: (type: number) => engine!.setMouseType(type),
             },

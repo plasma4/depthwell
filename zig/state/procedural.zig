@@ -1,6 +1,6 @@
 //! Handles procedural generation logic for the game.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const types = root.types;
 const logger = root.logger;
 const memory = root.memory;
@@ -77,7 +77,15 @@ pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
 /// 1. Generate an initial terrain density+moisture value using the seed vectors.
 /// 2. Generate a block from those values.
 /// 3. Generates larger structures with FBM Worley and valid placement checks.
-pub fn getBaseSpriteType(vec1: Vec2u, vec2: Vec2u, chunk_x: u32, chunk_y: u32, block_x: u32, block_y: u32) BaseTerrainData {
+pub fn getBaseSpriteType(
+    vec1: Vec2u,
+    vec2: Vec2u,
+    chunk_x: u32,
+    chunk_y: u32,
+    block_x: u4,
+    block_y: u4,
+) BaseTerrainData {
+    std.debug.assert(chunk_x < 1 << 16 and chunk_y < 1 << 16);
     const moisture = getFbmWorleyValue( // acts as a biome
         vec2,
         chunk_x * 16 + block_x,
@@ -418,6 +426,7 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void
             if (block.isFoundation() or target_chunk.blocks[id - 16].isEmpty()) continue;
             if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() <= oddsNum(0.7)) {
                 // TODO: evaluate if this not functioning across chunk boundaries really matters or not
+                // (visually un-noticed)
                 block.id = .spiral_plant;
             } else if (target_chunk.blocks[id - 16].isFoundation() and block.isEmpty()) {
                 const val = rng1.next();

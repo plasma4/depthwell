@@ -4,9 +4,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// Points to definitions from zig/root.zig.
-pub const root = @This();
-
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
 pub const is_debug = builtin.is_test or builtin.mode == .Debug;
 

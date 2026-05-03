@@ -1,7 +1,7 @@
 //! Contains important datatypes, some of which bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
 const std = @import("std");
 const builtin = @import("builtin");
-const root = @import("root").root;
+const root = @import("root.zig");
 const Sprite = root.Sprite;
 const types = root.types;
 const logger = root.logger;
@@ -28,12 +28,13 @@ pub const ZOOM_LOG2: comptime_int = 2;
 /// The factor for zooming, increasing the depth by 1. (So, 4 times means that the world will get 4 times wider and taller when depth increases.)
 pub const ZOOM_FACTOR: comptime_int = 4;
 /// The highest possible depth value where all coordinates can be represented in 1 quadrant.
-/// Equivalent to the highest depth value where ZOOM_FACTOR * QUADRANTLESS_DEPTH is <= 64.
-pub const QUADRANTLESS_DEPTH: comptime_int = 16;
+/// Equivalent to the highest depth value where ZOOM_LOG2 * QUADRANTLESS_DEPTH is <= 64.
+pub const QUADRANTLESS_DEPTH: comptime_int = 32;
 /// Represents how many blocks in a child chunk map to ONE parent block.
 /// (16 / 4 = 4). A 4x4 area of child blocks = 1 parent block.
 pub const BLOCKS_PER_PARENT: comptime_int = CHUNK_SIZE / ZOOM_FACTOR;
 
+// vector types!
 pub const Vec2i = @Vector(2, i64);
 pub const Vec2u = @Vector(2, u64);
 pub const Vec2f = @Vector(2, f64);
@@ -124,7 +125,7 @@ pub const GameState = extern struct {
         }
         self.player_pos = new_position;
         self.last_player_pos = new_position;
-        self.camera_pos = .{ 0.0, 0.0 };
+        self.camera_pos = new_position;
         world.clearCaches();
     }
 
@@ -404,7 +405,7 @@ pub const Entity = struct {
     /// H (hue, in radians) and C (chroma) are shifted additively.
     lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
 
-    /// Current position (based on internal viewport).
+    /// Current center position of the sprite (based on internal viewport).
     position: Vec2f32,
 
     /// The size of the entity (based on internal viewport).
@@ -425,7 +426,7 @@ pub const WGSLEntity = extern struct {
     /// H (hue) and C (chroma) are shifted additively in radians.
     lcha: @Vector(4, f32) align(16),
 
-    /// Current position (based on UV, not the internal viewport).
+    /// Current center position of the sprite (based on UV, not the internal viewport).
     position: Vec2f32,
 
     /// The width and height of the entity (based on UV, not the internal viewport).

@@ -1,7 +1,6 @@
 //! Lists enums for communication between JS and WASM, or important misc ones.
 const std = @import("std");
-
-const root = @import("depthwell");
+const root = @import("../root.zig");
 
 const GameState = @import("../memory.zig").GameState; // Direct relative import
 const GenerateOffsets = @import("../internal/offsets.zig").GenerateOffsets;

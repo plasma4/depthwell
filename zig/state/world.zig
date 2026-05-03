@@ -1,6 +1,6 @@
 //! Defines the architecture of the fractal world, contains cache data, and some ore definitions.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const SegmentedList = root.SegmentedList;
 const Sprite = root.Sprite;
 const utils = root.utils;
@@ -17,6 +17,7 @@ const Vec2f = memory.Vec2f;
 const Chunk = memory.Chunk;
 const Block = memory.Block;
 const Coordinate = memory.Coordinate;
+const QUADRANTLESS_DEPTH = memory.QUADRANTLESS_DEPTH;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
@@ -342,6 +343,7 @@ pub const SimBuffer = struct {
     }
 };
 
+/// A static cache that caches chunks when a generation is attempted.
 pub const ChunkCache = struct {
     var cache_keys: [CHUNK_CACHE_SIZE]?Coordinate = [_]?Coordinate{null} ** CHUNK_CACHE_SIZE;
     var cache_chunk_data: *[CHUNK_CACHE_SIZE]Chunk = chunk_pool[0..CHUNK_CACHE_SIZE];
@@ -476,7 +478,7 @@ pub const QuadCache = struct {
 
     /// Returns the 512-bit seed of a specified quadrant (or the global seed if the current depth is <= 16).
     pub inline fn getQuadrantSeed(self: *const @This(), quadrant: u2) seeding.Seed {
-        if (memory.game.depth <= memory.QUADRANTLESS_DEPTH) return memory.game.seed;
+        if (memory.game.depth <= QUADRANTLESS_DEPTH) return memory.game.seed;
         return self.path_hashes[quadrant];
     }
 
@@ -488,7 +490,7 @@ pub const QuadCache = struct {
     /// Returns details on a specific quadrant and what "edges" of the world it touches.
     pub inline fn getQuadrantEdgeDetails(self: *const @This(), quadrant: u2) QuadrantEdgeDetails {
         // Quadrant IDs for reference: 00: NW, 1: NE, 2: SW, 3: SE
-        if (memory.game.depth <= memory.QUADRANTLESS_DEPTH) {
+        if (memory.game.depth <= QUADRANTLESS_DEPTH) {
             return .{
                 .most_top = true,
                 .most_bottom = true,
@@ -614,8 +616,8 @@ fn generateChunk(chunk: *Chunk, coord: Coordinate) void {
             }
 
             // Map child (0..15) to parent index (1..4) in the 6x6 neighborhood
-            const py = (block_y >> memory.ZOOM_LOG2) + 1;
-            const px = (block_x >> memory.ZOOM_LOG2) + 1;
+            const py = (block_y / ZOOM_FACTOR) + 1;
+            const px = (block_x / ZOOM_FACTOR) + 1;
             const parent_sprite = parent_neighborhood[py][px];
 
             const final_sprite = root.ancestor.applyDeterministicHoles(parent_sprite, coord, @intCast(block_x), @intCast(block_y), depth);
@@ -828,7 +830,7 @@ inline fn shouldHaveEdgeFlags(sprite: Sprite, current_sprite: Sprite) bool {
 /// Returns whether `update_local_edge_flags` instantly removed the current block due to being in an invalid position.
 pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bool {
     const key = ModKey.from(coord);
-    const id: usize = @as(usize, by) * memory.CHUNK_SIZE + bx;
+    const id: usize = @as(usize, by) * CHUNK_SIZE + bx;
 
     const entry_id = mod_store.index.get(key) orelse blk: {
         const new_id = mod_store.history.len;
@@ -993,7 +995,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
 /// If `hp_to_add` is 0, the sprite is instantly mined. Returns if the block became/was type `none`.
 pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add: u4) bool {
     const key = ModKey.from(coord);
-    const id: usize = @as(usize, by) * memory.CHUNK_SIZE + bx;
+    const id: usize = @as(usize, by) * CHUNK_SIZE + bx;
 
     // Ensure entry exists in history
     const entry_id = mod_store.index.get(key) orelse blk: {
@@ -1053,7 +1055,6 @@ pub fn clearCaches() void {
     root.ancestor.AncestorCache.clear();
 }
 
-/// Handles increasing the depth.
 /// `coord` is the chunk the portal is in. `bx` and `by` represent the specific block within a chunk the zoom should be in.
 pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
@@ -1063,26 +1064,25 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     memory.game.player_velocity = .{ 0, 0 };
 
     // Mask the last 12 bits (0-4095)
-    const player_mask: i64 = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE - 1;
-    const new_pos: memory.Vec2i = .{
-        (memory.game.player_pos[0] << memory.ZOOM_LOG2) & player_mask,
-        (memory.game.player_pos[1] << memory.ZOOM_LOG2) & player_mask,
-    };
+    const new_pos: memory.Vec2i = @mod(
+        memory.game.player_pos * Vec2i{ ZOOM_FACTOR, ZOOM_FACTOR },
+        Vec2i{ memory.SUBPIXELS_IN_CHUNK, memory.SUBPIXELS_IN_CHUNK },
+    ) +
+        // magic pivot compensation value
+        Vec2i{ 0, (ZOOM_FACTOR - 1) * CHUNK_SIZE_SQ / 2 };
 
-    memory.game.teleport(null, new_pos);
-
-    if (depth <= memory.QUADRANTLESS_DEPTH) {
+    if (depth <= QUADRANTLESS_DEPTH) {
         // Zooming by 4x means the suffix shifts by 2 bits.
         // We also pull the most significant bits from the block offset (bx, by) to fill the new suffix bits.
-        memory.game.player_chunk[0] = (coord.suffix[0] << memory.ZOOM_LOG2) | (bx >> (memory.CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
-        memory.game.player_chunk[1] = (coord.suffix[1] << memory.ZOOM_LOG2) | (by >> (memory.CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
-
+        memory.game.player_chunk[0] = (coord.suffix[0] * ZOOM_FACTOR) | (bx >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
+        memory.game.player_chunk[1] = (coord.suffix[1] * ZOOM_FACTOR) | (by >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
         // Max possible suffix is now reached at depth 32 (64 bits).
-        max_possible_suffix = if (depth == 32)
+        max_possible_suffix = if (depth == QUADRANTLESS_DEPTH)
             std.math.maxInt(u64)
         else
             (@as(u64, 1) << @intCast(depth * memory.ZOOM_LOG2)) - 1;
 
+        memory.game.teleport(null, new_pos);
         return;
     }
 
@@ -1102,8 +1102,8 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
     const parent_quadrant_x = utils.intFromBool(u64, (memory.game.player_quadrant % 2) != 0);
     const parent_quadrant_y = utils.intFromBool(u64, (memory.game.player_quadrant / 2) != 0);
-    const naive_cell_x = (parent_quadrant_x << memory.ZOOM_LOG2) | top_x;
-    const naive_cell_y = (parent_quadrant_y << memory.ZOOM_LOG2) | top_y;
+    const naive_cell_x = (parent_quadrant_x * ZOOM_FACTOR) | top_x;
+    const naive_cell_y = (parent_quadrant_y * ZOOM_FACTOR) | top_y;
 
     // determine the origin for the NEW QuadCache window relative to the OLD origin
     const highest_possible_top_left_cell = (ZOOM_FACTOR - 1) * 2;
@@ -1135,23 +1135,26 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     }
 
     // update the prefix path
-    if ((depth - (32 + 1)) % 32 == 0) {
+    const path_start_depth = QUADRANTLESS_DEPTH + 1;
+    if (depth == path_start_depth or (depth > path_start_depth and (depth - path_start_depth) % 32 == 0)) {
         quad_cache.left_path.append(arena.allocator(), left_cell_x) catch @panic("quad-cache append failed");
         quad_cache.top_path.append(arena.allocator(), top_cell_y) catch @panic("quad-cache append failed");
     } else {
-        const last_path_index: usize = @intCast((depth - 1) / 32 - 1);
+        const last_path_index = @as(usize, @intCast((depth - path_start_depth) / 32));
         const l_ptr: *u64 = quad_cache.left_path.at(last_path_index);
         const t_ptr: *u64 = quad_cache.top_path.at(last_path_index);
 
-        l_ptr.* = (l_ptr.* << memory.ZOOM_LOG2) + left_cell_x;
-        t_ptr.* = (t_ptr.* << memory.ZOOM_LOG2) + top_cell_y;
+        l_ptr.* = (l_ptr.* * ZOOM_FACTOR) + left_cell_x;
+        t_ptr.* = (t_ptr.* * ZOOM_FACTOR) + top_cell_y;
     }
 
     // finalize player state
-    memory.game.player_chunk[0] = (coord.suffix[0] << memory.ZOOM_LOG2) | (bx >> (memory.CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
-    memory.game.player_chunk[1] = (coord.suffix[1] << memory.ZOOM_LOG2) | (by >> (memory.CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
+    memory.game.player_chunk[0] = (coord.suffix[0] * ZOOM_FACTOR) | (bx >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
+    memory.game.player_chunk[1] = (coord.suffix[1] * ZOOM_FACTOR) | (by >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2));
 
     const quadrant_x = naive_cell_x - left_cell_x;
     const quadrant_y = naive_cell_y - top_cell_y;
     memory.game.player_quadrant = @intCast(quadrant_x + (quadrant_y * 2));
+
+    memory.game.teleport(null, new_pos);
 }

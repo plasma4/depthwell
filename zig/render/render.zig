@@ -1,5 +1,5 @@
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const world = root.world;
 const entity = root.entity;
@@ -7,16 +7,19 @@ const chunks = root.chunks;
 const sprite = root.sprite;
 const logger = root.logger;
 
+/// Opacity of chunk wireframes.
+pub var WIREFRAME_OPACITY: f64 = 0.0;
+
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsHandleVisibleChunks(opacity: f64) void;
+extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframeOpacity: f64) void;
 
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
-pub inline fn handleVisibleChunks(opacity: f64) void {
+pub inline fn handleVisibleChunks(opacity: f64, wireframeOpacity: f64) void {
     if (root.is_wasm) {
-        return jsHandleVisibleChunks(opacity);
+        return jsHandleVisibleChunks(opacity, wireframeOpacity);
     } else {
         return; // no native impl yet
     }
@@ -49,7 +52,7 @@ pub inline fn dispatchMouseType() void {
 /// Processes data for renderFrame in TypeScript.
 pub fn prepareVisibleData(dt: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
     root.chunks.updateVisibleChunks(dt, canvas_w, canvas_h);
-    handleVisibleChunks(1.0);
+    handleVisibleChunks(1.0, WIREFRAME_OPACITY);
 
     entity.updateEntities(time_diff);
 

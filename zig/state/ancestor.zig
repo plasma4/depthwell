@@ -1,6 +1,6 @@
 //! Handles fractal ancestry, caching of D-1 chunks, and deterministic holes.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const world = root.world;
 const procedural = root.procedural;
@@ -11,11 +11,9 @@ const Sprite = root.Sprite;
 const Coordinate = memory.Coordinate;
 const Chunk = memory.Chunk;
 
-/// A cache specifically designed to hold chunks from the previous depth.
+/// A static cache specifically designed to hold chunks from the previous depth.
 /// Caching here prevents `getInheritedMaterial` from recalculating the ancestry
-/// of 256 blocks redundantly when adjacent chunks at Depth D share the same D-1 parent.
-///
-/// Static; does not need initialization.
+/// of 16 blocks redundantly when adjacent chunks at Depth D share the same D-1 parent.
 pub const AncestorCache = struct {
     pub const CACHE_SIZE = 16;
 
@@ -123,16 +121,21 @@ pub fn getParentInfo(coord: Coordinate, bx: u4, by: u4) ParentInfo {
     const zoom_shift = memory.ZOOM_LOG2;
     const parent_block_shift = memory.CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2;
 
+    // Calculate local parent block indices including potential underflow/overflow
+    const raw_px: i32 = @as(i32, @intCast(coord.suffix[0] & (memory.ZOOM_FACTOR - 1))) << parent_block_shift;
+    const raw_py: i32 = @as(i32, @intCast(coord.suffix[1] & (memory.ZOOM_FACTOR - 1))) << parent_block_shift;
+
+    const final_bx: u4 = @intCast(@as(u32, @intCast(raw_px)) | (bx >> zoom_shift));
+    const final_by: u4 = @intCast(@as(u32, @intCast(raw_py)) | (by >> zoom_shift));
+
     return .{
+        // Moving the chunk coordinate handles quadrant/boundary logic correctly
         .coord = .{
-            .suffix = .{
-                coord.suffix[0] >> zoom_shift,
-                coord.suffix[1] >> zoom_shift,
-            },
+            .suffix = .{ coord.suffix[0] >> zoom_shift, coord.suffix[1] >> zoom_shift },
             .quadrant = coord.quadrant,
         },
-        .bx = @intCast(((coord.suffix[0] & (memory.ZOOM_FACTOR - 1)) << parent_block_shift) | (bx >> zoom_shift)),
-        .by = @intCast(((coord.suffix[1] & (memory.ZOOM_FACTOR - 1)) << parent_block_shift) | (by >> zoom_shift)),
+        .bx = final_bx,
+        .by = final_by,
     };
 }
 
@@ -148,10 +151,15 @@ pub fn applyDeterministicHoles(sprite: Sprite, coord: Coordinate, bx: u4, by: u4
     std.hash.autoHash(&hasher, bx);
     std.hash.autoHash(&hasher, by);
 
-    // chance for hole: 20%
-    if (hasher.final() < root.seeding.oddsNum(0.2)) {
-        return .none;
-    }
+    // chance for hole: 15%
+    // if (hasher.final() < root.seeding.oddsNum(0.15)) {
+    //     return .none;
+    // }
+
+    // funny test pattern
+    // if ((bx ^ by) & 4 == 3) {
+    //     return .none;
+    // }
     return sprite;
 }
 
@@ -203,6 +211,11 @@ fn getBaseProceduralSpriteRelative(coord: Coordinate, bx: u4, by: u4, dx: i32, d
 /// Recursively traces the lineage of a block from the target depth down to max(D-31, STARTING_ZOOM_TIMES).
 /// Updated logic to trace ancestry without exponential block-by-block recursion.
 pub fn getInheritedMaterial(target_depth: u64, coord: Coordinate, bx: u4, by: u4) Sprite {
+    // rearranged for unsigned-ness: asks if target depth <= current depth - highest possible depth value where all coordinates can be represented in 1 quadrant
+    if (target_depth + memory.QUADRANTLESS_DEPTH <= memory.game.depth) {
+        return world.quad_cache.ancestor_materials[coord.quadrant];
+    }
+
     const mod_key = world.ModKey{
         .suffix = coord.suffix,
         .quadrant = coord.quadrant,
@@ -242,46 +255,34 @@ pub fn getInheritedMaterial(target_depth: u64, coord: Coordinate, bx: u4, by: u4
 /// The outer ring provides a 1-block margin for edge calculations.
 pub fn getAncestorNeighborhood(target_depth: u64, coord_d: Coordinate) [6][6]Sprite {
     var result: [6][6]Sprite = undefined;
-
-    // No ancestors exist below base depth. Return fallback safety blocks.
     if (target_depth <= STARTING_ZOOM_TIMES) {
-        for (0..6) |y| {
-            @memset(&result[y], .stone);
-        }
+        for (0..6) |y| @memset(&result[y], .stone);
         return result;
     }
 
     const parent_depth = target_depth - 1;
-    // Get the parent info for the top-left-most child block (0, 0)
     const p_info = getParentInfo(coord_d, 0, 0);
 
     for (0..6) |y_id| {
         for (0..6) |x_id| {
-            const dx: i32 = @as(i32, @intCast(x_id)) - 1;
-            const dy: i32 = @as(i32, @intCast(y_id)) - 1;
-
-            const nx: i32 = @as(i32, p_info.bx) + dx;
-            const ny: i32 = @as(i32, p_info.by) + dy;
+            const nx: i32 = @as(i32, p_info.bx) + @as(i32, @intCast(x_id)) - 1;
+            const ny: i32 = @as(i32, p_info.by) + @as(i32, @intCast(y_id)) - 1;
 
             const neighbor_coord = p_info.coord;
-            // var out_of_bounds = false;
+            const needs_move = nx < 0 or nx >= memory.CHUNK_SIZE or ny < 0 or ny >= memory.CHUNK_SIZE;
 
-            // // Handle neighbor crossing chunk boundaries at Depth D-1
-            // if (nx < 0 or nx >= memory.CHUNK_SIZE or ny < 0 or ny >= memory.CHUNK_SIZE) {
-            //     if (p_info.coord.move(.{ @divFloor(nx, memory.CHUNK_SIZE), @divFloor(ny, memory.CHUNK_SIZE) })) |nc| {
-            //         neighbor_coord = nc;
-            //     } else {
-            //         out_of_bounds = true;
-            //     }
-            // }
+            const final_coord = if (needs_move)
+                p_info.coord.move(.{ @divFloor(nx, memory.CHUNK_SIZE), @divFloor(ny, memory.CHUNK_SIZE) })
+            else
+                neighbor_coord;
 
-            // if (out_of_bounds) {
-            result[y_id][x_id] = .edge_stone; // Hard edge of the simulation
-            // } else {
-            const lbx: u4 = @intCast(@mod(nx, memory.CHUNK_SIZE));
-            const lby: u4 = @intCast(@mod(ny, memory.CHUNK_SIZE));
-            result[y_id][x_id] = getInheritedMaterial(parent_depth, neighbor_coord, lbx, lby);
-            // }
+            if (final_coord) |nc| {
+                const lbx: u4 = @intCast(@mod(nx, memory.CHUNK_SIZE));
+                const lby: u4 = @intCast(@mod(ny, memory.CHUNK_SIZE));
+                result[y_id][x_id] = getInheritedMaterial(parent_depth, nc, lbx, lby);
+            } else {
+                result[y_id][x_id] = .edge_stone;
+            }
         }
     }
     return result;

@@ -1,6 +1,6 @@
 //! Contains initialization and render update functions. See root.zig for exporting these functions (and others) to WASM.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("root.zig");
 const memory = root.memory;
 const sprite = root.sprite;
 const logger = root.logger;
@@ -20,8 +20,8 @@ pub const STARTING_ZOOM_TIMES = 2;
 const SET_PLAYER_SPAWN_RANDOMLY = true;
 
 const _ = {
-    if (STARTING_ZOOM_TIMES < 1 or STARTING_ZOOM_TIMES > 4) {
-        @compileError("STARTING_ZOOM_TIMES must be between 1 and 4 to prevent floating point or logic issues!");
+    if (STARTING_ZOOM_TIMES < 1 or STARTING_ZOOM_TIMES > 8) {
+        @compileError("STARTING_ZOOM_TIMES must be between 1 and 8 to prevent floating point or logic issues!");
     }
 };
 

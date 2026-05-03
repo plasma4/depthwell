@@ -1,6 +1,6 @@
 //! Handles mining and placing blocks.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const sprite = root.sprite;
 const Sprite = sprite.Sprite;
 const inventory = root.inventory;

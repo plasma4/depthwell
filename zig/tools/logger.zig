@@ -1,6 +1,6 @@
 //! Contains dedicated code for logging. Use quickWarn to quickly create warnings when testing (using ZLS or native zig test command), and quick to quickly log values to JS. Use the write()/clear() function to write to the 4 corners of the screen with the canvas for JS.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const memory = root.memory;
 const is_wasm = root.is_wasm;
 const is_debug = root.is_debug;

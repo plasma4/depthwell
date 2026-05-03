@@ -176,12 +176,12 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
     });
 
     // Create exactly ONE module for the game code
-    const depthwell_mod = b.createModule(.{
-        .root_source_file = b.path("zig/root.zig"),
-    });
+    // const depthwell_mod = b.createModule(.{
+    //     .root_source_file = b.path("zig/root.zig"),
+    // });
 
-    // The tool only needs to see the game root
-    gen_tool.root_module.addImport("depthwell", depthwell_mod);
+    // // The tool only needs to see the game root
+    // gen_tool.root_module.addImport("depthwell", depthwell_mod);
 
     const run_enums = b.addRunArtifact(gen_tool);
     run_enums.has_side_effects = true;

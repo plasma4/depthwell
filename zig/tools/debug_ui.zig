@@ -1,6 +1,6 @@
 //! Handles debug options for sliders and buttons, and contains functions to pass these to JS.
 const std = @import("std");
-const root = @import("root").root;
+const root = @import("../root.zig");
 const main = root.startup;
 const logger = root.logger;
 const memory = root.memory;
@@ -8,6 +8,9 @@ const world = root.world;
 const player = root.player;
 const seeding = root.seeding;
 const procedural = root.procedural;
+
+/// Determines whether an additional preview for chunks should be shown.
+pub var SHOW_CHUNK_PREVIEW = true;
 
 pub const SliderDef = struct {
     name: []const u8,
@@ -92,6 +95,12 @@ pub const sliders = [_]SliderDef{
         .max = 1.0,
         .val = &player.FRICTION_Y,
     },
+    .{
+        .name = "Wireframe opacity",
+        .min = 0.0,
+        .max = 1.0,
+        .val = &root.render.WIREFRAME_OPACITY,
+    },
 };
 
 /// List of buttons that point to actions.
@@ -117,6 +126,10 @@ pub const buttons = [_]ButtonDef{
     .{
         .name = "Toggle showing all items",
         .toggle = &root.inventory.SHOW_ALL_INVENTORY_ITEMS,
+    },
+    .{
+        .name = "Toggle chunk preview",
+        .toggle = &SHOW_CHUNK_PREVIEW,
     },
 };
 
