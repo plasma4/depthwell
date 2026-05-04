@@ -395,7 +395,7 @@ pub const ChunkCache = struct {
                 // Give second chance: clear bit and move hand
                 clock_bits.setValue(id, false);
             } else {
-                // Found a "victim" (either null key or ref_bit was 0)
+                // Found a "victim" to replace!
                 keys[id] = coord;
                 clock_bits.set(id); // Mark as recently used
                 return &chunks[id];
@@ -466,8 +466,9 @@ pub const QuadCache = struct {
     /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-31).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
-    /// The block IDs for each of the 4 places the QuadCache represents.
-    ancestor_materials: [4]Sprite,
+    /// The 4-by-4 material grid representing the "event horizon" at D-32.
+    /// The inner 2-by-2 (indices [1..2][1..2]) corresponds to the active quadrants.
+    ancestor_materials: [4][4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
     left_path: SegmentedList(u64, 1024),
     /// Stores the topmost QuadCache's Y-coordinate.
@@ -497,7 +498,13 @@ pub const QuadCache = struct {
     //     }
     // }
 
-    /// Returns the 512-bit seed of a specified quadrant (or the global seed if the current depth is <= 16).
+    /// Gets the `ancestor_materials` sprite for a specific quadrant.
+    /// Effectively, the ancestor block type when `isAncestralBoundary()` is true (and passes assertion).
+    pub inline fn getQuadrantSpriteAncestor(self: *const @This(), quadrant: u2) Sprite {
+        return self.ancestor_materials[1 + (quadrant >> 1)][1 + quadrant % 2];
+    }
+
+    /// Returns the 512-bit seed of a specified quadrant (or the global seed if the current depth is <= QUADRANTLESS_DEPTH).
     pub inline fn getQuadrantSeed(self: *const @This(), quadrant: u2, depth: u64) seeding.Seed {
         if (depth <= QUADRANTLESS_DEPTH) return memory.game.seed;
         return self.path_hashes[quadrant];
@@ -608,7 +615,7 @@ pub fn writeChunkModless(chunk: *Chunk, coord: Coordinate) void {
     chunk.* = new_slot_ptr.*;
 }
 
-/// Creates a new instance of a `Chunk`. Does not update edge flags.
+/// Gets a new instance of a `Chunk` at the current depth. Does not update edge flags.
 pub inline fn getChunk(coord: Coordinate) Chunk {
     var chunk: Chunk = undefined;
     writeChunk(&chunk, coord);
@@ -622,6 +629,8 @@ pub fn generateChunk(chunk: *Chunk, coord: Coordinate, depth: u64) void {
     if (depth == root.startup.STARTING_ZOOM_TIMES) {
         generateBaseChunk(chunk, coord);
         return;
+    } else if (depth + memory.QUADRANTLESS_DEPTH == memory.game.depth) {
+        // case?
     }
 
     const chunk_seeds = quad_cache.getChunkSeeds(coord, depth);
@@ -656,8 +665,13 @@ pub fn generateChunk(chunk: *Chunk, coord: Coordinate, depth: u64) void {
             const px = (block_x / ZOOM_FACTOR) + 1;
             const parent_sprite = parent_neighborhood[py][px];
 
-            // If the parent was a decoration (mushroom, etc), applyDeterministicHoles returns it as-is
-            const final_sprite = root.ancestor.applyDeterministicHoles(parent_sprite, coord, @intCast(block_x), @intCast(block_y), depth);
+            const final_sprite = root.ancestor.applyAncestorLogic(
+                parent_sprite,
+                coord,
+                @intCast(block_x),
+                @intCast(block_y),
+                depth,
+            );
             chunk.blocks[id] = Block.makeBasicBlock(final_sprite, rng4.next());
         }
     }
@@ -671,7 +685,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, coord: Coordinate, parent_neighborh
         for (0..CHUNK_SIZE) |block_x| {
             const id = block_x + block_y * CHUNK_SIZE;
             const current_sprite = target_chunk.blocks[id].id;
-            if (current_sprite == .none) continue;
+            if (current_sprite.isEmpty()) continue;
 
             if (!current_sprite.isFoundation()) {
                 target_chunk.blocks[id].edge_flags = 0xFF;
@@ -695,7 +709,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, coord: Coordinate, parent_neighborh
                             .{ @divFloor(nx, CHUNK_SIZE), @divFloor(ny, CHUNK_SIZE) },
                             depth,
                         ) orelse break :blk .edge_stone;
-                        break :blk root.ancestor.applyDeterministicHoles(
+                        break :blk root.ancestor.applyAncestorLogic(
                             parent_neighborhood[py][px],
                             nc,
                             @intCast(@mod(nx, CHUNK_SIZE)),
@@ -717,7 +731,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, coord: Coordinate, parent_neighborh
 /// Generates a starting chunk at depth `STARTING_ZOOM_TIMES`.
 /// Is procedural and does not require all other chunks are pre-calculated.
 /// As in, it does not use something like cellular noise that needs a whole map up front.
-fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
+pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     const depth = root.startup.STARTING_ZOOM_TIMES;
     const chunk_seeds = quad_cache.getChunkSeeds(coord, depth);
 
@@ -733,19 +747,25 @@ fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
 
     const cx = coord.suffix[0];
     const cy = coord.suffix[1];
-    const quadrant_edge_details = quad_cache.getQuadrantEdgeDetails(coord.quadrant, depth);
+    // const quadrant_edge_details = quad_cache.getQuadrantEdgeDetails(coord.quadrant, depth);
     const max_suffix = getMaxSuffixAtDepth(depth);
     for (0..CHUNK_SIZE) |block_y| {
         for (0..CHUNK_SIZE) |block_x| {
             const id = block_x + block_y * CHUNK_SIZE;
 
             // simple edge-of-the-world solid block logic
+            // const is_absolute_edge_x =
+            //     (cx == 0 and block_x < 2 and quadrant_edge_details.most_left) or
+            //     (cx == max_suffix and block_x >= (CHUNK_SIZE - 2) and quadrant_edge_details.most_right);
+            // const is_absolute_edge_y =
+            //     (cy == 0 and block_y < 2 and quadrant_edge_details.most_top) or
+            //     (cy == max_suffix and block_y >= (CHUNK_SIZE - 2) and quadrant_edge_details.most_bottom);
             const is_absolute_edge_x =
-                (cx == 0 and block_x < 2 and quadrant_edge_details.most_left) or
-                (cx == max_suffix and block_x >= (CHUNK_SIZE - 2) and quadrant_edge_details.most_right);
+                (cx == 0 and block_x < 2) or
+                (cx == max_suffix and block_x >= (CHUNK_SIZE - 2));
             const is_absolute_edge_y =
-                (cy == 0 and block_y < 2 and quadrant_edge_details.most_top) or
-                (cy == max_suffix and block_y >= (CHUNK_SIZE - 2) and quadrant_edge_details.most_bottom);
+                (cy == 0 and block_y < 2) or
+                (cy == max_suffix and block_y >= (CHUNK_SIZE - 2));
             if (is_absolute_edge_x or is_absolute_edge_y) {
                 chunk.blocks[id] = Block.makeBasicBlock(.edge_stone, rng4.next());
                 continue;
@@ -1057,7 +1077,7 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
 
     const overflow_hp = @addWithOverflow(hp_to_add, block.hp); // overflows past 15
     if (overflow_hp[1] == 1 or hp_to_add == 0 or !block.isSolid()) {
-        if (block.id == .none) return true;
+        if (block.id.isEmpty()) return true;
         mod_store.history.at(entry_id).blocks[id].id = .none;
 
         // Update caches so changes appear immediately
@@ -1104,10 +1124,13 @@ pub fn clearCaches(comptime clear_ancestors: bool) void {
     if (clear_ancestors) root.ancestor.AncestorCache.clear();
 }
 
-/// `coord` is the chunk the portal is in. `bx` and `by` represent the specific block within a chunk the zoom should be in.
+/// Increases the game's depth by 1, invalidates caches, moves the player, and handles data modification.
+/// `coord` is the chunk the portal is in or where the depth should take place.
+/// `bx` and `by` represent the specific block within a chunk the zoom should be in.
 pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
     memory.game.depth += 1;
+    clearCaches(true);
     const depth = memory.game.depth;
 
     memory.game.player_velocity = .{ 0, 0 };
@@ -1207,5 +1230,45 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     const quadrant_y = naive_cell_y - top_cell_y;
     memory.game.player_quadrant = @intCast(quadrant_x + (quadrant_y * 2));
 
+    var next_materials: [4][4]Sprite = undefined;
+    for (0..4) |y_idx| {
+        for (0..4) |x_idx| {
+            if (depth == QUADRANTLESS_DEPTH + 1) { // sample actual blocks
+                const virtual_x = (1 * ZOOM_FACTOR) + left_cell_x + x_idx - 1;
+                const virtual_y = (1 * ZOOM_FACTOR) + top_cell_y + y_idx - 1;
+
+                // At D = QUADRANTLESS_DEPTH, the suffix represents the full world.
+                // We sample the block ID at the parent depth.
+                next_materials[y_idx][x_idx] = getBlockIdAt(
+                    .{
+                        .suffix = .{ virtual_x / ZOOM_FACTOR, virtual_y / ZOOM_FACTOR },
+                        .quadrant = 0, // D=32 is quadrantless
+                    },
+                    @intCast(virtual_x % ZOOM_FACTOR),
+                    @intCast(virtual_y % ZOOM_FACTOR),
+                    depth - 1,
+                );
+            } else {
+                // materials already exist
+                const virtual_x = (1 * ZOOM_FACTOR) + left_cell_x + x_idx - 1;
+                const virtual_y = (1 * ZOOM_FACTOR) + top_cell_y + y_idx - 1;
+
+                const old_mat_x: u2 = @intCast(virtual_x / ZOOM_FACTOR);
+                const old_mat_y: u2 = @intCast(virtual_y / ZOOM_FACTOR);
+
+                const parent_mat = quad_cache.ancestor_materials[old_mat_y][old_mat_x];
+
+                next_materials[y_idx][x_idx] = root.ancestor.applyAncestorLogic(
+                    parent_mat,
+                    coord,
+                    @intCast(virtual_x % ZOOM_FACTOR),
+                    @intCast(virtual_y % ZOOM_FACTOR),
+                    depth - QUADRANTLESS_DEPTH,
+                );
+            }
+        }
+    }
+
+    quad_cache.ancestor_materials = next_materials;
     memory.game.teleport(null, new_pos);
 }

@@ -12,13 +12,21 @@ const Coordinate = memory.Coordinate;
 const Chunk = memory.Chunk;
 const ModKey = world.ModKey;
 
+/// Returns whether the specified depth is exactly at or beyond the limit of discrete coordinate representation.
+/// At this boundary, chunk-level detail is lost,
+/// and the world transitions to the global QuadCache background materials (`ancestor_materials`).
+pub inline fn isAncestralBoundary(depth: u64) bool {
+    // A depth is "ancestral" if it is 32 or more layers above the current game depth.
+    std.debug.assert(depth + memory.QUADRANTLESS_DEPTH >= memory.game.depth); // we shouldn't see values smaller (< case)
+    return depth + memory.QUADRANTLESS_DEPTH == memory.game.depth;
+}
+
 /// Optimized per-depth tier cache for ancestors of chunks.
 pub const AncestorCache = struct {
     /// 32 chunks per depth to allow full horizontal sweeps without evicting local dependencies.
     pub const TIER_SIZE = 32;
-    /// The number of depth tiers to cache. Modulo is used to map depths into tiers safely.
-    /// TODO: evaluate if +SZT is needed
-    pub const NUM_TIERS = 32 + STARTING_ZOOM_TIMES;
+    /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
+    pub const NUM_TIERS = 32;
 
     var keys: [NUM_TIERS][TIER_SIZE]?ModKey = [_][TIER_SIZE]?ModKey{[_]?ModKey{null} ** TIER_SIZE} ** NUM_TIERS;
     var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
@@ -43,7 +51,10 @@ pub const AncestorCache = struct {
 
     /// Allocates a slot in the appropriate tier based on depth and returns a mutable pointer.
     /// This allows `generateChunk` to write directly into the cache memory.
+    ///
+    /// Does NOT handle quadrant fallback case; asserts `depth` is high enough.
     pub fn allocateSlot(key: ModKey) *Chunk {
+        std.debug.assert(!isAncestralBoundary(key.depth)); // should've gone to quadrant fallback ):
         const d = @as(usize, @intCast(key.depth % NUM_TIERS));
 
         while (true) {
@@ -87,8 +98,7 @@ pub const ParentInfo = struct {
 };
 
 /// Shifts the suffix and incorporates the local block position to find the exact parent chunk and block.
-pub fn getParentInfo(coord: Coordinate, bx: u4, by: u4, target_depth: u64) ParentInfo {
-    _ = target_depth; // Prevent unused parameter err in case it's used for quadrants later
+pub fn getParentInfo(coord: Coordinate, bx: u4, by: u4) ParentInfo {
     const zoom_shift = memory.ZOOM_LOG2;
     const parent_block_shift = memory.CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2;
 
@@ -110,12 +120,16 @@ pub fn getParentInfo(coord: Coordinate, bx: u4, by: u4, target_depth: u64) Paren
     };
 }
 
-/// Applies deterministic holes based on coordinate and depth. For testing purposes; naive.
+/// Applies deterministic holes based on coordinate and depth. Also modifies some block types.
 /// TODO replace with actual cool logic!
-pub fn applyDeterministicHoles(sprite: Sprite, coord: Coordinate, bx: u4, by: u4, depth: u64) Sprite {
-    if (sprite == .none) return .none;
-    if (!sprite.isFoundation()) return sprite; // Keep decor/edge stone!
+pub fn applyAncestorLogic(sprite: Sprite, coord: Coordinate, bx: u4, by: u4, depth: u64) Sprite {
+    if (sprite.isEmpty()) return .none;
+    if (sprite == .ceiling_flower) return .strange_stone_other;
+    if (sprite == .spiral_plant) return .green_stone;
+    if (sprite == .mushroom) return .torch;
+    if (!sprite.isFoundation()) return sprite; // Keep edge stone and other fallthrough cases!
 
+    // naive code for testin'
     var hasher = std.hash.Wyhash.init(depth);
     std.hash.autoHash(&hasher, coord.quadrant);
     std.hash.autoHash(&hasher, coord.suffix[0]);
@@ -137,15 +151,14 @@ pub fn applyDeterministicHoles(sprite: Sprite, coord: Coordinate, bx: u4, by: u4
 }
 /// Traces the lineage of a single block type.
 pub fn getInheritedMaterial(target_depth: u64, coord: Coordinate, bx: u4, by: u4) Sprite {
-    // Quadrant fallback case!
-    if (target_depth + memory.QUADRANTLESS_DEPTH <= memory.game.depth) {
-        // Depth shouldn't be smaller ("skipping").
-        std.debug.assert(target_depth + memory.QUADRANTLESS_DEPTH == memory.game.depth);
-        return world.quad_cache.ancestor_materials[coord.quadrant];
+    if (isAncestralBoundary(target_depth)) {
+        // hey, wait! we should be falling back to quadrant.
+        // Quadrant fallback case! Respond with the whole quadrant.
+        return world.quad_cache.getQuadrantSpriteAncestor(coord.quadrant);
     }
 
-    // High-speed cache check
-    const mod_key = world.ModKey{
+    // Make a ModKey so caches can be accessed easily
+    const mod_key: ModKey = .{
         .suffix = coord.suffix,
         .quadrant = coord.quadrant,
         .depth = target_depth,
@@ -160,21 +173,27 @@ pub fn getInheritedMaterial(target_depth: u64, coord: Coordinate, bx: u4, by: u4
         return modified.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
     }
 
-    // At STARTING_ZOOM_TIMES; this is the base case depth.
-    // Break the recursion loop by generating the actual base chunk and caching it.
-    if (target_depth == STARTING_ZOOM_TIMES) {
-        const slot = AncestorCache.allocateSlot(mod_key);
-        world.generateChunk(slot, coord, target_depth);
-        return slot.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
-    }
-
     // Probe the parent ID.
-    const p_info = getParentInfo(coord, bx, by, target_depth);
-    const parent_sprite = getInheritedMaterial(target_depth - 1, p_info.coord, p_info.bx, p_info.by);
+    const p_info = getParentInfo(coord, bx, by);
+    var parent_sprite: Sprite = undefined;
+    if (target_depth == STARTING_ZOOM_TIMES) {
+        // At STARTING_ZOOM_TIMES; this is the base case depth.
+        // Break the recursion loop by generating the actual base chunk and caching it.
+        const slot = AncestorCache.allocateSlot(mod_key);
+        world.generateBaseChunk(slot, coord); // ensure chunk is populated before reading!
+        return slot.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
+    } else {
+        // Here is where the recursion actually happens!
+        parent_sprite = @call(
+            .auto, // maybe use tail call? otherwise this @call is useless
+            getInheritedMaterial,
+            .{ target_depth - 1, p_info.coord, p_info.bx, p_info.by },
+        );
+    }
 
     // Scale-up logic: If parent is solid, child is solid.
     if (parent_sprite.isFoundation()) {
-        return applyDeterministicHoles(parent_sprite, coord, bx, by, target_depth);
+        return applyAncestorLogic(parent_sprite, coord, bx, by, target_depth);
     }
 
     // Parent was air or decoration, allow!
@@ -186,15 +205,16 @@ pub fn getInheritedMaterial(target_depth: u64, coord: Coordinate, bx: u4, by: u4
 pub fn getAncestorNeighborhood(target_depth: u64, coord_d: Coordinate) [6][6]Sprite {
     var result: [6][6]Sprite = undefined;
     const parent_depth = target_depth - 1;
+    const is_parent_ancestral = isAncestralBoundary(parent_depth);
 
-    // Base Case
+    // Base case (easy!)
     if (target_depth == STARTING_ZOOM_TIMES) {
         for (0..6) |y| @memset(&result[y], .stone);
         return result;
     }
 
     // Identify the top-left-most parent block required (index -1, -1 relative to child origin)
-    const p_info_origin = getParentInfo(coord_d, 0, 0, target_depth);
+    const p_info_origin = getParentInfo(coord_d, 0, 0);
     const start_px: i32 = @as(i32, @intCast(p_info_origin.bx)) - 1;
     const start_py: i32 = @as(i32, @intCast(p_info_origin.by)) - 1;
 
@@ -206,14 +226,24 @@ pub fn getAncestorNeighborhood(target_depth: u64, coord_d: Coordinate) [6][6]Spr
             const nc = p_info_origin.coord.moveAtDepth(.{ cx, cy }, parent_depth);
 
             if (nc) |coord| {
-                const key = world.ModKey{ .suffix = coord.suffix, .quadrant = coord.quadrant, .depth = parent_depth };
-                // Use getInheritedMaterial logic but specifically for the chunk pointer
-                parent_chunks[@intCast(cy + 1)][@intCast(cx + 1)] = if (AncestorCache.get(key)) |c| c else if (world.mod_store.get(key)) |m| m else blk: {
-                    // If not cached, we MUST generate it
-                    const slot = AncestorCache.allocateSlot(key);
-                    world.generateChunk(slot, coord, parent_depth);
-                    break :blk slot;
+                const key = ModKey{
+                    .suffix = coord.suffix,
+                    .quadrant = coord.quadrant,
+                    .depth = parent_depth,
                 };
+                // Use getInheritedMaterial logic but specifically for the chunk pointer
+                parent_chunks[@intCast(cy + 1)][@intCast(cx + 1)] =
+                    if (AncestorCache.get(key)) |ancestor_chunk|
+                        ancestor_chunk
+                    else if (world.mod_store.get(key)) |modified_chunk|
+                        modified_chunk
+                    else blk: {
+                        // If not cached, we MUST generate it (unless we've hit the background material limit)
+                        if (is_parent_ancestral) break :blk null;
+                        const slot = AncestorCache.allocateSlot(key);
+                        world.generateChunk(slot, coord, parent_depth);
+                        break :blk slot;
+                    };
             }
         }
     }
@@ -242,7 +272,14 @@ pub fn getAncestorNeighborhood(target_depth: u64, coord_d: Coordinate) [6][6]Spr
             const is_edge_y = (chunk_y < 1 and p_info_origin.coord.suffix[1] == 0) or
                 (chunk_y >= 2 and p_info_origin.coord.suffix[1] == max_s);
 
-            result[y_idx][x_idx] = if (is_edge_x or is_edge_y) .edge_stone else world.quad_cache.ancestor_materials[coord_d.quadrant];
+            // Corrected fallback: Use the 4x4 materials directly if at ancestral boundary
+            result[y_idx][x_idx] = if (is_edge_x or is_edge_y) .edge_stone else if (is_parent_ancestral) blk: {
+                const qx = @as(usize, coord_d.quadrant % 2);
+                const qy = @as(usize, coord_d.quadrant / 2);
+                const sample_x = if (chunk_x < 1) qx else if (chunk_x >= 2) qx + 2 else qx + 1;
+                const sample_y = if (chunk_y < 1) qy else if (chunk_y >= 2) qy + 2 else qy + 1;
+                break :blk world.quad_cache.ancestor_materials[sample_y][sample_x];
+            } else world.quad_cache.getQuadrantSpriteAncestor(coord_d.quadrant);
         }
     }
     return result;

@@ -57,7 +57,7 @@ pub fn handleMiningAndPlacing() void {
         }
 
         // Are we breaking something, or placing into empty air?
-        if (sprite_type == .none or block.id != .none) {
+        if (sprite_type.isEmpty() or block.id != .none) {
             // mining or replacing case
             mining_progress += mining_speed;
             const strength = getSpriteStrength(block.id);
@@ -65,7 +65,7 @@ pub fn handleMiningAndPlacing() void {
             if (INSTANT_MINE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
                 mining_progress = 0;
                 // sprite type being none check also prevents unneeded memory waste with ModKey
-                const was_deleted = block.id == .none or world.modifyBlockHp(
+                const was_deleted = block.id.isEmpty() or world.modifyBlockHp(
                     mouse.mouse_chunk.?, // mouse block successful, this must be valid then!
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
@@ -104,7 +104,7 @@ pub fn handleMiningAndPlacing() void {
                     selected_hp = block.hp + mining_strength;
                 }
             }
-        } else if (block.id == .none and sprite_type != .none) {
+        } else if (block.id.isEmpty() and sprite_type != .none) {
             // placing into empty air!
             if (inventory.removeFromInventory(sprite_type)) {
                 if (world.modifyBlockType(

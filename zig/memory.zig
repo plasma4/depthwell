@@ -28,10 +28,10 @@ pub const ZOOM_LOG2: comptime_int = 2;
 /// The factor for zooming, increasing the depth by 1. (So, 4 times means that the world will get 4 times wider and taller when depth increases.)
 pub const ZOOM_FACTOR: comptime_int = 4;
 /// The highest possible depth value where all coordinates can be represented in 1 quadrant.
-/// Equivalent to the highest depth value where ZOOM_LOG2 * QUADRANTLESS_DEPTH is <= 64.
+/// Equivalent to the highest depth value where `ZOOM_LOG2 * QUADRANTLESS_DEPTH <= 64` is true.
 pub const QUADRANTLESS_DEPTH: comptime_int = 32;
 /// Represents how many blocks in a child chunk map to ONE parent block.
-/// (16 / 4 = 4). A 4x4 area of child blocks = 1 parent block.
+/// A 4x4 area of child blocks is 1 parent block if `ZOOM_FACTOR` is 4.
 pub const BLOCKS_PER_PARENT: comptime_int = CHUNK_SIZE / ZOOM_FACTOR;
 
 // vector types!
@@ -219,14 +219,12 @@ pub const Block = packed struct(u64) {
     hp: u4,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
-    /// Using the BOTTOM 28 bits from `seed_bits` to place into `seed`.
+    /// Uses the BOTTOM 28 bits from `seed_bits` to place into `seed`.
     pub inline fn makeBasicBlock(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
             .hp = 0,
             .edge_flags = 0,
-
-            // light only applies to ores in WGSL
             .light = 0,
             .seed = @truncate(seed_bits),
         };
@@ -321,12 +319,12 @@ pub const Coordinate = struct {
             const delta: u64 = if (is_pos) @intCast(dx) else @intCast(-%dx);
             const ov = if (is_pos) @addWithOverflow(res.suffix[0], delta) else @subWithOverflow(res.suffix[0], delta);
             if (ov[1] != 0) {
-                if (depth <= QUADRANTLESS_DEPTH) return null;
+                if (depth < QUADRANTLESS_DEPTH) return null;
                 if (is_pos == ((res.quadrant & 1) != 0)) return null;
                 res.quadrant ^= 1;
             }
 
-            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
+            if (is_pos and depth < QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
             res.suffix[0] = ov[0];
         }
 
@@ -336,12 +334,12 @@ pub const Coordinate = struct {
             const delta: u64 = if (is_pos) @intCast(dy) else @intCast(-%dy);
             const ov = if (is_pos) @addWithOverflow(res.suffix[1], delta) else @subWithOverflow(res.suffix[1], delta);
             if (ov[1] != 0) {
-                if (depth <= QUADRANTLESS_DEPTH) return null;
+                if (depth < QUADRANTLESS_DEPTH) return null;
                 if (is_pos == ((res.quadrant & 2) != 0)) return null;
                 res.quadrant ^= 2;
             }
 
-            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
+            if (is_pos and depth < QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
             res.suffix[1] = ov[0];
         }
         return res;
@@ -478,7 +476,7 @@ pub var mem: MemoryLayout align(MAIN_ALIGN_BYTES) = .{
     .scratch_len = 0,
     .scratch_capacity = 0,
     .game_ptr = 0,
-    .scratch_properties = std.mem.zeroes([20]u64), // start with empty
+    .scratch_properties = undefined, // start with empty
 };
 
 /// Returns the pointer to the memory layout for TypeScript to consume.

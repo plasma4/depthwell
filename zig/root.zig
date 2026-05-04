@@ -57,7 +57,7 @@ pub export fn setup() void {
         .path_hashes = undefined,
         .left_path = SegmentedList(u64, 1024){}, // easiest to do prealloc with larger stack size in case
         .top_path = SegmentedList(u64, 1024){},
-        .ancestor_materials = .{.none} ** 4,
+        .ancestor_materials = undefined,
     };
 
     logger.write(3,

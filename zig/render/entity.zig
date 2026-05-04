@@ -55,19 +55,19 @@ pub fn updateEntities(time_diff: f64) void {
         const tile_size: f32 = @floatCast(preview_tile_size);
         const preview_x_origin: f32 = 30.0;
         const preview_y_origin: f32 = 50.0;
-        const background_margins: f32 = 6.0;
+        const background_margin: f32 = 1.0;
         var bg: Entity = .{
             .sprite = .particle,
             .position = .{
                 preview_x_origin + tile_size * CHUNK_SIZE / 2 - tile_size / 2,
                 preview_y_origin + tile_size * CHUNK_SIZE / 2 - tile_size / 2,
             },
-            .size = tile_size * CHUNK_SIZE + background_margins * 2,
+            .size = tile_size * (background_margin + CHUNK_SIZE + 2.0),
             .lcha = .{ 1.0, 0.5, 1.2, 0.6 }, // translucent orange!
         };
         addEntity(bg);
         bg.size *= 1.01; // a tad larger!
-        bg.lcha = .{ 1.0, 0.5, 2.3, 0.5 }; // yelloower
+        bg.lcha = .{ 1.0, 0.5, 2.3, 0.6 }; // yellower
         addEntity(bg);
 
         const player_coord = memory.game.getPlayerCoord();
@@ -102,14 +102,19 @@ pub fn updateEntities(time_diff: f64) void {
                     preview_y_origin + @as(f32, @floatFromInt(y)) * tile_size,
                 };
 
-                // Draw base block (Existing Logic)
+                // Draw base block
                 if (!block.isEmpty()) {
                     if (block.isHeatmap()) {
                         addEntity(.{
                             .sprite = .rectangle,
                             .position = block_pos,
                             .size = tile_size,
-                            .lcha = .{ (@as(f32, @intFromEnum(block.id)) - 65000.0) / 256.0, 0.0, 0.0, 1.0 },
+                            .lcha = .{
+                                (@as(f32, @intFromEnum(block.id)) - 65000.0) / 256.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                            },
                         });
                     } else {
                         addEntity(.{
@@ -123,7 +128,7 @@ pub fn updateEntities(time_diff: f64) void {
                 if (block.isFoundation()) {
                     const edge_flags = block.edge_flags;
 
-                    // Non-diagonal directions first!
+                    // first handle non-diagonal directions
                     for ([4]u8{ 1, 6, 3, 4 }) |bit| {
                         if ((edge_flags & (@as(u8, 1) << @intCast(bit))) == 0) {
                             var ent: Entity = .{ .sprite = .rectangle, .position = block_pos };
@@ -176,11 +181,104 @@ pub fn updateEntities(time_diff: f64) void {
                         }
                     }
                 }
-                // Neighbor boundary flag injection (visualize flags pointing INTO the chunk)
+
+                // neighbor boundary flag injection (visualize flags pointing INTO the chunk)
                 if (x == 0) if (neighbors[2]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(15, @intCast(y)), block_pos, .W, tile_size, thick);
                 if (x == 15) if (neighbors[3]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(0, @intCast(y)), block_pos, .E, tile_size, thick);
                 if (y == 0) if (neighbors[0]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(@intCast(x), 15), block_pos, .N, tile_size, thick);
                 if (y == 15) if (neighbors[1]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(@intCast(x), 0), block_pos, .S, tile_size, thick);
+            }
+        }
+
+        // Draw D-1 and D-2 previews to the right
+        const start_zoom = root.startup.STARTING_ZOOM_TIMES;
+        const bx_idx = memory.game.getBlockXInChunk();
+        const by_idx = memory.game.getBlockYInChunk();
+        if (depth > start_zoom) {
+            const deeper_preview_x = preview_x_origin + background_margin + 18.5 * tile_size;
+            bg.position[0] = deeper_preview_x + tile_size * 2.5;
+            bg.position[1] = preview_y_origin + tile_size * 2.5;
+            bg.size = tile_size * (6.0 + background_margin);
+            bg.lcha[3] = 0.7; // higher opacity!
+            bg.sprite = .rectangle;
+            addEntity(bg); // box for D-1
+
+            const neighborhood_d1 = root.ancestor.getAncestorNeighborhood(depth, player_coord);
+
+            for (0..6) |py| {
+                for (0..6) |px| {
+                    addEntity(.{
+                        .sprite = neighborhood_d1[py][px],
+                        .position = .{
+                            deeper_preview_x + @as(f32, @floatFromInt(px)) * tile_size,
+                            preview_y_origin + @as(f32, @floatFromInt(py)) * tile_size,
+                        },
+                        .size = tile_size,
+                        .lcha = if (px == 0 or px == 5 or py == 0 or py == 5) .{ 0.6, 0.0, 0.0, 1.0 } else memory.DEFAULT_ENTITY_LCHA,
+                    });
+                }
+            }
+
+            // Render approximate player indicator in D-1
+            const p_sub_x = @as(f32, @floatFromInt(bx_idx % 4)) / 4.0;
+            const p_sub_y = @as(f32, @floatFromInt(by_idx % 4)) / 4.0;
+            const player_entity: Entity = .{
+                .sprite = .player,
+                .position = .{
+                    deeper_preview_x + (1.0 + @as(f32, @floatFromInt(bx_idx / 4)) + p_sub_x - 0.5) * tile_size,
+                    preview_y_origin + (1.0 + @as(f32, @floatFromInt(by_idx / 4)) + p_sub_y - 0.5) * tile_size,
+                },
+                .size = tile_size * 0.8,
+                .lcha = .{ 1.0, 0.1, -0.2, 1.0 },
+            };
+            var player_entity_bg = player_entity;
+
+            // make a sort of larger border/shadow
+            player_entity_bg.lcha[0] *= 0.6;
+            player_entity_bg.position -= .{ tile_size / 8.0, tile_size / 8.0 };
+            addEntity(player_entity_bg);
+            addEntity(player_entity);
+
+            if (depth > start_zoom + 1) {
+                const p_info = root.ancestor.getParentInfo(player_coord, bx_idx, by_idx);
+                const preview_y_d2 = preview_y_origin + 7.5 * tile_size;
+                const gp_info = root.ancestor.getParentInfo(p_info.coord, p_info.bx, p_info.by);
+
+                bg.position = .{ deeper_preview_x + tile_size * 1.0, preview_y_d2 + tile_size * 1.0 };
+                bg.size = tile_size * (3.0 + background_margin);
+                addEntity(bg);
+
+                var gpy: i32 = -1;
+                while (gpy <= 1) : (gpy += 1) {
+                    var gpx: i32 = -1;
+                    while (gpx <= 1) : (gpx += 1) {
+                        const target_bx = @as(i32, gp_info.bx) + gpx;
+                        const target_by = @as(i32, gp_info.by) + gpy;
+
+                        const target_nc = gp_info.coord.moveAtDepth(.{ @divFloor(target_bx, 16), @divFloor(target_by, 16) }, depth - 2) orelse continue;
+
+                        const lx: u4 = @intCast(@mod(target_bx, 16));
+                        const ly: u4 = @intCast(@mod(target_by, 16));
+
+                        addEntity(.{
+                            .sprite = root.world.getBlockIdAt(target_nc, lx, ly, depth - 2),
+                            .position = .{
+                                deeper_preview_x + @as(f32, @floatFromInt(gpx + 1)) * tile_size,
+                                preview_y_d2 + @as(f32, @floatFromInt(gpy + 1)) * tile_size,
+                            },
+                            .size = tile_size,
+                            .lcha = if (gpx == 0 and gpy == 0) memory.DEFAULT_ENTITY_LCHA else .{ 0.7, 0.0, 0.0, 1.0 },
+                        });
+                    }
+                }
+
+                // player indicator again (stuck in-place, since that's the current chunk)
+                addEntity(.{
+                    .sprite = .player,
+                    .position = .{ deeper_preview_x + 1.0 * tile_size, preview_y_d2 + 1.0 * tile_size },
+                    .size = tile_size * 0.8,
+                    .lcha = .{ 1.0, 0.2, -0.5, 0.9 },
+                });
             }
         }
 
@@ -198,6 +296,7 @@ pub fn updateEntities(time_diff: f64) void {
             .lcha = memory.DEFAULT_ENTITY_LCHA,
         };
         var player_entity_bg = player_entity;
+
         player_entity_bg.position -= .{ tile_size / 8.0, tile_size / 8.0 };
         player_entity_bg.lcha = .{ 0.5, 0.0, 0.0, 0.8 };
         addEntity(player_entity_bg);
@@ -267,7 +366,7 @@ fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: root.memory.Block, po
         .W => EdgeFlags.RIGHT, // Neighbor's East flag
         .E => EdgeFlags.LEFT, // Neighbor's West flag
     };
-    if ((neighbor_block.edge_flags & target_bit) != 0) {
+    if ((neighbor_block.edge_flags & target_bit) == 0) {
         ec.* += 1;
         const wgsl = memory.scratchAllocType(WGSLEntity, ebc);
         var f_pos = pos;
@@ -310,6 +409,7 @@ pub const TextConfig = struct {
     font_size: f32 = 16.0,
     /// The rotation of the text.
     rotation: f32 = 0.0,
+    /// Whether text is rendered from left-to-right (defaults to true; as in, left-aligned text).
     ltr: bool = true,
 };
 

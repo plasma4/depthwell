@@ -53,7 +53,7 @@ pub fn addToInventory(id: Sprite) void {
 
 /// Decrements the count for a block. Returns whether successful.
 pub fn removeFromInventory(id: Sprite) bool {
-    if (id == .none or id == .unselected) return false;
+    if (id.isEmpty() or id == .unselected) return false;
 
     const idx = @intFromEnum(id);
     if (idx >= inventory_counts.len or inventory_counts[idx] == 0) return false;
@@ -78,7 +78,7 @@ pub fn getActiveSlots(buffer: *SlotBuffer) []Sprite {
 
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.valid_sprites) |s| {
-        if (s == .none) continue;
+        if (s.isEmpty()) continue;
         if (SHOW_ALL_INVENTORY_ITEMS or inventory_counts[@intFromEnum(s)] > 0) {
             buffer[count] = s;
             count += 1;
@@ -91,11 +91,11 @@ pub fn getActiveSlots(buffer: *SlotBuffer) []Sprite {
 
 /// Gets the index of `selected_sprite` in the active slots.
 pub fn getSelectedIndex() u16 {
-    if (selected_sprite == .none or selected_sprite == .unselected) return 0;
+    if (selected_sprite.isEmpty() or selected_sprite == .unselected) return 0;
     var count: usize = 1;
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.valid_sprites) |s| {
-        if (s == .none) continue;
+        if (s.isEmpty()) continue;
         if (SHOW_ALL_INVENTORY_ITEMS or inventory_counts[@intFromEnum(s)] > 0) {
             if (s == selected_sprite) return @intCast(count);
             count += 1;
@@ -125,7 +125,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
         // Match the background sizing logic from the drawInventory() function
-        const is_mine_type = active_sprite == .none;
+        const is_mine_type = active_sprite.isEmpty();
         const is_selected = active_sprite == selected_sprite;
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
         const bg_pos = inventory_pos - Vec2f32{ bg_size / 4.0, bg_size / 4.0 };
@@ -184,7 +184,7 @@ pub fn drawInventory(time_diff: f64) void {
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
-        const is_mine_type = active_sprite == .none;
+        const is_mine_type = active_sprite.isEmpty();
 
         // Background sizing (using is_selected directly for instant feedback on bg)
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
@@ -245,7 +245,7 @@ pub fn drawInventory(time_diff: f64) void {
 
     // Second pass for numbers to ensure they are at the top of inventory rendering
     for (active_slots, 0..) |active_sprite, i| {
-        if (active_sprite == .none) continue;
+        if (active_sprite.isEmpty()) continue;
 
         const id = @intFromEnum(active_sprite);
         const t_eased = easeBack(inventory_anim_progress[id]);

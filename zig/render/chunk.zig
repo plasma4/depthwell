@@ -23,7 +23,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const half_w_sp = (@as(f64, root.SCREEN_WIDTH_HALF) / interpolated_zoom) * CHUNK_SIZE;
     const half_h_sp = (@as(f64, root.SCREEN_HEIGHT_HALF) / interpolated_zoom) * CHUNK_SIZE;
 
-    // calculate the interpolated camera
+    // calculate the interpolated camera loc
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
 
@@ -145,13 +145,13 @@ inline fn updateRenderProperties(
 
         if (game.depth > QUADRANTLESS_DEPTH) {
             logger.writeOnce(2, .{
-                "{mh}Left quadrant path (truncated)",
+                "{mh}Left quadrant path (compacted)",
                 qc.left_path,
                 "{mh}X suffix array",
                 suffix_array_x,
             });
             logger.writeOnce(3, .{
-                "{mh}Top quadrant path (truncated)",
+                "{mh}Top quadrant path (compacted)",
                 qc.top_path,
                 "{mh}Y suffix array",
                 suffix_array_y,
