@@ -227,7 +227,8 @@ comptime {
     };
 }
 
-/// Custom panic function. Note that you can press the arrow for any warnings/errors to see more detailed information (so you might be able to see details such as $debug.FullPanic((function 'panic')).integerOverflow)
+/// Custom panic function.
+/// TODO: figure out why this isn't emitting right!
 fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     const addr = ret_addr orelse 0;
     logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });

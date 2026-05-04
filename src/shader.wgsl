@@ -306,6 +306,8 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
                     wire_color = vec4f(rg.x, rg.y, b, scene.wireframe_opacity);
                 }
             }
+        } else if erode_mask == 0u {
+            discard;
         }
     }
 
@@ -377,10 +379,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     let has_br = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 4u + extractBits(seed3, 0u, 1u);
-    let r_tr = 4u + extractBits(seed3, 2u, 1u);
-    let r_bl = 4u + extractBits(seed3, 4u, 1u);
-    let r_br = 4u + extractBits(seed3, 6u, 1u);
+    let r_tl = 4u + extractBits(seed3, 0u, 2u);
+    let r_tr = 4u + extractBits(seed3, 2u, 2u);
+    let r_bl = 4u + extractBits(seed3, 4u, 2u);
+    let r_br = 4u + extractBits(seed3, 6u, 2u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 
@@ -526,7 +528,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     // Inner corners (no diagonal neighbor)
 
     if !has_tl && has_top && has_left {
-        let r = 2u + extractBits(seed3, 8u, 1u); // 2 or 3 pixel radius
+        let r = 1u + extractBits(seed3, 8u, 2u); // 1-4 pixel radius
         if px < r && py < r {
             let dx = px + 1u; // +1, so the circle center is at (-0.5, -0.5) effectively
             let dy = py + 1u;
@@ -537,7 +539,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     }
 
     if !has_tr && has_top && has_right {
-        let r = 2u + extractBits(seed3, 10u, 1u);
+        let r = 1u + extractBits(seed3, 10u, 2u);
         let fpx = 15u - px;
         if fpx < r && py < r {
             let dx = fpx + 1u;
@@ -549,7 +551,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     }
 
     if !has_bl && has_bottom && has_left {
-        let r = 2u + extractBits(seed3, 12u, 1u);
+        let r = 1u + extractBits(seed3, 12u, 2u);
         let fpy = 15u - py;
         if px < r && fpy < r {
             let dx = px + 1u;
@@ -561,7 +563,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     }
 
     if !has_br && has_bottom && has_right {
-        let r = 2u + extractBits(seed3, 14u, 1u);
+        let r = 1u + extractBits(seed3, 14u, 2u);
         let fpx = 15u - px;
         let fpy = 15u - py;
         if fpx < r && fpy < r {

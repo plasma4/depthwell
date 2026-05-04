@@ -2,13 +2,13 @@ const std = @import("std");
 
 // Run zig build normally, and zig build -Doptimize=ReleaseFast for a quick production version test, and zig build -Dwasm-opt to use ReleaseFast AND highly aggressive wasm-opt changes. Use zig build -Dgen-enums as well to automatically construct src/enums.ts and zig test "zig/root.zig" to run all tests across the codebase.
 
-// (Add --enable-memory64 for 64-bit builds)
+// (Add --memory64 for 64-bit builds)
 
 pub fn build(b: *std.Build) void {
     // TODO add in wasm-opt for ReleaseFast builds for even more optimization!
     b.install_path = ".";
-    const gen_enums = b.option(bool, "gen-enums", "Regenerate TypeScript enum definitions") orelse false; // -Dgen-enums
-    const wasm_opt = b.option(bool, "wasm-opt", "Add an aggressive pass of optimizations, forcing optimization level to ReleaseFast") orelse false; // -Dgen-enums
+    const gen_enums = b.option(bool, "gen-enums", "Regenerate TypeScript enum definitions (default: no)") orelse false; // -Dgen-enums
+    const wasm_opt = b.option(bool, "wasm-opt", "Add a very aggressive pass of optimizations provided by wasm-opt from Binaryen, forcing optimization level to ReleaseFast") orelse false; // -Dgen-enums
     const memory64 = b.option(bool, "memory64", "Utilize Memory64 (and enable relaxed SIMD)") orelse false; // -Dmemory64
     const target = b.standardTargetOptions(.{
         .default_target = .{
@@ -65,7 +65,7 @@ pub fn build(b: *std.Build) void {
     }
     exe.rdynamic = true; // export functions with "export" keyword
     exe.entry = .disabled; // No main()
-    exe.stack_size = 8 * 65536; // 8 pages, can increase as necessary
+    exe.stack_size = 8 * 65536; // 512KiB, can increase as necessary
 
     // removed since Zig manages pointers automatically
     // exe.global_base = 8;

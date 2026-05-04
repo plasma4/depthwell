@@ -1,4 +1,4 @@
-//! Handles fractal ancestry, caching of D-1 chunks, and deterministic holes.
+//! Handles fractal ancestry and lookup logic.
 const std = @import("std");
 const root = @import("../root.zig");
 const memory = root.memory;
@@ -10,102 +10,72 @@ const STARTING_ZOOM_TIMES = root.startup.STARTING_ZOOM_TIMES;
 const Sprite = root.Sprite;
 const Coordinate = memory.Coordinate;
 const Chunk = memory.Chunk;
+const ModKey = world.ModKey;
 
-/// A static cache specifically designed to hold chunks from the previous depth.
-/// Caching here prevents `getInheritedMaterial` from recalculating the ancestry
-/// of 16 blocks redundantly when adjacent chunks at Depth D share the same D-1 parent.
+/// Optimized per-depth tier cache for ancestors of chunks.
 pub const AncestorCache = struct {
-    pub const CACHE_SIZE = 16;
+    /// 32 chunks per depth to allow full horizontal sweeps without evicting local dependencies.
+    pub const TIER_SIZE = 32;
+    /// The number of depth tiers to cache. Modulo is used to map depths into tiers safely.
+    /// TODO: evaluate if +SZT is needed
+    pub const NUM_TIERS = 32 + STARTING_ZOOM_TIMES;
 
-    var keys: [CACHE_SIZE]?Coordinate = [_]?Coordinate{null} ** CACHE_SIZE;
-    var chunks: [CACHE_SIZE]Chunk = undefined;
-    var clock_bits: std.StaticBitSet(CACHE_SIZE) = std.StaticBitSet(CACHE_SIZE).initEmpty();
-    var hand: usize = 0;
+    var keys: [NUM_TIERS][TIER_SIZE]?ModKey = [_][TIER_SIZE]?ModKey{[_]?ModKey{null} ** TIER_SIZE} ** NUM_TIERS;
+    var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
+    var clock: [NUM_TIERS]std.StaticBitSet(TIER_SIZE) = [_]std.StaticBitSet(TIER_SIZE){std.StaticBitSet(TIER_SIZE).initEmpty()} ** NUM_TIERS;
+    var hand: [NUM_TIERS]usize = [_]usize{0} ** NUM_TIERS;
 
-    /// Retrieves a D-1 chunk if it exists, marking it as recently used.
-    pub fn get(coord_d_minus_1: Coordinate) ?*Chunk {
-        for (&keys, 0..) |maybe_key, i| {
+    /// Retrieves a chunk by ModKey. Searches the specific depth tier.
+    /// Returns a mutable pointer to allow for in-place updates or direct reads.
+    pub fn get(key: ModKey) ?*Chunk {
+        const d = @as(usize, @intCast(key.depth % NUM_TIERS));
+
+        for (&keys[d], 0..) |maybe_key, i| {
             if (maybe_key) |k| {
-                if (k.eql(coord_d_minus_1)) {
-                    clock_bits.set(i);
-                    return &chunks[i];
+                if (k.depth == key.depth and k.quadrant == key.quadrant and @reduce(.And, k.suffix == key.suffix)) {
+                    clock[d].set(i);
+                    return &chunks[d][i];
                 }
             }
         }
         return null;
     }
 
-    /// Allocates a slot for a D-1 chunk, evicting an old one using a clock algorithm.
-    pub fn allocateSlot(coord_d_minus_1: Coordinate) *Chunk {
+    /// Allocates a slot in the appropriate tier based on depth and returns a mutable pointer.
+    /// This allows `generateChunk` to write directly into the cache memory.
+    pub fn allocateSlot(key: ModKey) *Chunk {
+        const d = @as(usize, @intCast(key.depth % NUM_TIERS));
+
         while (true) {
-            const id = hand;
-            hand = (hand + 1) % CACHE_SIZE;
+            const id = hand[d];
+            hand[d] = (id + 1) % TIER_SIZE;
 
-            if (clock_bits.isSet(id)) {
-                clock_bits.setValue(id, false);
+            if (clock[d].isSet(id)) {
+                // Give second chance and clear reference bit.
+                clock[d].setValue(id, false);
             } else {
-                keys[id] = coord_d_minus_1;
-                clock_bits.set(id);
-                return &chunks[id];
+                // Found eviction candidate.
+                keys[d][id] = key;
+                clock[d].set(id); // Set reference bit for the new entry.
+                return &chunks[d][id];
             }
         }
     }
 
-    /// Retrieves the 6x6 grid of parent blocks at Depth D-1 corresponding to the provided chunk at Depth D.
-    /// The inner 4x4 grid (indices 1..4) represents the direct parents of the 16x16 child chunk.
-    /// The outer ring provides a 1-block margin for edge calculations.
-    pub fn getAncestorNeighborhood(target_depth: u64, coord_d: Coordinate) [6][6]Sprite {
-        var result: [6][6]Sprite = undefined;
-
-        // No ancestors exist below base depth. Return fallback safety blocks.
-        if (target_depth <= STARTING_ZOOM_TIMES) {
-            for (0..6) |y| {
-                @memset(&result[y], .stone);
-            }
-            return result;
-        }
-
-        const parent_depth = target_depth - 1;
-        // Get the parent info for the top-left-most child block (0, 0)
-        const p_info = getParentInfo(coord_d, 0, 0);
-
-        for (0..6) |y_id| {
-            for (0..6) |x_id| {
-                const dx: i32 = @as(i32, @intCast(x_id)) - 1;
-                const dy: i32 = @as(i32, @intCast(y_id)) - 1;
-
-                const nx: i32 = @as(i32, p_info.bx) + dx;
-                const ny: i32 = @as(i32, p_info.by) + dy;
-
-                var neighbor_coord = p_info.coord;
-                var out_of_bounds = false;
-
-                // Handle neighbor crossing chunk boundaries at Depth D-1
-                if (nx < 0 or nx >= memory.CHUNK_SIZE or ny < 0 or ny >= memory.CHUNK_SIZE) {
-                    if (p_info.coord.move(.{ @divFloor(nx, memory.CHUNK_SIZE), @divFloor(ny, memory.CHUNK_SIZE) })) |nc| {
-                        neighbor_coord = nc;
-                    } else {
-                        out_of_bounds = true;
-                    }
-                }
-
-                if (out_of_bounds) {
-                    result[y_id][x_id] = .edge_stone; // Hard edge of the simulation
-                } else {
-                    const lbx: u4 = @intCast(@mod(nx, memory.CHUNK_SIZE));
-                    const lby: u4 = @intCast(@mod(ny, memory.CHUNK_SIZE));
-                    result[y_id][x_id] = getInheritedMaterial(parent_depth, neighbor_coord, lbx, lby);
-                }
-            }
-        }
-        return result;
+    /// Allocates a slot and inserts a chunk directly.
+    pub fn insert(key: ModKey, chunk: Chunk) *const Chunk {
+        const slot = allocateSlot(key);
+        slot.* = chunk;
+        return slot;
     }
 
-    /// Clears the `AncestorCache`.
+    /// Clears the `AncestorCache` and resets clock data.
     pub fn clear() void {
-        @memset(&keys, null);
-        clock_bits = std.StaticBitSet(CACHE_SIZE).initEmpty();
-        hand = 0;
+        for (0..NUM_TIERS) |i| {
+            @memset(&keys[i], null);
+            clock[i] = std.StaticBitSet(TIER_SIZE).initEmpty();
+            hand[i] = 0;
+        }
     }
 };
 
@@ -117,7 +87,8 @@ pub const ParentInfo = struct {
 };
 
 /// Shifts the suffix and incorporates the local block position to find the exact parent chunk and block.
-pub fn getParentInfo(coord: Coordinate, bx: u4, by: u4) ParentInfo {
+pub fn getParentInfo(coord: Coordinate, bx: u4, by: u4, target_depth: u64) ParentInfo {
+    _ = target_depth; // Prevent unused parameter err in case it's used for quadrants later
     const zoom_shift = memory.ZOOM_LOG2;
     const parent_block_shift = memory.CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2;
 
@@ -139,10 +110,11 @@ pub fn getParentInfo(coord: Coordinate, bx: u4, by: u4) ParentInfo {
     };
 }
 
-/// Applies deterministic holes based on coordinate and depth. For testing purposes.
+/// Applies deterministic holes based on coordinate and depth. For testing purposes; naive.
 /// TODO replace with actual cool logic!
 pub fn applyDeterministicHoles(sprite: Sprite, coord: Coordinate, bx: u4, by: u4, depth: u64) Sprite {
     if (sprite == .none) return .none;
+    if (!sprite.isFoundation()) return sprite; // Keep decor/edge stone!
 
     var hasher = std.hash.Wyhash.init(depth);
     std.hash.autoHash(&hasher, coord.quadrant);
@@ -150,11 +122,12 @@ pub fn applyDeterministicHoles(sprite: Sprite, coord: Coordinate, bx: u4, by: u4
     std.hash.autoHash(&hasher, coord.suffix[1]);
     std.hash.autoHash(&hasher, bx);
     std.hash.autoHash(&hasher, by);
+    const noise = hasher.final();
 
-    // chance for hole: 15%
-    // if (hasher.final() < root.seeding.oddsNum(0.15)) {
-    //     return .none;
-    // }
+    // chance for hole!
+    if (noise <= seeding.oddsNum(0.20)) {
+        return .none;
+    }
 
     // funny test pattern
     // if ((bx ^ by) & 4 == 3) {
@@ -162,127 +135,114 @@ pub fn applyDeterministicHoles(sprite: Sprite, coord: Coordinate, bx: u4, by: u4
     // }
     return sprite;
 }
-
-/// Generates a chunk entirely for the base depth (D=3).
-/// Re-uses procedural logic, but returns the specific block requested.
-/// Highly optimized targeted lookup for a single base-depth block.
-/// This prevents quadratic time-complexity as it just looks up requested block and necessary neighbors.
-pub fn evaluateBaseDepth(coord: Coordinate, bx: u4, by: u4) Sprite {
-    const cx: u32 = @truncate(coord.suffix[0]);
-    const cy: u32 = @truncate(coord.suffix[1]);
-
-    // Get the primary block state (Stone/Ores)
-    const sprite = getBaseProceduralSprite(cx, cy, bx, by);
-
-    // If the block is not empty, it's a foundation/ore block; decorations can't spawn here.
-    if (!sprite.isEmpty()) return sprite;
-    return .none;
-}
-
-/// Helper to get the stone ore ore state for an absolute coordinate.
-fn getBaseProceduralSprite(cx: u32, cy: u32, bx: u4, by: u4) Sprite {
-    const seed_vec1: memory.Vec2u = .{ memory.game.seed2[0], memory.game.seed2[1] };
-    const seed_vec2: memory.Vec2u = .{ memory.game.seed2[2], memory.game.seed2[3] };
-    const seed_vec3: memory.Vec2u = .{ memory.game.seed2[4], memory.game.seed2[5] };
-    const seed_vec4: memory.Vec2u = .{ memory.game.seed2[6], memory.game.seed2[6] };
-    const seed_vec5: memory.Vec2u = .{ memory.game.seed2[7], memory.game.seed2[8] };
-    const seed_vec6: memory.Vec2u = .{ memory.game.seed2[9], memory.game.seed2[10] };
-
-    const base_data = procedural.getBaseSpriteType(seed_vec1, seed_vec2, cx, cy, bx, by);
-    if (base_data.sprite.isStone()) {
-        return procedural.addOres(base_data, seed_vec3, seed_vec4, seed_vec5, seed_vec6, cx * 16 + bx, cy * 16 + by);
-    }
-    return base_data.sprite;
-}
-
-/// Helper to get base procedural state relative to a chunk/block, handling boundaries.
-fn getBaseProceduralSpriteRelative(coord: Coordinate, bx: u4, by: u4, dx: i32, dy: i32) Sprite {
-    const nx = @as(i32, bx) + dx;
-    const ny = @as(i32, by) + dy;
-
-    var target_coord = coord;
-    if (nx < 0 or nx >= 16 or ny < 0 or ny >= 16) {
-        target_coord = coord.move(.{ @divFloor(nx, 16), @divFloor(ny, 16) }) orelse return .edge_stone;
-    }
-
-    return getBaseProceduralSprite(@truncate(target_coord.suffix[0]), @truncate(target_coord.suffix[1]), @intCast(@mod(nx, 16)), @intCast(@mod(ny, 16)));
-}
-
-/// Recursively traces the lineage of a block from the target depth down to max(D-31, STARTING_ZOOM_TIMES).
-/// Updated logic to trace ancestry without exponential block-by-block recursion.
+/// Traces the lineage of a single block type.
 pub fn getInheritedMaterial(target_depth: u64, coord: Coordinate, bx: u4, by: u4) Sprite {
-    // rearranged for unsigned-ness: asks if target depth <= current depth - highest possible depth value where all coordinates can be represented in 1 quadrant
+    // Quadrant fallback case!
     if (target_depth + memory.QUADRANTLESS_DEPTH <= memory.game.depth) {
+        // Depth shouldn't be smaller ("skipping").
+        std.debug.assert(target_depth + memory.QUADRANTLESS_DEPTH == memory.game.depth);
         return world.quad_cache.ancestor_materials[coord.quadrant];
     }
 
+    // High-speed cache check
     const mod_key = world.ModKey{
         .suffix = coord.suffix,
         .quadrant = coord.quadrant,
         .depth = target_depth,
     };
-    if (world.mod_store.get(mod_key)) |modified_chunk| {
-        return modified_chunk.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
+
+    if (AncestorCache.get(mod_key)) |cached| {
+        return cached.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
     }
 
-    if (target_depth == memory.game.depth - 1 and target_depth >= 3) {
-        if (AncestorCache.get(coord)) |cached_chunk| {
-            return cached_chunk.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
-        }
-
-        const new_chunk = AncestorCache.allocateSlot(coord);
-        const original_depth = memory.game.depth;
-        memory.game.depth = target_depth;
-
-        // writeChunkSkip triggers the full generation pass (including decorations)
-        world.writeChunkSkip(new_chunk, coord);
-
-        memory.game.depth = original_depth;
-        return new_chunk.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
+    // Check modification store for any changes with this depth!
+    if (world.mod_store.get(mod_key)) |modified| {
+        return modified.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
     }
 
-    if (target_depth <= STARTING_ZOOM_TIMES) {
-        return evaluateBaseDepth(coord, bx, by);
+    // At STARTING_ZOOM_TIMES; this is the base case depth.
+    // Break the recursion loop by generating the actual base chunk and caching it.
+    if (target_depth == STARTING_ZOOM_TIMES) {
+        const slot = AncestorCache.allocateSlot(mod_key);
+        world.generateChunk(slot, coord, target_depth);
+        return slot.blocks[(@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx].id;
     }
 
-    const parent_info = getParentInfo(coord, bx, by);
-    const parent_sprite = getInheritedMaterial(target_depth - 1, parent_info.coord, parent_info.bx, parent_info.by);
-    return applyDeterministicHoles(parent_sprite, coord, bx, by, target_depth);
+    // Probe the parent ID.
+    const p_info = getParentInfo(coord, bx, by, target_depth);
+    const parent_sprite = getInheritedMaterial(target_depth - 1, p_info.coord, p_info.bx, p_info.by);
+
+    // Scale-up logic: If parent is solid, child is solid.
+    if (parent_sprite.isFoundation()) {
+        return applyDeterministicHoles(parent_sprite, coord, bx, by, target_depth);
+    }
+
+    // Parent was air or decoration, allow!
+    return parent_sprite;
 }
 
-/// Retrieves the 6x6 grid of parent blocks at Depth D-1 corresponding to the provided chunk at Depth D.
-/// The inner 4x4 grid (indices 1..4) represents the direct parents of the 16x16 child chunk.
-/// The outer ring provides a 1-block margin for edge calculations.
+/// Fetches a 6x6 neighborhood of parent IDs for the generator.
+/// Optimized to fetch 3x3 parent chunks once rather than 36 individual block lookups.
 pub fn getAncestorNeighborhood(target_depth: u64, coord_d: Coordinate) [6][6]Sprite {
     var result: [6][6]Sprite = undefined;
-    if (target_depth <= STARTING_ZOOM_TIMES) {
+    const parent_depth = target_depth - 1;
+
+    // Base Case
+    if (target_depth == STARTING_ZOOM_TIMES) {
         for (0..6) |y| @memset(&result[y], .stone);
         return result;
     }
 
-    const parent_depth = target_depth - 1;
-    const p_info = getParentInfo(coord_d, 0, 0);
+    // Identify the top-left-most parent block required (index -1, -1 relative to child origin)
+    const p_info_origin = getParentInfo(coord_d, 0, 0, target_depth);
+    const start_px: i32 = @as(i32, @intCast(p_info_origin.bx)) - 1;
+    const start_py: i32 = @as(i32, @intCast(p_info_origin.by)) - 1;
 
-    for (0..6) |y_id| {
-        for (0..6) |x_id| {
-            const nx: i32 = @as(i32, p_info.bx) + @as(i32, @intCast(x_id)) - 1;
-            const ny: i32 = @as(i32, p_info.by) + @as(i32, @intCast(y_id)) - 1;
+    // Fetch the 3x3 chunk grid that covers the 6x6 block area
+    var parent_chunks: [3][3]?*const Chunk = [_][3]?*const Chunk{[_]?*const Chunk{null} ** 3} ** 3;
+    inline for (.{ -1, 0, 1 }) |cy| {
+        inline for (.{ -1, 0, 1 }) |cx| {
+            // Directly offset the chunk coordinate relative to the origin chunk
+            const nc = p_info_origin.coord.moveAtDepth(.{ cx, cy }, parent_depth);
 
-            const neighbor_coord = p_info.coord;
-            const needs_move = nx < 0 or nx >= memory.CHUNK_SIZE or ny < 0 or ny >= memory.CHUNK_SIZE;
-
-            const final_coord = if (needs_move)
-                p_info.coord.move(.{ @divFloor(nx, memory.CHUNK_SIZE), @divFloor(ny, memory.CHUNK_SIZE) })
-            else
-                neighbor_coord;
-
-            if (final_coord) |nc| {
-                const lbx: u4 = @intCast(@mod(nx, memory.CHUNK_SIZE));
-                const lby: u4 = @intCast(@mod(ny, memory.CHUNK_SIZE));
-                result[y_id][x_id] = getInheritedMaterial(parent_depth, nc, lbx, lby);
-            } else {
-                result[y_id][x_id] = .edge_stone;
+            if (nc) |coord| {
+                const key = world.ModKey{ .suffix = coord.suffix, .quadrant = coord.quadrant, .depth = parent_depth };
+                // Use getInheritedMaterial logic but specifically for the chunk pointer
+                parent_chunks[@intCast(cy + 1)][@intCast(cx + 1)] = if (AncestorCache.get(key)) |c| c else if (world.mod_store.get(key)) |m| m else blk: {
+                    // If not cached, we MUST generate it
+                    const slot = AncestorCache.allocateSlot(key);
+                    world.generateChunk(slot, coord, parent_depth);
+                    break :blk slot;
+                };
             }
+        }
+    }
+
+    // Fill the 6x6 sprite result from the 3x3 chunk grid
+    for (0..6) |y_idx| {
+        for (0..6) |x_idx| {
+            const lx = start_px + @as(i32, @intCast(x_idx));
+            const ly = start_py + @as(i32, @intCast(y_idx));
+
+            const chunk_x = @divFloor(lx, memory.CHUNK_SIZE) + 1;
+            const chunk_y = @divFloor(ly, memory.CHUNK_SIZE) + 1;
+
+            if (chunk_x >= 0 and chunk_x < 3 and chunk_y >= 0 and chunk_y < 3) {
+                if (parent_chunks[@intCast(chunk_y)][@intCast(chunk_x)]) |c| {
+                    const bx: usize = @intCast(@mod(lx, memory.CHUNK_SIZE));
+                    const by: usize = @intCast(@mod(ly, memory.CHUNK_SIZE));
+                    result[y_idx][x_idx] = c.blocks[by * memory.CHUNK_SIZE + bx].id;
+                    continue;
+                }
+            }
+
+            const max_s = world.getMaxSuffixAtDepth(parent_depth);
+            const is_edge_x = (chunk_x < 1 and p_info_origin.coord.suffix[0] == 0) or
+                (chunk_x >= 2 and p_info_origin.coord.suffix[0] == max_s);
+            const is_edge_y = (chunk_y < 1 and p_info_origin.coord.suffix[1] == 0) or
+                (chunk_y >= 2 and p_info_origin.coord.suffix[1] == max_s);
+
+            result[y_idx][x_idx] = if (is_edge_x or is_edge_y) .edge_stone else world.quad_cache.ancestor_materials[coord_d.quadrant];
         }
     }
     return result;

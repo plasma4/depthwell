@@ -21,9 +21,10 @@ const Vec2f = memory.Vec2f;
 const Vec2u = memory.Vec2u;
 
 // Lots of values controlled by debug sliders here!
+pub var dual_value_scale: f64 = 16.0;
 pub var base_gem_odds: f64 = 0.1;
 pub var procedural_cell_size: f64 = 1.0;
-pub var fbm_power: f64 = 1.0;
+pub var fbm_scale: f64 = 1.0;
 pub var density_min: f64 = 0.32;
 pub var density_max: f64 = 0.9;
 
@@ -85,7 +86,7 @@ pub fn getBaseSpriteType(
     block_x: u4,
     block_y: u4,
 ) BaseTerrainData {
-    std.debug.assert(chunk_x < 1 << 16 and chunk_y < 1 << 16);
+    std.debug.assert(chunk_x < 1 << 16 and chunk_y < 1 << 16); // reasonable values
     const moisture = getFbmWorleyValue( // acts as a biome
         vec2,
         chunk_x * 16 + block_x,
@@ -141,11 +142,19 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
     var warp_y: f32 = 0;
 
     var freq: u64 = 1;
-    var amp = options.fbm_shift_size * @as(f32, @floatCast(fbm_power));
+    var amp: f32 = options.fbm_shift_size;
+    if (root.is_debug) {
+        amp /= @as(f32, @floatCast(fbm_scale));
+    } else {
+        // TODO: find method to make this comptime-convert to f32
+        // amp *= comptime fbm_power;
+        amp /= @as(f32, @floatCast(fbm_scale));
+    }
     if (amp > 0) {
         // FBM warping
         inline for (0..fbm_octaves) |_| {
-            const noise = getDualValueNoise(seed_vector, x * freq, y * freq); // make shifting smooth!
+            // make shifting smooth instead of pointless random jitter with value noise freq!
+            const noise = getDualValueNoise(seed_vector, x * freq, y * freq);
             warp_x += noise[0] * amp;
             warp_y += noise[1] * amp;
             amp *= 0.5;
@@ -153,6 +162,7 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
         }
     }
 
+    // TODO: same comptime
     const cell_size = options.cell_size * @as(f32, @floatCast(procedural_cell_size));
     const wx = fx + warp_x;
     const wy = fy + warp_y;
@@ -202,9 +212,10 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
 
 /// Returns two independent noise values (32-bit float) based on the classic Value Noise algorithm.
 fn getDualValueNoise(seed: Vec2u, x: u64, y: u64) memory.Vec2f32 {
-    const scale: f32 = 16.0;
-    const fx_raw = @as(f32, @floatFromInt(x)) / scale;
-    const fy_raw = @as(f32, @floatFromInt(y)) / scale;
+    // TODO: same comptime
+    // also, vectorize
+    const fx_raw = @as(f32, @floatFromInt(x)) / @as(f32, @floatCast(dual_value_scale));
+    const fy_raw = @as(f32, @floatFromInt(y)) / @as(f32, @floatCast(dual_value_scale));
 
     const x0 = @as(u64, @trunc(fx_raw));
     const y0 = @as(u64, @trunc(fy_raw));
@@ -419,17 +430,25 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void
         }
     }
 
-    for (1..CHUNK_SIZE) |block_y| {
+    for (0..CHUNK_SIZE) |block_y| {
         for (0..CHUNK_SIZE) |block_x| {
             const id = block_x + block_y * CHUNK_SIZE;
             var block = &target_chunk.blocks[id];
-            if (block.isFoundation() or target_chunk.blocks[id - 16].isEmpty()) continue;
-            if (target_chunk.blocks[id - 16].id == .spiral_plant and rng1.next() <= oddsNum(0.7)) {
-                // TODO: evaluate if this not functioning across chunk boundaries really matters or not
-                // (visually un-noticed)
-                block.id = .spiral_plant;
-            } else if (target_chunk.blocks[id - 16].isFoundation() and block.isEmpty()) {
-                const val = rng1.next();
+            if (!block.isEmpty()) continue;
+            const has_ceiling = block.isAdjacentBlockSolid(types.EdgeFlags.getFlagBit(0, -1));
+
+            // Local check for spiral plant growth (allowed to be chunk-local).
+            const is_spiral_above = if (block_y > 0)
+                target_chunk.blocks[id - CHUNK_SIZE].id == .spiral_plant
+            else
+                false;
+
+            const val = rng1.next();
+            if (is_spiral_above) {
+                if (val <= oddsNum(0.7)) {
+                    block.id = .spiral_plant;
+                }
+            } else if (has_ceiling) {
                 if (val <= oddsNum(0.3)) {
                     block.id = .ceiling_flower;
                 } else if (val <= oddsNum(0.35)) {

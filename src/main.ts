@@ -36,7 +36,9 @@ if (!navigator.gpu) {
 
 const adapter = await navigator.gpu.requestAdapter();
 if (!adapter) {
-    alert("WebGPU is supported, but no compatible GPU was found.");
+    alert(
+        "WebGPU is supported by the browser, but no compatible GPU was found. Your GPU may be too old to play this game.",
+    );
 }
 
 import { GameEngine } from "./engine";
@@ -370,6 +372,8 @@ if (engine.isDebug) {
     const jsonStr = engine.readStr();
 
     const meta = JSON.parse(jsonStr);
+    if (CONFIG.verbose)
+        console.log("Auto-generated buttons and slider data:", meta);
 
     const container = document.getElementById(
         "debugContainer",

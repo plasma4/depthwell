@@ -51,7 +51,7 @@ const CAMERA_DEADZONE_X = 10 * memory.CHUNK_SIZE_SQ; // memory.CHUNK_SIZE_SQ mea
 /// How far the player has to move before actually panning the camera in sub-pixels (y-axis).
 const CAMERA_DEADZONE_Y = 3 * memory.CHUNK_SIZE_SQ;
 
-const pixel_mult: Vec2f = .{ @floatFromInt(CHUNK_SIZE), @floatFromInt(CHUNK_SIZE) };
+const pixel_mult: Vec2f = @splat(@floatFromInt(CHUNK_SIZE));
 pub var subpixel_accum: Vec2f = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
 
 /// Determines if the player is on the ground.

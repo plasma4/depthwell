@@ -126,7 +126,7 @@ pub const GameState = extern struct {
         self.player_pos = new_position;
         self.last_player_pos = new_position;
         self.camera_pos = new_position;
-        world.clearCaches();
+        world.clearCaches(false);
     }
 
     /// Sets the player position within a chunk, teleporting the previous position as well. Also clears subpixel accumulation/velocity.
@@ -277,6 +277,7 @@ pub const Block = packed struct(u64) {
 pub const Chunk = struct {
     blocks: [CHUNK_SIZE_SQ]Block align(MAIN_ALIGN_BYTES),
 
+    /// Gets a specific block within the 16x16 chunk.
     pub inline fn getBlock(self: @This(), x: u4, y: u4) Block {
         return self.blocks[(@as(usize, y) << CHUNK_SIZE_LOG2) | @as(usize, x)];
     }
@@ -284,13 +285,15 @@ pub const Chunk = struct {
 
 /// Represents a "coordinate", relative to a quad-cache. Stores an "active suffix" as well as the quadrant this coordinate belongs to.
 pub const Coordinate = struct {
-    // Active suffix (stored as a vector). You can think of the active suffix like 16 u4s packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see `README.md` for more details).
+    /// Active suffix (stored as a vector).
+    /// You can think of the active suffix like 32 u2s packed together for the X and Y coordinate.
+    /// This can be merged with a correct `QuadCache` quadrant to produce a "complete" path (see `README.md` for more details).
     suffix: Vec2u,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u2,
 
     /// Checks equality between two `Coordinate` values.
-    pub fn eql(a: ?Coordinate, b: ?Coordinate) bool {
+    pub inline fn eql(a: ?Coordinate, b: ?Coordinate) bool {
         if (a == null and b == null) return true;
         if (a == null or b == null) return false;
 
@@ -299,12 +302,17 @@ pub const Coordinate = struct {
     }
 
     /// Adds both an X and Y value, creating a new Coordinate and handling quadrants.
-    /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub fn move(self: @This(), shift: Vec2i) ?Coordinate {
+    /// Returns `null` if this change would exceed a quadrant's boundaries at the game's current depth.
+    pub inline fn move(self: @This(), shift: Vec2i) ?Coordinate {
+        return self.moveAtDepth(shift, game.depth);
+    }
+
+    /// Adds both an X and Y value, creating a new Coordinate and handling quadrants for a specific depth.
+    /// Returns `null` if this change would exceed boundaries.
+    pub inline fn moveAtDepth(self: @This(), shift: Vec2i, depth: u64) ?Coordinate {
         const dx = shift[0];
         const dy = shift[1];
         if (dx == 0 and dy == 0) return self;
-        const depth = game.depth;
         var res = self;
 
         // X Axis
@@ -317,7 +325,8 @@ pub const Coordinate = struct {
                 if (is_pos == ((res.quadrant & 1) != 0)) return null;
                 res.quadrant ^= 1;
             }
-            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.max_possible_suffix) return null;
+
+            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
             res.suffix[0] = ov[0];
         }
 
@@ -332,7 +341,7 @@ pub const Coordinate = struct {
                 res.quadrant ^= 2;
             }
 
-            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.max_possible_suffix) return null;
+            if (is_pos and depth <= QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
             res.suffix[1] = ov[0];
         }
         return res;
@@ -359,7 +368,7 @@ pub const ModifiedChunk = struct {
     /// The specific modified block IDs. Only indices with a 1 in `modified_mask` are valid.
     blocks: [CHUNK_SIZE_SQ]Sprite align(MAIN_ALIGN_BYTES),
 
-    /// Helper to check if a specific local block is modified
+    /// Helper to check if a specific local block has been modified.
     pub inline fn isModified(self: *const @This(), lx: u4, ly: u4) bool {
         const index = (@as(u8, ly) << CHUNK_SIZE_LOG2) | @as(u8, lx);
         const slot = index >> 6;
@@ -395,6 +404,7 @@ pub const Particle = struct {
     time_end: f64,
 };
 
+/// Default LCHA configuration to result in the same colors as the original sprite after mask.
 pub const DEFAULT_ENTITY_LCHA: @Vector(4, f32) = .{ 1.0, 0.0, 0.0, 1.0 };
 
 /// Entity data (before being sent to WGSL, using internal viewport).
@@ -547,7 +557,7 @@ pub inline fn scratchAllocType(comptime T: type, byte_count_before_end: ?*usize)
     const mod = type_size % MAIN_ALIGN_BYTES;
     if (byte_count_before_end == null or mod == 0) {
         const ptr = scratchAlloc(type_size);
-        return @as(T, @ptrCast(@alignCast(ptr)));
+        return @as(*T, @ptrCast(@alignCast(ptr)));
     }
 
     // ask for more and find the right position!

@@ -5,8 +5,11 @@ const memory = root.memory;
 const Particle = memory.Particle;
 
 /// Custom circular buffer system for particles that doesn't require CPU-side culling.
+/// The oldest particles get automatically removed. Particle insertion occurs based on creation order.
 pub const ParticleSystem = struct {
+    /// List of particles. Never expanded indefinitely.
     list: std.MultiArrayList(Particle) = .{},
+    /// Maximum amount of particles that can exist.
     max_particles: usize,
 
     pub fn init(allocator: std.mem.Allocator, max: usize) !ParticleSystem {

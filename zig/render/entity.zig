@@ -8,9 +8,13 @@ const ColorRGBA = root.ColorRGBA;
 const inventory = root.inventory;
 
 const CHUNK_SIZE = memory.CHUNK_SIZE;
+const EdgeFlags = root.types.EdgeFlags;
 const Entity = memory.Entity;
 const WGSLEntity = memory.WGSLEntity;
 const Vec2f32 = memory.Vec2f32;
+
+/// Scale of tiles in the small chunk preview.
+pub var preview_tile_size: f64 = 0.0;
 
 /// Extra spacing between number characters.
 const spacing = 0.25;
@@ -38,82 +42,172 @@ var entity_byte_count_before_end: usize = 0;
 /// Current number of entities (reset every frame).
 var entity_count: u64 = undefined;
 
-/// Updates all entities by adding them to the scratch buffer. Does not actually inform JS.
+/// Updates all entities by adding them to the scratch buffer. Does not actually inform JS by calling `handleVisibleEntities()`.
+/// Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
+/// Some properties are optional with defaults (size, rotation, LCHA).
 pub fn updateEntities(time_diff: f64) void {
     memory.scratchReset();
     entity_count = 0;
     entity_byte_count_before_end = 0;
 
-    if (root.is_debug and root.debug_ui.SHOW_CHUNK_PREVIEW) {
+    if (root.is_debug and preview_tile_size > 0.0) {
         // draw a rectangle background for preview, and then the chunk inside!
+        const tile_size: f32 = @floatCast(preview_tile_size);
         const preview_x_origin: f32 = 30.0;
         const preview_y_origin: f32 = 50.0;
-        const preview_tile_size: f32 = 4.0; // Scale of tiles in the preview
         const background_margins: f32 = 6.0;
         var bg: Entity = .{
             .sprite = .particle,
             .position = .{
-                preview_x_origin - 2 + preview_tile_size * CHUNK_SIZE / 2,
-                preview_y_origin - 2 + preview_tile_size * CHUNK_SIZE / 2,
+                preview_x_origin + tile_size * CHUNK_SIZE / 2 - tile_size / 2,
+                preview_y_origin + tile_size * CHUNK_SIZE / 2 - tile_size / 2,
             },
-            .size = preview_tile_size * CHUNK_SIZE + background_margins * 2,
+            .size = tile_size * CHUNK_SIZE + background_margins * 2,
             .lcha = .{ 1.0, 0.5, 1.2, 0.6 }, // translucent orange!
         };
         addEntity(bg);
         bg.size *= 1.01; // a tad larger!
-        bg.lcha = .{ 1.0, 0.5, 0.3, 0.5 }; // redder
+        bg.lcha = .{ 1.0, 0.5, 2.3, 0.5 }; // yelloower
         addEntity(bg);
 
-        const chunk = root.world.getChunk(memory.game.getPlayerCoord());
+        const player_coord = memory.game.getPlayerCoord();
+        const chunk = root.world.getChunk(player_coord);
+        const depth = memory.game.depth;
+
+        // Fetch neighbor chunks for border flag visualization
+        const neighbors = blk: {
+            var n: [8]?root.memory.Chunk = [_]?root.memory.Chunk{null} ** 8;
+            const offsets = [8]root.memory.Vec2i{
+                .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 }, // N, S, W, E
+                .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 1, 1 }, // NW, NE, SW, SE
+            };
+            for (offsets, 0..) |off, i| {
+                if (player_coord.moveAtDepth(off, depth)) |nc| {
+                    n[i] = root.world.getChunk(nc);
+                }
+            }
+            break :blk n;
+        };
+
+        const thick = tile_size * 0.08;
+        const line_len = tile_size;
+        const diag_size = tile_size * 0.2;
+        const half = tile_size * 0.5;
+
         for (0..CHUNK_SIZE) |y| {
             for (0..CHUNK_SIZE) |x| {
                 const block = chunk.getBlock(@intCast(x), @intCast(y));
-                if (block.id == .none) continue;
+                const block_pos: Vec2f32 = .{
+                    preview_x_origin + @as(f32, @floatFromInt(x)) * tile_size,
+                    preview_y_origin + @as(f32, @floatFromInt(y)) * tile_size,
+                };
 
-                if (block.isHeatmap()) {
-                    // special case! draw grayscale particle instead
-                    addEntity(.{
-                        .sprite = .particle,
-                        .position = .{
-                            preview_x_origin + (@as(f32, @floatFromInt(x)) * preview_tile_size),
-                            preview_y_origin + (@as(f32, @floatFromInt(y)) * preview_tile_size),
-                        },
-                        .size = preview_tile_size,
-                        .lcha = .{ (@as(f32, @intFromEnum(block.id)) - 65000.0) / 256.0, 0.0, 0.0, 1.0 },
-                    });
-                } else {
-                    addEntity(.{
-                        .sprite = block.id,
-                        .position = .{
-                            preview_x_origin + (@as(f32, @floatFromInt(x)) * preview_tile_size),
-                            preview_y_origin + (@as(f32, @floatFromInt(y)) * preview_tile_size),
-                        },
-                        .size = preview_tile_size,
-                        .lcha = memory.DEFAULT_ENTITY_LCHA,
-                    });
+                // Draw base block (Existing Logic)
+                if (!block.isEmpty()) {
+                    if (block.isHeatmap()) {
+                        addEntity(.{
+                            .sprite = .rectangle,
+                            .position = block_pos,
+                            .size = tile_size,
+                            .lcha = .{ (@as(f32, @intFromEnum(block.id)) - 65000.0) / 256.0, 0.0, 0.0, 1.0 },
+                        });
+                    } else {
+                        addEntity(.{
+                            .sprite = block.id,
+                            .position = block_pos,
+                            .size = tile_size,
+                        });
+                    }
                 }
+
+                if (block.isFoundation()) {
+                    const edge_flags = block.edge_flags;
+
+                    // Non-diagonal directions first!
+                    for ([4]u8{ 1, 6, 3, 4 }) |bit| {
+                        if ((edge_flags & (@as(u8, 1) << @intCast(bit))) == 0) {
+                            var ent: Entity = .{ .sprite = .rectangle, .position = block_pos };
+                            switch (bit) {
+                                1 => { // N
+                                    ent.position[1] -= half - thick * 0.5;
+                                    ent.size = line_len;
+                                    ent.lcha = .{ 0.8, 0.35, 0.4, 1.0 };
+                                    addEntityLine(ent, line_len, thick);
+                                },
+                                6 => { // S
+                                    ent.position[1] += half - thick * 0.5;
+                                    ent.lcha = .{ 0.8, 0.35, 4.2, 1.0 };
+                                    addEntityLine(ent, line_len, thick);
+                                },
+                                3 => { // W
+                                    ent.position[0] -= half - thick * 0.5;
+                                    ent.lcha = .{ 0.8, 0.35, 0.4, 1.0 };
+                                    addEntityLine(ent, thick, line_len);
+                                },
+                                4 => { // E
+                                    ent.position[0] += half - thick * 0.5;
+                                    ent.lcha = .{ 0.8, 0.35, 4.2, 1.0 };
+                                    addEntityLine(ent, thick, line_len);
+                                },
+                                else => unreachable,
+                            }
+                        }
+                    }
+
+                    // process diagonals!
+                    for ([4]u8{ 0, 2, 5, 7 }) |bit| {
+                        if ((edge_flags & (@as(u8, 1) << @intCast(bit))) == 0) {
+                            const dx = if (bit == 0 or bit == 5) -half + diag_size * 0.5 else half - diag_size * 0.5;
+                            const dy = if (bit == 0 or bit == 2) -half + diag_size * 0.5 else half - diag_size * 0.5;
+                            const c_idx =
+                                if (bit == 0) @as(usize, 0) else if (bit == 2) @as(usize, 1) else if (bit == 5) @as(usize, 2) else @as(usize, 3);
+                            addEntity(.{
+                                .sprite = .rectangle,
+                                .position = block_pos + Vec2f32{ dx, dy },
+                                .size = diag_size,
+                                // different purples/pinks
+                                .lcha = .{
+                                    0.4 + 0.2 * @as(f32, @floatFromInt(c_idx)),
+                                    0.3,
+                                    5.4,
+                                    1.0,
+                                },
+                            });
+                        }
+                    }
+                }
+                // Neighbor boundary flag injection (visualize flags pointing INTO the chunk)
+                if (x == 0) if (neighbors[2]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(15, @intCast(y)), block_pos, .W, tile_size, thick);
+                if (x == 15) if (neighbors[3]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(0, @intCast(y)), block_pos, .E, tile_size, thick);
+                if (y == 0) if (neighbors[0]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(@intCast(x), 15), block_pos, .N, tile_size, thick);
+                if (y == 15) if (neighbors[1]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(@intCast(x), 0), block_pos, .S, tile_size, thick);
             }
         }
 
         // render the player now!
-        addEntity(.{
+        const center_offset = @as(@Vector(2, i64), @splat(memory.CHUNK_SIZE_SQ / 2));
+        const relative_pos = memory.game.player_pos - center_offset;
+
+        const scale = tile_size / memory.CHUNK_SIZE_SQ;
+        const origin = Vec2f32{ preview_x_origin, preview_y_origin };
+
+        const player_entity: Entity = .{
             .sprite = .player,
-            .position = .{
-                preview_x_origin + (@as(f32, @floatFromInt(memory.game.player_pos[0] - 128)) / memory.CHUNK_SIZE_SQ * preview_tile_size),
-                preview_y_origin + (@as(f32, @floatFromInt(memory.game.player_pos[1] - 128)) / memory.CHUNK_SIZE_SQ * preview_tile_size),
-            },
-            .size = preview_tile_size,
+            .position = origin + @as(Vec2f32, @floatFromInt(relative_pos)) * @as(Vec2f32, @splat(scale)),
+            .size = tile_size,
             .lcha = memory.DEFAULT_ENTITY_LCHA,
-        });
+        };
+        var player_entity_bg = player_entity;
+        player_entity_bg.position -= .{ tile_size / 8.0, tile_size / 8.0 };
+        player_entity_bg.lcha = .{ 0.5, 0.0, 0.0, 0.8 };
+        addEntity(player_entity_bg);
+        addEntity(player_entity);
     }
 
     root.mouse.mouse_type = .initial;
     inventory.drawInventory(time_diff);
     root.render.dispatchMouseType();
     root.mouse.just_mouse_down = false;
-
-    // Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
-    // Some properties are optional with defaults (size, rotation, LCHA).
 
     // draw selected HP (for testing)
     const progress = root.mining.selected_hp;
@@ -149,6 +243,61 @@ pub fn updateEntities(time_diff: f64) void {
 
     memory.setScratchProp(0, entity_count);
     // entities are cleared in the render code afterward
+}
+
+fn addEntityLine(entity: Entity, w: f32, h: f32) void {
+    entity_count += 1;
+    const wgsl_entity = memory.scratchAllocType(WGSLEntity, &entity_byte_count_before_end);
+    wgsl_entity.* = .{
+        .lcha = entity.lcha,
+        .position = entity.position / Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
+        .size = Vec2f32{ w / root.SCREEN_WIDTH, h / root.SCREEN_HEIGHT },
+        .rotation = entity.rotation,
+        .id = @intFromEnum(entity.sprite),
+    };
+}
+
+fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: root.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {
+    if (!neighbor_block.isFoundation()) return;
+    const half = pts * 0.5;
+    // check the flag of the neighbor that points TOWARDS our chunk
+    const target_bit: u8 = switch (side) {
+        .N => EdgeFlags.BOTTOM, // Neighbor's South flag
+        .S => EdgeFlags.TOP, // Neighbor's North flag
+        .W => EdgeFlags.RIGHT, // Neighbor's East flag
+        .E => EdgeFlags.LEFT, // Neighbor's West flag
+    };
+    if ((neighbor_block.edge_flags & target_bit) != 0) {
+        ec.* += 1;
+        const wgsl = memory.scratchAllocType(WGSLEntity, ebc);
+        var f_pos = pos;
+        var size: Vec2f32 = undefined;
+        switch (side) {
+            .N => {
+                f_pos[1] -= half + thick * 0.5;
+                size = .{ pts, thick };
+            },
+            .S => {
+                f_pos[1] += half + thick * 0.5;
+                size = .{ pts, thick };
+            },
+            .W => {
+                f_pos[0] -= half + thick * 0.5;
+                size = .{ thick, pts };
+            },
+            .E => {
+                f_pos[0] += half + thick * 0.5;
+                size = .{ thick, pts };
+            },
+        }
+        wgsl.* = .{
+            .lcha = .{ 1.0, 0.0, 0.0, 1.0 }, // Bright white/red for neighbor alerts
+            .position = f_pos / Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
+            .size = size / Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
+            .rotation = 0,
+            .id = @intFromEnum(root.Sprite.rectangle),
+        };
+    }
 }
 
 /// Configuration for drawing a number.

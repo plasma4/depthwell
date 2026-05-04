@@ -9,22 +9,29 @@ const player = root.player;
 const seeding = root.seeding;
 const procedural = root.procedural;
 
-/// Determines whether an additional preview for chunks should be shown.
-pub var SHOW_CHUNK_PREVIEW = true;
-
 pub const SliderDef = struct {
+    /// Label identifying the slider.
     name: []const u8,
+    /// Minimum value.
     min: f64,
+    /// Maximum value.
     max: f64,
+    /// Pointer to the variable to change.
     val: *f64,
+    /// Optional function to also call on slider state change.
     on_change: ?*const fn (f64) void = null,
+    /// Whether to clear chunk-based caches.
     regen: bool = false,
 };
 
 pub const ButtonDef = struct {
+    /// Text to put inside the button.
     name: []const u8,
+    /// Optional function to also call on button press.
     action: ?*const fn () void = null,
+    /// Optional pointer to a boolean to toggle on button press.
     toggle: ?*bool = null,
+    /// Whether to clear chunk-based caches.
     regen: bool = false,
 };
 
@@ -38,10 +45,17 @@ pub const sliders = [_]SliderDef{
         .regen = true,
     },
     .{
-        .name = "FBM (random domain warping) power",
-        .min = 0.0,
+        .name = "FBM (random domain warping) scale",
+        .min = 0.2,
         .max = 5.0,
-        .val = &procedural.fbm_power,
+        .val = &procedural.fbm_scale,
+        .regen = true,
+    },
+    .{
+        .name = "FBM dual value scale size",
+        .min = 4.0,
+        .max = 32.0,
+        .val = &procedural.dual_value_scale,
         .regen = true,
     },
     .{
@@ -101,6 +115,12 @@ pub const sliders = [_]SliderDef{
         .max = 1.0,
         .val = &root.render.WIREFRAME_OPACITY,
     },
+    .{
+        .name = "Preview tile size",
+        .min = 0.0,
+        .max = 16.0,
+        .val = &root.entity.preview_tile_size,
+    },
 };
 
 /// List of buttons that point to actions.
@@ -126,10 +146,6 @@ pub const buttons = [_]ButtonDef{
     .{
         .name = "Toggle showing all items",
         .toggle = &root.inventory.SHOW_ALL_INVENTORY_ITEMS,
-    },
-    .{
-        .name = "Toggle chunk preview",
-        .toggle = &SHOW_CHUNK_PREVIEW,
     },
 };
 
@@ -165,6 +181,7 @@ fn teleportRandomly() void {
     main.findSafeSpawn();
 }
 
+/// Handles a slider change to a new specified value.
 pub fn changeSlider(id: u32, val: f64) void {
     if (id >= sliders.len and id < 0) @panic("Slider ID invalid!");
     const s = sliders[id];
@@ -173,10 +190,11 @@ pub fn changeSlider(id: u32, val: f64) void {
         func(val);
     }
     if (s.regen) {
-        world.clearCaches();
+        world.clearCaches(true);
     }
 }
 
+/// Handles the action or toggle of a button press.
 pub fn clickButton(id: u32) void {
     if (id >= buttons.len and id < 0) @panic("Button ID invalid!");
 
@@ -188,10 +206,11 @@ pub fn clickButton(id: u32) void {
         value.* = !value.*;
     }
     if (b.regen) {
-        world.clearCaches();
+        world.clearCaches(true);
     }
 }
 
+/// Build debug UI metadata by exporting a JSON string.
 pub fn buildMetadata() void {
     var arena = memory.makeArena();
     defer arena.deinit();
@@ -211,6 +230,8 @@ pub fn buildMetadata() void {
     ws.beginArray() catch return;
 
     for (sliders, 0..) |s, i| {
+        const value = s.val.*;
+        if (value < s.min or value > s.max) @panic("A slider definition contains out-of-bounds minimum or maximum!");
         ws.beginObject() catch return;
 
         ws.objectField("id") catch return;
@@ -226,7 +247,7 @@ pub fn buildMetadata() void {
         ws.write(s.max) catch return;
 
         ws.objectField("val") catch return;
-        ws.write(s.val.*) catch return;
+        ws.write(value) catch return;
 
         ws.endObject() catch return;
     }

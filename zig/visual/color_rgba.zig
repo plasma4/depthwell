@@ -48,7 +48,7 @@ pub const ColorRGBA = extern union {
     }
 
     /// Interpolates two colors linearly.
-    pub inline fn mix(self: *const @This(), other: ColorRGBA, t: f32) ColorRGBA {
+    pub fn mix(self: *const @This(), other: ColorRGBA, t: f32) ColorRGBA {
         const amt: u16 = @round(t * 256.0);
         const rev: u16 = 256 - amt;
 
@@ -222,6 +222,7 @@ pub const ColorRGBA = extern union {
     }
 
     /// Converts a hex code directly into OKLCH. Use like `comptime ColorRGBA.hexToOklch("#ffffff")`.
+    /// TODO: see if we can make comptime part of evaluation inherent
     pub fn hexToOklch(comptime html_hex: []const u8) @Vector(4, f32) {
         comptime {
             const rgba = ColorRGBA.fromHex(html_hex);

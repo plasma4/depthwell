@@ -28,12 +28,13 @@ pub const NUMBER_START = DECOR_START + 10;
 pub const Sprite = enum(u16) {
     /// Empty (air) sprite.
     none = 0,
+    /// Sprite of the player.
     player = 1,
 
-    // Edge stone (2 variations)
+    /// Edge stone (2 variations).
     edge_stone = 2,
 
-    // Stone types
+    // stone types!
     strange_stone = STONE_START,
     strange_stone_other,
     blue_stone,
@@ -42,9 +43,10 @@ pub const Sprite = enum(u16) {
     lava_stone,
     mossy_stone,
     old_stone,
-    stone = STONE_END, // 2x2 variations of stone exist
+    /// "Plain" stone type, with 2x2 variations to prevent a tiling look.
+    stone = STONE_END,
 
-    // ores
+    // ores!
     copper = ORE_START,
     iron,
     silver,
@@ -67,17 +69,25 @@ pub const Sprite = enum(u16) {
     torch = DECOR_START + 5,
     portal = DECOR_START + 6,
 
+    /// Unselected inventory sprite.
     inventory = DECOR_START + 7,
+    /// Selected (currently used) inventory sprite.
     inventory_selected,
-    inventory_selected_invalid,
-    text_0 = NUMBER_START,
+    inventory_selected_invalid, // unused
+
+    text_0 = NUMBER_START, // sprite with text 0
+
+    /// Sprite for a particle; a full white rectangle but with corner pixels cut off.
     particle = NUMBER_START + 10,
+    /// Full rectangle sprite; no corner pixels cut off.
+    rectangle,
+    /// Pickaxe sprite.
     pickaxe,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
     unselected = 65535,
 
-    _, // non-exhastive for heatmaps
+    _, // non-exhaustive for heatmaps
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
     /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
@@ -90,7 +100,7 @@ pub const Sprite = enum(u16) {
     /// Includes the empty block, and excludes entities.
     ///
     /// If this code is wrong, invalid (or unnamed) enums may appear and wreak havoc.
-    pub inline fn isValid(self: @This()) bool {
+    pub fn isValid(self: @This()) bool {
         // do note that heatmap isn't valid
         return switch (self) {
             .none,
@@ -110,7 +120,7 @@ pub const Sprite = enum(u16) {
 
     /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
     /// This returns true for edge stone, unlike `is_solid`.
-    pub inline fn isSolid(self: @This()) bool {
+    pub fn isSolid(self: @This()) bool {
         if (self == Sprite.none or self == .player) return false;
 
         const id = @intFromEnum(self);

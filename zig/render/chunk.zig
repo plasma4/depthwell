@@ -3,6 +3,8 @@ const root = @import("../root.zig");
 const memory = root.memory;
 const logger = root.logger;
 const world = root.world;
+
+const QUADRANTLESS_DEPTH = memory.QUADRANTLESS_DEPTH;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
@@ -131,30 +133,25 @@ inline fn updateRenderProperties(
         const qc = world.quad_cache;
         const d: usize = @intCast(memory.game.depth);
         if (memory.ZOOM_LOG2 != 2) @compileError("Logging logic for suffixes is incorrect!");
-        var suffix_array_x = std.mem.zeroes([memory.QUADRANTLESS_DEPTH]u2); // or [_]u2{0} ** 32 :)
-        var suffix_array_y = std.mem.zeroes([memory.QUADRANTLESS_DEPTH]u2);
-        for (0..d) |i| {
-            suffix_array_x[d - i] = @intCast((game.player_chunk[0] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
-            suffix_array_y[d - i] = @intCast((game.player_chunk[1] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
+
+        const log_limit = @min(d, QUADRANTLESS_DEPTH);
+        var suffix_array_x = std.mem.zeroes([QUADRANTLESS_DEPTH]u2);
+        var suffix_array_y = std.mem.zeroes([QUADRANTLESS_DEPTH]u2);
+
+        for (0..log_limit) |i| {
+            suffix_array_x[log_limit - 1 - i] = @intCast((game.player_chunk[0] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
+            suffix_array_y[log_limit - 1 - i] = @intCast((game.player_chunk[1] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
         }
 
-        if (game.depth > memory.QUADRANTLESS_DEPTH) {
-            // logger.write(0, .{
-            //     "{h}Top left quadrant X, Y, current quadrant, and active suffix",
-            //     qc.left_path,
-            //     qc.top_path,
-            //     ([_][]const u8{ "top left", "top right", "bottom left", "bottom right" })[game.player_quadrant],
-            //     suffix_array_x,
-            //     suffix_array_y,
-            // });
+        if (game.depth > QUADRANTLESS_DEPTH) {
             logger.writeOnce(2, .{
-                "{mh}Left quadrant path",
+                "{mh}Left quadrant path (truncated)",
                 qc.left_path,
                 "{mh}X suffix array",
                 suffix_array_x,
             });
             logger.writeOnce(3, .{
-                "{mh}Top quadrant path",
+                "{mh}Top quadrant path (truncated)",
                 qc.top_path,
                 "{mh}Y suffix array",
                 suffix_array_y,
@@ -169,14 +166,12 @@ inline fn updateRenderProperties(
             logger.writeOnce(0, .{
                 "{h}Quadrant name",
                 quadrant_name,
-                // "{mh}Number of digits in the current (hypothetical) width of the game world",
-                // @as(u64, @floor(std.math.log10(16.0) * @as(f64, @floatFromInt(game.depth + 1)))) + 1,
             });
         } else {
             logger.writeOnce(0, .{
                 "{h}Chunk active suffix X/Y",
-                suffix_array_x[0..d],
-                suffix_array_y[0..d],
+                suffix_array_x[0..log_limit], // Use log_limit to avoid overflow if d > 32
+                suffix_array_y[0..log_limit],
             });
         }
 

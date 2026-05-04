@@ -312,8 +312,6 @@ You can see how because the entities are _ordered_, it's easy to add a shadow. A
 
 #### The fractal modification buffer
 
-TODO, finish. This part is **not actually implemented** yet.
-
 Depthwell stores modifications with some fancy lineage inheritance: modifications are stored per-layer, and when generating a chunk at Depth $D$, the engine traverses up depths of the `ModificationStore` (eventually bubbling up to checking the type of a quad-cache if no changes were found). Small detail: portals can only spawn in places where the player is able to enter the new depth, not stuck within a block!
 
 The _goal_ with modifications is to ensure the following:
@@ -324,18 +322,30 @@ The _goal_ with modifications is to ensure the following:
 4. Minimize heap fragmentation and "allocation churn."
 5. The entire state can be stored inside RAM.
 
-Therefore, the current solution is to hash a Coordinate and the current depth together using `std.hash.autoHash`. A `std.AutoHashMap` stores these hashes and a dynamically allocated array of `[memory.CHUNK_SIZE_SQ]BlockMod` (the dense data representing a chunk's entire modifications). See some definitions and more details:
+Therefore, the current solution is to hash a Coordinate and the current depth together using `std.hash.autoHash`. A `std.HashMap` stores these hashes and a dynamically allocated array of `Chunk`s (the dense data representing a chunk's entire modifications). See some definitions and more details:
 
 ```zig
-/// Stores and handles modifications of chunks; stores values across depths.
+/// Stores and handles modifications of chunks. Functions across depths.
 pub const ModificationStore = struct {
-    index: std.HashMap(ModKey, usize, ModKeyContext, std.hash_map.default_max_load_percentage),
+    /// `HashMap`-based system to store indexes to `history`.
+    index: std.HashMap(
+        ModKey,
+        usize,
+        ModKeyContext,
+        std.hash_map.default_max_load_percentage,
+    ),
+    /// TODO: evaluate if this is slow, and if `Arraylist` would fit better for native?
+    /// Or maybe it's too slow even for WASM?
     history: SegmentedList(Chunk, 128) = .{},
 
     pub fn init(allocator: std.mem.Allocator) ModificationStore {
         return .{
-            .index =
-            std.HashMap(ModKey, usize, ModKeyContext, std.hash_map.default_max_load_percentage).init(allocator),
+            .index = std.HashMap(
+                ModKey,
+                usize,
+                ModKeyContext,
+                std.hash_map.default_max_load_percentage,
+            ).init(allocator),
         };
     }
 
