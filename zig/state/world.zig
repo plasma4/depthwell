@@ -233,7 +233,7 @@ pub const SimBuffer = struct {
         const dx = coord.suffix[0] -% og.suffix[0];
         const dy = coord.suffix[1] -% og.suffix[1];
 
-        if (dx < SIM_BUFFER_WIDTH and dy < SIM_BUFFER_WIDTH) {
+        if ((dx | dy) < SIM_BUFFER_WIDTH) {
             const id = getIndex(@intCast(dx), @intCast(dy));
             if (keys[id]) |k| {
                 if (k.eql(coord)) return &sim_buffer_ptr[id];
@@ -993,7 +993,7 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
     c.blocks[id].id = new_sprite;
     c.blocks[id].hp = 0;
     // Explicitly reset edge flags to 255 for non-foundation blocks (to fix rendering artifacts)!
-    const edge_flags_val: u8 = if (new_sprite.isFoundation()) undefined else 0xFF;
+    const edge_flags_val: u8 = if (new_sprite.isFoundation()) 0 else 0xFF;
     c.blocks[id].edge_flags = edge_flags_val;
 
     if (SimBuffer.get(coord)) |sim_chunk| {

@@ -61,7 +61,7 @@ pub fn build(b: *std.Build) void {
     } else if (optimize == .ReleaseFast) {
         exe.root_module.single_threaded = true;
         exe.root_module.stack_check = false;
-        exe.lto = .full; // no work ):
+        exe.lto = .full;
     }
     exe.rdynamic = true; // export functions with "export" keyword
     exe.entry = .disabled; // No main()
@@ -85,6 +85,9 @@ pub fn build(b: *std.Build) void {
             "--strip-debug",
             "--strip-dwarf",
             "--strip-producers",
+            "--optimize-instructions",
+            "--flatten",
+            "--rereloop",
             "--enable-simd",
             "--enable-sign-ext",
             "--enable-tail-call",

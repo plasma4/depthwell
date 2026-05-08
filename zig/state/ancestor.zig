@@ -45,6 +45,11 @@ pub const AncestorCache = struct {
         const d = @as(usize, @intCast(key.depth % NUM_TIERS)); // TODO: maybe we shouldn't be doing a % 33, which is slow?
 
         for (&keys[d], 0..) |maybe_key, i| {
+            if (i + 1 < TIER_SIZE) {
+                // small optimization
+                @prefetch(&keys[d][i + 1], .{ .rw = .read, .locality = 1, .cache = .data });
+            }
+
             if (maybe_key) |k| {
                 if (k.depth == key.depth and k.quadrant == key.quadrant and @reduce(.And, k.suffix == key.suffix)) {
                     clock[d].set(i);
