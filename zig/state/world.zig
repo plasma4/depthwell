@@ -168,6 +168,8 @@ pub const DepthCoordinateContext = struct {
 
 /// Width of the simulation buffer.
 const SIM_BUFFER_WIDTH = 16;
+/// Represents log2(SIM_BUFFER_WIDTH).
+const SIM_WIDTH_LOG2 = std.math.log2(SIM_BUFFER_WIDTH);
 /// Size of the chunk cache (can be arbitrarily adjusted).
 const CHUNK_CACHE_SIZE = 256;
 
@@ -220,9 +222,6 @@ pub const SimBuffer = struct {
         if (!std.math.isPowerOfTwo(SIM_BUFFER_WIDTH)) @compileError("Sim buffer width must be a positive power of 2.");
     };
 
-    /// Represents log2(SIM_BUFFER_WIDTH).
-    const LOG_2_MASK = std.math.log2(SIM_BUFFER_WIDTH);
-
     /// Attempts to retrieve a chunk from the buffer, returning `null` if non-existent.
     pub fn get(coord: Coordinate) ?*Chunk {
         const og = origin orelse return null;
@@ -246,7 +245,7 @@ pub const SimBuffer = struct {
     pub inline fn getIndex(cx: u4, cy: u4) usize {
         const rx = (ring_x +% cx) & SIM_MASK;
         const ry = (ring_y +% cy) & SIM_MASK;
-        return (@as(usize, ry) << LOG_2_MASK) | rx;
+        return (@as(usize, ry) << SIM_WIDTH_LOG2) | rx;
     }
 
     /// Clears the whole `SimBuffer`, invalidating previous data.
@@ -308,7 +307,7 @@ pub const SimBuffer = struct {
 
         for (0..SIM_BUFFER_WIDTH) |cy| {
             for (0..SIM_BUFFER_WIDTH) |cx| {
-                const id = (cy << LOG_2_MASK) | cx;
+                const id = (cy << SIM_WIDTH_LOG2) | cx;
                 if (new_origin.move(.{ @intCast(cx), @intCast(cy) })) |cell_coord| {
                     keys[id] = cell_coord;
                     writeChunkSkip(&sim_buffer_ptr[id], cell_coord);

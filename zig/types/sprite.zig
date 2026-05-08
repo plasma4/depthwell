@@ -127,19 +127,8 @@ pub const Sprite = enum(u16) {
         if (self == Sprite.none or self == .player) return false;
 
         const id = @intFromEnum(self);
-        if (id >= @intFromEnum(Sprite.gem_mask) and id < @intFromEnum(Sprite.spiral_plant)) return false;
-        return switch (self) {
-            .spiral_plant,
-            .ceiling_flower,
-            .mushroom,
-            .mushroom_big,
-            .torch,
-            .none,
-            .player,
-            .portal,
-            => false,
-            else => true,
-        };
+        if (id >= MASK_START and id <= @intFromEnum(Sprite.inventory)) return false;
+        return true;
     }
 
     /// Determines if the sprite's type is `none` (air/void).

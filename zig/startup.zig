@@ -15,7 +15,7 @@ const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
 
 /// Sets the number of times the push_layer function is called at the start.
 /// If set to n, the game will start off by being n ^ ZOOM_FACTOR chunks in either dimension.
-pub const STARTING_ZOOM_TIMES = 4;
+pub const STARTING_ZOOM_TIMES = 2;
 /// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` is positive).
 const SET_PLAYER_SPAWN_RANDOMLY = true;
 
