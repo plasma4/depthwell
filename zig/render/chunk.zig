@@ -132,15 +132,14 @@ inline fn updateRenderProperties(
     if (root.is_debug) {
         const qc = world.quad_cache;
         const d: usize = @intCast(memory.game.depth);
-        if (memory.ZOOM_LOG2 != 2) @compileError("Logging logic for suffixes is incorrect!");
 
         const log_limit = @min(d, HORIZON_DEPTH);
-        var suffix_array_x = std.mem.zeroes([HORIZON_DEPTH]u2);
-        var suffix_array_y = std.mem.zeroes([HORIZON_DEPTH]u2);
+        var suffix_array_x = std.mem.zeroes([HORIZON_DEPTH]u64);
+        var suffix_array_y = std.mem.zeroes([HORIZON_DEPTH]u64);
 
         for (0..log_limit) |i| {
-            suffix_array_x[log_limit - 1 - i] = @intCast((game.player_chunk[0] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
-            suffix_array_y[log_limit - 1 - i] = @intCast((game.player_chunk[1] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
+            suffix_array_x[log_limit - 1 - i] = (game.player_chunk[0] >> @intCast(memory.ZOOM_LOG2 * i)) % memory.ZOOM_FACTOR;
+            suffix_array_y[log_limit - 1 - i] = (game.player_chunk[1] >> @intCast(memory.ZOOM_LOG2 * i)) % memory.ZOOM_FACTOR;
         }
 
         if (game.depth > HORIZON_DEPTH) {

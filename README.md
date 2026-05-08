@@ -72,14 +72,14 @@ pub const SUBPIXELS_IN_CHUNK: comptime_int = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZ
 
 Now, we move on to locations (which also has some technical jargon, but I'll explain). Locations (named `Coordinate` internally) are addressed via a struct like this:
 
-- There is a globally shared **prefix stack**, which is a memoized history of the path (not stored individually for each `Coordinate`, but in the `QuadCache`.
-- Each coordinate has an **active suffix** (2 `u64` values, stored as a `@Vector`), representing chunk's coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[32]u2` (32 numbers between 0-4) squashed together. This is **always relative to a quadrant**.
-- Finally, a **Quadrant ID** is stored as a `u2` integer from 0-3. This identifies which of the 4 static $2^{64}$-wide quad-caches we are "using" for the prefix stack. Each Quad-Cache (QC) references a specific Prefix Stack.
+- There is a globally shared **prefix stack**, which is a memoized history of the path (not stored individually for each `Coordinate`, but inside the `QuadCache`).
+- Each coordinate has an **active suffix** (2 `u64` values, stored as a `@Vector`), representing a chunk's coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[32]u2` (32 numbers between 0-4) squashed together. This is **always relative to a quadrant**.
+- Finally, a **quadrant ID** is stored as a `u2` integer from 0-3. This identifies which of the 4 static $2^{64}$-wide quad-caches we are "using" for the prefix stack. Each Quad-Cache (QC) references a specific Prefix Stack.
 
 > [!NOTE]
-> Important detail! If the `depth` is at or below 16, the quadrant ID is useless and will defaults to 0. Any processing of the active suffix will first determine the current depth and also "crop" the suffix.
+> Important detail! If the `depth` is at or below 32 (our "horizon limit"), the quadrant ID defaults to 0 and relies purely on the active suffix. Any processing of the active suffix will first determine the current depth and also "crop" the suffix.
 
-The reason all this quadrant logic works is because of one essential fact: **_The `depth` can only INCREASE!_** The player can't zoom out, which is the main reason this quad-cache assumption is safe.
+The reason all this quadrant logic works is because of one essential fact: **_The `depth` can only INCREASE!_** The player can't zoom out, which is the main reason this quad-cache rebasing assumption is safe.
 
 You can imagine the actual location of something as a "smashed together version" of the specific QC's prefix stack. Consider an example where the maximum active suffix length is 4, and the zoom multiplier is 16 rather than 4 (so like `[4]u4` rather than `[32]u2`).
 
@@ -91,7 +91,7 @@ Now, the "raw coordinate" of a player (or anything we want to represent, such as
 
 This would actually internally look like this for the caches (the quad-cache is the same for all players/NPCs/enemies):
 
-- Cached X: `[9, 15]`, `[10, 0]` (9, 15 "carried" to 10, 0. Don't worry about carrying details too much for now, I'll explain more later! Think of these like addition carries, maybe in base 16, that's literally what they act like.)
+- Cached X: `[9, 15]`, `[10, 0]` (9, 15 "carried" to 10, 0. Think of these like addition carries, but base 16; that's literally what they act like.)
 - Cached Y: `[2, 15]`, `[3, 0]` (Same carrying here, notice how the carrying is to the left because `[0, 0, 1, 1]` is "below average" while `[15, 15, 15, 15]` is "above average", basically a midpoint split/weight-adjusted quad-partitioning)
 - However, since there are 4 combinations of cached X and Y, there are 4 quad-caches (so combinations $X_1Y_1,X_2Y_1,X_1Y_2,X_2Y_2$ for example), with the seed cached for each combination. Each quad-cache "points" to a combination, so the possible X/Y values aren't stored twice.
 
@@ -106,13 +106,13 @@ And here would be the `Coordinate` (again, assuming that the active suffix is on
 
 (Note that "expanding" these cached values is invalid in practice. These are really just one larger number, but it helps to separate these out when explaining. Also, this glosses over some details when the prefix stack is empty because the active suffix can successfully represent all possible places the player is in.)
 
-When zooming in, a new value is pushed to either the cache (if `depth` is at least 16) or it's just added to each of the quad-caches if not. The game starts out with the `depth` at 3. You can find specific implementations of the quad-cache in `zig/world.zig`.
+When zooming in, a new value is pushed to either the cache (if `depth` is beyond the rebasing horizon limit) or it's just added to each of the quad-caches if not. You can find specific implementations of the quad-cache and depth rebasing logic in `zig/world.zig`.
 
 This explanation also highlights why we need 4 quad-caches: the player might be juuuust in between two possible prefix stacks for X, and two other possible ones for Y. Of course, the player doesn't have to worry about all this when enjoying the game. But sometimes it's nice to peek behind the curtain!
 
 #### Depths
 
-There's some details the previous explanation glossed over. You might have wondered how exactly that cached X and Y is stored, and it's internally stored as a `u64`, plus a length (`usize`, although the meaning of this isn't important) representing how large the cache is. And going back to this example: `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, the `depth` would equal 6.
+There's some details the previous explanation glossed over. You might have wondered how exactly that cached X and Y is stored, and it's internally stored as a `u64` with packed data representing bitwise chunk-origin offsets. And going back to this example: `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, the `depth` would equal 6.
 
 If the active suffix was a `u16` instead of a `u64`, this would technically be stored as this:
 
@@ -140,7 +140,7 @@ Of course, to have a fractal _mining_ game, you must store if the player has mod
 
 > Does this chunk have any blocks where the player replaced a block of type A with type B?
 
-(Air/empty space is itself a type of block.) If the answer is YES (even if it's just one block in a chunk with 256 blocks that's different), then a `ModificationStore` is created for that chunk (with a `Coordinate` to specify where these modifications are).
+(Air/empty space is itself a type of block.) If the answer is YES (even if it's just one block in a chunk with 256 blocks that's different), then a modification is recorded within the `ModificationStore` (with a `DepthCoordinate` referencing both location and height).
 
 But wait, what is a block? Here is `zig/memory.zig`:
 
@@ -155,10 +155,10 @@ pub const Block = packed struct(u64) {
     /// The brightness of the tile.
     light: u8,
 
-    /// How "mined" the block is. 0 is least mined, 15 is most mined.
-    hp: u4,
     /// Per-block seed for procedural variation in the shader.
     seed: u28,
+    /// How "mined" the block is. 0 is least mined, 15 is most mined.
+    hp: u4,
 };
 ```
 
@@ -166,25 +166,17 @@ Well, now you know what a block contains.
 
 The most complex part of Depthwell's architecture, though, is ensuring that a hole mined at Depth 0 results in an empty 4-by-4 region at Depth 1, 16-by-16 at Depth 2, and so on. This is handled through a neat little **lineage check** during chunk generation.
 
-When the generator builds a chunk at Depth $D$, it iterates backward through the prefix stack from $D-1$ down to $0$. ($D$ is larger the "more zoomed in" the game is, and starts at $2$. It represents how many `u2`s need to represent where a chunk is, to put it another way.)
+When the generator builds a chunk at Depth $D$, it iteratively traverses backward through the prefix stack from $D-1$ down to $D-32$. ($D$ is larger the "more zoomed in" the game is, and starts at $2$. It represents how many `u2`s need to represent where a chunk is, to put it another way.)
 
-The reason the game starts at depth $2$ specifically is that depth $0$ would mean that the entire world is a single chunk in size. By starting at depth $2$, the world is $2^8$-by-$2^8$ blocks (16-by-16 chunks), which is a neat size and ties into the whole idea of $16$ being an important number.
-
-For each ancestor level, it asks the `ModificationStore`: _"Was the portal block at this specific path modified?"_ The `ModificationStore` finds all modifications that _could_ impact this block, starting with higher depths (and it eventually asks a whole quad-cache, which stores a base type). Note that the `ModificationStore` deals with whole chunks (256 `Block`s) at a time.
-
-The engine traverses up depths of the `ModificationStore` (eventually bubbling up to checking the type of a quad-cache if no changes were found). Small detail: portals can only spawn in places where the player is able to enter the new depth, not stuck within a block!
-
-If a parent block was gold for example, the entire are would inherit gold as its ambient background. The game searches for a non-empty (not void/air) block and inherits the `QuadCache` background if necessary, and these chunk-or-larger size backgrounds get cached in the `SimBuffer` as well. Then, the game processes individual block modifications and renders them.
-
-If any blocks are modified they get modified in the `SimBuffer` as well.
+For each ancestor level, it traces upward and queries `ModificationStore` or evaluates `AncestorCache`: _"Was the parent block at this specific path modified?"_ At $D-32$ (the event horizon limit), chunk-level details are replaced by checking the global `QuadCache` 4x4 material grid. Any properties inherited directly from parents influence chunk structures appropriately.
 
 #### Prefix stack and memoization
 
-You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using a dynamic array (specifically a `SegmentedList` copied from Zig 0.15.2).
+You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using dynamic array allocations (`SegmentedList`).
 
-**Why memoize and make the logic so complicated?**
+#### Why memoize and make the logic so complicated?
 
-By storing the resulting 512-bit `seed` at every level of the stack, the game no longer needs to spent resources reseeding a bunch for each chunk (while the math working out, as if every chunk was, resulting in high-quality seeding!). We never re-calculate the entire 10,000-level BLAKE3 chain as an extra benefit; we only hash the _newest_ nibble added to the stack.
+By storing the resulting 512-bit `seed` at every level of the stack, the game no longer needs to spend resources reseeding a bunch for each chunk (while the math working out, as if every chunk was, resulting in high-quality seeding!). We never re-calculate the entire 10,000-level BLAKE3 chain; we only hash the _newest_ nibble added to the stack. This makes procedural chunk generation effectively amortized constant-time!
 
 #### Storing chunks with a simulation distance
 
@@ -336,17 +328,17 @@ You can see how because the entities are _ordered_, it's easy to add a shadow. A
 
 #### The fractal modification buffer
 
-Depthwell stores modifications with some fancy lineage inheritance: modifications are stored per-layer, and when generating a chunk at Depth $D$, the engine traverses up depths of the `ModificationStore` (eventually bubbling up to checking the type of a quad-cache if no changes were found). Small detail: portals can only spawn in places where the player is able to enter the new depth, not stuck within a block!
+Depthwell stores modifications with some fancy lineage inheritance: modifications are stored per-layer, and when generating a chunk at Depth $D$, the engine recursively climbs and calculates the history of the `ModificationStore` and its resulting cache properties.
 
 The _goal_ with modifications is to ensure the following:
 
 1. Read _existing_ modifications to extract rectangular groups of chunks: ~1000 reads/second for as long as possible due to potential of requiring 16-32 new chunks in SimBuffer during some frames and camera features in the future.
 2. Write a _new_ modification (60fps for as long as possible). In practice, this is very easy with hash maps.
-3. Increment the depth (below 3 seconds for as long as possible). For this part, an O(n) would be quite reasonable! However, the current approach (which stores the `depth` as part of the key) is an easy O(1).
+3. Increment the depth (below 3 seconds for as long as possible).
 4. Minimize heap fragmentation and "allocation churn."
 5. The entire state can be stored inside RAM.
 
-Therefore, the current solution is to hash a Coordinate and the current depth together using `std.hash.autoHash`. A `std.HashMap` stores these hashes and a dynamically allocated array of `Chunk`s (the dense data representing a chunk's entire modifications). See some definitions and more details:
+Therefore, the current solution is to hash a `DepthCoordinate` using `std.hash.autoHash`. A `std.HashMap` stores these hashes and indexes a dynamically allocated array of `Chunk`s (the dense data representing a chunk's entire modifications) utilizing a segmented list storage setup. See some definitions and more details:
 
 ```zig
 /// Stores and handles modifications of chunks. Functions across depths.
@@ -358,8 +350,6 @@ pub const ModificationStore = struct {
         DepthCoordinateContext,
         std.hash_map.default_max_load_percentage,
     ),
-    /// TODO: evaluate if this is slow, and if `Arraylist` would fit better for native?
-    /// Or maybe it's too slow even for WASM?
     history: SegmentedList(Chunk, 128) = .{},
 
     pub fn init(allocator: std.mem.Allocator) ModificationStore {
@@ -452,21 +442,19 @@ See the big chunk of comments in `push_layer` for specific details on zoom logic
 
 #### More rebasing explanation
 
-Because the coordinate tracking suffix uses a 64-bit integer, and each depth traversal consumes exactly 2 bits (a nibble), a player can natively traverse exactly 16 depths ($2^{64}$ chunks) without exceeding standard integer bounds.
+Because the coordinate tracking suffix uses a 64-bit integer, and each depth traversal consumes exactly 2 bits, a player can natively traverse exactly 32 depths ($2^{64}$ chunks) without exceeding standard integer bounds.
 
-To manage near-infinite zoom, Depthwell stores seeds for each quadrant in `path_hashes`(4 because the code generates 4 BLAKE3 hashes for various parts of seeding, from terrain to WGSL decoration).
+To manage near-infinite zoom, Depthwell stores seeds for each quadrant in `path_hashes` (4 because the code generates 4 BLAKE3 hashes for various parts of seeding, from terrain to WGSL decoration).
 
-Once increasing the depth past 32, the engine executes a "rebase" each time. The player is re-centered inside the 64-bit bounds, and the highest 2 bits (the overflow nibble) "fall off" the top of the suffix.
+Once increasing the depth past 32, the engine executes a "rebase" each time. The player is re-centered inside the 64-bit bounds, and the highest 2 bits (the overflow nibble) "fall off" the top of the suffix into the `QuadCache` history arrays.
 
-Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 32 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-33$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-31$. [TODO in the future, actually implement this.]
+Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 32 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-33$, that chunk will be 16x larger than a whole quadrant. Therefore, a fixed 32-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications and base seeds explicitly at exactly $D-32$.
 
-Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.) [TODO in the future, actually implement this.]
+Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. To assist in lineage checks, `AncestorCache` caches chunk requests spanning through these depths to ease generational processing.
 
-(Modifications are not culled in order to allow for a spectating/history once the player dies, and perhaps even be a main/custom mode where you can re-spawn, although this may might encounter its own set of difficult struggles in the future!)
-
-- Reading performance is an amortized O(1) due only needing to consider block sizes between depth $D-31$ to $D$.
-- Writing performance is an amortized O(1) due to needing to find a `HashMap.
-- Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `DepthCoordinate` and assuming that collisions are impossible.
+- Reading performance is an amortized O(1) due to only needing to consider block sizes between depth $D-32$ to $D$.
+- Writing performance is an amortized O(1) due to needing to modify a `HashMap`.
+- Increasing depth is, surprisingly, an O(1) operation due to a lack of modification culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `DepthCoordinate` and assuming that collisions are impossible.
 - Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 2KiB in history. However, this is stored as a `SegmentedList` to prevent large unused gaps in WASM memory.
 
 #### Smart chunk loading

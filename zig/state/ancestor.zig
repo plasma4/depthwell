@@ -23,15 +23,15 @@ pub inline fn isHorizonDepth(depth: u64) bool {
     // Horizon kicks in once we are 32 layers deep.
     if (memory.game.depth < STARTING_ZOOM_TIMES + horizon_limit) return false;
 
-    return (depth + horizon_limit) <= memory.game.depth;
+    return (depth + horizon_limit) == memory.game.depth;
 }
 
 /// Optimized per-depth tier cache for ancestors of chunks.
 pub const AncestorCache = struct {
-    /// 32 chunks per depth to allow full horizontal sweeps without evicting local dependencies.
+    /// Amount of chunks per depth/tier; too low and performance regressions may occur.
     pub const TIER_SIZE = 32;
     /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
-    pub const NUM_TIERS = 32;
+    pub const NUM_TIERS = 33;
 
     var keys: [NUM_TIERS][TIER_SIZE]?DepthCoordinate = [_][TIER_SIZE]?DepthCoordinate{[_]?DepthCoordinate{null} ** TIER_SIZE} ** NUM_TIERS;
     var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
@@ -42,7 +42,7 @@ pub const AncestorCache = struct {
     /// Returns a mutable pointer to allow for in-place updates or direct reads.
     pub fn get(key: DepthCoordinate) ?*Chunk {
         std.debug.assert(!isHorizonDepth(key.depth)); // should've gone to quadrant fallback ):
-        const d = @as(usize, @intCast(key.depth % NUM_TIERS));
+        const d = @as(usize, @intCast(key.depth % NUM_TIERS)); // TODO: maybe we shouldn't be doing a % 33, which is slow?
 
         for (&keys[d], 0..) |maybe_key, i| {
             if (maybe_key) |k| {
@@ -125,8 +125,8 @@ pub fn getParentInfo(key: DepthCoordinate, bx: u4, by: u4) ParentInfo {
 }
 
 /// Applies deterministic holes based on coordinate and depth (in `DepthCoordinate`). Also modifies some block types.
-/// TODO replace with actual cool logic!
 pub fn applyAncestorLogic(sprite: Sprite, key: DepthCoordinate, bx: u4, by: u4) Sprite {
+    // TODO: pass chunk seeds here.
     if (sprite.isEmpty()) return .none;
     if (sprite == .ceiling_flower) return .none;
     if (sprite == .spiral_plant) return .spiral_plant;

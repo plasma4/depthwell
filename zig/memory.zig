@@ -10,6 +10,9 @@ const ColorRGBA = root.ColorRGBA;
 const seeding = root.seeding;
 const world = root.world;
 
+// Note: changing these constants below will probably have disasterous consequences.
+// A lot of logic is hard-coded, such as `[6][6]Sprite` use, and a lot of logic is bound to break if these constants are modified.
+
 /// Represents log2(CHUNK_SIZE).
 pub const CHUNK_SIZE_LOG2: comptime_int = 4;
 /// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel. (Note that changing these values WILL break the code!)
@@ -35,6 +38,8 @@ pub const HORIZON_DEPTH: comptime_int = 32;
 /// Represents how many blocks in a child chunk map to ONE parent block.
 /// A 4x4 area of child blocks is 1 parent block if `ZOOM_FACTOR` is 4.
 pub const BLOCKS_PER_PARENT: comptime_int = CHUNK_SIZE / ZOOM_FACTOR;
+
+// Scary constants end here; types and structs begin below!
 
 // vector types!
 pub const Vec2i = @Vector(2, i64);
