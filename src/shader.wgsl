@@ -186,7 +186,7 @@ fn vs_tile(
         // if (random_mod == 0u) {
         //     id++;
         // }
-    } else if id == DECOR_START + 3u { // variation for mushrooms
+    } else if id == DECOR_START + 3u || id == DECOR_START + 6u { // variation for mushrooms
         id += min(extractBits(tile.seeds[0], 16u, 2u), 2u); // select variation (0-3, 50% odds of third)
     }
 

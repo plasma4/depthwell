@@ -135,7 +135,8 @@ pub fn applyAncestorLogic(sprite: Sprite, key: DepthCoordinate, bx: u4, by: u4) 
     if (sprite.isEmpty()) return .none;
     if (sprite == .ceiling_flower) return .none;
     if (sprite == .spiral_plant) return .spiral_plant;
-    if (sprite == .mushroom) return .none;
+    // TODO: consolidate visual variations to be factored in with seed for mushrooms.
+    if (sprite == .mushroom) return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3) .mushroom_big else .none;
     if (sprite == .edge_stone) return .edge_stone;
     if (!sprite.isFoundation()) return .none; // Fallthrough case! Make the ancestor nothing instead.
 
