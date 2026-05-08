@@ -110,7 +110,6 @@ pub fn getSelectedIndex() u16 {
 
 /// Returns the sprite being hovered if the mouse is within any inventory slot hitbox.
 pub fn getHoveredInventorySprite() ?Sprite {
-    // TODO merge with drawInventory()?
     var buffer: SlotBuffer = undefined;
     const active_slots = getActiveSlots(&buffer);
 

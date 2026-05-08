@@ -64,7 +64,7 @@ pub fn handleMiningAndPlacing() void {
 
             if (INSTANT_MINE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
                 mining_progress = 0;
-                // sprite type being none check also prevents unneeded memory waste with ModKey
+                // sprite type being none check also prevents unneeded memory waste with DepthCoordinate
                 const was_deleted = block.id.isEmpty() or world.modifyBlockHp(
                     mouse.mouse_chunk.?, // mouse block successful, this must be valid then!
                     mouse.mouse_block_x,

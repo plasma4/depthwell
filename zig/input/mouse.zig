@@ -114,7 +114,7 @@ pub fn updateMouseLocation() void {
         block_position_changed =
             mouse_block_x != old_x or
             mouse_block_y != old_y or
-            !memory.Coordinate.eql(coord, old_coord);
+            !(old_coord != null and memory.Coordinate.eql(coord, old_coord.?));
     } else {
         mouse_chunk = null;
         mouse_subpixel = null;

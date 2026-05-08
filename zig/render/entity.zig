@@ -183,10 +183,42 @@ pub fn updateEntities(time_diff: f64) void {
                 }
 
                 // neighbor boundary flag injection (visualize flags pointing INTO the chunk)
-                if (x == 0) if (neighbors[2]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(15, @intCast(y)), block_pos, .W, tile_size, thick);
-                if (x == 15) if (neighbors[3]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(0, @intCast(y)), block_pos, .E, tile_size, thick);
-                if (y == 0) if (neighbors[0]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(@intCast(x), 15), block_pos, .N, tile_size, thick);
-                if (y == 15) if (neighbors[1]) |n| drawNeighborFlag(&entity_byte_count_before_end, &entity_count, n.getBlock(@intCast(x), 0), block_pos, .S, tile_size, thick);
+                if (x == 0) if (neighbors[2]) |n| drawNeighborFlag(
+                    &entity_byte_count_before_end,
+                    &entity_count,
+                    n.getBlock(15, @intCast(y)),
+                    block_pos,
+                    .W,
+                    tile_size,
+                    thick,
+                );
+                if (x == 15) if (neighbors[3]) |n| drawNeighborFlag(
+                    &entity_byte_count_before_end,
+                    &entity_count,
+                    n.getBlock(0, @intCast(y)),
+                    block_pos,
+                    .E,
+                    tile_size,
+                    thick,
+                );
+                if (y == 0) if (neighbors[0]) |n| drawNeighborFlag(
+                    &entity_byte_count_before_end,
+                    &entity_count,
+                    n.getBlock(@intCast(x), 15),
+                    block_pos,
+                    .N,
+                    tile_size,
+                    thick,
+                );
+                if (y == 15) if (neighbors[1]) |n| drawNeighborFlag(
+                    &entity_byte_count_before_end,
+                    &entity_count,
+                    n.getBlock(@intCast(x), 0),
+                    block_pos,
+                    .S,
+                    tile_size,
+                    thick,
+                );
             }
         }
 
@@ -194,16 +226,15 @@ pub fn updateEntities(time_diff: f64) void {
         const start_zoom = root.startup.STARTING_ZOOM_TIMES;
         const bx_idx = memory.game.getBlockXInChunk();
         const by_idx = memory.game.getBlockYInChunk();
-        if (depth > start_zoom) {
-            const deeper_preview_x = preview_x_origin + background_margin + 18.5 * tile_size;
+        const deeper_preview_x = preview_x_origin + background_margin + 18.5 * tile_size;
+        if (!root.procedural.USE_BASE_HEATMAP and !root.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
             bg.position[0] = deeper_preview_x + tile_size * 2.5;
             bg.position[1] = preview_y_origin + tile_size * 2.5;
             bg.size = tile_size * (6.0 + background_margin);
-            bg.lcha[3] = 0.7; // higher opacity!
             bg.sprite = .rectangle;
             addEntity(bg); // box for D-1
 
-            const neighborhood_d1 = root.ancestor.getAncestorNeighborhood(depth, player_coord);
+            const neighborhood_d1 = root.ancestor.getAncestorNeighborhood(player_coord.asDepthCoordinate(depth));
 
             for (0..6) |py| {
                 for (0..6) |px| {
@@ -214,7 +245,10 @@ pub fn updateEntities(time_diff: f64) void {
                             preview_y_origin + @as(f32, @floatFromInt(py)) * tile_size,
                         },
                         .size = tile_size,
-                        .lcha = if (px == 0 or px == 5 or py == 0 or py == 5) .{ 0.6, 0.0, 0.0, 1.0 } else memory.DEFAULT_ENTITY_LCHA,
+                        .lcha = if (px == 0 or px == 5 or py == 0 or py == 5)
+                            .{ 0.6, 0.0, 0.0, 1.0 }
+                        else
+                            memory.DEFAULT_ENTITY_LCHA,
                     });
                 }
             }
@@ -240,9 +274,17 @@ pub fn updateEntities(time_diff: f64) void {
             addEntity(player_entity);
 
             if (depth > start_zoom + 1) {
-                const p_info = root.ancestor.getParentInfo(player_coord, bx_idx, by_idx);
+                const p_info = root.ancestor.getParentInfo(
+                    player_coord.asDepthCoordinate(depth),
+                    bx_idx,
+                    by_idx,
+                );
                 const preview_y_d2 = preview_y_origin + 7.5 * tile_size;
-                const gp_info = root.ancestor.getParentInfo(p_info.coord, p_info.bx, p_info.by);
+                const gp_info = root.ancestor.getParentInfo(
+                    p_info.coord.asDepthCoordinate(depth - 1),
+                    p_info.bx,
+                    p_info.by,
+                );
 
                 bg.position = .{ deeper_preview_x + tile_size * 1.0, preview_y_d2 + tile_size * 1.0 };
                 bg.size = tile_size * (3.0 + background_margin);
@@ -255,10 +297,14 @@ pub fn updateEntities(time_diff: f64) void {
                         const target_bx = @as(i32, gp_info.bx) + gpx;
                         const target_by = @as(i32, gp_info.by) + gpy;
 
-                        const target_nc = gp_info.coord.moveAtDepth(.{ @divFloor(target_bx, 16), @divFloor(target_by, 16) }, depth - 2) orelse continue;
+                        const target_nc = gp_info.coord.moveAtDepth(
+                            .{ @divFloor(target_bx, 16), @divFloor(target_by, 16) },
+                            depth - 2,
+                        ) orelse continue;
 
-                        const lx: u4 = @intCast(@mod(target_bx, 16));
-                        const ly: u4 = @intCast(@mod(target_by, 16));
+                        // truncate it to prevent crashes!
+                        const lx: u4 = @truncate(@as(u32, @bitCast(target_bx)));
+                        const ly: u4 = @truncate(@as(u32, @bitCast(target_by)));
 
                         addEntity(.{
                             .sprite = root.world.getBlockIdAt(target_nc, lx, ly, depth - 2),
@@ -272,14 +318,50 @@ pub fn updateEntities(time_diff: f64) void {
                     }
                 }
 
-                // player indicator again (stuck in-place, since that's the current chunk)
+                // player indicator (poor guy is stuck in-place, since that's the current chunk)
                 addEntity(.{
                     .sprite = .player,
                     .position = .{ deeper_preview_x + 1.0 * tile_size, preview_y_d2 + 1.0 * tile_size },
                     .size = tile_size * 0.8,
-                    .lcha = .{ 1.0, 0.2, -0.5, 0.9 },
+                    .lcha = .{ 1.0, 0.1, 0.0, 0.7 },
                 });
             }
+        }
+
+        if (depth >= memory.HORIZON_DEPTH + start_zoom) {
+            const preview_y_ancestor = preview_y_origin + 12.0 * tile_size; // Put it below D-2
+
+            bg.position = .{ deeper_preview_x + tile_size * 1.5, preview_y_ancestor + tile_size * 1.5 };
+            bg.size = tile_size * (4.0 + background_margin);
+            bg.lcha = .{ 0.8, 0.2, 0.4, 1.0 };
+            addEntity(bg);
+
+            for (0..4) |y| {
+                for (0..4) |x| {
+                    addEntity(.{
+                        .sprite = root.world.quad_cache.ancestor_materials[y][x],
+                        .position = .{
+                            deeper_preview_x + @as(f32, @floatFromInt(x)) * tile_size,
+                            preview_y_ancestor + @as(f32, @floatFromInt(y)) * tile_size,
+                        },
+                        .size = tile_size,
+                        .lcha = memory.DEFAULT_ENTITY_LCHA,
+                    });
+                }
+            }
+
+            // Render approximate player indicator in the active quadrant
+            const qx = memory.game.player_quadrant % 2;
+            const qy = memory.game.player_quadrant / 2;
+            addEntity(.{
+                .sprite = .player,
+                .position = .{
+                    deeper_preview_x + @as(f32, @floatFromInt(qx + 1)) * tile_size,
+                    preview_y_ancestor + @as(f32, @floatFromInt(qy + 1)) * tile_size,
+                },
+                .size = tile_size * 0.8,
+                .lcha = .{ 1.0, 0.1, 0.0, 0.7 },
+            });
         }
 
         // render the player now!
@@ -454,7 +536,7 @@ pub fn drawNumber(
     const cos_r = @cos(rotation);
     const sin_r = @sin(rotation);
 
-    // We track the relative X offset from the pivot point
+    // Track the relative X offset from the pivot point
     var rel_x: f32 = 0.0;
 
     if (ltr) {

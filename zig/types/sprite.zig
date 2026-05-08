@@ -6,7 +6,7 @@ const procedural = root.procedural;
 /// Index where stone-like sprites begin.
 const STONE_START = 4;
 /// Index where stone-like sprites end.
-const STONE_END = STONE_START + 8;
+const STONE_END = STONE_START + 10;
 
 /// Index where ore sprites begin.
 const ORE_START = STONE_END + 4;
@@ -35,12 +35,14 @@ pub const Sprite = enum(u16) {
     edge_stone = 2,
 
     // stone types!
-    strange_stone = STONE_START,
-    strange_stone_other,
+    blue_strange_stone = STONE_START,
+    purple_strange_stone,
     blue_stone,
+    red_stone,
     seagreen_stone,
     green_stone,
     lava_stone,
+    redder_stone,
     mossy_stone,
     old_stone,
     /// "Plain" stone type, with 2x2 variations to prevent a tiling look.
@@ -210,7 +212,8 @@ pub const max_sprite_value = blk: {
     for (fields) |field| {
         if (std.mem.eql(u8, field.name, "unselected")) continue;
         if (field.value > max_val) {
-            if (field.value >= 60000) @compileError("Sprite enum values must not be between 60000-65535.");
+            if (field.value >= 60000)
+                @compileError("Sprite enum values must not be between the reserved range of 60000-65534.");
             max_val = @intCast(field.value);
         }
     }

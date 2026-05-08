@@ -28,8 +28,10 @@ pub const ZOOM_LOG2: comptime_int = 2;
 /// The factor for zooming, increasing the depth by 1. (So, 4 times means that the world will get 4 times wider and taller when depth increases.)
 pub const ZOOM_FACTOR: comptime_int = 4;
 /// The highest possible depth value where all coordinates can be represented in 1 quadrant.
-/// Equivalent to the highest depth value where `ZOOM_LOG2 * QUADRANTLESS_DEPTH <= 64` is true.
-pub const QUADRANTLESS_DEPTH: comptime_int = 32;
+/// Equivalent to the highest depth value where `ZOOM_LOG2 * HORIZON_DEPTH <= 64` is true.
+///
+/// This is an important value for ancestry and depth increase calculations.
+pub const HORIZON_DEPTH: comptime_int = 32;
 /// Represents how many blocks in a child chunk map to ONE parent block.
 /// A 4x4 area of child blocks is 1 parent block if `ZOOM_FACTOR` is 4.
 pub const BLOCKS_PER_PARENT: comptime_int = CHUNK_SIZE / ZOOM_FACTOR;
@@ -291,12 +293,14 @@ pub const Coordinate = struct {
     quadrant: u2,
 
     /// Checks equality between two `Coordinate` values.
-    pub inline fn eql(a: ?Coordinate, b: ?Coordinate) bool {
-        if (a == null and b == null) return true;
-        if (a == null or b == null) return false;
+    pub inline fn eql(a: Coordinate, b: Coordinate) bool {
+        return @reduce(.And, a.suffix == b.suffix) and
+            a.quadrant == b.quadrant;
+    }
 
-        return @reduce(.And, a.?.suffix == b.?.suffix) and
-            a.?.quadrant == b.?.quadrant;
+    /// Converts a `Coordinate` to a `DepthCoordinate`, provided that a depth is given.
+    pub inline fn asDepthCoordinate(self: @This(), depth: u64) world.DepthCoordinate {
+        return .{ .depth = depth, .quadrant = self.quadrant, .suffix = self.suffix };
     }
 
     /// Adds both an X and Y value, creating a new Coordinate and handling quadrants.
@@ -319,12 +323,12 @@ pub const Coordinate = struct {
             const delta: u64 = if (is_pos) @intCast(dx) else @intCast(-%dx);
             const ov = if (is_pos) @addWithOverflow(res.suffix[0], delta) else @subWithOverflow(res.suffix[0], delta);
             if (ov[1] != 0) {
-                if (depth < QUADRANTLESS_DEPTH) return null;
-                if (is_pos == ((res.quadrant & 1) != 0)) return null;
+                if (depth < HORIZON_DEPTH) return null;
+                // if (is_pos == ((res.quadrant & 1) != 0)) return null;
                 res.quadrant ^= 1;
             }
 
-            if (is_pos and depth < QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
+            if (is_pos and depth < HORIZON_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
             res.suffix[0] = ov[0];
         }
 
@@ -334,12 +338,12 @@ pub const Coordinate = struct {
             const delta: u64 = if (is_pos) @intCast(dy) else @intCast(-%dy);
             const ov = if (is_pos) @addWithOverflow(res.suffix[1], delta) else @subWithOverflow(res.suffix[1], delta);
             if (ov[1] != 0) {
-                if (depth < QUADRANTLESS_DEPTH) return null;
-                if (is_pos == ((res.quadrant & 2) != 0)) return null;
+                if (depth < HORIZON_DEPTH) return null;
+                // if (is_pos == ((res.quadrant & 2) != 0)) return null;
                 res.quadrant ^= 2;
             }
 
-            if (is_pos and depth < QUADRANTLESS_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
+            if (is_pos and depth < HORIZON_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
             res.suffix[1] = ov[0];
         }
         return res;

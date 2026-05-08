@@ -16,9 +16,9 @@ test "basic usage example" {
     seedFromBytes("my-game-seed", &world_seed);
 
     var rng: Xoshiro512 = .{ .state = world_seed };
-    // change to quickWarn to see result from ZLS
-    logger.quick(rng.float(f32));
-    logger.quick(rng.next());
+    // change to quickWarn to see result from ZLS (maybe?)
+    std.log.debug(rng.float(f32));
+    std.log.debug(rng.next());
 }
 
 /// A 512-bit seed state (also used for hashing).
@@ -241,7 +241,7 @@ pub const ChaCha12 = struct {
         @compileError("Only floats up to 64-bit precision are supported.");
     }
 
-    /// High-performance stateless 2D hash (using the first 384 seed bits), returning 128 bits of data.
+    /// Expensive stateless 2D hash (using the first 384 seed bits), returning 128 bits of data.
     /// Treats X and Y as the `ChaCha12` nonce/counter to return a random value.
     pub fn hash2d128(comptime T: type, seed_data: *const Seed, x: u64, y: u64) @Vector(2, T) {
         const s: [16]u32 = @bitCast(seed_data);
@@ -289,7 +289,7 @@ pub const ChaCha12 = struct {
         @compileError("Only u64 and f64 values are supported.");
     }
 
-    /// High-performance stateless 2D hash (using the first 384 seed bits), returning 512 bits of data.
+    /// Expensive stateless 2D hash (using the first 384 seed bits), returning 512 bits of data.
     /// Treats X and Y as the `ChaCha12` nonce/counter to return a random value.
     pub fn hash2d512(comptime T: type, seed_data: *const Seed, x: u64, y: u64) [8]T {
         const s: [16]u32 = @bitCast(seed_data);
@@ -510,7 +510,7 @@ test "float range" {
 }
 
 /// Xoshiro512** (StarStar), public domain randomness function.
-/// A high-performance, all-purpose generator with a period of 2^512 - 1.
+/// A decent performance, all-purpose generator with a period of 2^512 - 1.
 pub const Xoshiro512 = struct {
     state: Seed,
 
@@ -558,7 +558,7 @@ pub const Xoshiro512 = struct {
     }
 };
 
-/// Stafford Mix 13 for 64-bit entropy avalanching. No long used.
+/// Stafford Mix 13 for 64-bit entropy avalanching.
 pub inline fn staffordMix13(value: u64) u64 {
     var z = (value ^ (value >> 30)) *% 0xbf58476d1ce4e5b9;
     z = (z ^ (z >> 27)) *% 0x94d049bb133111eb;

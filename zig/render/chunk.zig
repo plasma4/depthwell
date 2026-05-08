@@ -4,7 +4,7 @@ const memory = root.memory;
 const logger = root.logger;
 const world = root.world;
 
-const QUADRANTLESS_DEPTH = memory.QUADRANTLESS_DEPTH;
+const HORIZON_DEPTH = memory.HORIZON_DEPTH;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
@@ -64,7 +64,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
             const offset_x: i64 = @as(i64, @intCast(min_cx)) + @as(i64, @intCast(gx));
 
             if (player_coord.move(.{ offset_x, offset_y })) |target_coord| {
-                if (game.depth <= memory.QUADRANTLESS_DEPTH) {
+                if (game.depth <= memory.HORIZON_DEPTH) {
                     if (target_coord.suffix[0] > world_limit or target_coord.suffix[1] > world_limit) {
                         for (0..CHUNK_SIZE) |ly| {
                             const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
@@ -134,16 +134,16 @@ inline fn updateRenderProperties(
         const d: usize = @intCast(memory.game.depth);
         if (memory.ZOOM_LOG2 != 2) @compileError("Logging logic for suffixes is incorrect!");
 
-        const log_limit = @min(d, QUADRANTLESS_DEPTH);
-        var suffix_array_x = std.mem.zeroes([QUADRANTLESS_DEPTH]u2);
-        var suffix_array_y = std.mem.zeroes([QUADRANTLESS_DEPTH]u2);
+        const log_limit = @min(d, HORIZON_DEPTH);
+        var suffix_array_x = std.mem.zeroes([HORIZON_DEPTH]u2);
+        var suffix_array_y = std.mem.zeroes([HORIZON_DEPTH]u2);
 
         for (0..log_limit) |i| {
             suffix_array_x[log_limit - 1 - i] = @intCast((game.player_chunk[0] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
             suffix_array_y[log_limit - 1 - i] = @intCast((game.player_chunk[1] >> @intCast(2 * i)) % memory.ZOOM_FACTOR);
         }
 
-        if (game.depth > QUADRANTLESS_DEPTH) {
+        if (game.depth > HORIZON_DEPTH) {
             logger.writeOnce(2, .{
                 "{mh}Left quadrant path (compacted)",
                 qc.left_path,

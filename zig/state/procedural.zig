@@ -21,12 +21,44 @@ const Vec2f = memory.Vec2f;
 const Vec2u = memory.Vec2u;
 
 // Lots of values controlled by debug sliders here!
-pub var dual_value_scale: f64 = 16.0;
-pub var base_gem_odds: f64 = 0.1;
-pub var procedural_cell_size: f64 = 1.0;
-pub var fbm_scale: f64 = 1.0;
-pub var density_min: f64 = 0.32;
-pub var density_max: f64 = 0.9;
+pub const dual_value_scale = TuningFloat(16.0);
+pub const base_gem_odds = TuningFloat(0.1);
+pub const procedural_cell_size = TuningFloat(1.0);
+pub const fbm_scale = TuningFloat(1.0);
+pub const density_min = TuningFloat(0.32);
+pub const density_max = TuningFloat(0.9);
+
+/// Returns a struct with an extractable `value: f64` and `getF32()` functions.
+/// Allows for types to act like variables in Debug mode and constant-fold in all Release modes.
+fn TuningFloat(comptime default_value: f64) type {
+    if (root.is_debug) {
+        return struct {
+            pub var value: f64 = default_value;
+            pub inline fn getF32() f32 {
+                return @floatCast(value);
+            }
+        };
+    } else {
+        return struct {
+            pub const value: f64 = default_value;
+            pub inline fn getF32() f32 {
+                return @floatCast(value);
+            }
+        };
+    }
+}
+
+fn TuningBool(comptime default_value: bool) type {
+    if (root.is_debug) {
+        return struct {
+            pub var value: bool = default_value;
+        };
+    } else {
+        return struct {
+            pub const value: bool = default_value;
+        };
+    }
+}
 
 /// Determines whether to use a heatmap or not for base terrain. Ignored if `root.is_debug` is false.
 pub var USE_BASE_HEATMAP = false;
@@ -57,15 +89,16 @@ pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
     if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
     if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
-        return .strange_stone;
-    } else if (density <= density_min or density >= density_max) {
-        return if (moisture >= 0.93 and moisture <= 0.97) .strange_stone_other else .none;
+        return .blue_strange_stone;
+    } else if (density <= density_min.getF32() or density >= density_max.getF32()) {
+        return if (moisture >= 0.93 and moisture <= 0.97) .purple_strange_stone else .none;
     }
 
+    if (moisture >= 0.93 and moisture <= 0.91) return .red_stone;
     if (moisture >= 0.88 and moisture <= 0.92) return .lava_stone;
     if (moisture >= 0.50 and density <= 0.53 and density <= 0.6) return .green_stone;
 
-    if (moisture >= 0.58 and density >= 0.92) return .seagreen_stone;
+    if (moisture >= 0.58 and density >= 0.83) return .seagreen_stone;
     if (moisture <= 0.65 and density >= 0.60 and density <= 0.65) return .blue_stone;
 
     if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
@@ -144,11 +177,11 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
     var freq: u64 = 1;
     var amp: f32 = options.fbm_shift_size;
     if (root.is_debug) {
-        amp /= @as(f32, @floatCast(fbm_scale));
+        amp /= fbm_scale.getF32();
     } else {
         // TODO: find method to make this comptime-convert to f32
         // amp *= comptime fbm_power;
-        amp /= @as(f32, @floatCast(fbm_scale));
+        amp /= fbm_scale.getF32();
     }
     if (amp > 0) {
         // FBM warping
@@ -163,7 +196,7 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
     }
 
     // TODO: same comptime
-    const cell_size = options.cell_size * @as(f32, @floatCast(procedural_cell_size));
+    const cell_size = options.cell_size * procedural_cell_size.getF32();
     const wx = fx + warp_x;
     const wy = fy + warp_y;
     const cell_w = cell_size * h_stretch;
@@ -212,10 +245,8 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
 
 /// Returns two independent noise values (32-bit float) based on the classic Value Noise algorithm.
 fn getDualValueNoise(seed: Vec2u, x: u64, y: u64) memory.Vec2f32 {
-    // TODO: same comptime
-    // also, vectorize
-    const fx_raw = @as(f32, @floatFromInt(x)) / @as(f32, @floatCast(dual_value_scale));
-    const fy_raw = @as(f32, @floatFromInt(y)) / @as(f32, @floatCast(dual_value_scale));
+    const fx_raw = @as(f32, @floatFromInt(x)) / dual_value_scale.getF32();
+    const fy_raw = @as(f32, @floatFromInt(y)) / dual_value_scale.getF32();
 
     const x0 = @as(u64, @trunc(fx_raw));
     const y0 = @as(u64, @trunc(fy_raw));
@@ -302,7 +333,7 @@ pub fn addOres(
             true,
             .{ v1, 0.55, 0.65 },
         );
-        if (sprite == .iron and base_data.sprite != .strange_stone) return sprite;
+        if (sprite == .iron and base_data.sprite != .blue_strange_stone) return sprite;
 
         sprite = selectSprite(
             .{ sprite, .silver },
@@ -311,7 +342,7 @@ pub fn addOres(
         );
         sprite = selectSprite(
             .{ sprite, .silver },
-            base_data.sprite == .strange_stone,
+            base_data.sprite == .blue_strange_stone,
             .{ v1, 0.18, 0.2 },
         );
         if (sprite == .iron or sprite == .silver) return sprite;
@@ -324,11 +355,11 @@ pub fn addOres(
         if (sprite == .gold) return sprite;
     } else {
         // Logic for generating gems
-        const gem_v2_bound: f32 = if (sprite == .strange_stone_other) 0.4 else 0.3;
+        const gem_v2_bound: f32 = if (sprite == .purple_strange_stone) 0.4 else 0.3;
         if (base_data.density >= 0.3 and base_data.density <= 0.5 and v2 >= 0.1 and v2 <= gem_v2_bound) {
             const random_value = FastHash.float2d(seed_vector_3, @intCast(x), @intCast(y));
 
-            if (random_value <= base_gem_odds) {
+            if (random_value <= base_gem_odds.value) {
                 const v3 = getFbmWorleyValue(
                     seed_vector_4,
                     y,
@@ -343,21 +374,21 @@ pub fn addOres(
 
                 sprite = selectSprite(
                     .{ sprite, .amethyst },
-                    v3 <= 0.4 and random_value <= 0.4 * base_gem_odds,
+                    v3 <= 0.4 and random_value <= 0.4 * base_gem_odds.value,
                     null,
                 );
                 if (sprite == .amethyst) return sprite;
 
                 sprite = selectSprite(
                     .{ sprite, .sapphire },
-                    v3 >= 0.75 and random_value <= 0.65 * base_gem_odds,
+                    v3 >= 0.75 and random_value <= 0.65 * base_gem_odds.value,
                     null,
                 );
                 if (sprite == .sapphire) return sprite;
 
                 sprite = selectSprite(
                     .{ sprite, .emerald },
-                    v3 >= 0.45 and v3 <= 0.65 and random_value <= 0.86 * base_gem_odds,
+                    v3 >= 0.45 and v3 <= 0.65 and random_value <= 0.86 * base_gem_odds.value,
                     null,
                 );
                 if (sprite == .emerald) return sprite;

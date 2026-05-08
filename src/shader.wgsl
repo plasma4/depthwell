@@ -908,7 +908,7 @@ fn srgb_to_linear(c: vec3f) -> vec3f {
 fn linear_to_srgb(c: vec3f) -> vec3f {
     let safe_c = max(c, vec3f(0.0));
     return select(
-        1.292 * safe_c,
+        12.92 * safe_c,
         1.055 * pow(safe_c, vec3f(1.0 / 2.4)) - 0.055,
         safe_c > vec3f(0.0031308)
     );

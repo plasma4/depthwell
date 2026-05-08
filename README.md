@@ -49,10 +49,13 @@ Here are the basic terms (note that there are, for example, 16 possible subpixel
 - 1 Block = 16 Pixels
 - 1 Chunk = 16 Blocks = 256 Pixels = 4,096 Subpixels
 - Depth = how "deep" the player is. Starts off at $2$, and we say the player is at depth $D$ at any given time. You can think of depth $D-1$ as having "16x16-chunk-level precision" while depth $D$ represents individual chunks. To the player, depth $D-1$ (where $D$ is the current depth) would be what the game was such as right _before_ entering a portal. (The portal would make everything look 4 times larger and increment $D$.)
+- $D$ is a shorthand for depth. $D-1$ means previous depth, $D-2$ is the depth before $D-1$.
+- The player starts off at `STARTING_ZOOM_TIMES`, which defaults to 2. So, $D$ starts off as 2 and $D-1$ doesn't exist until $D$ increases further.
+- $H$ represents $D-32$ (where $D$ is the current depth, which will change over time). When terms like $D-1$ or $H$ are referred to, assume that the current depth is high enough for that definition to be valid.
 
 The camera and the player work with (integeric) subpixels, while entities are considered in terms of (floating-point) pixels. Seeding of specific blocks in chunks and modifications concern themselves with blocks. Asking something "where" it is involves just chunks (see later).
 
-Now, bear with me here, because you might be freaking out over the fact a code segment just appeared. But don't fret, I'll break things down! This code is just those interested in specific details on what these numbers _could_ mean, because there are a lot of definitions
+Now, bear with me here, because you might be freaking out over the fact a code segment just appeared. But don't fret, I'll break things down! This code is just those interested in specific details on what these numbers _could_ mean, because there are a lot of definitions!
 
 Basically, all the code below is doing is declaring some constants in Zig, a fancy low-level language. The `CHUNK_SIZE` variable just represents 16; you don't really need to understand the code blocks so feel free to skip these. From `zig/memory.zig`:
 
@@ -195,9 +198,9 @@ Generating a world that is statistically infinite yet perfectly consistent acros
 
 #### Hashing function
 
-In the earlier sections, I mentioned `ChaCha12` for its cryptographic strength. However, calling a full ChaCha block 256 times for every single chunk is (who knew) incredibly slow. For the heavy lifting of 2D noise, Depthwell uses a custom **stateless multiply-unrolled-multiply mixer** called `FastHash`.
+In the earlier sections, I mentioned `ChaCha12` for its cryptographic strength. However, calling a full ChaCha block 256 times for every single chunk is (who knew) incredibly slow. For the heavy lifting of 2D noise, Depthwell uses a custom **stateless multiply-unrolled-multiply mixer** called `FastHash` that uses some magic numbers from Wyhash.
 
-By using `v2u64` vectors and bit-folding, `FastHash.hash_2d` provides enough variance for smooth terrain while being significantly faster than a standard PRNG.
+By using `Vec2f` vectors and bit-folding, `FastHash.hash_2d` provides enough variance for smooth terrain while being significantly faster than a standard PRNG.
 
 #### Terrain and biomes
 
@@ -241,8 +244,8 @@ pub const Entity = struct {
     /// H (hue, in radians) and C (chroma) are shifted additively.
     lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
 
-    /// Current position (based on internal viewport).
-    position: v2f32,
+    /// Current center position of the sprite (based on internal viewport).
+    position: Vec2f32,
 
     /// The size of the entity (based on internal viewport).
     size: f32 = 16.0,
@@ -253,6 +256,27 @@ pub const Entity = struct {
     /// The sprite type of the entity to use.
     sprite: Sprite = .none,
 };
+
+/// Tightly packed data for a entity to be sent directly to WGSL (using UV coordinates).
+/// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
+pub const WGSLEntity = extern struct {
+    /// The light, chroma, hue, and opacity components (HSL + alpha).
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// H (hue) and C (chroma) are shifted additively in radians.
+    lcha: @Vector(4, f32) align(16),
+
+    /// Current center position of the sprite (based on UV, not the internal viewport).
+    position: Vec2f32,
+
+    /// The width and height of the entity (based on UV, not the internal viewport).
+    size: Vec2f32,
+
+    /// The rotation of the entity (radians).
+    rotation: f32,
+
+    /// The ID of the entity (sprite type).
+    id: u32,
+};
 ```
 
 These are then passed to WGSL in a large batch. Here is an example of potential usage:
@@ -262,7 +286,7 @@ These are then passed to WGSL in a large batch. Here is an example of potential 
 for (0..10) |i| {
     addEntity(.{ // draw shadow of inventory slot by darkening and reducing opacity
         .sprite = if (i == selected_id) .inventory_selected else .inventory,
-        .position = getInventoryPos(i) - v2f32{ 2, 2 },
+        .position = getInventoryPos(i) - Vec2f{ 2, 2 },
         .lcha = .{ if (i == 0) 0.8 else 0.7, 0.0, 0.0, 0.9 },
     });
 }
@@ -277,13 +301,13 @@ for (0..10) |i| {
 // number-drawing example:
 // draw selected HP (for testing)
 const progress = root.mining.selected_hp;
-const pos: v2f32 = .{ 10, 28 };
+const pos: Vec2f = .{ 10, 28 };
 const font_size = 10.0;
 
 if (progress != 255 and progress != 0) {
     const value_hue = 0.2 + @as(f32, @floatFromInt(progress)) * (std.math.pi / 8.0);
     // draw shadow of text
-    drawNumber(progress, pos - v2f32{ 1.5, 1.5 }, .{
+    drawNumber(progress, pos - Vec2f{ 1.5, 1.5 }, .{
         .lcha = .{
             0.5, // darken
             0.4,
@@ -329,9 +353,9 @@ Therefore, the current solution is to hash a Coordinate and the current depth to
 pub const ModificationStore = struct {
     /// `HashMap`-based system to store indexes to `history`.
     index: std.HashMap(
-        ModKey,
+        DepthCoordinate,
         usize,
-        ModKeyContext,
+        DepthCoordinateContext,
         std.hash_map.default_max_load_percentage,
     ),
     /// TODO: evaluate if this is slow, and if `Arraylist` would fit better for native?
@@ -341,16 +365,16 @@ pub const ModificationStore = struct {
     pub fn init(allocator: std.mem.Allocator) ModificationStore {
         return .{
             .index = std.HashMap(
-                ModKey,
+                DepthCoordinate,
                 usize,
-                ModKeyContext,
+                DepthCoordinateContext,
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
         };
     }
 
     /// Gets an existing modification for reading.
-    pub fn get(self: *const @This(), key: ModKey) ?*const Chunk {
+    pub fn get(self: *const @This(), key: DepthCoordinate) ?*const Chunk {
         const id = self.index.get(key) orelse return null;
         return self.history.at(id);
     }
@@ -359,27 +383,25 @@ pub const ModificationStore = struct {
 pub var mod_store: ModificationStore = undefined;
 
 /// Stores what location a modification with an active suffix and quadrant, as well as its depth, to easily identify it.
-pub const ModKey = extern struct {
+pub const DepthCoordinate = struct {
     /// Active suffix (stored as a vector).
-    /// You can think of the active suffix like 32 `u2` values packed together for the X and Y coordinate that can be merged with the correct QuadCache quadrant to produce a "complete" path (see `README.md` for more details).
+    /// Should not be set manually; must call `getParent()` to decrease the depth for depths beyond `HORIZON_DEPTH`.
+    /// Most likely, a "path" of accessing D->D-1->D-2->... will occur.
+    /// You can think of the active suffix like 32 `u2` values packed together
+    /// for the X and Y coordinate that can be merged with the correct `QuadCache` quadrant to produce a "complete" path
+    /// See `README.md` for more details.
     suffix: Vec2u,
-    /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
-    quadrant: u32,
     /// The depth of the modification.
     depth: u64,
-
-    pub inline fn from(coord: Coordinate) @This() {
-        return .{
-            .suffix = coord.suffix,
-            .quadrant = @intCast(coord.quadrant),
-            .depth = memory.game.depth,
-        };
-    }
+    /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
+    quadrant: u32,
+...
 };
 
-/// Context for the `ModKey` (providing hashing and equality checks).
-pub const ModKeyContext = struct {
-    pub inline fn hash(self: @This(), key: ModKey) u64 {
+/// Context for the `DepthCoordinate` (providing hashing and equality checks).
+pub const DepthCoordinateContext = struct {
+    /// Basic hash function for modifications. Equality is checked if hashes are identical as a fallback.
+    pub inline fn hash(self: @This(), key: DepthCoordinate) u64 {
         _ = self;
         var hasher = std.hash.Wyhash.init(key.depth);
         // Hash exact fields explicitly to avoid padding ambiguities
@@ -388,7 +410,8 @@ pub const ModKeyContext = struct {
         return hasher.final();
     }
 
-    pub inline fn eql(self: @This(), a: ModKey, b: ModKey) bool {
+    /// Checks for equality between two `DepthCoordinate` instances.
+    pub inline fn eql(self: @This(), a: DepthCoordinate, b: DepthCoordinate) bool {
         _ = self;
         return a.depth == b.depth and a.quadrant == b.quadrant and @reduce(.And, a.suffix == b.suffix);
     }
@@ -401,12 +424,19 @@ pub const QuadCache = struct {
     /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-31).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
     path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
-    /// The block IDs for each of the 4 places the QuadCache represents.
-    ancestor_materials: [4]Sprite,
+    /// The 4-by-4 material grid representing the "event horizon" at D-32.
+    /// The inner 2-by-2 (indices [1..2][1..2]) corresponds to the active quadrants.
+    ancestor_materials: [4][4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
     left_path: SegmentedList(u64, 1024),
-    /// Stores the topmost QuadCache's Y-coordinate.
+    /// A list representing the prefix stack of the top left quadrant's Y-coordinate.
     top_path: SegmentedList(u64, 1024),
+
+    // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen/zooming in.
+    most_top: bool = true,
+    most_bottom: bool = true,
+    most_left: bool = true,
+    most_right: bool = true,
 ...
 ```
 
@@ -428,7 +458,7 @@ To manage near-infinite zoom, Depthwell stores seeds for each quadrant in `path_
 
 Once increasing the depth past 32, the engine executes a "rebase" each time. The player is re-centered inside the 64-bit bounds, and the highest 2 bits (the overflow nibble) "fall off" the top of the suffix.
 
-Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 32 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-16$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-31$. [TODO in the future, actually implement this.]
+Because a quadrant's spatial area precisely covers $2^{64}$ chunks at the current depth, looking back _exactly_ 32 levels guarantees full coverage of the current addressable space. If a modification occurred at Depth $D-33$, that chunk will be 16x larger than a whole quadrant, so it doesn't matter (and each quadrant stores the value of its original block type, for procedural generation preservation). Therefore, a fixed 16-length lookback is ideal here, and `ancestor_materials` acts as a "collapsed" summary of all modifications beyond $D-31$. [TODO in the future, actually implement this.]
 
 Modifications of "higher" $D$-values are prioritized, and lower $D$-values are used for backgrounds/procedural generation; at any depth $D$, individual blocks are still individual blocks. (See `README.md` for depth's meaning and more details.) [TODO in the future, actually implement this.]
 
@@ -436,7 +466,7 @@ Modifications of "higher" $D$-values are prioritized, and lower $D$-values are u
 
 - Reading performance is an amortized O(1) due only needing to consider block sizes between depth $D-31$ to $D$.
 - Writing performance is an amortized O(1) due to needing to find a `HashMap.
-- Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `ModKey` and assuming that collisions are impossible.
+- Increasing depth is, surprisingly, an O(1) operation due to a lack of culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `DepthCoordinate` and assuming that collisions are impossible.
 - Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 2KiB in history. However, this is stored as a `SegmentedList` to prevent large unused gaps in WASM memory.
 
 #### Smart chunk loading

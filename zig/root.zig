@@ -53,21 +53,6 @@ pub export fn setup() void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
     memory.game = .{}; // initialize GameState
     world.mod_store = world.ModificationStore.init(world.alloc);
-    world.quad_cache = .{
-        .path_hashes = undefined,
-        .left_path = SegmentedList(u64, 1024){}, // easiest to do prealloc with larger stack size in case
-        .top_path = SegmentedList(u64, 1024){},
-        .ancestor_materials = undefined,
-    };
-
-    logger.write(3,
-        \\Left-clicking places blocks; click on inventory slots directly to select block types.
-        \\Use the pickaxe icon to mine and WASD/arrow keys to move around.
-        \\
-        \\For inventory hotkeys:
-        \\- Use backquote and 0-9 keys to change inventory selection.
-        \\- Q moves up a row in the inventory while E moves down a row.
-    );
 }
 pub export fn init() void {
     startup.init();
@@ -101,6 +86,9 @@ pub export fn getDecorStart() u32 {
 pub export fn handleMouse(mouse_x: f64, mouse_y: f64, action: u32) void {
     mouse.handleMouse(mouse_x, mouse_y, action);
 }
+
+/// Sets if the Z key should increase the depth recursively until D=32 is reached.
+var debug_recursively_increase_depth = false;
 
 pub export fn tick(speed: f64, iterations: u32) void {
     var buffer: inventory.SlotBuffer = undefined;
@@ -137,16 +125,38 @@ pub export fn tick(speed: f64, iterations: u32) void {
         }
     }
 
-    // increase the depth (testing hotkey)
-    if (KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
-        // if (in_debug_mode) {
+    if (is_debug and debug_recursively_increase_depth and memory.game.depth < memory.HORIZON_DEPTH) {
         world.pushLayer(
             Sprite.none,
             memory.game.getPlayerCoord(),
             memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
             memory.game.getBlockYInChunk(),
         );
-        // }
+        if (memory.game.depth == memory.HORIZON_DEPTH) {
+            logger.quick(.{ "{h}Position", memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth) });
+            debug_recursively_increase_depth = false;
+        }
+    }
+
+    // increase the depth (testing hotkey)
+    if (is_debug and KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
+        world.pushLayer(
+            Sprite.none,
+            memory.game.getPlayerCoord(),
+            memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
+            memory.game.getBlockYInChunk(),
+        );
+        // debug_recursively_increase_depth = true;
+        if (memory.game.depth > memory.HORIZON_DEPTH and
+            memory.game.depth < memory.HORIZON_DEPTH * 2 + startup.STARTING_ZOOM_TIMES)
+        {
+            var key = memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth);
+            while (key.depth > memory.HORIZON_DEPTH) {
+                key = key.getParent();
+            }
+            logger.quick(.{ "{h}Resulting key/current depth", memory.game.depth, key });
+        }
+
         mining.selected_hp = 255;
         mouse.mouse_chunk = null;
     } else {
@@ -160,12 +170,27 @@ pub export fn tick(speed: f64, iterations: u32) void {
     }
 
     // Generate chunks around the SimBuffer in the background.
-    world.SimBuffer.generateChunkCaches(
+    world.SimBuffer.precacheChunks(
         memory.game.getPlayerCoord(),
         memory.game.player_velocity,
         2,
         4,
     );
+
+    // give some helpful info! logging is a bit hacky
+    // we use a {h} header but can write multiple lines, this gets cleared every frame since writeOnce() is used
+    logger.writeOnce(3, .{
+        \\{h}Left-clicking places blocks; click on inventory slots directly to select block types.
+        \\Use the pickaxe icon to mine and WASD/arrow keys to move around.
+        \\
+        \\For inventory hotkeys:
+        \\- Use backquote and 0-9 keys to change inventory selection.
+        \\- Q moves up a row in the inventory while E moves down a row.
+        \\
+        \\Selected sprite ID
+        ,
+        inventory.selected_sprite,
+    });
 }
 
 pub export fn mixSeed(number: u64) i64 {
@@ -224,11 +249,42 @@ comptime {
         pub export fn logInventory() void {
             inventory.logInventory();
         }
+
+        // pub export fn getParent(x: u64, y: u64, quadrant: u32, depth: u32) void {
+        //     if (depth < startup.STARTING_ZOOM_TIMES)
+        //         logger.quick("Depth is too small! ):")
+        //     else if (depth > memory.game.depth)
+        //         logger.quick("Depth is higher than current game depth!")
+        //     else {
+        //         var key = world.DepthCoordinate{
+        //             .quadrant = quadrant,
+        //             .suffix = .{ x, y },
+        //             .depth = memory.game.depth,
+        //         };
+        //         while (key.depth > depth) {
+        //             key = key.getParent();
+        //         }
+        //         logger.quick(.{ "{h}Resulting key", key });
+        //     }
+        // }
+
+        pub export fn getPlayerPosAtDepth(depth: u32) void {
+            logger.quick(.{ "{h}Current depth", memory.game.depth });
+            if (depth == 0) {
+                logger.quick(.{ "{h}Current coord", memory.game.getPlayerCoord() });
+                return;
+            }
+            var key = memory.game.getPlayerCoord().asDepthCoordinate(depth);
+            while (key.depth > depth) {
+                key = key.getParent();
+            }
+            logger.quick(.{ "{h}Resulting key", key });
+        }
     };
 }
 
 /// Custom panic function.
-/// TODO: figure out why this isn't emitting right!
+/// TODO: figure out why this isn't emitting right in Zig 0.16.0?
 fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     const addr = ret_addr orelse 0;
     logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });
