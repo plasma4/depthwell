@@ -160,10 +160,12 @@ fn vs_tile(
         select(
             0.0,
             3.0 * scene.zoom,
-            id == DECOR_START + 0u || id == DECOR_START + 1u// spiral plant, ceiling flower
+            // spiral plant, ceiling flower
+            id == DECOR_START + 0u || id == DECOR_START + 1u
         ),
         -1.0 * scene.zoom,
-        id == DECOR_START + 3u// mushroom sprite
+        // mushroom sprite
+        id == DECOR_START + 3u
     );
 
     // add to ID based on pre-determined shifts
@@ -175,8 +177,8 @@ fn vs_tile(
         // edge stone alternates in a checkerboard pattern
         let offset = (tile_coords.x & 1u) ^ (tile_coords.y & 1u);
         id += offset;
-    } else if id == DECOR_START + 1u || id == DECOR_START + 3u {
-        // seed-based variation for mushrooms OR ceiling flowers
+    } else if id == DECOR_START + 1u {
+        // seed-based variation for ceiling flowers
         id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); // 50% odds to select the variation
 
         // for 25%:
@@ -184,6 +186,8 @@ fn vs_tile(
         // if (random_mod == 0u) {
         //     id++;
         // }
+    } else if id == DECOR_START + 3u { // variation for mushrooms
+        id += min(extractBits(tile.seeds[0], 16u, 2u), 2u); // select variation (0-3, 50% odds of third)
     }
 
     // apply to screen_pos.y before converting to normalized device coordinates

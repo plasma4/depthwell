@@ -21,7 +21,7 @@ const MASK_START = GEM_START + 4;
 const DECOR_START = MASK_START + 24;
 
 /// Index where numbers (0-9) start.
-pub const NUMBER_START = DECOR_START + 10;
+pub const NUMBER_START = DECOR_START + 11;
 
 /// Sprite IDs with values based on their sprite sheet location
 /// Packed sprite sheet located at src/main.png.
@@ -67,12 +67,12 @@ pub const Sprite = enum(u16) {
     // Decor
     spiral_plant = DECOR_START,
     ceiling_flower = DECOR_START + 1, // 2 variations
-    mushroom = DECOR_START + 3, // 2 variations
-    torch = DECOR_START + 5,
-    portal = DECOR_START + 6,
+    mushroom = DECOR_START + 3, // 3 variations
+    torch = DECOR_START + 6,
+    portal = DECOR_START + 7,
 
     /// Unselected inventory sprite.
-    inventory = DECOR_START + 7,
+    inventory = DECOR_START + 8,
     /// Selected (currently used) inventory sprite.
     inventory_selected,
     inventory_selected_invalid, // unused
