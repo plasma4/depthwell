@@ -374,18 +374,95 @@ pub var mod_store: ModificationStore = undefined;
 
 /// Stores what location a modification with an active suffix and quadrant, as well as its depth, to easily identify it.
 pub const DepthCoordinate = struct {
-    /// Active suffix (stored as a vector).
-    /// Should not be set manually; must call `getParent()` to decrease the depth for depths beyond `HORIZON_DEPTH`.
-    /// Most likely, a "path" of accessing D->D-1->D-2->... will occur.
-    /// You can think of the active suffix like 32 `u2` values packed together
-    /// for the X and Y coordinate that can be merged with the correct `QuadCache` quadrant to produce a "complete" path
+    /// Represents an invalid `DepthCoordinate`, which has `depth` equal to 0.
+    /// Semantically equivalent to `null`.
+    pub const invalid = DepthCoordinate{
+        .depth = 0,
+        .quadrant = undefined,
+        .suffix = undefined,
+    };
+
+    /// Active suffix (stored as a vector). Should not be set manually; must call `getParent()` to decrease the depth for depths beyond `HORIZON_DEPTH`.
+    /// Most likely, a "path" of accessing D->D-1->D-2->...->D-32 will occur.
+    /// You can think of the active suffix like 32 `u2` values packed together for the X and Y coordinate.
+    /// This coordinate can then be merged with the correct `QuadCache` quadrant to go all the way to D-32, or H!
     /// See `README.md` for more details.
     suffix: Vec2u,
     /// The depth of the modification.
     depth: u64,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u32,
-...
+
+    /// Checks for equality between two `DepthCoordinate` values.
+    pub inline fn eql(a: DepthCoordinate, b: DepthCoordinate) bool {
+        return a.depth == b.depth and a.quadrant == b.quadrant and @reduce(.And, a.suffix == b.suffix);
+    }
+
+    /// Converts any `Coordinate` to a `DepthCoordinate` at the current depth.
+    pub inline fn from(coord: Coordinate) @This() {
+        return .{
+            .suffix = coord.suffix,
+            .quadrant = @intCast(coord.quadrant),
+            .depth = memory.game.depth,
+        };
+    }
+
+    /// Converts a `DepthCoordinate` to a `Coordinate`, removing information about depth.
+    pub inline fn asCoord(key: @This()) Coordinate {
+        return .{
+            .suffix = key.suffix,
+            .quadrant = @intCast(key.quadrant),
+        };
+    }
+
+    /// Gets the correct location of D-1, in a `DepthCoordinate` format.
+    /// Handles depth decrement, acting as the `pushLayer()` "inverse" for a `DepthCoordinate`.
+    pub inline fn getParent(self: @This()) @This() {
+        const parent_depth = self.depth - 1;
+
+        // No rebasing exists at or below the horizon so bit-shifting does the trick.
+        if (self.depth <= memory.HORIZON_DEPTH) {
+            return .{
+                .suffix = self.suffix >> @splat(memory.ZOOM_LOG2),
+                .depth = parent_depth,
+                .quadrant = self.quadrant, // below horizon, quadrant is always 0.
+            };
+        }
+
+        std.debug.assert(self.depth + memory.HORIZON_DEPTH >= memory.game.depth); // can't go to D-33
+
+        // Rebase case! child_depth is larger than the horizon (> 32).
+        // Recover the exact 3-bit rebase origin mapped to THIS depth transition.
+        const origin_x = quad_cache.getOriginX(self.depth);
+        const origin_y = quad_cache.getOriginY(self.depth);
+
+        // The absolute cell within the parent QuadCache uses BOTH the origin offset AND the child's quadrant.
+        const child_qx = self.quadrant % 2;
+        const child_qy = self.quadrant / 2;
+
+        const cell_x = origin_x + child_qx;
+        const cell_y = origin_y + child_qy;
+
+        // Parent quadrant is the macro-cell this child belonged to.
+        const parent_qx = cell_x / ZOOM_FACTOR;
+        const parent_qy = cell_y / ZOOM_FACTOR;
+        const parent_quadrant: u32 = @intCast(parent_qx + parent_qy * 2);
+
+        // The top bits that "fell off" are the remainder!
+        const top_x = cell_x % ZOOM_FACTOR;
+        const top_y = cell_y % ZOOM_FACTOR;
+
+        // Effectively, take bottom 4 bits of top X/Y, and add in the 62 significant bits of the original suffix at the bottom.
+        const shift: u6 = 64 - memory.ZOOM_LOG2;
+        const px = (top_x << shift) | (self.suffix[0] >> memory.ZOOM_LOG2);
+        const py = (top_y << shift) | (self.suffix[1] >> memory.ZOOM_LOG2);
+
+        return .{
+            .suffix = .{ px, py },
+            .depth = parent_depth,
+            .quadrant = parent_quadrant,
+        };
+    }
 };
 
 /// Context for the `DepthCoordinate` (providing hashing and equality checks).
@@ -400,7 +477,7 @@ pub const DepthCoordinateContext = struct {
         return hasher.final();
     }
 
-    /// Checks for equality between two `DepthCoordinate` instances.
+    /// Checks for equality between two `DepthCoordinate` values.
     pub inline fn eql(self: @This(), a: DepthCoordinate, b: DepthCoordinate) bool {
         _ = self;
         return a.depth == b.depth and a.quadrant == b.quadrant and @reduce(.And, a.suffix == b.suffix);
@@ -409,18 +486,20 @@ pub const DepthCoordinateContext = struct {
 ```
 
 ```zig
-/// A static 2x2 grid of seeds only updated on entering a portal/game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
+/// A static 2x2 grid of seeds only updated when depth increases or game startup. See `README.md` for a more detailed and intuitive explanation for what this does.
 pub const QuadCache = struct {
+    pub const PATH_PREALLOC_SIZE = 256;
+
     /// The 512-bit hashes for the 4 active quadrants (sequentially from D to D-31).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
-    path_hashes: [4]seeding.Seed align(memory.MAIN_ALIGN_BYTES),
+    path_hashes: ChunkSeeds align(memory.MAIN_ALIGN_BYTES),
     /// The 4-by-4 material grid representing the "event horizon" at D-32.
     /// The inner 2-by-2 (indices [1..2][1..2]) corresponds to the active quadrants.
     ancestor_materials: [4][4]Sprite,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
-    left_path: SegmentedList(u64, 1024),
+    left_path: SegmentedList(u64, PATH_PREALLOC_SIZE),
     /// A list representing the prefix stack of the top left quadrant's Y-coordinate.
-    top_path: SegmentedList(u64, 1024),
+    top_path: SegmentedList(u64, PATH_PREALLOC_SIZE),
 
     // These 4 properties are used to determine if a QuadCache is at the very edge of the world for chunk gen/zooming in.
     most_top: bool = true,

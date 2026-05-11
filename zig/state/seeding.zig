@@ -10,6 +10,11 @@ const testing = std.testing;
 pub const POW_2_64 = 18446744073709551616;
 const Vec2u = memory.Vec2u;
 
+/// A 512-bit seed state (useful for hashing and procedural generation).
+pub const Seed = [8]u64;
+/// Contains 4 512-bit seed states, which are different for each chunk.
+pub const ChunkSeeds = [4][8]u64;
+
 test "basic usage example" {
     // Start with an arbitrary seed (NOTE: seed_from_bytes fails for WASM builds)
     var world_seed: Seed = undefined;
@@ -17,12 +22,9 @@ test "basic usage example" {
 
     var rng: Xoshiro512 = .{ .state = world_seed };
     // change to quickWarn to see result from ZLS (maybe?)
-    std.log.debug(rng.float(f32));
-    std.log.debug(rng.next());
+    std.log.debug("{d}", .{rng.float(f32)});
+    std.log.debug("{d}", .{rng.next()});
 }
-
-/// A 512-bit seed state (also used for hashing).
-pub const Seed = [8]u64;
 
 // /// A fast 64-bit to 64-bit generator for avalanching the X/Y offsets.
 // inline fn splitMix64(state: *u64) u64 {
@@ -72,7 +74,7 @@ pub fn mixCoordinateSeed(layer_seed: *const Seed, x: u64, y: u64, depth: u64) Se
 }
 
 /// Generates 4 sets of seeds for every chunk when combining X/Y active suffix coordinates with the seed of a quadrant.
-pub fn mixChunkSeeds(quadrant_seed: *const Seed, coord_vector: Vec2u, depth: u64) [4]Seed {
+pub fn mixChunkSeeds(quadrant_seed: *const Seed, coord_vector: Vec2u, depth: u64) ChunkSeeds {
     const PackedInput = extern struct { // do the packing thing again
         seed: Seed,
         c1: u64,
@@ -86,7 +88,7 @@ pub fn mixChunkSeeds(quadrant_seed: *const Seed, coord_vector: Vec2u, depth: u64
         .depth = depth,
     };
 
-    var out_seeds: [4]Seed = undefined;
+    var out_seeds: ChunkSeeds = undefined;
     std.crypto.hash.Blake3.hash(std.mem.asBytes(&input), std.mem.asBytes(&out_seeds), .{});
     return out_seeds;
 }
@@ -155,10 +157,10 @@ pub const ChaCha12 = struct {
         const s: [16]u32 = @bitCast(seed_data);
 
         return ChaCha12{
-            .row0 = @as(v4u32, @bitCast(s[0..4].*)),
-            .row1 = @as(v4u32, @bitCast(s[4..8].*)),
-            .row2 = @as(v4u32, @bitCast(s[8..12].*)),
-            .row3 = @as(v4u32, @bitCast(s[12..16].*)),
+            .row0 = @bitCast(s[0..4].*),
+            .row1 = @bitCast(s[4..8].*),
+            .row2 = @bitCast(s[8..12].*),
+            .row3 = @bitCast(s[12..16].*),
             .position = 8,
         };
     }
@@ -167,9 +169,9 @@ pub const ChaCha12 = struct {
     pub fn initWithNonce(seed_data: Seed, nonce: [2]u32) ChaCha12 {
         const s: [16]u32 = @bitCast(seed_data);
         return ChaCha12{
-            .row0 = @as(v4u32, @bitCast(s[0..4].*)),
-            .row1 = @as(v4u32, @bitCast(s[4..8].*)),
-            .row2 = @as(v4u32, @bitCast(s[8..12].*)),
+            .row0 = @bitCast(s[0..4].*),
+            .row1 = @bitCast(s[4..8].*),
+            .row2 = @bitCast(s[8..12].*),
             .row3 = v4u32{
                 0,        0, // Counter always starts at 0 for a new layer
                 nonce[0], nonce[1],
@@ -246,9 +248,9 @@ pub const ChaCha12 = struct {
     pub fn hash2d128(comptime T: type, seed_data: *const Seed, x: u64, y: u64) @Vector(2, T) {
         const s: [16]u32 = @bitCast(seed_data);
 
-        var x0 = @as(v4u32, @bitCast(s[0..4].*));
-        var x1 = @as(v4u32, @bitCast(s[4..8].*));
-        var x2 = @as(v4u32, @bitCast(s[8..12].*));
+        var x0: v4u32 = @bitCast(s[0..4].*);
+        var x1: v4u32 = @bitCast(s[4..8].*);
+        var x2: v4u32 = @bitCast(s[8..12].*);
         // Inject coordinates directly into the final row
         var x3 = v4u32{
             @as(u32, @truncate(x)),

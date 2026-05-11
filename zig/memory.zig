@@ -73,10 +73,10 @@ pub const GameState = extern struct {
 
     /// Represents which quadrant (0-3) of the `QuadCache` the player is in (starts at 0 when depth is <= 16).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
-    player_quadrant: u32 = 0,
+    player_quadrant: u8 = 0,
 
     /// Current frame ID. 32-bit; expect wrap-arounds and access with powers-of-2 checks.
-    frame: u32 = 0,
+    frame: u32 align(4) = 0,
 
     // /// Represents if the grid needs to be recalculated/passed to WGSL.
     // grid_dirty: bool = true,
@@ -308,13 +308,13 @@ pub const Coordinate = struct {
         return .{ .depth = depth, .quadrant = self.quadrant, .suffix = self.suffix };
     }
 
-    /// Adds both an X and Y value, creating a new Coordinate and handling quadrants.
+    /// Adds both an X and Y value, creating a new `Coordinate` and handling quadrants.
     /// Returns `null` if this change would exceed a quadrant's boundaries at the game's current depth.
     pub inline fn move(self: @This(), shift: Vec2i) ?Coordinate {
         return self.moveAtDepth(shift, game.depth);
     }
 
-    /// Adds both an X and Y value, creating a new Coordinate and handling quadrants for a specific depth.
+    /// Adds both an X and Y value, creating a new `Coordinate` and handling quadrants for a specific depth.
     /// Returns `null` if this change would exceed boundaries.
     pub inline fn moveAtDepth(self: @This(), shift: Vec2i, depth: u64) ?Coordinate {
         const dx = shift[0];
@@ -379,7 +379,7 @@ pub const ModifiedChunk = struct {
     pub inline fn isModified(self: *const @This(), lx: u4, ly: u4) bool {
         const index = (@as(u8, ly) << CHUNK_SIZE_LOG2) | @as(u8, lx);
         const slot = index >> 6;
-        const bit = @as(u6, @truncate(index));
+        const bit: u6 = @truncate(index);
         return (self.modified_mask[slot] & (@as(u64, 1) << bit)) != 0;
     }
 };

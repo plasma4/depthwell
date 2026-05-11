@@ -125,7 +125,8 @@ pub export fn tick(speed: f64, iterations: u32) void {
         }
     }
 
-    if (is_debug and debug_recursively_increase_depth and memory.game.depth < memory.HORIZON_DEPTH) {
+    // in prod, add is_debug here!
+    if (debug_recursively_increase_depth and memory.game.depth < memory.HORIZON_DEPTH) {
         world.pushLayer(
             Sprite.none,
             memory.game.getPlayerCoord(),

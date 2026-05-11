@@ -365,7 +365,7 @@ pub fn updateEntities(time_diff: f64) void {
         }
 
         // render the player now!
-        const center_offset = @as(@Vector(2, i64), @splat(memory.CHUNK_SIZE_SQ / 2));
+        const center_offset: memory.Vec2i = @splat(memory.CHUNK_SIZE_SQ / 2);
         const relative_pos = memory.game.player_pos - center_offset;
 
         const scale = tile_size / memory.CHUNK_SIZE_SQ;
@@ -578,6 +578,7 @@ pub fn drawNumber(
 
 /// Optimized version of draw_number for when rotation is exactly 0.
 fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
+    std.debug.assert(options.rotation == 0);
     const lcha = options.lcha;
     const font_size = options.font_size;
     const ltr = options.ltr;

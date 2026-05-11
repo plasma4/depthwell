@@ -1,5 +1,7 @@
 const std = @import("std");
 const root = @import("../root.zig");
+
+const is_debug = root.is_debug;
 const memory = root.memory;
 const procedural = root.procedural;
 
@@ -16,12 +18,14 @@ const GEM_START = ORE_START + 4;
 
 /// Index where gem masks (not gem sprites) begin.
 const MASK_START = GEM_START + 4;
-/// Index where the HP mask ends.
+/// Index after the HP mask ends, and decorations begin.
 /// Between `MASK_START` and `MASK_END` are 8 ore masks and 16 HP masks.
 const DECOR_START = MASK_START + 24;
 
+/// Index where inventory slot sprites start.
+pub const INVENTORY_START = DECOR_START + 11;
 /// Index where numbers (0-9) start.
-pub const NUMBER_START = DECOR_START + 14;
+pub const NUMBER_START = INVENTORY_START + 3;
 
 /// Sprite IDs with values based on their sprite sheet location
 /// Packed sprite sheet located at src/main.png.
@@ -68,12 +72,12 @@ pub const Sprite = enum(u16) {
     spiral_plant = DECOR_START,
     ceiling_flower = DECOR_START + 1, // 2 variations
     mushroom = DECOR_START + 3, // 3 variations
-    mushroom_big = DECOR_START + 6, // 3 variations
+    big_mushroom = DECOR_START + 6, // 3 variations
     torch = DECOR_START + 9,
     portal = DECOR_START + 10,
 
     /// Unselected inventory sprite.
-    inventory = DECOR_START + 11,
+    inventory = INVENTORY_START,
     /// Selected (currently used) inventory sprite.
     inventory_selected,
     inventory_selected_invalid, // unused
@@ -110,10 +114,14 @@ pub const Sprite = enum(u16) {
             .spiral_plant,
             .ceiling_flower,
             .mushroom,
+            .big_mushroom,
             .torch,
             .portal,
             => true,
             else => {
+                // may be used for testing visually, as it's a clean sprite
+                if (is_debug and self == .inventory_selected_invalid) return true;
+
                 const id = @intFromEnum(self);
                 return (id >= STONE_START and id <= STONE_END) or
                     (id >= ORE_START and id < MASK_START);
@@ -125,9 +133,10 @@ pub const Sprite = enum(u16) {
     /// This returns true for edge stone, unlike `is_solid`.
     pub fn isSolid(self: @This()) bool {
         if (self == Sprite.none or self == .player) return false;
+        if (is_debug and self == .inventory_selected_invalid) return false;
 
         const id = @intFromEnum(self);
-        if (id >= MASK_START and id <= @intFromEnum(Sprite.inventory)) return false;
+        if (id >= MASK_START and id <= INVENTORY_START) return false;
         return true;
     }
 
@@ -157,7 +166,7 @@ pub const Sprite = enum(u16) {
     /// Determines if the sprite is a heatmap (between types 65000-65256).
     pub inline fn isHeatmap(self: @This()) bool {
         const id = @intFromEnum(self);
-        return root.is_debug and id >= 65000 and id <= 65256;
+        return is_debug and id >= 65000 and id <= 65256;
     }
 };
 

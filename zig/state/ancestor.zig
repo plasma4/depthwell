@@ -20,38 +20,40 @@ pub inline fn isHorizonDepth(depth: u64) bool {
     if (depth <= STARTING_ZOOM_TIMES) return false;
 
     const horizon_limit = memory.HORIZON_DEPTH;
-    // Horizon kicks in once we are 32 layers deep.
+    // The horizon (H) kicks in once we are more than 32 + STARTING_ZOOM_TIMES layers deep.
     if (memory.game.depth < STARTING_ZOOM_TIMES + horizon_limit) return false;
 
     return (depth + horizon_limit) == memory.game.depth;
 }
 
-/// Optimized per-depth tier cache for ancestors of chunks.
+/// Optimized per-depth tier cache for ancestors of chunks. Fully cleared on depth increase.
 pub const AncestorCache = struct {
     /// Amount of chunks per depth/tier; too low and performance regressions may occur.
     pub const TIER_SIZE = 32;
     /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
-    pub const NUM_TIERS = 33;
+    pub const NUM_TIERS = 32;
 
-    var keys: [NUM_TIERS][TIER_SIZE]?DepthCoordinate = [_][TIER_SIZE]?DepthCoordinate{[_]?DepthCoordinate{null} ** TIER_SIZE} ** NUM_TIERS;
+    var keys: [NUM_TIERS][TIER_SIZE]DepthCoordinate = .{.{DepthCoordinate.invalid} ** TIER_SIZE} ** NUM_TIERS;
     var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
     var clock: [NUM_TIERS]std.StaticBitSet(TIER_SIZE) = [_]std.StaticBitSet(TIER_SIZE){std.StaticBitSet(TIER_SIZE).initEmpty()} ** NUM_TIERS;
-    var hand: [NUM_TIERS]usize = [_]usize{0} ** NUM_TIERS;
+    var hand: [NUM_TIERS]usize = [_]usize{0} ** NUM_TIERS; // or std.mem.zeroes([NUM_TIERS]usize)
 
     /// Retrieves a chunk by DepthCoordinate. Searches the specific depth tier.
     /// Returns a mutable pointer to allow for in-place updates or direct reads.
     pub fn get(key: DepthCoordinate) ?*Chunk {
         std.debug.assert(!isHorizonDepth(key.depth)); // should've gone to quadrant fallback ):
-        const d = @as(usize, @intCast(key.depth % NUM_TIERS)); // TODO: maybe we shouldn't be doing a % 33, which is slow?
 
-        for (&keys[d], 0..) |maybe_key, i| {
+        // % is slow here if NUM_TIERS is not a power of 2 but it's insignificant
+        const d: usize = @intCast(key.depth % NUM_TIERS);
+
+        for (&keys[d], 0..) |cache_key, i| {
             if (i + 1 < TIER_SIZE) {
                 // small optimization
-                @prefetch(&keys[d][i + 1], .{ .rw = .read, .locality = 1, .cache = .data });
+                @prefetch(&keys[d][i + 1], .{ .rw = .read, .locality = 0, .cache = .data });
             }
 
-            if (maybe_key) |k| {
-                if (k.depth == key.depth and k.quadrant == key.quadrant and @reduce(.And, k.suffix == key.suffix)) {
+            if (cache_key.depth != 0) {
+                if (cache_key.eql(key)) {
                     clock[d].set(i);
                     return &chunks[d][i];
                 }
@@ -66,7 +68,7 @@ pub const AncestorCache = struct {
     /// Does NOT handle quadrant fallback case; asserts `depth` is high enough.
     pub fn allocateSlot(key: DepthCoordinate) *Chunk {
         std.debug.assert(!isHorizonDepth(key.depth)); // should've gone to quadrant fallback ):
-        const d = @as(usize, @intCast(key.depth % NUM_TIERS));
+        const d: usize = @intCast(key.depth % NUM_TIERS);
 
         while (true) {
             const id = hand[d];
@@ -94,7 +96,7 @@ pub const AncestorCache = struct {
     /// Clears the `AncestorCache` and resets clock data.
     pub fn clear() void {
         for (0..NUM_TIERS) |i| {
-            @memset(&keys[i], null);
+            @memset(&keys[i], .invalid);
             clock[i] = std.StaticBitSet(TIER_SIZE).initEmpty();
             hand[i] = 0;
         }
@@ -129,34 +131,46 @@ pub fn getParentInfo(key: DepthCoordinate, bx: u4, by: u4) ParentInfo {
     };
 }
 
-/// Applies deterministic holes based on coordinate and depth (in `DepthCoordinate`). Also modifies some block types.
-pub fn applyAncestorLogic(sprite: Sprite, key: DepthCoordinate, bx: u4, by: u4) Sprite {
-    // TODO: pass chunk seeds here.
+/// Retrieves a full chunk at any depth, handling cache and procedural generation.
+pub fn getAncestorChunk(key: DepthCoordinate) *const Chunk {
+    // Check user modifications first...
+    if (world.mod_store.get(key)) |mod| return mod;
+
+    // Check the ancestor cache
+    if (AncestorCache.get(key)) |cached| return cached;
+
+    // Generate the chunk into the cache slot
+    const slot = AncestorCache.allocateSlot(key);
+    world.generateChunk(slot, key);
+    return slot;
+}
+
+/// Applies deterministic logic to a block based on its coordinate, depth, and 8 parent neighbors.
+pub fn applyAncestorLogic(
+    sprite: Sprite,
+    parent_neighbors: [8]Sprite,
+    key: DepthCoordinate,
+    bx: u4,
+    by: u4,
+) Sprite {
+    // for testing purposes!
+    if (std.mem.allEqual(Sprite, &parent_neighbors, .stone)) return .inventory_selected_invalid;
     if (sprite.isEmpty()) return .none;
     if (sprite == .ceiling_flower) return .none;
     if (sprite == .spiral_plant) return .spiral_plant;
-    // TODO: consolidate visual variations to be factored in with seed for mushrooms.
-    if (sprite == .mushroom) return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3) .mushroom_big else .none;
+    if (sprite == .mushroom) return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3) .big_mushroom else .none;
+    if (sprite == .big_mushroom) return .big_mushroom;
     if (sprite == .edge_stone) return .edge_stone;
-    if (!sprite.isFoundation()) return .none; // Fallthrough case! Make the ancestor nothing instead.
+    if (!sprite.isFoundation()) return .none;
 
-    // naive code for testin'
-    var hasher = std.hash.Wyhash.init(key.depth);
-    std.hash.autoHash(&hasher, key.quadrant);
-    // std.hash.autoHash(&hasher, key.suffix[0]);
-    // std.hash.autoHash(&hasher, key.suffix[1]);
-    std.hash.autoHash(&hasher, key.suffix); // hashing logic in std preserves vector order, this is okay
-    std.hash.autoHash(&hasher, @as(u8, by) * 4 + @as(u8, bx));
-    const noise = hasher.final();
+    // Diffuse purely based on coordinate for deterministic ancestors across depth changes!
+    const seed_vec = memory.Vec2u{
+        key.suffix[0] ^ @as(u64, key.depth),
+        key.suffix[1] ^ @as(u64, key.quadrant),
+    };
+    const noise = seeding.FastHash.hash2d(seed_vec, bx, by);
 
-    // chance for hole!
-    if (noise <= seeding.oddsNum(0.2)) {
-        return .none;
-    }
-    // alternate funny test pattern
-    // if ((bx ^ by) & 4 == 3) {
-    //     return .none;
-    // }
+    if (noise <= seeding.oddsNum(0.05)) return .none;
 
     if (sprite == .mossy_stone) return .spiral_plant;
     if (sprite == .blue_strange_stone) return .blue_stone;
@@ -170,21 +184,14 @@ pub fn applyAncestorLogic(sprite: Sprite, key: DepthCoordinate, bx: u4, by: u4) 
 /// Traces the lineage of a single block type. Target depth is described in the `DepthCoordinate`.
 pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Sprite {
     const target_depth = key.depth;
-    // Hard check for the world floor.
-    // This MUST happen before isHorizonDepth to allow bootstrapping at D=34.
     if (target_depth == STARTING_ZOOM_TIMES) {
-        const new_key = DepthCoordinate{
-            .suffix = key.suffix,
-            .quadrant = @intCast(key.quadrant),
-            .depth = target_depth,
-        };
         const block_idx = (@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx;
 
         if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx].id;
         if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx].id;
 
         const slot = AncestorCache.allocateSlot(key);
-        world.generateBaseChunk(slot, new_key.asCoord());
+        world.generateBaseChunk(slot, key.asCoord());
         return slot.blocks[block_idx].id;
     }
 
@@ -192,55 +199,106 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Sprite {
         return world.getBlockIdAt(key.asCoord(), bx, by, target_depth);
     }
 
-    const new_key = DepthCoordinate{
-        .suffix = key.suffix,
-        .quadrant = @intCast(key.quadrant),
-        .depth = target_depth,
-    };
     const block_idx = (@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx;
 
     if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx].id;
     if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx].id;
 
-    const p = getParentInfo(new_key, bx, by);
+    const p = getParentInfo(key, bx, by);
     const parent_sprite = getInheritedMaterial(p.coord.asDepthCoordinate(target_depth - 1), p.bx, p.by);
 
-    return applyAncestorLogic(parent_sprite, new_key, bx, by);
+    // Fetch the 3x3 boundary of the parent block to pass to our ancestor logic
+    var neighbors: [8]Sprite align(8) = undefined;
+    var n_idx: usize = 0;
+
+    var dy: i32 = -1;
+    while (dy <= 1) : (dy += 1) {
+        var dx: i32 = -1;
+        while (dx <= 1) : (dx += 1) {
+            if (dx == 0 and dy == 0) continue;
+
+            const lx = @as(i32, @intCast(p.bx)) + dx;
+            const ly = @as(i32, @intCast(p.by)) + dy;
+            const chunk_off_x = @divFloor(lx, memory.CHUNK_SIZE);
+            const chunk_off_y = @divFloor(ly, memory.CHUNK_SIZE);
+
+            const target_nc = p.coord.moveAtDepth(.{ chunk_off_x, chunk_off_y }, target_depth - 1) orelse {
+                neighbors[n_idx] = if (target_depth - 1 == STARTING_ZOOM_TIMES) .edge_stone else .none;
+                n_idx += 1;
+                continue;
+            };
+
+            // This uses AncestorCache!
+            neighbors[n_idx] = getInheritedMaterial(
+                target_nc.asDepthCoordinate(target_depth - 1),
+                @intCast(@mod(lx, memory.CHUNK_SIZE)),
+                @intCast(@mod(ly, memory.CHUNK_SIZE)),
+            );
+            n_idx += 1;
+        }
+    }
+
+    return applyAncestorLogic(parent_sprite, neighbors, key, bx, by);
 }
 
 /// Fetches a 6x6 neighborhood of parent IDs for the generator. Requires a specific depth and location.
 pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Sprite {
     var result: [6][6]Sprite = undefined;
     const parent_depth = key.depth - 1;
-    std.debug.assert(parent_depth >= STARTING_ZOOM_TIMES);
 
     const p_info_origin = getParentInfo(key, 0, 0);
-    const start_px: i32 = @as(i32, @intCast(p_info_origin.bx)) - 1;
-    const start_py: i32 = @as(i32, @intCast(p_info_origin.by)) - 1;
+    const start_px = @as(i32, @intCast(p_info_origin.bx)) - 1;
+    const start_py = @as(i32, @intCast(p_info_origin.by)) - 1;
+
+    // Small local cache for the 1-4 parent chunks required for this neighborhood
+    var cached_chunks: [4]?*const Chunk = .{null} ** 4;
+    var cached_coords: [4]Coordinate = undefined;
 
     for (0..6) |y_idx| {
         for (0..6) |x_idx| {
             const lx = start_px + @as(i32, @intCast(x_idx));
             const ly = start_py + @as(i32, @intCast(y_idx));
-            const chunk_off_x = @divFloor(lx, memory.CHUNK_SIZE);
-            const chunk_off_y = @divFloor(ly, memory.CHUNK_SIZE);
+            const chunk_off_x = @divFloor(lx, 16);
+            const chunk_off_y = @divFloor(ly, 16);
 
-            const target_nc = p_info_origin.coord.moveAtDepth(.{ chunk_off_x, chunk_off_y }, parent_depth) orelse {
-                // World boundary only exists at the generation floor.
-                if (parent_depth == STARTING_ZOOM_TIMES) {
-                    result[y_idx][x_idx] = .edge_stone;
-                } else {
-                    // This is unreachable in rebasing depths (>32).
-                    result[y_idx][x_idx] = .none;
-                }
+            const target_nc = p_info_origin.coord.moveAtDepth(
+                .{ chunk_off_x, chunk_off_y },
+                parent_depth,
+            ) orelse {
+                result[y_idx][x_idx] = if (parent_depth == STARTING_ZOOM_TIMES) .edge_stone else .none;
                 continue;
             };
 
-            result[y_idx][x_idx] = getInheritedMaterial(
-                target_nc.asDepthCoordinate(parent_depth),
-                @intCast(@mod(lx, memory.CHUNK_SIZE)),
-                @intCast(@mod(ly, memory.CHUNK_SIZE)),
-            );
+            if (isHorizonDepth(parent_depth)) {
+                result[y_idx][x_idx] = world.getBlockIdAt(
+                    target_nc,
+                    @intCast(@mod(lx, 16)),
+                    @intCast(@mod(ly, 16)),
+                    parent_depth,
+                );
+                continue;
+            }
+
+            var chunk: ?*const Chunk = null;
+            for (0..4) |i| {
+                if (cached_chunks[i]) |c| {
+                    if (cached_coords[i].eql(target_nc)) {
+                        chunk = c;
+                        break;
+                    }
+                } else {
+                    const new_chunk = getAncestorChunk(target_nc.asDepthCoordinate(parent_depth));
+                    cached_chunks[i] = new_chunk;
+                    cached_coords[i] = target_nc;
+                    chunk = new_chunk;
+                    break;
+                }
+            }
+
+            result[y_idx][x_idx] = chunk.?.blocks[
+                (@as(usize, @intCast(@mod(ly, 16))) << 4) |
+                    @as(usize, @intCast(@mod(lx, 16)))
+            ].id;
         }
     }
     return result;

@@ -39,8 +39,8 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     // find the chunk indices that end up covering the screen, with just enough buffer
     const min_cx: i32 = @floor(edge_left / subpixels_per_chunk);
     const min_cy: i32 = @floor(edge_top / subpixels_per_chunk);
-    const max_cx: i32 = @as(i32, @floor(edge_right / subpixels_per_chunk)) + 1;
-    const max_cy: i32 = @as(i32, @floor(edge_bottom / subpixels_per_chunk)) + 1;
+    const max_cx = @as(i32, @floor(edge_right / subpixels_per_chunk)) + 1;
+    const max_cy = @as(i32, @floor(edge_bottom / subpixels_per_chunk)) + 1;
 
     // determine the dimensions of the grid to render (cw/ch is how many chunks wide/high the current render-window is)
     const cw: u32 = @intCast(max_cx - min_cx + 1);
@@ -53,19 +53,18 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     memory.scratchReset(); // scratch allocator always needs to be reset!
     const out = memory.scratchAllocSlice(memory.Block, wb * hb);
 
-    const world_limit: u64 = world.max_possible_suffix;
     const player_coord = game.getPlayerCoord();
 
     var chunk: memory.Chunk = undefined;
     for (0..ch) |gy| {
-        const offset_y: i64 = @as(i64, @intCast(min_cy)) + @as(i64, @intCast(gy));
+        const offset_y = @as(i64, @intCast(min_cy)) + @as(i64, @intCast(gy));
 
         for (0..cw) |gx| {
-            const offset_x: i64 = @as(i64, @intCast(min_cx)) + @as(i64, @intCast(gx));
+            const offset_x = @as(i64, @intCast(min_cx)) + @as(i64, @intCast(gx));
 
             if (player_coord.move(.{ offset_x, offset_y })) |target_coord| {
                 if (game.depth <= memory.HORIZON_DEPTH) {
-                    if (target_coord.suffix[0] > world_limit or target_coord.suffix[1] > world_limit) {
+                    if (target_coord.suffix[0] > world.max_possible_suffix or target_coord.suffix[1] > world.max_possible_suffix) {
                         for (0..CHUNK_SIZE) |ly| {
                             const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
                             @memset(out[row_start .. row_start + CHUNK_SIZE], root.sprite.AIR_BLOCK);
@@ -134,8 +133,8 @@ inline fn updateRenderProperties(
         const d: usize = @intCast(memory.game.depth);
 
         const log_limit = @min(d, HORIZON_DEPTH);
-        var suffix_array_x = std.mem.zeroes([HORIZON_DEPTH]u64);
-        var suffix_array_y = std.mem.zeroes([HORIZON_DEPTH]u64);
+        var suffix_array_x: [HORIZON_DEPTH]u64 = undefined;
+        var suffix_array_y: [HORIZON_DEPTH]u64 = undefined;
 
         for (0..log_limit) |i| {
             suffix_array_x[log_limit - 1 - i] = (game.player_chunk[0] >> @intCast(memory.ZOOM_LOG2 * i)) % memory.ZOOM_FACTOR;

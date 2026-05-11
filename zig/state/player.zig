@@ -106,7 +106,7 @@ pub fn move(logic_speed: f64) void {
     const displacement = game.player_velocity * @as(Vec2f, @splat(dt * memory.CHUNK_SIZE_FLOAT));
     subpixel_accum += displacement;
 
-    const total_move = @as(Vec2i, @floor(subpixel_accum));
+    const total_move: Vec2i = @floor(subpixel_accum);
     subpixel_accum -= @as(Vec2f, @floatFromInt(total_move));
 
     game.last_player_pos = game.player_pos;
@@ -234,8 +234,8 @@ fn updateCamera(logic_speed: f64) void {
     const game = &memory.game;
     game.last_camera_pos = game.camera_pos;
 
-    const x_deadzone = @as(i64, @intFromFloat(CAMERA_DEADZONE_X / game.camera_scale));
-    const y_deadzone = @as(i64, @intFromFloat(CAMERA_DEADZONE_Y / game.camera_scale));
+    const x_deadzone: i64 = @intFromFloat(CAMERA_DEADZONE_X / game.camera_scale);
+    const y_deadzone: i64 = @intFromFloat(CAMERA_DEADZONE_Y / game.camera_scale);
 
     var shift_x: i64 = 0;
     var shift_y: i64 = 0;

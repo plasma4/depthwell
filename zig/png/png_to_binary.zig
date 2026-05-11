@@ -280,10 +280,10 @@ pub const Bitmap = struct {
         for (y0..y1) |y| {
             const row = self.pixels[y * self.width + x0 .. y * self.width + x1];
             for (row) |px| {
-                const r = @as(u64, px.channels.r);
-                const g = @as(u64, px.channels.g);
-                const b = @as(u64, px.channels.b);
-                const a = @as(u64, px.channels.a);
+                const r: u64 = px.channels.r;
+                const g: u64 = px.channels.g;
+                const b: u64 = px.channels.b;
+                const a: u64 = px.channels.a;
 
                 // Ensure u64 math throughout to prevent overflow
                 sum_r += r * r * a;

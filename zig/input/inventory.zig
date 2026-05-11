@@ -118,8 +118,8 @@ pub fn getHoveredInventorySprite() ?Sprite {
     const mouse_pos = mouse.uv_position * memory.Vec2f{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT };
 
     for (active_slots, 0..) |active_sprite, i| {
-        const col = @as(f32, @floatFromInt(i % inventory_width));
-        const row = @as(f32, @floatFromInt(i / inventory_width));
+        const col: f32 = @floatFromInt(i % inventory_width);
+        const row: f32 = @floatFromInt(i / inventory_width);
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
@@ -178,8 +178,8 @@ pub fn drawInventory(time_diff: f64) void {
         const size_selected: f32 = 12.0 / 16.0 * base_size;
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
 
-        const col = @as(f32, @floatFromInt(i % inventory_width));
-        const row = @as(f32, @floatFromInt(i / inventory_width));
+        const col: f32 = @floatFromInt(i % inventory_width);
+        const row: f32 = @floatFromInt(i / inventory_width);
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
@@ -263,8 +263,8 @@ pub fn drawInventory(time_diff: f64) void {
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
         const size_vec = Vec2f32{ current_size, current_size };
 
-        const col = @as(f32, @floatFromInt(i % inventory_width));
-        const row = @as(f32, @floatFromInt(i / inventory_width));
+        const col: f32 = @floatFromInt(i % inventory_width);
+        const row: f32 = @floatFromInt(i / inventory_width);
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
         const pos = inventory_pos - size_vec / Vec2f32{ base_size / 4.0, base_size / 4.0 } - Vec2f32{ base_size / 16.0, base_size / 16.0 };
@@ -281,10 +281,7 @@ pub fn drawInventory(time_diff: f64) void {
 
         // wrap and convert hue to f32
         // hue is affected by ID in active slots AND wobble angles!
-        const color_hue = @as(
-            f32,
-            @floatCast(@rem(@as(f64, @floatFromInt(i)) * 0.2 - @abs(wobble_angle * 2.0), std.math.tau)),
-        );
+        const color_hue: f32 = @floatCast(@rem(@as(f64, @floatFromInt(i)) * 0.2 - @abs(wobble_angle * 2.0), std.math.tau));
 
         drawNumber( // shadow of inventory number
             count,

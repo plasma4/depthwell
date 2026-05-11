@@ -165,8 +165,8 @@ pub fn getBaseSpriteType(
 /// This function uses fractal brownian motion with value noise in an initial pass for domain warping,
 /// then Worley noise to generate terrain.
 fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: TerrainOptions) f32 {
-    const fx = @as(f32, @floatFromInt(x));
-    const fy = @as(f32, @floatFromInt(if (options.horizontally_wide) y * 2 else y)); // scaled Y
+    const fx: f32 = @floatFromInt(x);
+    const fy: f32 = @floatFromInt(if (options.horizontally_wide) y * 2 else y); // scaled Y
 
     // buncha config options
     const h_stretch = 1.5;
@@ -203,8 +203,8 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
 
     const cx_f = @floor(wx / cell_w);
     const cy_f = @floor(wy / cell_size);
-    const cx_i = @as(i64, @intFromFloat(cx_f));
-    const cy_i = @as(i64, @intFromFloat(cy_f));
+    const cx_i: i64 = @intFromFloat(cx_f);
+    const cy_i: i64 = @intFromFloat(cy_f);
 
     var d1_sq = std.math.inf(f32); // highest possible values
     var d2_sq = std.math.inf(f32);
@@ -212,8 +212,8 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
     // Worley search
     inline for (.{ -1, 0, 1 }) |ox| {
         inline for (.{ -1, 0, 1 }) |oy| {
-            const cur_x = @as(u64, @bitCast(cx_i + ox));
-            const cur_y = @as(u64, @bitCast(cy_i + oy));
+            const cur_x: u64 = @bitCast(cx_i + ox);
+            const cur_y: u64 = @bitCast(cy_i + oy);
 
             // Hash once for both offsets
             const h = FastHash.hash2d(seed_vector, cur_x, cur_y);
@@ -248,8 +248,8 @@ fn getDualValueNoise(seed: Vec2u, x: u64, y: u64) memory.Vec2f32 {
     const fx_raw = @as(f32, @floatFromInt(x)) / dual_value_scale.getF32();
     const fy_raw = @as(f32, @floatFromInt(y)) / dual_value_scale.getF32();
 
-    const x0 = @as(u64, @trunc(fx_raw));
-    const y0 = @as(u64, @trunc(fy_raw));
+    const x0: u64 = @trunc(fx_raw);
+    const y0: u64 = @trunc(fy_raw);
     const tx = fx_raw - @trunc(fx_raw);
     const ty = fy_raw - @trunc(fy_raw);
 
@@ -264,7 +264,7 @@ fn getDualValueNoise(seed: Vec2u, x: u64, y: u64) memory.Vec2f32 {
 
     var res: memory.Vec2f32 = .{ 0, 0 };
     inline for (0..2) |i| {
-        const shift = @as(u6, @intCast(i * 32));
+        const shift: u6 = @intCast(i * 32);
         const v00 = @as(f32, @floatFromInt(@as(u32, @truncate(h00 >> shift)))) / POW_2_32;
         const v10 = @as(f32, @floatFromInt(@as(u32, @truncate(h10 >> shift)))) / POW_2_32;
         const v01 = @as(f32, @floatFromInt(@as(u32, @truncate(h01 >> shift)))) / POW_2_32;
