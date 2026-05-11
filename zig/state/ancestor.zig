@@ -6,12 +6,14 @@ const world = root.world;
 const procedural = root.procedural;
 const seeding = root.seeding;
 
-const HORIZON_DEPTH = memory.HORIZON_DEPTH;
-const STARTING_ZOOM_TIMES = root.startup.STARTING_ZOOM_TIMES;
 const Sprite = root.Sprite;
+const Block = memory.Block;
 const Coordinate = memory.Coordinate;
 const Chunk = memory.Chunk;
 const DepthCoordinate = world.DepthCoordinate;
+
+const HORIZON_DEPTH = memory.HORIZON_DEPTH;
+const STARTING_ZOOM_TIMES = root.startup.STARTING_ZOOM_TIMES;
 
 /// Returns whether the specified depth is far enough from the current player depth that discrete coordinates are no longer tracked.
 /// At this boundary, chunk-level detail is replaced by the global `QuadCache` 4x4 background grid.
@@ -145,70 +147,140 @@ pub fn getAncestorChunk(key: DepthCoordinate) *const Chunk {
     return slot;
 }
 
-/// Applies deterministic logic to a block based on its coordinate, depth, and 8 parent neighbors.
+/// Given a 4x4 string of 0s and 1s (skipping others).
+/// Returns an array of values between 0-15 where there is a 1. Should be called with `comptime`.
+pub inline fn get4x4List(comptime str: []const u8) []const u4 {
+    comptime {
+        var result: [16]u4 = undefined;
+        var count: usize = 0;
+        var cell_idx: usize = 0;
+        var total_cells: usize = 0;
+
+        for (str) |c| {
+            if (c == '0' or c == '1') {
+                if (total_cells >= 16) {
+                    @compileError("Input string contains more than 16 cells.");
+                }
+
+                if (c == '1') {
+                    result[count] = cell_idx;
+                    count += 1;
+                }
+
+                cell_idx += 1;
+                total_cells += 1;
+            }
+        }
+
+        if (total_cells != 16) {
+            @compileError("Input string must contain exactly 16 characters (0s or 1s).");
+        }
+
+        const final = result[0..count];
+        return final;
+    }
+}
+
+/// Applies deterministic logic to a child Block based on its parent Block and 8 parent neighbors.
 pub fn applyAncestorLogic(
-    sprite: Sprite,
-    parent_neighbors: [8]Sprite,
+    parent_block: Block,
+    parent_neighbors: [8]Block,
     key: DepthCoordinate,
     bx: u4,
     by: u4,
-) Sprite {
-    // for testing purposes!
-    if (std.mem.allEqual(Sprite, &parent_neighbors, .stone)) return .inventory_selected_invalid;
-    if (sprite.isEmpty()) return .none;
-    if (sprite == .ceiling_flower) return .none;
-    if (sprite == .spiral_plant) return .spiral_plant;
-    if (sprite == .mushroom) return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3) .big_mushroom else .none;
-    if (sprite == .big_mushroom) return .big_mushroom;
-    if (sprite == .edge_stone) return .edge_stone;
-    if (!sprite.isFoundation()) return .none;
+) Block {
+    const parent_sprite = parent_block.id;
+    // const parent_seed = parent_block.seed;
 
-    // Diffuse purely based on coordinate for deterministic ancestors across depth changes!
-    const seed_vec = memory.Vec2u{
-        key.suffix[0] ^ @as(u64, key.depth),
-        key.suffix[1] ^ @as(u64, key.quadrant),
+    if (parent_sprite.isEmpty()) return .empty;
+    const seeds = world.quad_cache.getChunkSeeds(key);
+    const noise = seeding.FastHash.hash2d(.{ seeds[0][0], seeds[0][1] }, bx, by);
+
+    // Structural logic!
+    const local_id = (by % 4) * 4 + (bx % 4);
+    const grid_mask = comptime get4x4List(
+        \\1001
+        \\0000
+        \\0000
+        \\1001
+    );
+    inline for (grid_mask) |id| { // TODO: we should maybe not use get4x4List here ):
+        if (id == local_id and parent_sprite.isFoundation()) {
+            const no_corner_hole = switch (id) {
+                // top-left corner: Check NW, N, and W neighbors
+                0 => parent_neighbors[0].isFoundation() or parent_neighbors[1].isFoundation() or parent_neighbors[3].isFoundation(),
+                // top-right corner: Check N, NE, and E neighbors
+                3 => parent_neighbors[1].isFoundation() or parent_neighbors[2].isFoundation() or parent_neighbors[4].isFoundation(),
+                // bottom-left corner: Check W, SW, and S neighbors
+                12 => parent_neighbors[3].isFoundation() or parent_neighbors[5].isFoundation() or parent_neighbors[6].isFoundation(),
+                // bottom-right corner: Check E, S, and SE neighbors
+                15 => parent_neighbors[4].isFoundation() or parent_neighbors[6].isFoundation() or parent_neighbors[7].isFoundation(),
+                else => unreachable,
+            };
+
+            if (!no_corner_hole) return .empty;
+        }
+    }
+
+    // Inherit plant still!
+    if (parent_sprite == .spiral_plant) return .makeBasicBlock(.spiral_plant, noise);
+
+    if (parent_sprite == .mushroom) {
+        // Only specific sub-blocks of a mushroom parent become a big_mushroom.
+        return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3)
+            .makeBasicBlock(.big_mushroom, noise)
+        else
+            .empty;
+    }
+
+    // Material evolution
+    if (!parent_sprite.isFoundation()) return .empty;
+
+    // if (noise <= seeding.oddsNum(0.10)) return .empty;
+
+    const evolved_sprite: Sprite = switch (parent_sprite) {
+        .mossy_stone => .spiral_plant,
+        .blue_strange_stone => .blue_stone,
+        .purple_strange_stone => .red_stone,
+        .lava_stone => .red_stone,
+        .red_stone => .redder_stone,
+        .redder_stone => .lava_stone,
+        else => parent_sprite,
     };
-    const noise = seeding.FastHash.hash2d(seed_vec, bx, by);
 
-    if (noise <= seeding.oddsNum(0.05)) return .none;
-
-    if (sprite == .mossy_stone) return .spiral_plant;
-    if (sprite == .blue_strange_stone) return .blue_stone;
-    if (sprite == .purple_strange_stone) return .red_stone;
-    if (sprite == .lava_stone) return .red_stone;
-    if (sprite == .red_stone) return .redder_stone;
-    if (sprite == .redder_stone) return .lava_stone;
-    return sprite;
+    // Return the new block, passing the hash down as the new seed for the next generation.
+    // TODO: is it bad that this is being done, rather than `seed` property being decided at the chunk-level
+    return Block.makeBasicBlock(evolved_sprite, noise);
 }
 
 /// Traces the lineage of a single block type. Target depth is described in the `DepthCoordinate`.
-pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Sprite {
+pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
     const target_depth = key.depth;
     if (target_depth == STARTING_ZOOM_TIMES) {
         const block_idx = (@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx;
 
-        if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx].id;
-        if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx].id;
+        if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx];
+        if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx];
 
         const slot = AncestorCache.allocateSlot(key);
         world.generateBaseChunk(slot, key.asCoord());
-        return slot.blocks[block_idx].id;
+        return slot.blocks[block_idx];
     }
 
     if (isHorizonDepth(target_depth)) {
-        return world.getBlockIdAt(key.asCoord(), bx, by, target_depth);
+        return world.getBlockAt(key.asCoord(), bx, by, target_depth);
     }
 
     const block_idx = (@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx;
 
-    if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx].id;
-    if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx].id;
+    if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx];
+    if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx];
 
     const p = getParentInfo(key, bx, by);
-    const parent_sprite = getInheritedMaterial(p.coord.asDepthCoordinate(target_depth - 1), p.bx, p.by);
+    const parent_block = getInheritedMaterial(p.coord.asDepthCoordinate(target_depth - 1), p.bx, p.by);
 
     // Fetch the 3x3 boundary of the parent block to pass to our ancestor logic
-    var neighbors: [8]Sprite align(8) = undefined;
+    var neighbors: [8]Block align(8) = undefined;
     var n_idx: usize = 0;
 
     var dy: i32 = -1;
@@ -223,7 +295,8 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Sprite {
             const chunk_off_y = @divFloor(ly, memory.CHUNK_SIZE);
 
             const target_nc = p.coord.moveAtDepth(.{ chunk_off_x, chunk_off_y }, target_depth - 1) orelse {
-                neighbors[n_idx] = if (target_depth - 1 == STARTING_ZOOM_TIMES) .edge_stone else .none;
+                // neighbors[n_idx] = if (target_depth - 1 == STARTING_ZOOM_TIMES) .edge_stone else .none;
+                neighbors[n_idx] = .empty;
                 n_idx += 1;
                 continue;
             };
@@ -238,12 +311,12 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Sprite {
         }
     }
 
-    return applyAncestorLogic(parent_sprite, neighbors, key, bx, by);
+    return applyAncestorLogic(parent_block, neighbors, key, bx, by);
 }
 
 /// Fetches a 6x6 neighborhood of parent IDs for the generator. Requires a specific depth and location.
-pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Sprite {
-    var result: [6][6]Sprite = undefined;
+pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Block {
+    var result: [6][6]Block = undefined;
     const parent_depth = key.depth - 1;
 
     const p_info_origin = getParentInfo(key, 0, 0);
@@ -265,12 +338,13 @@ pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Sprite {
                 .{ chunk_off_x, chunk_off_y },
                 parent_depth,
             ) orelse {
-                result[y_idx][x_idx] = if (parent_depth == STARTING_ZOOM_TIMES) .edge_stone else .none;
+                // result[y_idx][x_idx] = if (parent_depth == STARTING_ZOOM_TIMES) .edge_stone else .empty;
+                result[y_idx][x_idx] = .empty;
                 continue;
             };
 
             if (isHorizonDepth(parent_depth)) {
-                result[y_idx][x_idx] = world.getBlockIdAt(
+                result[y_idx][x_idx] = world.getBlockAt(
                     target_nc,
                     @intCast(@mod(lx, 16)),
                     @intCast(@mod(ly, 16)),
@@ -298,7 +372,7 @@ pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Sprite {
             result[y_idx][x_idx] = chunk.?.blocks[
                 (@as(usize, @intCast(@mod(ly, 16))) << 4) |
                     @as(usize, @intCast(@mod(lx, 16)))
-            ].id;
+            ];
         }
     }
     return result;

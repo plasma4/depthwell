@@ -239,7 +239,7 @@ pub fn updateEntities(time_diff: f64) void {
             for (0..6) |py| {
                 for (0..6) |px| {
                     addEntity(.{
-                        .sprite = neighborhood_d1[py][px],
+                        .sprite = neighborhood_d1[py][px].id,
                         .position = .{
                             deeper_preview_x + @as(f32, @floatFromInt(px)) * tile_size,
                             preview_y_origin + @as(f32, @floatFromInt(py)) * tile_size,
@@ -307,7 +307,7 @@ pub fn updateEntities(time_diff: f64) void {
                         const ly: u4 = @truncate(@as(u32, @bitCast(target_by)));
 
                         addEntity(.{
-                            .sprite = root.world.getBlockIdAt(target_nc, lx, ly, depth - 2),
+                            .sprite = root.world.getBlockAt(target_nc, lx, ly, depth - 2).id,
                             .position = .{
                                 deeper_preview_x + @as(f32, @floatFromInt(gpx + 1)) * tile_size,
                                 preview_y_d2 + @as(f32, @floatFromInt(gpy + 1)) * tile_size,
@@ -339,7 +339,7 @@ pub fn updateEntities(time_diff: f64) void {
             for (0..4) |y| {
                 for (0..4) |x| {
                     addEntity(.{
-                        .sprite = root.world.quad_cache.ancestor_materials[y][x],
+                        .sprite = root.world.quad_cache.ancestor_materials[y][x].id,
                         .position = .{
                             deeper_preview_x + @as(f32, @floatFromInt(x)) * tile_size,
                             preview_y_ancestor + @as(f32, @floatFromInt(y)) * tile_size,

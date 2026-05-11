@@ -212,6 +212,9 @@ pub const MemorySizes = struct {
 
 /// A single block within a chunk. Each block uses 8 bytes.
 pub const Block = packed struct(u64) {
+    /// A block with an `id` of `none`.
+    pub const empty: Block = .makeBasicBlock(.none, 0);
+
     /// Internal sprite ID.
     id: Sprite,
     /// Edge flags: which neighbors are air (for edge-darkening and culling).

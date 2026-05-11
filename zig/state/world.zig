@@ -534,7 +534,7 @@ pub const QuadCache = struct {
     path_hashes: ChunkSeeds align(memory.MAIN_ALIGN_BYTES),
     /// The 4-by-4 material grid representing the "event horizon" at D-32.
     /// The inner 2-by-2 (indices [1..2][1..2]) corresponds to the active quadrants.
-    ancestor_materials: [4][4]Sprite,
+    ancestor_materials: [4][4]Block,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
     left_path: SegmentedList(u64, PATH_PREALLOC_SIZE),
     /// A list representing the prefix stack of the top left quadrant's Y-coordinate.
@@ -778,7 +778,7 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
             const parent_sprite = parent_neighborhood[py][px];
 
             // Extract the 8 neighbors from our 6x6 parent neighborhood matrix
-            const neighbors: [8]Sprite align(8) = .{
+            const neighbors: [8]Block align(8) = .{
                 parent_neighborhood[py - 1][px - 1],
                 parent_neighborhood[py - 1][px],
                 parent_neighborhood[py - 1][px + 1],
@@ -796,7 +796,7 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
                 @intCast(block_x),
                 @intCast(block_y),
             );
-            chunk.blocks[id] = Block.makeBasicBlock(final_sprite, rng4.next());
+            chunk.blocks[id] = Block.makeBasicBlock(final_sprite.id, rng4.next());
         }
     }
 
@@ -804,7 +804,7 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
 }
 
 /// Adds edge flags for deeper depths by applying seeding logic.
-fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighborhood: [6][6]Sprite) void {
+fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighborhood: [6][6]Block) void {
     _ = parent_neighborhood; // No longer used for halo calculation to prevent indexing overflows
     for (0..CHUNK_SIZE) |block_y| {
         for (0..CHUNK_SIZE) |block_x| {
@@ -824,14 +824,14 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
                     const nx = @as(i32, @intCast(block_x)) + dx;
                     const ny = @as(i32, @intCast(block_y)) + dy;
 
-                    const sprite = if (nx >= 0 and nx < CHUNK_SIZE and ny >= 0 and ny < CHUNK_SIZE)
-                        target_chunk.blocks[@as(usize, @intCast(ny * CHUNK_SIZE + nx))].id
+                    const block: Block = if (nx >= 0 and nx < CHUNK_SIZE and ny >= 0 and ny < CHUNK_SIZE)
+                        target_chunk.blocks[@as(usize, @intCast(ny * CHUNK_SIZE + nx))]
                     else blk: {
                         // Safely resolve the coordinate of the adjacent chunk
                         const nc = key.asCoord().moveAtDepth(
                             .{ @divFloor(nx, CHUNK_SIZE), @divFloor(ny, CHUNK_SIZE) },
                             key.depth,
-                        ) orelse break :blk .none;
+                        ) orelse break :blk .empty;
 
                         // Use inherited material lookup which handles its own neighbor-reconstruction
                         break :blk root.ancestor.getInheritedMaterial(
@@ -841,7 +841,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
                         );
                     };
 
-                    if (shouldHaveEdgeFlags(sprite, current_sprite)) {
+                    if (shouldHaveEdgeFlags(block.id, current_sprite)) {
                         flags |= types.EdgeFlags.getFlagBit(dx, dy);
                     }
                 }
@@ -974,7 +974,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                 target_nc.asDepthCoordinate(depth),
                 lx,
                 ly,
-            );
+            ).id;
         }
     }
 
@@ -1090,21 +1090,22 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 const lbx: u4 = @intCast(@mod(nx, CHUNK_SIZE));
                 const lby: u4 = @intCast(@mod(ny, CHUNK_SIZE));
                 const block_id = @as(usize, lby) * CHUNK_SIZE + lbx;
-                const current_sprite = getBlockIdAt(target_coord, lbx, lby, memory.game.depth);
+                const current_block = getBlockAt(target_coord, lbx, lby, memory.game.depth);
+                const current_sprite = current_block.id;
 
                 // Cascade logic
                 var broken = false;
                 if (current_sprite == .mushroom) {
                     const below = if (lby < 15)
-                        getBlockIdAt(target_coord, lbx, lby + 1, memory.game.depth)
+                        getBlockAt(target_coord, lbx, lby + 1, memory.game.depth).id
                     else
-                        getBlockIdAt(target_coord.moveY(1) orelse target_coord, lbx, 0, memory.game.depth);
+                        getBlockAt(target_coord.moveY(1) orelse target_coord, lbx, 0, memory.game.depth).id;
                     if (!below.isSolid()) broken = true;
                 } else if (current_sprite == .ceiling_flower or current_sprite == .spiral_plant) {
                     const above = if (lby > 0)
-                        getBlockIdAt(target_coord, lbx, lby - 1, memory.game.depth)
+                        getBlockAt(target_coord, lbx, lby - 1, memory.game.depth).id
                     else
-                        getBlockIdAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth);
+                        getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
                     if (current_sprite == .ceiling_flower) {
                         if (!above.isSolid()) broken = true;
                     } else if (!above.isSolid() and above != .spiral_plant) broken = true;
@@ -1151,7 +1152,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 inline for (.{ -1, 0, 1 }) |ndy| {
                     inline for (.{ -1, 0, 1 }) |ndx| {
                         if (ndx == 0 and ndy == 0) continue;
-                        const neighbor_sprite = getBlockIdAt(
+                        const neighbor_block = getBlockAt(
                             target_coord.move(.{
                                 @divFloor(@as(i32, lbx) + ndx, CHUNK_SIZE),
                                 @divFloor(@as(i32, lby) + ndy, CHUNK_SIZE),
@@ -1161,7 +1162,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                             @intCast(@mod(@as(i32, lby) + ndy, CHUNK_SIZE)),
                             memory.game.depth,
                         );
-                        if (shouldHaveEdgeFlags(neighbor_sprite, current_sprite)) {
+                        if (shouldHaveEdgeFlags(neighbor_block.id, current_sprite)) {
                             new_flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
                         }
                     }
@@ -1232,11 +1233,11 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
 /// Basic lookup to find a block's `Sprite` type for flag calculation.
 /// Checks caches, then modifications, then falls back to procedural logic.
 /// Ensures that we do not accidentally read SimBuffer data if checking an ancestor depth!
-pub fn getBlockIdAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Sprite {
+pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
     if (depth == memory.game.depth) { // easy!
-        if (SimBuffer.get(coord)) |chunk| return chunk.blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx].id;
+        if (SimBuffer.get(coord)) |chunk| return chunk.blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
         if (ChunkCache.findIndex(coord)) |i| {
-            return ChunkCache.chunks[i].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx].id;
+            return ChunkCache.chunks[i].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
         }
 
         const slot_index = ChunkCache.allocateIndex(coord);
@@ -1248,7 +1249,7 @@ pub fn getBlockIdAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Sprite {
         } else { // generate procedurally
             generateChunk(&ChunkCache.chunks[slot_index], key);
         }
-        return ChunkCache.chunks[slot_index].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx].id;
+        return ChunkCache.chunks[slot_index].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
     }
 
     if (memory.game.depth >= memory.HORIZON_DEPTH) {
@@ -1289,7 +1290,7 @@ pub fn getBlockIdAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Sprite {
             if (x_idx >= 0 and x_idx < 4 and y_idx >= 0 and y_idx < 4) {
                 return quad_cache.ancestor_materials[@intCast(y_idx)][@intCast(x_idx)];
             }
-            return .none;
+            return .empty;
         }
     }
 
@@ -1430,7 +1431,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
     const target_horizon_depth = depth - memory.HORIZON_DEPTH;
     if (target_horizon_depth >= STARTING_ZOOM_TIMES) {
-        var next_materials: [4][4]Sprite = undefined;
+        var next_materials: [4][4]Block = undefined;
 
         // Ancestor at H = D-32. Find the exact block we are located in to summarize the region correctly.
         var trace_coord = memory.game.getPlayerCoord().asDepthCoordinate(depth);
@@ -1475,7 +1476,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                 if (trace_coord.asCoord().moveAtDepth(.{ chunk_dx, chunk_dy }, target_horizon_depth)) |nc| {
                     const child_key = nc.asDepthCoordinate(target_horizon_depth);
                     if (mod_store.get(child_key)) |mod| {
-                        next_materials[y_idx][x_idx] = mod.blocks[(@as(usize, local_by) << 4) | local_bx].id;
+                        next_materials[y_idx][x_idx] = mod.blocks[(@as(usize, local_by) << 4) | local_bx];
                     } else if (target_horizon_depth == STARTING_ZOOM_TIMES) {
                         next_materials[y_idx][x_idx] = root.ancestor.getInheritedMaterial(child_key, local_bx, local_by);
                     } else {
@@ -1488,11 +1489,11 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                         const p_x_idx = diff_chunk_x * 16 + @as(i64, p.bx) - @as(i64, old_t_bx) + 1 + @as(i64, old_quadrant % 2);
                         const p_y_idx = diff_chunk_y * 16 + @as(i64, p.by) - @as(i64, old_t_by) + 1 + @as(i64, old_quadrant / 2);
 
-                        var parent_sprite: Sprite = .none;
-                        var p_neighbors: [8]Sprite align(8) = [_]Sprite{.none} ** 8;
+                        var parent_block: Block = .empty;
+                        var p_neighbors: [8]Block align(8) = [_]Block{.empty} ** 8;
 
                         if (p_x_idx >= 0 and p_x_idx < 4 and p_y_idx >= 0 and p_y_idx < 4) {
-                            parent_sprite = quad_cache.ancestor_materials[@intCast(p_y_idx)][@intCast(p_x_idx)];
+                            parent_block = quad_cache.ancestor_materials[@intCast(p_y_idx)][@intCast(p_x_idx)];
 
                             // Populate neighbors for applyAncestorLogic from the current 4x4 ancestor grid
                             var n_idx: usize = 0;
@@ -1507,7 +1508,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                                     if (nx >= 0 and nx < 4 and ny >= 0 and ny < 4) {
                                         p_neighbors[n_idx] = quad_cache.ancestor_materials[@intCast(ny)][@intCast(nx)];
                                     } else {
-                                        p_neighbors[n_idx] = .none;
+                                        p_neighbors[n_idx] = .empty;
                                     }
                                     n_idx += 1;
                                 }
@@ -1515,14 +1516,14 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                         }
 
                         next_materials[y_idx][x_idx] = root.ancestor.applyAncestorLogic(
-                            parent_sprite,
+                            parent_block,
                             p_neighbors,
                             child_key,
                             local_bx,
                             local_by,
                         );
                     }
-                } else next_materials[y_idx][x_idx] = .none;
+                } else next_materials[y_idx][x_idx] = .empty;
             }
         }
 
