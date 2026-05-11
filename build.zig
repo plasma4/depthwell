@@ -57,9 +57,9 @@ pub fn build(b: *std.Build) void {
         exe.lto = .none;
         exe.export_table = true;
 
-        // not sure if these actually do anything but they don't crash, so it's probably fine
-        exe.use_llvm = false;
-        exe.use_lld = false;
+        // having these options enabled seems to freak the Zig compiler out a lot, so best to not use these for now
+        // exe.use_llvm = false;
+        // exe.use_lld = false;
     } else if (optimize == .ReleaseFast) {
         exe.root_module.single_threaded = true;
         exe.root_module.stack_check = false;

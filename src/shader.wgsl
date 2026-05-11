@@ -183,7 +183,7 @@ fn vs_tile(
 
         // for 25%:
         // let random_mod = extractBits(tile.seeds[0], 16u, 2u);
-        // if (random_mod == 0u) {
+        // if random_mod == 0u {
         //     id++;
         // }
     } else if id == DECOR_START + 3u || id == DECOR_START + 6u { // variation for mushrooms
@@ -796,7 +796,7 @@ fn vs_entity(
     let entity = entities[instance_index];
     // presume ID 0 is unreasonable
     // var out: EntityOutput;
-    // if (entity.id == 0u) {
+    // if entity.id == 0u {
     //     out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
     // }
 
@@ -847,7 +847,7 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     // make raw mask stronger
     let tex_color = vec4f(srgb_to_linear(raw_tex.rgb * raw_mask.rgb), raw_tex.a * raw_mask.a);
     // Early discard if the pixel is fully transparent (maybe)
-    // if (tex_color.a <= 0.0) {
+    // if tex_color.a <= 0.0 {
     //     discard;
     // }
     var lab = linear_srgb_to_oklab(tex_color.rgb);
