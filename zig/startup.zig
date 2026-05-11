@@ -23,7 +23,7 @@ const _ = {
     // technically, floating-point inaccuracies start to ~3% influence procedural generation at STARTING_ZOOM_TIMES = 7
     // since the max coordinate from a block perspective is 2 ^ (7 * ZOOM_LOG2 + 4) and 2 ^ (7 * ZOOM_LOG2) from a chunk perspective
     // that ends up meaning that you're using 18 of 23 bits of precision in f32
-    // any more than that would be pretty bad, probably; 3% is pretty much negligible
+    // any more than that would be pretty bad, probably; 3% precision jitter is pretty much negligible
     if (STARTING_ZOOM_TIMES < 1 or STARTING_ZOOM_TIMES > 7) {
         @compileError("STARTING_ZOOM_TIMES must be between 1 and 7 to prevent floating point or logic issues!");
     }
@@ -38,24 +38,9 @@ pub fn init() void {
         logger.log(@src(), "Hello from Zig!", .{});
     }
     var temp_seed = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 1));
-    memory.game.seed2 = .{
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-        temp_seed.next(),
-    };
+    inline for (&memory.game.seed2) |*s| {
+        s.* = temp_seed.next();
+    }
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 2));
     for (0..STARTING_ZOOM_TIMES) |_| {

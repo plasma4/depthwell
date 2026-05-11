@@ -56,8 +56,10 @@ pub fn build(b: *std.Build) void {
         exe.root_module.strip = false; // try to reduce any WASM optimization
         exe.lto = .none;
         exe.export_table = true;
-        // exe.use_llvm = false; // can't do this for WASM ):
-        // exe.use_lld = false; // nope
+
+        // not sure if these actually do anything but they don't crash, so it's probably fine
+        exe.use_llvm = false;
+        exe.use_lld = false;
     } else if (optimize == .ReleaseFast) {
         exe.root_module.single_threaded = true;
         exe.root_module.stack_check = false;
@@ -80,7 +82,7 @@ pub fn build(b: *std.Build) void {
     if (wasm_opt) {
         const optimize_wasm = b.addSystemCommand(&.{ "wasm-opt", "src/main.wasm", "-o", "src/main.wasm", "-O4" });
 
-        // Add all those specific flags
+        // Add all those specific flags for more optimization!
         optimize_wasm.addArgs(&.{
             "--strip-debug",
             "--strip-dwarf",
@@ -125,6 +127,7 @@ pub fn build(b: *std.Build) void {
     }
 }
 
+/// Updates `enums.ts` automatically. Only called by `build()` if the `-Dgen-enums` flag is passed.
 fn generateEnums(b: *std.Build, paths: []const []const u8) void {
     const cache_root = b.cache_root.path orelse ".";
     const cache_path = b.pathJoin(&.{ cache_root, "content_hashes.txt" });
