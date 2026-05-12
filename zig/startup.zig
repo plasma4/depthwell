@@ -13,7 +13,7 @@ const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
 
-/// Sets the number of times the push_layer function is called at the start.
+/// Sets the number of times the `push_layer` function is called in `startup.init()`.
 /// If set to n, the game will start off by being n ^ ZOOM_FACTOR chunks in either dimension.
 pub const STARTING_ZOOM_TIMES = 2;
 /// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` is positive).
@@ -24,14 +24,16 @@ const _ = {
     // since the max coordinate from a block perspective is 2 ^ (7 * ZOOM_LOG2 + 4) and 2 ^ (7 * ZOOM_LOG2) from a chunk perspective
     // that ends up meaning that you're using 18 of 23 bits of precision in f32
     // any more than that would be pretty bad, probably; 3% precision jitter is pretty much negligible
-    if (STARTING_ZOOM_TIMES < 1 or STARTING_ZOOM_TIMES > 7) {
-        @compileError("STARTING_ZOOM_TIMES must be between 1 and 7 to prevent floating point or logic issues!");
+
+    // note that setting STARTING_ZOOM_TIMES to 0 or 1 may result in fully empty or boring chunks
+    if (STARTING_ZOOM_TIMES < 0 or STARTING_ZOOM_TIMES > 7) {
+        @compileError("STARTING_ZOOM_TIMES must be between 0 and 7 to prevent floating point or logic issues!");
     }
 };
 
 var alreadyStarted = false;
 
-/// Initializes the game.
+/// Initializes the game, setting up seeding and spawn logic!
 pub fn init() void {
     if (!alreadyStarted) {
         alreadyStarted = true;

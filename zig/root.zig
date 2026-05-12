@@ -285,8 +285,8 @@ comptime {
 }
 
 /// Custom panic function.
-/// TODO: figure out why this isn't emitting right in Zig 0.16.0?
-fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
+/// NOTE: apparently, without `pub`, Zig 0.16.0 will not emit this. Odd.
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     const addr = ret_addr orelse 0;
     logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });
     @trap();
