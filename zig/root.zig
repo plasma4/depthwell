@@ -200,11 +200,17 @@ pub export fn mixSeed(number: u64) i64 {
     return @intCast(seeding.mixBaseSeed(&memory.game.seed, number)[0] >> 1);
 }
 pub export fn mixSeedF64(number: u64) f64 { // same thing as mix_seed but f64
-    return @as(f64, @floatFromInt(seeding.mixBaseSeed(&memory.game.seed, number)[0] >> 1)) / seeding.POW_2_64;
+    return @as(f64, @floatFromInt(
+        seeding.mixBaseSeed(&memory.game.seed, number)[0] >> 1,
+    )) / seeding.POW_2_64;
 }
 
 pub export fn wasmSeedFromString() void {
-    seeding.wasmSeedFromString(memory.scratch_buffer.ptr, memory.mem.scratch_len, &memory.game.seed);
+    seeding.wasmSeedFromString(
+        memory.scratch_buffer.ptr,
+        memory.mem.scratch_len,
+        &memory.game.seed,
+    );
 }
 
 // Layout logic
@@ -251,6 +257,11 @@ comptime {
             inventory.logInventory();
         }
 
+        pub export fn testPanic() void {
+            logger.log(@src(), "A call to @panic() will be dispatched. This should trap or abort the program.", .{});
+            @panic("Panic test!");
+        }
+
         // pub export fn getParent(x: u64, y: u64, quadrant: u32, depth: u32) void {
         //     if (depth < startup.STARTING_ZOOM_TIMES)
         //         logger.quick("Depth is too small! ):")
@@ -269,27 +280,29 @@ comptime {
         //     }
         // }
 
-        pub export fn getPlayerPosAtDepth(depth: u32) void {
-            logger.quick(.{ "{h}Current depth", memory.game.depth });
-            if (depth == 0) {
-                logger.quick(.{ "{h}Current coord", memory.game.getPlayerCoord() });
-                return;
-            }
-            var key = memory.game.getPlayerCoord().asDepthCoordinate(depth);
-            while (key.depth > depth) {
-                key = key.getParent();
-            }
-            logger.quick(.{ "{h}Resulting key", key });
-        }
+        // pub export fn getPlayerPosAtDepth(depth: u32) void {
+        //     logger.quick(.{ "{h}Current depth", memory.game.depth });
+        //     if (depth == 0) {
+        //         logger.quick(.{ "{h}Current coord", memory.game.getPlayerCoord() });
+        //         return;
+        //     }
+        //     var key = memory.game.getPlayerCoord().asDepthCoordinate(depth);
+        //     while (key.depth > depth) {
+        //         key = key.getParent();
+        //     }
+        //     logger.quick(.{ "{h}Resulting key", key });
+        // }
     };
 }
 
-/// Custom panic function.
-/// NOTE: apparently, without `pub`, Zig 0.16.0 will not emit this. Odd.
-pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
-    const addr = ret_addr orelse 0;
-    logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });
-    @trap();
+/// Custom override panic function that calls `logger.err()` and either traps or aborts the process.
+pub const panic = std.debug.FullPanic(customPanic);
+
+pub fn customPanic(msg: []const u8, ret_addr: ?usize) noreturn {
+    if (ret_addr) |addr| {
+        logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });
+    } else logger.err(@src(), "PANIC: {s}", .{msg});
+    if (is_wasm) @trap() else std.process.abort();
 }
 
 // Runs tests from other files. I have to remember to add more as necessary when new files with tests appear...
