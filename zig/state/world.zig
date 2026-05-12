@@ -1060,21 +1060,18 @@ var worklist: SegmentedList(UpdateItem, 256) = .{};
 /// Recalculates edge flags for a specific block its 8 neighbors. Also breaks any non-foundation blocks.
 /// Returns whether the current block was removed due to being in an invalid position.
 fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
-    var work_ptr: usize = 0; // which item in the worklist am I looking at?
     worklist.append(alloc, .{
         .coord = coord,
         .bx = bx,
         .by = by,
     }) catch @panic("Edge flags worklist failed!");
     defer worklist.clearRetainingCapacity();
-    work_ptr += 1;
 
     var original_block_broken = false;
     var checks_done: usize = 0; // prevent running out of memory
-    while (work_ptr > 0 and (CHECK_LIMIT == 0 or checks_done < CHECK_LIMIT)) {
+    while (worklist.pop()) |item| {
+        if (CHECK_LIMIT != 0 and checks_done >= CHECK_LIMIT) break;
         checks_done += 1;
-        work_ptr -= 1;
-        const item: *UpdateItem = worklist.at(work_ptr);
 
         var dy: i32 = -1;
         while (dy <= 1) : (dy += 1) {
@@ -1125,7 +1122,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                         mod_store.index.put(key, new_id) catch @panic("Failed to put into modification storage!");
                         break :blk new_id;
                     };
-                    const target_chunk = mod_store.history.at(mod_id);
+                    const target_chunk: *Chunk = mod_store.history.at(mod_id);
                     target_chunk.blocks[block_id].id = .none;
                     target_chunk.blocks[block_id].edge_flags = 0xFF;
 
@@ -1138,10 +1135,11 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                         ChunkCache.chunks[index].blocks[block_id].edge_flags = 0xFF;
                     }
 
-                    // Push to worklist to process the cascade of THIS newly broken block
-                    worklist.growCapacity(alloc, work_ptr + 2) catch @panic("Edge flags worklist failed!");
-                    worklist.at(work_ptr).* = .{ .coord = target_coord, .bx = lbx, .by = lby };
-                    work_ptr += 1;
+                    worklist.append(alloc, .{ // use append() instead of at() to prevent panics
+                        .coord = target_coord,
+                        .bx = lbx,
+                        .by = lby,
+                    }) catch @panic("Edge flags worklist failed!");
                     continue;
                 }
 

@@ -181,7 +181,17 @@ pub inline fn get4x4List(comptime str: []const u8) []const u4 {
     }
 }
 
-/// Applies deterministic logic to a child Block based on its parent Block and 8 parent neighbors.
+/// Gets the ID of a corner for values between 0-15.
+/// Top left = 0, top right = 1, bottom left = 2, bottom right = 3
+pub inline fn getCornerId(id: u4) u2 {
+    const id_row = id % 4;
+    const id_col = id / 4;
+    return root.utils.intFromBool(u64, id_row >= 2) +
+        2 * root.utils.intFromBool(u64, id_col >= 2);
+}
+
+/// Applies deterministic logic to a child `Block` based on its parent and 8 parent neighbors.
+/// Correctly determines the child's `seed` property when returning it if the block is not empty.
 pub fn applyAncestorLogic(
     parent_block: Block,
     parent_neighbors: [8]Block,
@@ -189,54 +199,71 @@ pub fn applyAncestorLogic(
     bx: u4,
     by: u4,
 ) Block {
-    const parent_sprite = parent_block.id;
+    var parent_sprite = parent_block.id;
     // const parent_seed = parent_block.seed;
 
     if (parent_sprite.isEmpty()) return .empty;
     const seeds = world.quad_cache.getChunkSeeds(key);
-    const noise = seeding.FastHash.hash2d(.{ seeds[0][0], seeds[0][1] }, bx, by);
+    const noise_hash_1 = seeding.FastHash.hash2d(.{ seeds[0][0], seeds[0][1] }, bx, by);
+    const noise_hash_2 = seeding.FastHash.hash2d(.{ seeds[0][2], seeds[0][3] }, bx, by);
 
     // Structural logic!
     const local_id = (by % 4) * 4 + (bx % 4);
-    const grid_mask = comptime get4x4List(
+    const corner_list = comptime get4x4List(
         \\1001
         \\0000
         \\0000
         \\1001
     );
-    inline for (grid_mask) |id| { // TODO: we should maybe not use get4x4List here ):
+    const corners_nonempty: [4]bool = .{
+        parent_neighbors[1].isFoundation() or parent_neighbors[3].isFoundation(),
+        parent_neighbors[1].isFoundation() or parent_neighbors[4].isFoundation(),
+        parent_neighbors[3].isFoundation() or parent_neighbors[6].isFoundation(),
+        parent_neighbors[4].isFoundation() or parent_neighbors[7].isFoundation(),
+    };
+    inline for (corner_list) |id| {
         if (id == local_id and parent_sprite.isFoundation()) {
-            const no_corner_hole = switch (id) {
-                // top-left corner: Check NW, N, and W neighbors
-                0 => parent_neighbors[0].isFoundation() or parent_neighbors[1].isFoundation() or parent_neighbors[3].isFoundation(),
-                // top-right corner: Check N, NE, and E neighbors
-                3 => parent_neighbors[1].isFoundation() or parent_neighbors[2].isFoundation() or parent_neighbors[4].isFoundation(),
-                // bottom-left corner: Check W, SW, and S neighbors
-                12 => parent_neighbors[3].isFoundation() or parent_neighbors[5].isFoundation() or parent_neighbors[6].isFoundation(),
-                // bottom-right corner: Check E, S, and SE neighbors
-                15 => parent_neighbors[4].isFoundation() or parent_neighbors[6].isFoundation() or parent_neighbors[7].isFoundation(),
-                else => unreachable,
-            };
+            const corner_id = getCornerId(id);
+            const is_corner_empty = !corners_nonempty[corner_id];
+            if (is_corner_empty) return .empty;
+        }
+    }
 
-            if (!no_corner_hole) return .empty;
+    const edges_list = comptime get4x4List(
+        \\1111
+        \\1001
+        \\1001
+        \\1111
+    );
+    inline for (edges_list) |id| {
+        if (noise_hash_1 % 4 == 0) {
+            // 25% odds to randomly take a parent neighbor's sprite type now!
+            // each block gets different noise with right-shift
+            const noise: u3 = @truncate(noise_hash_1 >> (3 * @as(u6, @intCast(local_id))));
+            const parent = parent_neighbors[noise];
+            if (!parent.isEmpty()) parent_sprite = parent.id;
+        } else if (noise_hash_1 % 8 == 2) {
+            // 12.5% odds for edges to become empty
+            const corner_id = getCornerId(id);
+            const is_corner_empty = !corners_nonempty[corner_id];
+            if (is_corner_empty) return .empty;
         }
     }
 
     // Inherit plant still!
-    if (parent_sprite == .spiral_plant) return .makeBasicBlock(.spiral_plant, noise);
+    if (parent_sprite == .spiral_plant)
+        return .makeBasicBlock(.spiral_plant, @truncate(noise_hash_2));
 
     if (parent_sprite == .mushroom) {
         // Only specific sub-blocks of a mushroom parent become a big_mushroom.
         return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3)
-            .makeBasicBlock(.big_mushroom, noise)
+            .makeBasicBlock(.big_mushroom, @truncate(noise_hash_2))
         else
             .empty;
     }
 
     // Material evolution
     if (!parent_sprite.isFoundation()) return .empty;
-
-    // if (noise <= seeding.oddsNum(0.10)) return .empty;
 
     const evolved_sprite: Sprite = switch (parent_sprite) {
         .mossy_stone => .spiral_plant,
@@ -248,8 +275,7 @@ pub fn applyAncestorLogic(
     };
 
     // Return the new block, passing the hash down as the new seed for the next generation.
-    // TODO: is it bad that this is being done, rather than `seed` property being decided at the chunk-level
-    return Block.makeBasicBlock(evolved_sprite, noise);
+    return Block.makeBasicBlock(evolved_sprite, @truncate(noise_hash_2));
 }
 
 /// Traces the lineage of a single block type. Target depth is described in the `DepthCoordinate`.

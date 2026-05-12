@@ -312,9 +312,9 @@ export async function create(
     engine.exports.setup();
     await engine.setSeed(Seeding.makeSeed(100));
     // its a random seed that looks nice
-    await engine.setSeed(
-        "bilkfvrdfprzwieuihruktkdphaarixgsyjhkzljtvysbhmxeihmzatzxfnqmbfylvcbpacmsnbahxccqselcmsgdhggsojwtsjf",
-    );
+    // await engine.setSeed(
+    //     "bilkfvrdfprzwieuihruktkdphaarixgsyjhkzljtvysbhmxeihmzatzxfnqmbfylvcbpacmsnbahxccqselcmsgdhggsojwtsjf",
+    // );
     engine.startDelta = Number(exports.mixSeed(60n) % 120000n); // use a random seed mixing value here
     engine.exports.init();
 

@@ -279,9 +279,8 @@ engine.logicLoop = function (ticks: number) {
     // Interestingly enough, as ticks becomes large enough, the "imprecision" of the camera (16 possible subpixel positions) results in the player panning being all weird! This only happens past 1000 logical FPS though so it's fine.
     const startTime = performance.now();
 
-    // Scale the 'speed' per iteration so constants designed for 60fps stay consistent.
+    // tickSpeed is the logical tick speed (shouldn't change based on frame rate)
     const tickSpeed = (60 / engine.getFrameRate()) * engine.baseSpeed;
-
     engine.tick(tickSpeed, ticks);
     let delta = performance.now() - startTime;
 
@@ -351,7 +350,7 @@ document.addEventListener("pointerdown", (e) => {
         return;
     }
 
-    const action = e.button === 2 ? 3 : 1;
+    const action = e.button === 2 ? 3 : 1; // see zig/mouse.zig for what these actions mean
     dispatch(e, action);
 });
 
@@ -367,7 +366,7 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Build the fancy debug UI in the corner!
 if (engine.isDebug) {
-    // Populate scratch buffer with JSON data and parse it
+    // Populate scratch buffer with JSON data about the debug UI, and parse it!
     engine.exports.debugBuildUiMetadata();
     const jsonStr = engine.readStr();
 
