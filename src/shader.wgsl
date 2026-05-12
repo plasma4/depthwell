@@ -154,7 +154,7 @@ fn vs_tile(
     let screen_pos = ((world_pixel_pos - scene.camera) * scene.zoom) + (scene.viewport_size * 0.5);
 
     // normalize coordinates
-    // first, make sure spiral plant and ceiling flower should move up by 3 pixels, mushroom should move down 1 pixel
+    // first, make sure spiral plant and ceiling flower should move up by 3 pixels, mushroom/portal should move down 1 pixel
     // this is necessary because otherwise, they would look like they're floating in space
     var vertical_offset = select(
         select(
@@ -164,8 +164,8 @@ fn vs_tile(
             id == DECOR_START + 0u || id == DECOR_START + 1u
         ),
         -1.0 * scene.zoom,
-        // mushroom sprite
-        id == DECOR_START + 3u
+        // mushroom or portal sprite
+        id == DECOR_START + 3u || id == DECOR_START + 10u
     );
 
     // add to ID based on pre-determined shifts

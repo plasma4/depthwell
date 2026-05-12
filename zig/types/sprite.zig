@@ -23,7 +23,7 @@ const MASK_START = GEM_START + 4;
 const DECOR_START = MASK_START + 24;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = DECOR_START + 11;
+pub const INVENTORY_START = DECOR_START + 12;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 3;
 
@@ -68,13 +68,14 @@ pub const Sprite = enum(u16) {
     gem_mask = MASK_START, // 8 masks
     hp_mask = MASK_START + 8, // 16 masks
 
-    // Decor
+    // Decor (THIS IS COUPLED TO WGSL CODE)
     spiral_plant = DECOR_START,
     ceiling_flower = DECOR_START + 1, // 2 variations
     mushroom = DECOR_START + 3, // 3 variations
     big_mushroom = DECOR_START + 6, // 3 variations
     torch = DECOR_START + 9,
-    portal = DECOR_START + 10,
+    chest,
+    portal,
 
     /// Unselected inventory sprite.
     inventory = INVENTORY_START,
@@ -116,6 +117,7 @@ pub const Sprite = enum(u16) {
             .mushroom,
             .big_mushroom,
             .torch,
+            .chest,
             .portal,
             => true,
             else => {

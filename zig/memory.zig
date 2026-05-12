@@ -163,8 +163,9 @@ pub const GameState = extern struct {
 /// The state of the current game, containing pre-allocated properties.
 pub var game: GameState = undefined;
 
-/// System-level allocator for pages. On WASM, this grows the linear heap. On native, this
-/// requests pages from the OS. Use as a backing for other allocators.
+/// System-level allocator for pages (or testing allocator when running tests).
+/// On WASM, this grows the linear heap. On native, this requests pages from the OS.
+/// Use as a backing for other allocators.
 pub const page_allocator = if (builtin.is_test) std.testing.allocator else std.heap.page_allocator;
 
 /// An instance of the general-purpose allocator (or testing allocator when running tests).

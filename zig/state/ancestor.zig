@@ -242,7 +242,6 @@ pub fn applyAncestorLogic(
         .mossy_stone => .spiral_plant,
         .blue_strange_stone => .blue_stone,
         .purple_strange_stone => .red_stone,
-        .lava_stone => .red_stone,
         .red_stone => .redder_stone,
         .redder_stone => .lava_stone,
         else => parent_sprite,

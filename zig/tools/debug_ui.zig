@@ -144,8 +144,8 @@ pub const buttons = [_]ButtonDef{
         .regen = true,
     },
     .{
-        .name = "Toggle showing all items",
-        .toggle = &root.inventory.SHOW_ALL_INVENTORY_ITEMS,
+        .name = "Toggle creative",
+        .toggle = &root.inventory.IN_CREATIVE,
     },
 };
 

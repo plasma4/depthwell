@@ -11,10 +11,19 @@ const Vec2f32 = memory.Vec2f32;
 const addEntity = root.entity.addEntity;
 const drawNumber = root.entity.drawNumber;
 
+/// Debug option, allowing for unlimited block placement.
+pub var IN_CREATIVE = false;
 /// Debug option, changing whether to show all inventory item slots and items or not.
-pub var SHOW_ALL_INVENTORY_ITEMS = false;
+pub const SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is.
 const inventory_width = 10;
+
+pub inline fn isInCreative() bool {
+    return root.is_debug and IN_CREATIVE;
+}
+pub inline fn shouldShowAllItems() bool {
+    return root.is_debug and (IN_CREATIVE or SHOW_ALL_INVENTORY_ITEMS);
+}
 
 /// Which row the selected sprite is in.
 /// Used for finding which active slot should be used and navigated through Q and E keys.
@@ -56,13 +65,15 @@ pub fn removeFromInventory(id: Sprite) bool {
     if (id.isEmpty() or id == .unselected) return false;
 
     const idx = @intFromEnum(id);
-    if (idx >= inventory_counts.len or inventory_counts[idx] == 0) return false;
+    if (!isInCreative()) {
+        if (idx >= inventory_counts.len or inventory_counts[idx] == 0) return false;
 
-    inventory_counts[idx] -= 1;
+        inventory_counts[idx] -= 1;
+    }
     if (inventory_wobble_progress[idx] == 0.0) inventory_wobble_progress[idx] = -1.0;
 
     // If we used the last one, unselect it immediately
-    if (inventory_counts[idx] == 0 and selected_sprite == id) {
+    if (!isInCreative() and inventory_counts[idx] == 0 and selected_sprite == id) {
         selected_sprite = .unselected;
     }
 
@@ -79,7 +90,7 @@ pub fn getActiveSlots(buffer: *SlotBuffer) []Sprite {
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.valid_sprites) |s| {
         if (s.isEmpty()) continue;
-        if (SHOW_ALL_INVENTORY_ITEMS or inventory_counts[@intFromEnum(s)] > 0) {
+        if (shouldShowAllItems() or inventory_counts[@intFromEnum(s)] > 0) {
             buffer[count] = s;
             count += 1;
             // logger.quick(.{ s, buffer.len, sprite.max_sprite_value });
@@ -96,7 +107,7 @@ pub fn getSelectedIndex() u16 {
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.valid_sprites) |s| {
         if (s.isEmpty()) continue;
-        if (SHOW_ALL_INVENTORY_ITEMS or inventory_counts[@intFromEnum(s)] > 0) {
+        if (shouldShowAllItems() or inventory_counts[@intFromEnum(s)] > 0) {
             if (s == selected_sprite) return @intCast(count);
             count += 1;
         }
@@ -283,27 +294,29 @@ pub fn drawInventory(time_diff: f64) void {
         // hue is affected by ID in active slots AND wobble angles!
         const color_hue: f32 = @floatCast(@rem(@as(f64, @floatFromInt(i)) * 0.2 - @abs(wobble_angle * 2.0), std.math.tau));
 
-        drawNumber( // shadow of inventory number
-            count,
-            pos + Vec2f32{ base_size / 3.5, base_size / 3.5 },
-            .{
-                .lcha = .{ 0.5, 0.2, color_hue, 0.8 },
-                .font_size = number_size,
-                .ltr = false,
-                .rotation = wobble_angle, // text wobbles when you mine something!
-            },
-        );
+        if (!isInCreative()) {
+            drawNumber( // shadow of inventory number
+                count,
+                pos + Vec2f32{ base_size / 3.5, base_size / 3.5 },
+                .{
+                    .lcha = .{ 0.5, 0.2, color_hue, 0.8 },
+                    .font_size = number_size,
+                    .ltr = false,
+                    .rotation = wobble_angle, // text wobbles when you mine something!
+                },
+            );
 
-        drawNumber( // actual value
-            count,
-            pos + Vec2f32{ base_size / 3.2, base_size / 3.2 },
-            .{
-                .lcha = .{ 0.9, 0.2, color_hue, 1.0 },
-                .font_size = number_size,
-                .ltr = false,
-                .rotation = wobble_angle,
-            },
-        );
+            drawNumber( // actual value
+                count,
+                pos + Vec2f32{ base_size / 3.2, base_size / 3.2 },
+                .{
+                    .lcha = .{ 0.9, 0.2, color_hue, 1.0 },
+                    .font_size = number_size,
+                    .ltr = false,
+                    .rotation = wobble_angle,
+                },
+            );
+        }
     }
 }
 

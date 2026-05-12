@@ -7,9 +7,6 @@ const inventory = root.inventory;
 const world = root.world;
 const mouse = root.mouse;
 
-/// Whether to instantly mine blocks or not (acting as infinite strength and speed).
-const INSTANT_MINE = false;
-
 /// How far the player has progressed to increase `hp`.
 pub var mining_progress: u64 = 0;
 
@@ -62,7 +59,7 @@ pub fn handleMiningAndPlacing() void {
             mining_progress += mining_speed;
             const strength = getSpriteStrength(block.id);
 
-            if (INSTANT_MINE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
+            if (inventory.IN_CREATIVE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
                 mining_progress = 0;
                 // sprite type being none check also prevents unneeded memory waste with DepthCoordinate
                 const was_deleted = block.id.isEmpty() or world.modifyBlockHp(
@@ -71,7 +68,7 @@ pub fn handleMiningAndPlacing() void {
                     mouse.mouse_block_y,
                     block,
                     // instantly mine (0 value special-case in modifyBlockHp) if block type has no strength
-                    if (!INSTANT_MINE and strength > 0) mining_strength else 0,
+                    if (!inventory.IN_CREATIVE and strength > 0) mining_strength else 0,
                 );
 
                 if (was_deleted) {

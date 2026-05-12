@@ -495,9 +495,10 @@ pub const ChunkCache = struct {
     }
 };
 
-/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `ArrayList` represented one giant number. Performs allocation; the caller should deinit the path eventually using `arena`.
+/// UNUSED DUE TO BEING UNNECESSARY. Adds 1 to the `path` as if the `ArrayList` represented one giant number.
+/// Performs allocation; the caller should deinit the path eventually using `arena`.
 fn carryPath(path: *const std.ArrayList(u64)) std.ArrayList(u64) {
-    const new_path = path.clone(arena.allocator()) catch @panic("carry alloc for QuadCache coordinates failed");
+    const new_path = path.clone(alloc) catch @panic("carry alloc for QuadCache coordinates failed");
     // arena.reset(.retain_capacity);
     var carry: u1 = 1;
 
@@ -1050,30 +1051,30 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
     return updateLocalEdgeFlags(coord, bx, by);
 }
 
-/// Recalculates edge flags for a specific block its 8 neighbors.
-/// Also breaks any non-foundation blocks.
-/// Returns whether the current block was removed due to being in an invalid position.
-///
-/// Updating does NOT guarantee validity or reliability of edge flags due to eventually exiting after 100 checks.
-/// TODO evaluate if this is problematic, use `SegmentedList` or steal scratch buffer storage for infinite size?
-fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
-    const UpdateItem = struct { coord: Coordinate, bx: u4, by: u4 };
-    var worklist: [256]UpdateItem = undefined;
-    var work_ptr: usize = 0;
+const UpdateItem = struct { coord: Coordinate, bx: u4, by: u4 };
+/// Max amount of edge flags to check before exiting. If 0, never exits.
+const CHECK_LIMIT = 0;
+/// Dedicated worklist for local edge flag updating.
+var worklist: SegmentedList(UpdateItem, 256) = .{};
 
-    worklist[work_ptr] = .{
+/// Recalculates edge flags for a specific block its 8 neighbors. Also breaks any non-foundation blocks.
+/// Returns whether the current block was removed due to being in an invalid position.
+fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
+    var work_ptr: usize = 0; // which item in the worklist am I looking at?
+    worklist.append(alloc, .{
         .coord = coord,
         .bx = bx,
         .by = by,
-    };
+    }) catch @panic("Edge flags worklist failed!");
+    defer worklist.clearRetainingCapacity();
     work_ptr += 1;
 
     var original_block_broken = false;
-    var checks_done: u8 = 0; // prevent running out of memory
-    while (work_ptr > 0 and checks_done < 100) {
+    var checks_done: usize = 0; // prevent running out of memory
+    while (work_ptr > 0 and (CHECK_LIMIT == 0 or checks_done < CHECK_LIMIT)) {
         checks_done += 1;
         work_ptr -= 1;
-        const item = worklist[work_ptr];
+        const item: *UpdateItem = worklist.at(work_ptr);
 
         var dy: i32 = -1;
         while (dy <= 1) : (dy += 1) {
@@ -1138,10 +1139,9 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     }
 
                     // Push to worklist to process the cascade of THIS newly broken block
-                    if (work_ptr < 255) {
-                        worklist[work_ptr] = .{ .coord = target_coord, .bx = lbx, .by = lby };
-                        work_ptr += 1;
-                    }
+                    worklist.growCapacity(alloc, work_ptr + 2) catch @panic("Edge flags worklist failed!");
+                    worklist.at(work_ptr).* = .{ .coord = target_coord, .bx = lbx, .by = lby };
+                    work_ptr += 1;
                     continue;
                 }
 
@@ -1179,6 +1179,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
             }
         }
     }
+
     return original_block_broken;
 }
 
@@ -1337,6 +1338,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         new_pos[1] -= memory.SUBPIXELS_IN_CHUNK;
         chunk_offset[1] = 1;
     }
+    memory.game.teleport(null, new_pos); // make sure to teleport!
 
     if (depth <= HORIZON_DEPTH) {
         // Zooming by 4x means the suffix shifts by 2 bits.
@@ -1357,8 +1359,6 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
         // Max possible suffix is now reached at depth 32 (64 bits).
         max_possible_suffix = getMaxSuffixAtDepth(depth);
-
-        memory.game.teleport(null, new_pos);
         return;
     }
 
@@ -1401,8 +1401,8 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         const slot: usize = @intCast(path_idx / 21);
         const bit_shift: u6 = @intCast((path_idx % 21) * 3);
         if (bit_shift == 0) {
-            quad_cache.left_path.append(arena.allocator(), left_cell_x) catch @panic("path alloc failed");
-            quad_cache.top_path.append(arena.allocator(), top_cell_y) catch @panic("path alloc failed");
+            quad_cache.left_path.append(alloc, left_cell_x) catch @panic("path alloc failed");
+            quad_cache.top_path.append(alloc, top_cell_y) catch @panic("path alloc failed");
         } else {
             quad_cache.left_path.at(slot).* |= (left_cell_x << bit_shift);
             quad_cache.top_path.at(slot).* |= (top_cell_y << bit_shift);
@@ -1483,8 +1483,12 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                         const p = root.ancestor.getParentInfo(child_key, local_bx, local_by);
                         const p_qx_128: i128 = p.coord.quadrant % 2;
                         const p_qy_128: i128 = p.coord.quadrant / 2;
-                        const diff_chunk_x: i64 = @intCast(((p_qx_128 << shift_amt) | @as(i128, p.coord.suffix[0])) - ((old_qx << shift_amt) | @as(i128, old_trace_coord.suffix[0])));
-                        const diff_chunk_y: i64 = @intCast(((p_qy_128 << shift_amt) | @as(i128, p.coord.suffix[1])) - ((old_qy << shift_amt) | @as(i128, old_trace_coord.suffix[1])));
+                        const diff_chunk_x: i64 = @intCast(((p_qx_128 << shift_amt) |
+                            @as(i128, p.coord.suffix[0])) - ((old_qx << shift_amt) |
+                            @as(i128, old_trace_coord.suffix[0])));
+                        const diff_chunk_y: i64 = @intCast(((p_qy_128 << shift_amt) |
+                            @as(i128, p.coord.suffix[1])) - ((old_qy << shift_amt) |
+                            @as(i128, old_trace_coord.suffix[1])));
 
                         const p_x_idx = diff_chunk_x * 16 + @as(i64, p.bx) - @as(i64, old_t_bx) + 1 + @as(i64, old_quadrant % 2);
                         const p_y_idx = diff_chunk_y * 16 + @as(i64, p.by) - @as(i64, old_t_by) + 1 + @as(i64, old_quadrant / 2);
@@ -1529,6 +1533,4 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
         quad_cache.ancestor_materials = next_materials;
     }
-
-    memory.game.teleport(null, new_pos); // make sure to teleport!
 }
