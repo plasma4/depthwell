@@ -1093,7 +1093,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
 
                 // Cascade logic
                 var broken = false;
-                if (current_sprite == .mushroom) {
+                if (current_sprite == .mushroom or current_sprite == .big_mushroom) {
                     const below = if (lby < 15)
                         getBlockAt(target_coord, lbx, lby + 1, memory.game.depth).id
                     else

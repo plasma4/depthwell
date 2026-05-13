@@ -204,8 +204,10 @@ pub fn applyAncestorLogic(
 
     if (parent_sprite.isEmpty()) return .empty;
     const seeds = world.quad_cache.getChunkSeeds(key);
-    const noise_hash_1 = seeding.FastHash.hash2d(.{ seeds[0][0], seeds[0][1] }, bx, by);
+    var noise_hash_1 = seeding.FastHash.hash2d(.{ seeds[0][0], seeds[0][1] }, bx, by);
     const noise_hash_2 = seeding.FastHash.hash2d(.{ seeds[0][2], seeds[0][3] }, bx, by);
+    if (parent_sprite == .edge_stone)
+        return Block.makeBasicBlock(parent_sprite, @truncate(noise_hash_2));
 
     // Structural logic!
     const local_id = (by % 4) * 4 + (bx % 4);
@@ -229,50 +231,59 @@ pub fn applyAncestorLogic(
         }
     }
 
-    const edges_list = comptime get4x4List(
-        \\1111
-        \\1001
-        \\1001
-        \\1111
-    );
-    inline for (edges_list) |id| {
-        if (noise_hash_1 % 4 == 0) {
-            // 25% odds to randomly take a parent neighbor's sprite type now!
-            // each block gets different noise with right-shift
-            const noise: u3 = @truncate(noise_hash_1 >> (3 * @as(u6, @intCast(local_id))));
-            const parent = parent_neighbors[noise];
-            if (!parent.isEmpty()) parent_sprite = parent.id;
-        } else if (noise_hash_1 % 8 == 2) {
-            // 12.5% odds for edges to become empty
-            const corner_id = getCornerId(id);
-            const is_corner_empty = !corners_nonempty[corner_id];
-            if (is_corner_empty) return .empty;
-        }
-    }
-
     // Inherit plant still!
     if (parent_sprite == .spiral_plant)
         return .makeBasicBlock(.spiral_plant, @truncate(noise_hash_2));
 
     if (parent_sprite == .mushroom) {
-        // Only specific sub-blocks of a mushroom parent become a big_mushroom.
+        // Only make specific sub-blocks of a mushroom parent become big mushroom!
         return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3)
             .makeBasicBlock(.big_mushroom, @truncate(noise_hash_2))
         else
-            .empty;
+            .empty; // bypass edges logic too
     }
 
-    // Material evolution
-    if (!parent_sprite.isFoundation()) return .empty;
+    // var seed = parent_block.seed;
+    if (parent_sprite.isFoundation()) { // we don't want non-solid blocks to become solid, since the player could be in them
+        const edges_list = comptime get4x4List(
+            \\1111
+            \\1001
+            \\1001
+            \\1111
+        );
+        inline for (edges_list) |id| {
+            if (noise_hash_1 % 4 == 0) {
+                // 25% odds to randomly take a parent neighbor's sprite type now!
 
-    const evolved_sprite: Sprite = switch (parent_sprite) {
+                // each block gets different noise with right-shift
+                const noise: u3 = @truncate(noise_hash_1);
+                noise_hash_1 >>= @bitSizeOf(@TypeOf(noise));
+
+                const parent = parent_neighbors[noise];
+                if (!parent.isEmpty()) parent_sprite = parent.id;
+            } else if (noise_hash_1 % 8 == 2) {
+                // 12.5% odds for edges to become empty
+                const corner_id = getCornerId(id);
+                const is_corner_empty = !corners_nonempty[corner_id];
+                if (is_corner_empty) return .empty;
+            }
+        }
+    }
+
+    var evolved_sprite: Sprite = switch (parent_sprite) {
         .mossy_stone => .spiral_plant,
-        .blue_strange_stone => .blue_stone,
         .purple_strange_stone => .red_stone,
         .red_stone => .redder_stone,
         .redder_stone => .lava_stone,
         else => parent_sprite,
     };
+
+    const noise: u8 = @truncate(noise_hash_1);
+    noise_hash_1 >>= @bitSizeOf(@TypeOf(noise));
+    if (evolved_sprite == .blue_strange_stone and noise < 16) {
+        // 1 in 8 chance
+        evolved_sprite = .blue_stone;
+    }
 
     // Return the new block, passing the hash down as the new seed for the next generation.
     return Block.makeBasicBlock(evolved_sprite, @truncate(noise_hash_2));
