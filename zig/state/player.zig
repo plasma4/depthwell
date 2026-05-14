@@ -21,7 +21,9 @@ pub const CAMERA_MIN_ZOOM = 1.0 / 3.0;
 
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
 /// Any more and it would look weird, and camera deadzone would start to no longer work.
-pub const CAMERA_MAX_ZOOM = 1.0; // 100%
+pub const CAMERA_MAX_ZOOM = 2.0; // 200%
+
+pub const STARTING_CAMERA_SCALE = 1.0; // 100%
 
 /// The base speed of the player.
 pub var PLAYER_BASE_SPEED: f64 = 1.0;
@@ -33,6 +35,8 @@ pub var JUMP_FORCE: f64 = 8.0;
 pub var FRICTION_X: f64 = 0.2;
 /// Friction of player movement (vertical).
 pub var FRICTION_Y: f64 = 0.02;
+/// How many frames the player can still jump after leaving a ledge.
+const COYOTE_TIME_FRAMES: u8 = 3;
 
 /// The size of the player's width. The player is assumed to be centered at the bottom as a rectangle.
 pub const PLAYER_HITBOX_WIDTH = 64;
@@ -56,6 +60,8 @@ pub var subpixel_accum: Vec2f = .{ 0.0, 0.0 }; // note that vectors are smartly 
 
 /// Determines if the player is on the ground.
 var is_grounded: bool = false;
+/// Frames remaining for coyote time jump.
+var coyote_frames: u8 = 0;
 
 /// Moves the player, handling camera changes.
 pub fn move(logic_speed: f64) void {
@@ -94,9 +100,10 @@ pub fn move(logic_speed: f64) void {
     }
 
     // Update y velocity with gravity
-    if (is_grounded and KeyBits.isSet(KeyBits.up, game.keys_held_mask)) {
+    if (coyote_frames > 0 and KeyBits.isSet(KeyBits.up, game.keys_held_mask)) {
         game.player_velocity[1] = -JUMP_FORCE;
         is_grounded = false;
+        coyote_frames = 0;
     } else {
         game.player_velocity[1] = game.player_velocity[1] * pow_fy;
         game.player_velocity[1] += if (FRICTION_Y < 1e-4) GRAVITY * f_y else ((GRAVITY * f_y * (1.0 - pow_fy) / FRICTION_Y));
@@ -136,6 +143,12 @@ pub fn move(logic_speed: f64) void {
             subpixel_accum[1] = 0;
             break;
         }
+    }
+
+    if (is_grounded) {
+        coyote_frames = COYOTE_TIME_FRAMES;
+    } else if (coyote_frames > 0) {
+        coyote_frames -= 1;
     }
 
     // Now do horizontal CCD

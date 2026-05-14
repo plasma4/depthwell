@@ -186,8 +186,8 @@ fn vs_tile(
         // if random_mod == 0u {
         //     id++;
         // }
-    } else if id == DECOR_START + 3u || id == DECOR_START + 6u { // variation for mushrooms
-        id += min(extractBits(tile.seeds[0], 16u, 2u), 2u); // select variation (0-3, 50% odds of third)
+    } else if id == DECOR_START + 5u || id == DECOR_START + 8u { // variation for mushrooms
+        id -= min(extractBits(tile.seeds[0], 16u, 2u), 2u); // select variation (0, -1, or -2, 50% odds of -2)
     }
 
     // apply to screen_pos.y before converting to normalized device coordinates
@@ -223,20 +223,25 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     }
 
     if in.sprite_id >= 65000u && in.sprite_id <= 65256u {
-        // Heatmap logic!
+        // Heatmap logic...
         let color = (f32(in.sprite_id - 65000u)) / 256.0;
-        var lch = vec3f(0.2 + color * 0.8, 0.25, 1.0); // lightness, chroma, and hue
+        var lch = vec3f(0.2 + color * 0.8, 0.25, 1.0);
         let lab = oklch_to_oklab(lch);
         let final_rgb = oklab_to_linear_srgb(lab);
         return vec4f(final_rgb, 1.0);
     }
 
     let seed = in.seeds[0];
+    let is_gem = in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START;
+    let is_ore = in.sprite_id >= ORE_START && in.sprite_id < GEM_START;
+
     var final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
-    if in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START {
-        let shift_bits = extractBits(seed, 18u, 8u); // shift the gem sprite around 0-15 pixels using bits 18-26
+
+    // Apply 0-15 pixel shift for gems and ores using bits 16-23 of seed3
+    if is_gem || is_ore {
+        let shift_bits = extractBits(in.seeds[2], 16u, 8u);
         let shift = vec2f(vec2u(shift_bits & 0xFu, shift_bits >> 4u)) / 16.0;
-        let wrapped_local = fract(in.local_uv + shift); // there are 1 pixel boundaries so fract() being imprecise is okay
+        let wrapped_local = fract(in.local_uv + shift);
         let safe_wrapped = clamp(wrapped_local, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
         final_uv = in.sprite_uv_origin + safe_wrapped * vec2f(SPRITE_W, SPRITE_H);
     }
@@ -245,14 +250,15 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     let hp_grid = vec2f(f32(hp_id % TILES_PER_ROW_U), f32(hp_id / TILES_PER_ROW_U));
     let hp_uv = (hp_grid + safe_local_uv) * vec2f(SPRITE_W, SPRITE_H);
 
-    // Sample the primary color (the actual original sprite, gem or not)
+    // Sample the primary color (this will now be shifted for both Ores and Gems)
     var hp_darkness_mult = textureSampleLevel(sprite_atlas, pixel_sampler, hp_uv, 0.0).r;
     var tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
     tex_color = vec4f(srgb_to_linear(tex_color.rgb) * hp_darkness_mult, tex_color.a);
 
     // ore sampling pixel logic
-    if in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START {
-        let mask_variation = extractBits(seed, 15u, 3u); // 8 masks
+    if is_gem || is_ore {
+        // 8 masks, first 4 for gems, second 4 for ore
+        let mask_variation = extractBits(seed, 15u, 2u) + select(4u, 0u, is_gem);
         let mask_id = GEM_MASK_START + mask_variation;
 
         let flip = vec2f(vec2u(extractBits(seed, 25u, 1u), extractBits(seed, 26u, 1u)));
@@ -272,14 +278,14 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
         let tex_stone = textureSampleLevel(sprite_atlas, pixel_sampler, stone_uv, 0.0);
         let tex_mask = textureSampleLevel(sprite_atlas, pixel_sampler, mask_uv, 0.0);
 
-        let abs_dist = abs(in.local_uv - 0.5);
-        let u_dist = max(abs_dist.x, abs_dist.y);
+        let abs_dist = abs(in.local_uv - 0.5); // higher value means closer to EDGES
+        let u_dist = 0.5 - max(abs_dist.x, abs_dist.y); // higher value means closer to CENTER
 
-        // with linear RGB: r component of mask determines mix amount, vary ore brightness, multiply stone brightness based on dist
+        // with linear RGB: r component of mask determines brightness, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
-            srgb_to_linear(tex_stone.rgb) * vec3f(0.4 + u_dist * 1.2),
-            tex_color.rgb,
-            tex_mask.r + (0.5 - u_dist)
+            srgb_to_linear(tex_stone.rgb) * vec3f(1.2 - 1.2 * u_dist),
+            tex_color.rgb * vec3f(tex_mask.r),
+            tex_mask.a + u_dist
         );
         tex_color = vec4f(final_rgb_ore, tex_color.a);
     }

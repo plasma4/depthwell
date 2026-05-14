@@ -495,7 +495,7 @@ pub const QuadCache = struct {
     path_hashes: ChunkSeeds align(memory.MAIN_ALIGN_BYTES),
     /// The 4-by-4 material grid representing the "event horizon" at D-32.
     /// The inner 2-by-2 (indices [1..2][1..2]) corresponds to the active quadrants.
-    ancestor_materials: [4][4]Sprite,
+    ancestor_materials: [4][4]Block,
     /// A list representing the prefix stack of the top left quadrant's X-coordinate.
     left_path: SegmentedList(u64, PATH_PREALLOC_SIZE),
     /// A list representing the prefix stack of the top left quadrant's Y-coordinate.

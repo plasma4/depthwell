@@ -65,7 +65,7 @@ pub const GameState = extern struct {
     /// Represents the camera's movement in a frame (derivative of `camera_pos`).
     last_camera_pos: Vec2i = .{ 0, 0 },
     /// Represents the camera's zoom scale.
-    camera_scale: f64 = player.CAMERA_MAX_ZOOM,
+    camera_scale: f64 = player.STARTING_CAMERA_SCALE,
     /// Represents the camera's zoom scale change rate (multiplier, acts as derivative of camera_scale change).
     camera_scale_change: f64 = 1.0,
     /// Represents how many layers deep the player is (defaults to 3).

@@ -261,6 +261,7 @@ pub fn applyAncestorLogic(
 
                 const parent = parent_neighbors[noise];
                 if (!parent.isEmpty()) parent_sprite = parent.id;
+                if (parent_sprite == .edge_stone) return .empty;
             } else if (noise_hash_1 % 8 == 2) {
                 // 12.5% odds for edges to become empty
                 const corner_id = getCornerId(id);

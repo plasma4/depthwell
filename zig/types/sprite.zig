@@ -23,7 +23,7 @@ const MASK_START = GEM_START + 4;
 const DECOR_START = MASK_START + 24;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = DECOR_START + 12;
+pub const INVENTORY_START = DECOR_START + 14;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 3;
 
@@ -71,9 +71,11 @@ pub const Sprite = enum(u16) {
     // Decor (THIS IS COUPLED TO WGSL CODE)
     spiral_plant = DECOR_START,
     ceiling_flower = DECOR_START + 1, // 2 variations
-    mushroom = DECOR_START + 3, // 3 variations
-    big_mushroom = DECOR_START + 6, // 3 variations
-    torch = DECOR_START + 9,
+    mushroom = DECOR_START + 5, // 3 variations (+2) because of WGSL logic
+    big_mushroom = DECOR_START + 8, // 3 variations (also +2)
+    forest_furnace = DECOR_START + 9,
+    lava_furnace = DECOR_START + 10,
+    torch,
     chest,
     portal,
 
@@ -116,6 +118,8 @@ pub const Sprite = enum(u16) {
             .ceiling_flower,
             .mushroom,
             .big_mushroom,
+            .forest_furnace,
+            .lava_furnace,
             .torch,
             .chest,
             .portal,
@@ -136,6 +140,7 @@ pub const Sprite = enum(u16) {
     pub fn isSolid(self: @This()) bool {
         if (self == Sprite.none or self == .player) return false;
         if (is_debug and self == .inventory_selected_invalid) return false;
+        if (self == .forest_furnace or self == .lava_furnace) return true;
 
         const id = @intFromEnum(self);
         if (id >= MASK_START and id <= INVENTORY_START) return false;

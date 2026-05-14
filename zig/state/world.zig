@@ -1202,7 +1202,7 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
     const overflow_hp = @addWithOverflow(hp_to_add, block.hp); // overflows past 15
     if (overflow_hp[1] == 1 or hp_to_add == 0 or !block.isSolid()) {
         // The block should be removed.
-        if (block.id.isEmpty()) return true;
+        if (block.isEmpty()) return true;
         mod_store.history.at(entry_id).blocks[id].id = .none;
 
         // Update caches so changes appear immediately

@@ -54,15 +54,15 @@ pub fn handleMiningAndPlacing() void {
         }
 
         // Are we breaking something, or placing into empty air?
-        if (sprite_type.isEmpty() or block.id != .none) {
+        if (sprite_type.isEmpty() or !block.isEmpty()) {
             // mining or replacing case
             mining_progress += mining_speed;
-            const strength = getSpriteStrength(block.id);
+            const strength = getSpriteStrength(block.id).?;
 
             if (inventory.IN_CREATIVE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
                 mining_progress = 0;
-                // sprite type being none check also prevents unneeded memory waste with DepthCoordinate
-                const was_deleted = block.id.isEmpty() or world.modifyBlockHp(
+                // sprite type being none check also prevents unneeded memory waste with data update
+                const was_deleted = block.isEmpty() or world.modifyBlockHp(
                     mouse.mouse_chunk.?, // mouse block successful, this must be valid then!
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
@@ -72,7 +72,7 @@ pub fn handleMiningAndPlacing() void {
                 );
 
                 if (was_deleted) {
-                    if (block.id != .none) {
+                    if (!block.isEmpty()) {
                         inventory.addToInventory(block.id);
 
                         // Only auto-replace if the block being mined is different from the held item.
@@ -101,7 +101,7 @@ pub fn handleMiningAndPlacing() void {
                     selected_hp = block.hp + mining_strength;
                 }
             }
-        } else if (block.id.isEmpty() and sprite_type != .none) {
+        } else if (block.isEmpty() and sprite_type != .none) {
             // placing into empty air!
             if (inventory.removeFromInventory(sprite_type)) {
                 if (world.modifyBlockType(
@@ -125,9 +125,11 @@ pub fn handleMiningAndPlacing() void {
 }
 
 /// Returns how "strong" a `Sprite` is; how much mining_progress must be contributed to increase `hp` of a block.
-fn getSpriteStrength(s: Sprite) u64 {
+inline fn getSpriteStrength(s: Sprite) ?u64 {
     if (!s.isSolid()) {
         return 0;
+    } else if (s == .forest_furnace or s == .lava_furnace) {
+        return std.math.maxInt(u64);
     } else if (s.isStone()) {
         return 15;
     } else if (s.isOre()) {
@@ -146,7 +148,7 @@ fn getSpriteStrength(s: Sprite) u64 {
             .ruby => 100,
             else => 100,
         };
-    } else if (root.is_debug) return std.math.maxInt(u64) else unreachable;
+    } else if (root.is_debug) return null;
 }
 
 comptime {
@@ -155,7 +157,7 @@ comptime {
 
         // If it's a valid, solid block, it MUST have a defined mining strength.
         if (field_sprite.isValid() and field_sprite.isSolid()) {
-            if (getSpriteStrength(field_sprite) == std.math.maxInt(u64)) {
+            if (getSpriteStrength(field_sprite) == null) {
                 @compileError("Sprite is valid and solid but missing a strength value in get_sprite_strength: " ++ field.name);
             }
         }
