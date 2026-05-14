@@ -33,7 +33,7 @@ pub const AncestorCache = struct {
     /// Amount of chunks per depth/tier; too low and performance regressions may occur.
     pub const TIER_SIZE = 32;
     /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
-    pub const NUM_TIERS = 32;
+    pub const NUM_TIERS = HORIZON_DEPTH;
 
     var keys: [NUM_TIERS][TIER_SIZE]DepthCoordinate = .{.{DepthCoordinate.invalid} ** TIER_SIZE} ** NUM_TIERS;
     var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
