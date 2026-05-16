@@ -19,7 +19,9 @@ Run `zig build` for the main build of Zig code, `zig test "zig/root.zig"` to run
 
 Useful variables to customize include `CONFIG` in `src/main.ts`, `engine.wireframeOpacity`, `engine.baseSpeed`, and `zig/player.zig` config options.
 
-When building for production with Vite (using `npm run build` instead of `npm run dev`), use `zig build -Dgen-enums -Dwasm-opt` (with WASM optimizations from Binaryen), edit `SHADER_SOURCE` in `engineMaker.ts` to `"./shader.wgsl"` temporarily (without the `?raw` property) to actually compress `shader.wgsl`.
+When building for production with Vite (using `npm run build` instead of `npm run dev`), use `zig build -Dgen-enums -Dwasm-opt` (with WASM optimizations from Binaryen). Or, use `git config core.hooksPath .githooks` to set this up on-commit.
+
+For a final version, edit `SHADER_SOURCE` in `engineMaker.ts` to `"./shader.wgsl"` temporarily (without the `?raw` property) to actually compress `shader.wgsl`.
 
 Currently, Depthwell does not utilize web worker technology, so custom headers are not necessary (and this means it's fairly easily to save the entire game as a local asset folder or file, _after building_).
 
