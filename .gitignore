@@ -4,3 +4,4 @@ compile_commands.json
 /.zig-cache
 /node_modules
 /src/assets/*.aseprite
+!/src/assets/main.aseprite

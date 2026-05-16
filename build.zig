@@ -7,6 +7,8 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     // TODO add in wasm-opt for ReleaseFast builds for even more optimization!
     b.install_path = ".";
+    const aseprite_path = b.option([]const u8, "aseprite", "Path to the Aseprite executable (default: aseprite in PATH)") orelse
+        b.findProgram(&.{"aseprite"}, &.{}) catch null;
     const gen_enums = b.option(bool, "gen-enums", "Regenerate TypeScript enum definitions (default: no)") orelse false; // -Dgen-enums
     const wasm_opt = b.option(bool, "wasm-opt", "Add a very aggressive pass of optimizations provided by wasm-opt from Binaryen, forcing optimization level to ReleaseFast") orelse false; // -Dgen-enums
     const memory64 = b.option(bool, "memory64", "Utilize Memory64 (and enable relaxed SIMD)") orelse false; // -Dmemory64
@@ -122,9 +124,72 @@ pub fn build(b: *std.Build) void {
         optimize_wasm.step.dependOn(&install_wasm.step);
         b.getInstallStep().dependOn(&optimize_wasm.step);
     }
+
     if (gen_enums) {
         generateEnums(b, &[_][]const u8{ "zig/root.zig", "zig/types/types.zig", "zig/memory.zig" });
     }
+
+    // validate!
+    if (aseprite_path) |path| {
+        // Use "" for the layer name if you want the entire sprite (main.png)
+        const export_main = addAsepriteStep(
+            b,
+            path,
+            "src/assets/main.aseprite",
+            "main",
+            "main.png",
+        );
+        const export_masked = addAsepriteStep(
+            b,
+            path,
+            "src/assets/main.aseprite",
+            "masks", // Ensure this matches the layer name exactly (or "Group/masks")
+            "mainMasked.png",
+        );
+
+        // Install the generated files from the cache into your src directory
+        const install_main = b.addInstallFile(export_main, "src/assets/main.png");
+        const install_masked = b.addInstallFile(export_masked, "src/assets/mainMasked.png");
+
+        // Make the WASM build depend on the installation of assets
+        exe.step.dependOn(&install_main.step);
+        exe.step.dependOn(&install_masked.step);
+    } else {
+        std.debug.print("Aseprite executable not found; skipping step. Either add to your system PATH or use -Daseprite.", .{});
+    }
+}
+
+/// Handles `.aseprite` file exports automatically.
+fn addAsepriteStep(
+    b: *std.Build,
+    aseprite_exe: []const u8,
+    input_path: []const u8,
+    layer_name: []const u8,
+    out_filename: []const u8,
+) std.Build.LazyPath {
+    const run_cmd = b.addSystemCommand(&.{aseprite_exe});
+    run_cmd.addArg("-b");
+    if (layer_name.len > 0) {
+        run_cmd.addArgs(&.{ "--layer", layer_name });
+    } else {
+        // run_cmd.addArg("--all-layers");
+        @panic("Layer name must be non-empty!");
+    }
+
+    run_cmd.addFileArg(b.path(input_path));
+    run_cmd.addArgs(&.{
+        "--sheet-type",
+        "rows",
+        "--sheet-columns",
+        "8",
+    });
+    run_cmd.addArg("--sheet");
+    const output = run_cmd.addOutputFileArg(out_filename);
+
+    run_cmd.has_side_effects = true;
+    _ = run_cmd.captureStdOut(.{});
+    // _ = run_cmd.captureStdErr(.{});
+    return output;
 }
 
 /// Updates `enums.ts` automatically. Only called by `build()` if the `-Dgen-enums` flag is passed.
