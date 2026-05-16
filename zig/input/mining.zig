@@ -22,7 +22,8 @@ pub var selected_hp: u8 = 1;
 /// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
 pub fn handleMiningAndPlacing() void {
     if (mouse.just_mouse_down and inventory.getHoveredInventorySprite() != null) {
-        mouse.mouse_state = .inventory; // prevent mouse block placement issue, TODO figure out if something more robust works too
+        // use mouse states to prevent the player from placing blocks when actually selecting something from the inventory
+        mouse.mouse_state = .inventory;
     }
 
     mouse.updateMouseLocation(); // update to get correct mouse position data

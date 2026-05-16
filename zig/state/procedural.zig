@@ -88,8 +88,8 @@ pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
     if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(density * 256.0)));
     if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
-    if (moisture < 0.1) {
-        return .water;
+    if (moisture < 0.12) {
+        return .water; // TODO: make more robust
     } else if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
         return .blue_strange_stone;
     } else if (density <= density_min.getF32() or density >= density_max.getF32()) {
@@ -181,8 +181,6 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
     if (root.is_debug) {
         amp /= fbm_scale.getF32();
     } else {
-        // TODO: find method to make this comptime-convert to f32
-        // amp *= comptime fbm_power;
         amp /= fbm_scale.getF32();
     }
     if (amp > 0) {
@@ -197,7 +195,6 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
         }
     }
 
-    // TODO: same comptime
     const cell_size = options.cell_size * procedural_cell_size.getF32();
     const wx = fx + warp_x;
     const wy = fy + warp_y;

@@ -381,7 +381,7 @@ fn murmurmix32(number: u32) -> u32 {
     return h;
 }
 
-// Complex logic that returns 0u if a pixel should be TRANSPARENT ("eroded"), NORMAL, or BORDER (darkened).
+// Complex logic that returns 0u if a pixel should be TRANSPARENT ("eroded"), 1u for NORMAL, or 2u for BORDER (darkened).
 fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { // uv of sprite, edge flags, and mixed seeds
     let px = u32(local_uv.x * TILE_SIZE);
     let py = u32(local_uv.y * TILE_SIZE);
@@ -396,10 +396,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     let has_br = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 4u + extractBits(seed3, 0u, 2u);
-    let r_tr = 4u + extractBits(seed3, 2u, 2u);
-    let r_bl = 4u + extractBits(seed3, 4u, 2u);
-    let r_br = 4u + extractBits(seed3, 6u, 2u);
+    let r_tl = 5u + extractBits(seed3, 0u, 2u);
+    let r_tr = 5u + extractBits(seed3, 2u, 2u);
+    let r_bl = 5u + extractBits(seed3, 4u, 2u);
+    let r_br = 5u + extractBits(seed3, 6u, 2u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 

@@ -223,7 +223,7 @@ pub const ColorRGBA = extern union {
     }
 
     /// Converts a hex code directly into OKLCH. Use like `comptime ColorRGBA.hexToOklch("#ffffff")`.
-    /// TODO: see if we can make comptime part of evaluation inherent
+    /// TODO: see if we can make comptime a fully required part of evaluation
     pub fn hexToOklch(comptime html_hex: []const u8) @Vector(4, f32) {
         comptime {
             const rgba = ColorRGBA.fromHex(html_hex);

@@ -36,8 +36,7 @@ pub const ModificationStore = struct {
         DepthCoordinateContext,
         std.hash_map.default_max_load_percentage,
     ),
-    /// TODO: evaluate if this is slow, and if `Arraylist` would fit better for native?
-    /// Or maybe it's too slow even for WASM?
+    /// Expandable list that stores modified `Chunk` data (256KiB pre-allocation).
     history: SegmentedList(Chunk, 128) = .{},
 
     pub fn init(allocator: std.mem.Allocator) ModificationStore {
