@@ -5,4 +5,5 @@ if [ $RESULT -ne 0 ]; then
     echo "Error: Build for NPM failed; commit stopped."
     exit 1
 fi
+git add dist/
 exit 0
