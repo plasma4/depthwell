@@ -251,6 +251,11 @@ pub const Block = packed struct(u64) {
         return self.id.isSolid();
     }
 
+    /// Determines if the sprite's type is a liquid (such as water).
+    pub inline fn isLiquid(self: @This()) bool {
+        return self.id.isLiquid();
+    }
+
     /// Determines if the block's type is `none` (air/void).
     pub inline fn isEmpty(self: @This()) bool {
         return self.id.isEmpty();

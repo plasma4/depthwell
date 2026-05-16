@@ -75,7 +75,25 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
 
                 world.writeChunk(&chunk, target_coord);
                 for (0..CHUNK_SIZE) |ly| {
-                    @memcpy(out[(gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE ..][0..CHUNK_SIZE], chunk.blocks[ly * CHUNK_SIZE ..][0..CHUNK_SIZE]);
+                    const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
+                    const chunk_row_start = ly * CHUNK_SIZE;
+
+                    // Iterate through each block in the row instead of doing a blind @memcpy
+                    for (0..CHUNK_SIZE) |lx| {
+                        var block = chunk.blocks[chunk_row_start + lx];
+
+                        // Check if the block is liquid at the top, replace it with the top sprite instead if so (enum ID + 1)
+                        const block_above_flag = root.types.EdgeFlags.getFlagBit(0, -1);
+                        if (block.isLiquid() and (block.edge_flags & block_above_flag == 0)) {
+                            block.id = @enumFromInt(@intFromEnum(block.id) + 1);
+                        }
+
+                        if (!block.isFoundation()) {
+                            // since water/decor aren't foundation blocks, they don't get edge flags
+                            block.edge_flags = 0xFF;
+                        }
+                        out[row_start + lx] = block;
+                    }
                 }
             } else {
                 for (0..CHUNK_SIZE) |ly| {

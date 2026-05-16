@@ -192,6 +192,7 @@ pub inline fn getCornerId(id: u4) u2 {
 
 /// Applies deterministic logic to a child `Block` based on its parent and 8 parent neighbors.
 /// Correctly determines the child's `seed` property when returning it if the block is not empty.
+/// Decorations are applied afterward in `procedural.applyAncestorDecorations()`. TODO: actually add this!
 pub fn applyAncestorLogic(
     parent_block: Block,
     parent_neighbors: [8]Block,

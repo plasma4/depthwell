@@ -88,7 +88,9 @@ pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
     if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(density * 256.0)));
     if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
-    if (density <= 0.08 and moisture >= 0.3 and moisture <= 0.4) {
+    if (moisture < 0.1) {
+        return .water;
+    } else if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
         return .blue_strange_stone;
     } else if (density <= density_min.getF32() or density >= density_max.getF32()) {
         return if (moisture >= 0.93 and moisture <= 0.97) .purple_strange_stone else .none;
@@ -444,7 +446,6 @@ pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
 /// Continues from step 4 in `addOres()`.
 ///
 /// 5. Adds decorative blocks.
-/// 6. Critically, sets `edge_flags` of all blocks that are not `isFoundation()` blocks to `0xFF` to prevent erosion.
 pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void {
     // Extra decor passes (doesn't worry about cross-chunk sadly)
     for (0..CHUNK_SIZE) |block_y| {
@@ -490,10 +491,11 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void
     }
 
     // final pass to reset edge flags for blocks that should NOT be eroded
-    for (0..memory.CHUNK_SIZE_SQ) |id| {
-        var block = &target_chunk.blocks[id];
-        if (!block.isFoundation()) block.edge_flags = 0xFF;
-    }
+    // update: now logic is in chunk.zig
+    // for (0..memory.CHUNK_SIZE_SQ) |id| {
+    //     var block = &target_chunk.blocks[id];
+    //     if (!block.isFoundation()) block.edge_flags = 0xFF;
+    // }
 }
 
 /// Linearly interpolates between a and b.

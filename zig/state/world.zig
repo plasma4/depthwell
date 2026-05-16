@@ -1002,11 +1002,11 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
 }
 
 /// Returns whether a sprite should have edge flag logic applied to it.
-/// Can be modified for testing as necessary; defaults to `isFoundation()`.
+/// Can be modified for testing as necessary. Is different from the final result in `root.chunks.updateVisibleChunks()`.
 inline fn shouldHaveEdgeFlags(sprite: Sprite, current_sprite: Sprite) bool {
     _ = .{current_sprite};
-    // return (sprite.isFoundation() and !sprite.isOre() and current_sprite.isFoundation() and !current_sprite.isOre()) or sprite == current_sprite;
-    return sprite.isFoundation();
+    return sprite.isFoundation() or sprite.isLiquid();
+    // TODO: improve edge flag logic to make liquid only check with liquid, and solid only check with solid
 }
 
 /// Applies a block modification, changing the `Sprite` type and resetting `hp`.

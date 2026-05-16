@@ -91,8 +91,12 @@ pub const Sprite = enum(u16) {
     particle = NUMBER_START + 10,
     /// Full rectangle sprite; no corner pixels cut off.
     rectangle,
-    /// Pickaxe sprite.
+    /// Pickaxe icon.
     pickaxe,
+    /// Generic water block (filled). Default internal water type.
+    water,
+    // Generic water block (top, with small waves) is the ID afterward.
+    // That gets processed and added in chunk.zig.
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
     unselected = 65535,
@@ -122,6 +126,7 @@ pub const Sprite = enum(u16) {
             .lava_furnace,
             .torch,
             .chest,
+            .water,
             .portal,
             => true,
             else => {
@@ -143,8 +148,13 @@ pub const Sprite = enum(u16) {
         if (self == .forest_furnace or self == .lava_furnace) return true;
 
         const id = @intFromEnum(self);
-        if (id >= MASK_START and id <= INVENTORY_START) return false;
+        if (id >= MASK_START) return false;
         return true;
+    }
+
+    /// Determines if the sprite's type is a liquid (such as water).
+    pub fn isLiquid(self: @This()) bool {
+        return self == .water;
     }
 
     /// Determines if the sprite's type is `none` (air/void).

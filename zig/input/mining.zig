@@ -57,7 +57,8 @@ pub fn handleMiningAndPlacing() void {
         if (sprite_type.isEmpty() or !block.isEmpty()) {
             // mining or replacing case
             mining_progress += mining_speed;
-            const strength = getSpriteStrength(block.id).?;
+            // strength function is inline, so this is fine
+            const strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
 
             if (inventory.IN_CREATIVE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
                 mining_progress = 0;

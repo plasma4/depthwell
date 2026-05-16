@@ -70,7 +70,7 @@ struct TileOutput {
     // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
     @location(1) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
     @location(2) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
-    @location(3) @interpolate(flat) sprite_id: u32,
+    @location(3) @interpolate(flat) sprite_id: u32, // do note that an extra u16 id is injected to the top half of bits with gems
     @location(4) @interpolate(flat) edge_flags: u32,
     @location(5) @interpolate(flat) light: f32,
     @location(6) @interpolate(flat) hp: u32,
@@ -200,6 +200,12 @@ fn vs_tile(
 
     out.position = vec4f(ndc, 0.0, 1.0);
     out.sprite_uv_origin = origin;
+    let is_gem = id >= GEM_START && id < GEM_MASK_START;
+    // if is_gem {
+    //     out.sprite_id = extractBits(tiles[instance_index].word0, 0u, 16u) | id;
+    // } else {
+    //     out.sprite_id = id;
+    // }
     out.sprite_id = id;
     out.hp = tile.hp;
     out.seeds = tile.seeds;
@@ -213,6 +219,7 @@ fn vs_tile(
 @fragment
 fn fs_main(in: TileOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
+    let id = in.sprite_id & 65535;
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
     if in.edge_flags != 0xFFu {
@@ -222,9 +229,9 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
-    if in.sprite_id >= 65000u && in.sprite_id <= 65256u {
+    if id >= 65000u && id <= 65256u {
         // Heatmap logic...
-        let color = (f32(in.sprite_id - 65000u)) / 256.0;
+        let color = (f32(id - 65000u)) / 256.0;
         var lch = vec3f(0.2 + color * 0.8, 0.25, 1.0);
         let lab = oklch_to_oklab(lch);
         let final_rgb = oklab_to_linear_srgb(lab);
@@ -232,8 +239,8 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     }
 
     let seed = in.seeds[0];
-    let is_gem = in.sprite_id >= GEM_START && in.sprite_id < GEM_MASK_START;
-    let is_ore = in.sprite_id >= ORE_START && in.sprite_id < GEM_START;
+    let is_gem = id >= GEM_START && id < GEM_MASK_START;
+    let is_ore = id >= ORE_START && id < GEM_START;
 
     var final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
 
@@ -300,7 +307,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
         if is_block_edge {
             let mods = in.tile_coords & vec2u(15u);
 
-            if in.sprite_id == 1u {
+            if id == 1u {
                 wire_color = vec4f(1.0, 0.5, 0.0, 1.0);
             } else {
                 // Is this pixel on the edge of a CHUNK?
@@ -352,7 +359,7 @@ fn fs_main(in: TileOutput) -> @location(0) vec4f {
     lab = oklch_to_oklab(lch);
     final_rgb = oklab_to_linear_srgb(lab);
 
-    var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, in.sprite_id == 1u); // use chunk_opacity, unless this sprite is for the player
+    var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, id == 1u); // use chunk_opacity, unless this sprite is for the player
 
     if scene.wireframe_opacity != 0.0 {
         // Correctly mix the wireframe dynamically depending on whether the block exists below it.
