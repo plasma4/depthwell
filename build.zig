@@ -186,8 +186,7 @@ fn addAsepriteStep(
     run_cmd.addArg("--sheet");
     const output = run_cmd.addOutputFileArg(out_filename);
 
-    run_cmd.has_side_effects = true;
-    _ = run_cmd.captureStdOut(.{});
+    // _ = run_cmd.captureStdOut(.{});
     // _ = run_cmd.captureStdErr(.{});
     return output;
 }

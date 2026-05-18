@@ -812,7 +812,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
             const current_sprite = target_chunk.blocks[id].id;
             if (current_sprite.isEmpty()) continue;
 
-            if (!current_sprite.isFoundation()) {
+            if (!shouldHaveEdgeFlags(current_sprite)) {
                 target_chunk.blocks[id].edge_flags = 0xFF;
                 continue;
             }
@@ -841,7 +841,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
                         );
                     };
 
-                    if (shouldHaveEdgeFlags(block.id, current_sprite)) {
+                    if (shouldHaveEdgeFlags(block.id)) {
                         flags |= types.EdgeFlags.getFlagBit(dx, dy);
                     }
                 }
@@ -981,7 +981,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
     // Calculate flags using the static halo buffer
     for (0..CHUNK_SIZE) |y| {
         for (0..CHUNK_SIZE) |x| {
-            const current_sprite = halo[y + 1][x + 1];
+            // const current_sprite = halo[y + 1][x + 1];
 
             var flags: u8 = 0;
             inline for (.{ -1, 0, 1 }) |dy| {
@@ -990,7 +990,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
 
                     const neighbor_sprite = halo[@intCast(@as(i32, @intCast(y + 1)) + dy)][@intCast(@as(i32, @intCast(x + 1)) + dx)];
 
-                    if (shouldHaveEdgeFlags(neighbor_sprite, current_sprite)) {
+                    if (shouldHaveEdgeFlags(neighbor_sprite)) {
                         flags |= types.EdgeFlags.getFlagBit(dx, dy);
                     }
                 }
@@ -1001,9 +1001,9 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
 }
 
 /// Returns whether a sprite should have edge flag logic applied to it.
-/// Can be modified for testing as necessary. Is different from the final result in `root.chunks.updateVisibleChunks()`.
-inline fn shouldHaveEdgeFlags(sprite: Sprite, current_sprite: Sprite) bool {
-    _ = .{current_sprite};
+/// Can be modified for testing as necessary.
+/// Is different from the final result in `root.chunks.updateVisibleChunks()`.
+inline fn shouldHaveEdgeFlags(sprite: Sprite) bool {
     return sprite.isFoundation() or sprite.isLiquid();
     // TODO: improve edge flag logic to make liquid only check with liquid, and solid only check with solid
 }
@@ -1030,7 +1030,7 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
     c.blocks[id].id = new_sprite;
     c.blocks[id].hp = 0;
     // Explicitly reset edge flags to 255 for non-foundation blocks (to fix rendering artifacts)!
-    const edge_flags_val: u8 = if (new_sprite.isFoundation()) 0 else 0xFF;
+    const edge_flags_val: u8 = if (shouldHaveEdgeFlags(new_sprite)) 0 else 0xFF;
     c.blocks[id].edge_flags = edge_flags_val;
 
     if (SimBuffer.get(coord)) |sim_chunk| {
@@ -1142,7 +1142,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     continue;
                 }
 
-                if (!current_sprite.isFoundation()) continue;
+                if (!shouldHaveEdgeFlags(current_sprite)) continue;
 
                 // Recalculate flags for foundation blocks
                 var new_flags: u8 = 0;
@@ -1159,7 +1159,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                             @intCast(@mod(@as(i32, lby) + ndy, CHUNK_SIZE)),
                             memory.game.depth,
                         );
-                        if (shouldHaveEdgeFlags(neighbor_block.id, current_sprite)) {
+                        if (shouldHaveEdgeFlags(neighbor_block.id)) {
                             new_flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
                         }
                     }
