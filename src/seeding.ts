@@ -4,7 +4,8 @@ const base = 26n;
 /** Creates a seed up from 1 to `seedLength` characters; won't work properly past length 100. Returns an empty string if `seedLength` is non-positive. */
 export function makeSeed(seedLength = 100) {
     if (seedLength <= 0) return "";
-    // 68 bytes > 2*10^173. The amount of possible seed combinations is around ~3.29*10^141, so this is a sufficient amount of bytes.
+    // 72 bytes > 2.47*10^173.
+    // The amount of possible seed combinations is around ~3.29*10^141, so this is more than sufficient!
     const bytes = new Uint8Array(72);
     crypto.getRandomValues(bytes);
 
@@ -37,7 +38,8 @@ function seedToBigInt(seed: string): bigint {
 }
 
 /**
- * Bijective 512-bit mixer using HMAC-SHA256 in a Feistel Network. This isn't your typical string-to-binary algorithm as it preserves true bijectivity while being cryptographically secure...why not.
+ * Bijective 512-bit mixer using HMAC-SHA256 in a Feistel Network.
+ * This isn't your typical string-to-binary algorithm as it preserves true bijectivity while being cryptographically secure...why not.
  */
 export async function seedToMemory(
     seed: string,

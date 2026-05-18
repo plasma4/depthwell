@@ -154,18 +154,12 @@ fn vs_tile(
     let screen_pos = ((world_pixel_pos - scene.camera) * scene.zoom) + (scene.viewport_size * 0.5);
 
     // normalize coordinates
-    // first, make sure spiral plant and ceiling flower should move up by 3 pixels, mushroom/portal should move down 1 pixel
-    // this is necessary because otherwise, they would look like they're floating in space
+    // first, make sure spiral plant and ceiling flower move up (visually) by 2 pixels
     var vertical_offset = select(
-        select(
-            0.0,
-            3.0 * scene.zoom,
-            // spiral plant, ceiling flower
-            id == DECOR_START + 0u || id == DECOR_START + 1u
-        ),
-        -1.0 * scene.zoom,
-        // mushroom or portal sprite
-        id == DECOR_START + 3u || id == DECOR_START + 10u
+        0.0,
+        2.0 * scene.zoom,
+        // spiral plant, ceiling flower
+        id == DECOR_START + 0u || id == DECOR_START + 1u
     );
 
     // add to ID based on pre-determined shifts
@@ -187,7 +181,8 @@ fn vs_tile(
         //     id++;
         // }
     } else if id == DECOR_START + 5u || id == DECOR_START + 8u { // variation for mushrooms
-        id -= min(extractBits(tile.seeds[0], 16u, 2u), 2u); // select variation (0, -1, or -2, 50% odds of -2)
+        let bits = extractBits(tile.seeds[0], 16u, 2u);
+        id -= select(0u, bits, bits == 3u); // select variation (0, +1, or +2, 50% odds of 0)
     }
 
     // apply to screen_pos.y before converting to normalized device coordinates
@@ -396,10 +391,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     let has_br = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 5u + extractBits(seed3, 0u, 2u);
-    let r_tr = 5u + extractBits(seed3, 2u, 2u);
-    let r_bl = 5u + extractBits(seed3, 4u, 2u);
-    let r_br = 5u + extractBits(seed3, 6u, 2u);
+    let r_tl = 3u + extractBits(seed3, 0u, 2u);
+    let r_tr = 3u + extractBits(seed3, 2u, 2u);
+    let r_bl = 3u + extractBits(seed3, 4u, 2u);
+    let r_br = 3u + extractBits(seed3, 6u, 2u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 
@@ -459,7 +454,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
 
     // Top edge
     if !has_top {
-        let base_depth = 1u + extractBits(seed2, 0u, 1u); // 1 or 2 pixels inward for each edge
+        let base_depth = extractBits(seed2, 0u, 1u); // 0 or 1 pixels inward for each edge
         let notch_pos = extractBits(seed2, 1u, 4u);
         let notch_dir = extractBits(seed2, 5u, 1u);
         let notch_width = 2u + extractBits(seed2, 6u, 2u);
@@ -481,7 +476,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
 
     // Bottom edge
     if !has_bottom {
-        let base_depth = 1u + extractBits(seed2, 8u, 1u);
+        let base_depth = extractBits(seed2, 8u, 1u);
         let notch_pos = extractBits(seed2, 9u, 4u);
         let notch_dir = extractBits(seed2, 13u, 1u);
         let notch_width = 2u + extractBits(seed2, 14u, 2u);
@@ -502,7 +497,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
 
     // Left edge
     if !has_left {
-        let base_depth = 1u + extractBits(seed2, 16u, 1u);
+        let base_depth = extractBits(seed2, 16u, 1u);
         let notch_pos = extractBits(seed2, 17u, 4u);
         let notch_dir = extractBits(seed2, 21u, 1u);
         let notch_width = 2u + extractBits(seed2, 22u, 2u);
@@ -523,7 +518,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
 
     // Right edge
     if !has_right {
-        let base_depth = 1u + extractBits(seed2, 24u, 1u);
+        let base_depth = extractBits(seed2, 24u, 1u);
         let notch_pos = extractBits(seed2, 25u, 4u);
         let notch_dir = extractBits(seed2, 29u, 1u);
         let notch_width = 2u + extractBits(seed2, 30u, 2u);
@@ -881,11 +876,12 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
 
 /*
     ----
-    OKLAB and Color Space Conversions
+    OKLAB AND COLOR SPACE
+    (There are a lot of magic numbers here.)
     ----
 */
 fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
-    let m1 = mat3x3f( // LMS again
+    let m1 = mat3x3f( // LMS
         1.0, 1.0, 1.0,
         0.3963377774, -0.1055613458, -0.0894841775,
         0.2158037573, -0.0638541728, -1.2914855480);

@@ -8,6 +8,8 @@ const HORIZON_DEPTH = memory.HORIZON_DEPTH;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
+/// Adds visible chunk data to the scratch buffer, as well as properties.
+/// This is used in `render.prepareVisibleData()`.
 pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
     const game = &memory.game;

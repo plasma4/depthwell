@@ -145,7 +145,7 @@ pub fn getBaseSpriteType(
 
     const sprite = generateSpriteFromValues(moisture, density);
 
-    // drawing sprite change in WGSL now after tile unpacking, quite silly to be here
+    // drawing sprite change in WebGPU now after tile unpacking, quite silly to be here
     // if (sprite == .stone) {
     //     if (block_y % 2 == 0) {
     //         sprite = if (block_x == 0) .stone else ._stone;

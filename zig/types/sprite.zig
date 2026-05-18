@@ -71,8 +71,8 @@ pub const Sprite = enum(u16) {
     // Decor (THIS IS COUPLED TO WGSL CODE)
     spiral_plant = DECOR_START,
     ceiling_flower = DECOR_START + 1, // 2 variations
-    mushroom = DECOR_START + 5, // 3 variations (+2) because of WGSL logic
-    big_mushroom = DECOR_START + 8, // 3 variations (also +2)
+    mushroom = DECOR_START + 3, // 3 variations
+    big_mushroom = DECOR_START + 6, // 3 variations
     forest_furnace = DECOR_START + 9,
     lava_furnace = DECOR_START + 10,
     torch,

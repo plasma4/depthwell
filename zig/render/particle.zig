@@ -58,6 +58,7 @@ pub const ParticleSystem = struct {
         // Allocate the exact slice size needed in the scratch buffer
         const slice = memory.scratchAllocSlice(memory.WGSLEntity, count) orelse return;
 
+        // TODO: update properties
         const times = self.list.items(.time);
         const times_end = self.list.items(.time_end);
         const positions = self.list.items(.position);
@@ -66,7 +67,7 @@ pub const ParticleSystem = struct {
         const rotations = self.list.items(.rotation);
 
         for (0..count) |i| {
-            // Optional: Calculate alpha fade based on life remaining
+            // Calculate some alpha fade based on life remaining
             const life_ratio: f32 = @floatCast(times[i] / times_end[i]);
 
             slice[i] = .{

@@ -49,7 +49,7 @@ pub inline fn dispatchMouseType() void {
     }
 }
 
-/// Processes data for renderFrame in TypeScript.
+/// Processes data for renderFrame() in TypeScript to upload to WebGPU.
 pub fn prepareVisibleData(dt: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
     root.chunks.updateVisibleChunks(dt, canvas_w, canvas_h);
     handleVisibleChunks(1.0, WIREFRAME_OPACITY);

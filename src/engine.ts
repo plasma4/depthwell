@@ -5,6 +5,7 @@ import * as Seeding from "./seeding";
 import * as InputManager from "./inputManager";
 import * as EngineMaker from "./engineMaker";
 
+/** Typed array types mapped to integers. */
 export enum WasmTypeCode {
     Uint8 = 8,
     Uint16 = 16,
@@ -16,13 +17,14 @@ export enum WasmTypeCode {
     Int32 = -32,
     Int64 = -64,
 
-    Uint8Clamped = -80,
-    Float32 = -320,
-    Float64 = -640,
+    Uint8Clamped = 1,
+    Float32 = 2,
+    Float64 = 4,
 }
 
 globalThis.WasmTypeCode = WasmTypeCode;
 
+/** Typed array integer identifiers from `WasmTypeCode` mapped back into typed arrays. */
 const WasmTypeMap = {
     [WasmTypeCode.Uint8]: Uint8Array,
     [WasmTypeCode.Uint16]: Uint16Array,
@@ -42,7 +44,7 @@ const WasmTypeMap = {
 /**
  * The maximum number of WebGPU buffers necessary to render everything.
  * This is set to 4 because it is guaranteed that only 2 backgrounds and 2 batches of tiles need to be drawn per frame.
- * */
+ */
 export const MAX_DRAW_CALLS = 4;
 
 // Note: constants where most of the game logic resides are in Zig. These are currently unused in JS.

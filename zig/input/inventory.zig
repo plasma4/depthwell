@@ -83,7 +83,7 @@ pub fn removeFromInventory(id: Sprite) bool {
 /// Helper to get the list of sprites currently in the inventory. Creates a temporary buffer in the stack.
 /// Always starts with .none, followed by owned foundation sprites sorted by ID.
 /// Requires a buffer to prevent dangling pointer (from local array) issues.
-pub fn getActiveSlots(buffer: *SlotBuffer) []Sprite {
+pub fn getSpritesInInventory(buffer: *SlotBuffer) []Sprite {
     var count: usize = 1;
     buffer[0] = .none; // slot 0 (pickaxe) must always exist
 
@@ -122,7 +122,7 @@ pub fn getSelectedIndex() u16 {
 /// Returns the sprite being hovered if the mouse is within any inventory slot hitbox.
 pub fn getHoveredInventorySprite() ?Sprite {
     var buffer: SlotBuffer = undefined;
-    const active_slots = getActiveSlots(&buffer);
+    const active_slots = getSpritesInInventory(&buffer);
 
     const base_size = 16.0;
     const spacing = 1.25 * base_size;
@@ -158,7 +158,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
 pub fn drawInventory(time_diff: f64) void {
     @setFloatMode(.optimized); // safe here, tis all rendering/mouse logic
     var buffer: SlotBuffer = undefined;
-    const active_slots = getActiveSlots(&buffer);
+    const active_slots = getSpritesInInventory(&buffer);
     // logger.quick(.{ root.mining.selected_hp, inventory_counts });
 
     const wobble_decay_speed: f32 = 2.0; // controls wobble decay speed
@@ -320,7 +320,8 @@ pub fn drawInventory(time_diff: f64) void {
     }
 }
 
-/// Back easing function: provides a slight negative dip before smoothing to the target.
+/// Back easing function (time-based)
+/// Has a slight negative dip before smoothing to the target.
 fn easeBack(target: f32) f32 {
     const a = 1.70158;
     const b = a + 1.0;

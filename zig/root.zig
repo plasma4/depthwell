@@ -10,9 +10,9 @@ pub const is_debug = builtin.is_test or builtin.mode == .Debug;
 pub const memory = @import("memory.zig");
 pub const startup = @import("startup.zig");
 
-// The width of the screen for the internal viewport. Normalized to 0-1 before being used in WGSL.
+// The width of the screen for the internal viewport. Normalized to 0-1 before being used in WebGPU.
 pub const SCREEN_WIDTH = 480;
-// The height of the screen for the internal viewport. Normalized to 0-1 before being used in WGSL.
+// The height of the screen for the internal viewport. Normalized to 0-1 before being used in WebGPU.
 pub const SCREEN_HEIGHT = 270;
 // Half the internal viewport width.
 pub const SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
@@ -92,7 +92,7 @@ var debug_recursively_increase_depth = false;
 
 pub export fn tick(speed: f64, iterations: u32) void {
     var buffer: inventory.SlotBuffer = undefined;
-    const active_slots = inventory.getActiveSlots(&buffer);
+    const active_slots = inventory.getSpritesInInventory(&buffer);
 
     // handles M and 0 cases, see code in function for details
     if (KeyBits.isSet(KeyBits.inventory_up, memory.game.keys_pressed_mask)) inventory.selected_row -|= 1;

@@ -234,7 +234,7 @@ Here is their definition:
 /// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
 pub const Entity = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
-    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue, in radians) and C (chroma) are shifted additively.
     lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
 
@@ -255,7 +255,7 @@ pub const Entity = struct {
 /// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
 pub const WGSLEntity = extern struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
-    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue) and C (chroma) are shifted additively in radians.
     lcha: @Vector(4, f32) align(16),
 

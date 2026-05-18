@@ -484,7 +484,7 @@ fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: root.memory.Block, po
 /// Configuration for drawing a number.
 pub const TextConfig = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
-    /// L (lightness) and alpha components are multiplied by the sprite's color in WGSL.
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue, in radians) and C (chroma) are shifted additively.
     lcha: @Vector(4, f32) = memory.DEFAULT_ENTITY_LCHA,
     /// The font size of the text.
