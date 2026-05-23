@@ -62,7 +62,7 @@ pub export fn prepareVisibleData(time_interpolated: f64, time_diff: f64, canvas_
 }
 
 pub export fn getTilesPerRow() u32 {
-    return 8; // Sprites are saved as a .png in a sprite sheet 128 pixels wide, and each asset is 16x16.
+    return 8; // Sprites are saved as a .png in a sprite sheet 128 pixels wide, and each individual sprite is 16x16.
 }
 pub export fn getTilesPerColumn() u32 {
     return sprite.max_sprite_value / 8 + 1; // works out from 0-indexing
@@ -81,6 +81,9 @@ pub export fn getGemMaskStart() u32 {
 }
 pub export fn getDecorStart() u32 {
     return @intCast(@intFromEnum(Sprite.spiral_plant));
+}
+pub export fn getWaterStart() u32 {
+    return @intCast(@intFromEnum(Sprite.water));
 }
 
 pub export fn handleMouse(mouse_x: f64, mouse_y: f64, action: u32) void {
@@ -298,7 +301,7 @@ comptime {
 /// Custom override panic function that calls `logger.err()` and either traps or aborts the process.
 pub const panic = std.debug.FullPanic(customPanic);
 
-pub fn customPanic(msg: []const u8, ret_addr: ?usize) noreturn {
+fn customPanic(msg: []const u8, ret_addr: ?usize) noreturn {
     if (ret_addr) |addr| {
         logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });
     } else logger.err(@src(), "PANIC: {s}", .{msg});

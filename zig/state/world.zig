@@ -859,8 +859,8 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     const chunk_seeds = quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth));
 
     const seeds = memory.game.seed2;
-    const seed_vec1: memory.Vec2u = seeds[0..2].*;
-    const seed_vec2: memory.Vec2u = seeds[2..4].*;
+    // const seed_vec1: memory.Vec2u = seeds[0..2].*;
+    // const seed_vec2: memory.Vec2u = seeds[2..4].*;
     const seed_vec3: memory.Vec2u = seeds[4..6].*;
     const seed_vec4: memory.Vec2u = seeds[6..8].*;
     const seed_vec5: memory.Vec2u = seeds[8..10].*;
@@ -888,8 +888,6 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
             }
 
             const base_data = procedural.getBaseSpriteType(
-                seed_vec1,
-                seed_vec2,
                 @intCast(cx),
                 @intCast(cy),
                 @intCast(block_x),
@@ -905,6 +903,9 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
                 @intCast(cx * 16 + block_x),
                 @intCast(cy * 16 + block_y),
             );
+            // if (procedural.getStructureBlock(block_x, block_y, seeds[12..14].*)) |sp| {
+            //     sprite = sp;
+            // }
 
             chunk.blocks[id] = Block.makeBasicBlock(
                 sprite,
@@ -934,6 +935,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
     const is_base = (depth == STARTING_ZOOM_TIMES);
     const seeds = memory.game.seed2;
 
+    // TODO: optimize using cached orthogonal chunks if they exist by checking caches
     // Fill the 1-pixel border (72 pixels total)
     var hy: i32 = -1;
     while (hy <= CHUNK_SIZE) : (hy += 1) {
@@ -952,23 +954,27 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
             halo[@intCast(hy + 1)][@intCast(hx + 1)] = if (is_base) blk: {
                 const abs_nc = target_nc.suffix;
                 const base_data = procedural.getBaseSpriteType(
-                    seeds[0..2].*,
-                    seeds[2..4].*,
                     @intCast(abs_nc[0]),
                     @intCast(abs_nc[1]),
                     lx,
                     ly,
                 );
                 var s = base_data.sprite;
-                if (s.isStone()) s = procedural.addOres(
-                    base_data,
-                    seeds[4..6].*,
-                    seeds[6..8].*,
-                    seeds[8..10].*,
-                    seeds[10..12].*,
-                    @intCast(abs_nc[0] * 16 + lx),
-                    @intCast(abs_nc[1] * 16 + ly),
-                );
+                if (procedural.addStructures(lx, ly, seeds[12..14].*)) |sp| {
+                    s = sp;
+                }
+
+                // optimization play: ores only changes from solid-type to solid-type
+                // so this doesn't affect edge flags!
+                // if (s.isStone()) s = procedural.addOres(
+                //     base_data,
+                //     seeds[4..6].*,
+                //     seeds[6..8].*,
+                //     seeds[8..10].*,
+                //     seeds[10..12].*,
+                //     @intCast(abs_nc[0] * 16 + lx),
+                //     @intCast(abs_nc[1] * 16 + ly),
+                // );
                 break :blk s;
             } else root.ancestor.getInheritedMaterial(
                 target_nc.asDepthCoordinate(depth),
@@ -1317,7 +1323,6 @@ pub fn clearCaches(comptime clear_ancestors: bool) void {
 /// `bx` and `by` represent the specific block within a chunk the zoom should be in.
 pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
-    const old_quadrant = memory.game.player_quadrant;
     clearCaches(true);
     memory.game.depth += 1;
     const depth = memory.game.depth;
@@ -1354,12 +1359,12 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         memory.game.player_chunk = target_coord.suffix;
         memory.game.player_quadrant = target_coord.quadrant;
 
-        // Max possible suffix is now reached at depth 32 (64 bits).
+        // Max possible suffix is reached at depth 32 (64 bits).
         max_possible_suffix = getMaxSuffixAtDepth(depth);
         return;
     }
 
-    // identify bits for rebasing...
+    // Rebase case logic (depth > HORIZON_DEPTH)
     const shift = 64 - memory.ZOOM_LOG2;
     const top_x = coord.suffix[0] >> shift;
     const top_y = coord.suffix[1] >> shift;
@@ -1389,7 +1394,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         const cell_x = left_cell_x + utils.intFromBool(u64, q_id % 2 == 1);
         const cell_y = top_cell_y + utils.intFromBool(u64, q_id >= 2);
         const old_q_id = utils.intFromBool(usize, cell_x >= ZOOM_FACTOR) + utils.intFromBool(usize, cell_y >= ZOOM_FACTOR) * 2;
-        quad_cache.path_hashes[q_id] = seeding.mixCoordinateSeed(&old_hashes[old_q_id], cell_x % ZOOM_FACTOR, cell_y % ZOOM_FACTOR, depth);
+        quad_cache.path_hashes[q_id] = seeding.mixCoordinateSeed(&old_hashes[old_q_id], @intCast(cell_x % ZOOM_FACTOR), @intCast(cell_y % ZOOM_FACTOR), depth);
     }
 
     const path_start_depth = memory.HORIZON_DEPTH + 1;
@@ -1425,6 +1430,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
     memory.game.player_chunk = target_coord.suffix;
     memory.game.player_quadrant = target_coord.quadrant;
+    max_possible_suffix = std.math.maxInt(u64);
 
     const target_horizon_depth = depth - memory.HORIZON_DEPTH;
     if (target_horizon_depth >= STARTING_ZOOM_TIMES) {
@@ -1478,7 +1484,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                         next_materials[y_idx][x_idx] = root.ancestor.getInheritedMaterial(child_key, local_bx, local_by);
                     } else {
                         const p = root.ancestor.getParentInfo(child_key, local_bx, local_by);
-                        const p_qx_128: i128 = p.coord.quadrant % 2;
+                        const p_qx_128: i128 = p.coord.quadrant % 2; // TODO: u64-ify this instead
                         const p_qy_128: i128 = p.coord.quadrant / 2;
                         const diff_chunk_x: i64 = @intCast(((p_qx_128 << shift_amt) |
                             @as(i128, p.coord.suffix[0])) - ((old_qx << shift_amt) |
@@ -1487,8 +1493,8 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                             @as(i128, p.coord.suffix[1])) - ((old_qy << shift_amt) |
                             @as(i128, old_trace_coord.suffix[1])));
 
-                        const p_x_idx = diff_chunk_x * 16 + @as(i64, p.bx) - @as(i64, old_t_bx) + 1 + @as(i64, old_quadrant % 2);
-                        const p_y_idx = diff_chunk_y * 16 + @as(i64, p.by) - @as(i64, old_t_by) + 1 + @as(i64, old_quadrant / 2);
+                        const p_x_idx = diff_chunk_x * 16 + @as(i64, p.bx) - @as(i64, old_t_bx) + 1 + @as(i64, memory.game.player_quadrant % 2);
+                        const p_y_idx = diff_chunk_y * 16 + @as(i64, p.by) - @as(i64, old_t_by) + 1 + @as(i64, memory.game.player_quadrant / 2);
 
                         var parent_block: Block = .empty;
                         var p_neighbors: [8]Block align(8) = [_]Block{.empty} ** 8;
@@ -1516,6 +1522,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                             }
                         }
 
+                        // keep tracing the materials back...
                         next_materials[y_idx][x_idx] = root.ancestor.applyAncestorLogic(
                             parent_block,
                             p_neighbors,

@@ -632,10 +632,12 @@ fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
     }
 }
 
-/// Adds a single entity to the `entities` array, changing position to use UV.
-/// Modifies the original entity instance. Does not do anything if the sprite type is `none`.
+/// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
+/// No-op if the sprite type is `none`.
 pub inline fn addEntity(entity: Entity) void {
     entity_count += 1;
+    const id = @intFromEnum(entity.sprite);
+    if (entity.sprite.isEmpty()) return;
     const wgsl_entity = memory.scratchAllocType(WGSLEntity, &entity_byte_count_before_end);
     wgsl_entity.* = .{
         .lcha = entity.lcha,
@@ -646,7 +648,7 @@ pub inline fn addEntity(entity: Entity) void {
             entity.size / root.SCREEN_HEIGHT,
         },
         .rotation = entity.rotation,
-        .id = @intFromEnum(entity.sprite),
+        .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else id,
     };
     // root.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
 }

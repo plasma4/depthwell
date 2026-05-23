@@ -12,6 +12,10 @@ const ORE_START: u32 = /* ORE_START */ 1 /* ORE_START */;
 const GEM_START: u32 = /* GEM_START */ 1 /* GEM_START */;
 const GEM_MASK_START: u32 = /* GEM_MASK_START */ 1 /* GEM_MASK_START */;
 const DECOR_START: u32 = /* DECOR_START */ 1 /* DECOR_START */;
+const WATER_START: u32 = /* WATER_START */ 1 /* WATER_START */;
+
+const PI = radians(180.0);
+const TAU = radians(360.0);
 
 const TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
 const HP_SAMPLE_START = GEM_MASK_START + 8; // there are 8 gem masks and 16 HP masks
@@ -214,7 +218,8 @@ fn vs_tile(
 @fragment
 fn fs_main(in: TileOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
-    let id = in.sprite_id & 65535;
+    let id = in.sprite_id /* & 65535 */;
+    if id == WATER_START || id == WATER_START + 1u { return water_body(in); }
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
     if in.edge_flags != 0xFFu {
@@ -614,6 +619,88 @@ fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 
     );
 
     return max(max(edge_darkenings.x, edge_darkenings.y), max(edge_darkenings.z, edge_darkenings.w));
+}
+
+// World-space pixel coordinate of this fragment (floating point, any value)
+fn water_world(in: TileOutput) -> vec2f {
+    return vec2f(in.tile_coords) * TILE_SIZE + in.local_uv * TILE_SIZE;
+}
+
+// Shared base LCH that cycles hue between teal and blue
+fn water_base_lch(t: f32) -> vec3f {
+    // sin has period 2π/0.12 ≈ 52 s; H sweeps ±0.85 rad around 3.35 (≈192°, blue-teal)
+    let H = 3.35 + sin(t * 0.12) * 0.85;
+    return vec3f(0.42, 0.12, H);
+}
+
+// Two crossing diagonal caustic streaks → additive brightness scalar [0, ~0.46]
+fn water_caustics(world: vec2f, t: f32) -> f32 {
+    // Layer A: two near-frequency waves on same diagonal interference bands
+    let d_a = world.x * 0.906 - world.y * 0.423;
+    let a1 = sin((d_a + t * 30.0) / 44.0 * TAU) * 0.5 + 0.5;
+    let a2 = sin((d_a + t * 26.0) / 40.0 * TAU) * 0.5 + 0.5;
+    let band_a = pow(a1 * a2, 2.5) * 0.55;
+
+    // Layer B: crossing direction, slower, creates the diamond mesh
+    let d_b = world.x * 0.643 - world.y * -0.766;
+    let b1 = sin((d_b + t * 14.0) / 32.0 * TAU) * 0.5 + 0.5;
+    let b2 = sin((d_b + t * 11.0) / 28.0 * TAU) * 0.5 + 0.5;
+    let band_b = pow(b1 * b2, 3.0) * 0.35;
+
+    // pixelate
+    let px_world = floor(world);
+    let d_px_a = px_world.x * 0.906 + px_world.y * 0.423;
+    let pixel_a = pow(max(0.0, sin((d_px_a + t * 30.0) / 44.0 * TAU)), 4.0) * 0.2;
+
+    return band_a + band_b + pixel_a;
+}
+
+fn water_shimmer(world: vec2f, t: f32, speed: f32, density: f32) -> f32 {
+    // Bubbles rise at ~20px/s; x is stable per column, y drifts up
+    let risen_y = world.y - t / 50.0; // TODO fix
+    let cell = vec2u(
+        u32(abs(floor(world.x))),
+        u32(abs(floor(risen_y))),
+    );
+    let h = murmurmix32((cell.x * 2654435761u) ^ murmurmix32(cell.y * 2246822519u));
+    // Additional horizontal wobble using a slower hash
+    let wobble_h = murmurmix32(cell.y * 1234567u);
+    let wobble = (f32(wobble_h & 15u) - 7.5) / 7.5; // ±1.0
+    let cell_x_wobbled = u32(abs(floor(world.x + wobble)));
+    let h2 = murmurmix32((cell_x_wobbled * 2654435761u) ^ murmurmix32(cell.y * 2246822519u));
+
+    let off = f32(h2 >> 8u) / 16777216.0;
+    let phase = fract(off + t * speed);
+    return step(1.0 - density, phase);
+}
+
+// Procedural effect for all but the top water sprite
+fn water_body(in: TileOutput) -> vec4f {
+    let world = water_world(in);
+    let t = scene.time;
+
+    var lch = water_base_lch(t);
+
+    // Depth gradient: lighter near y=0 (surface), darker going down.
+    // world.y increases downward in your coordinate system.
+    // Tune the divisor to match how tall your water bodies typically are.
+    let depth_t = clamp(world.y / 192.0, 0.0, 1.0); // 192px ≈ 12 tiles deep
+    lch.x = mix(0.52, 0.34, depth_t);   // light surface → dark deep
+    lch.y = mix(0.10, 0.14, depth_t);   // slightly more saturated deep
+
+    // Horizontal color band (Celeste's characteristic depth striping)
+    // A slow vertical sine adds subtle banding that shifts over time
+    let band_t = sin(world.y / 24.0 + t * 0.4) * 0.5 + 0.5;
+    lch.x += band_t * 0.04;
+
+    let caustic = water_caustics(world, t);
+    lch.x = clamp(lch.x + caustic, 0.26, 0.90);
+    lch.y = clamp(lch.y + caustic * 0.10, 0.04, 0.28);
+
+    lch.x += water_shimmer(world, t, 1.4, 0.025) * 0.18;
+
+    let rgb = oklab_to_linear_srgb(oklch_to_oklab(lch));
+    return vec4f(apply_color_management(rgb), 0.8);
 }
 
 /*

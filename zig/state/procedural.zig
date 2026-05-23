@@ -7,9 +7,7 @@ const memory = root.memory;
 const seeding = root.seeding;
 const world = root.world;
 
-/// Represents 2^32.
-const POW_2_32 = 4294967296;
-const POW_2_64 = seeding.POW_2_64;
+const POW_2_32 = seeding.POW_2_32;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 
 const Sprite = root.Sprite;
@@ -28,9 +26,9 @@ pub const fbm_scale = TuningFloat(1.0);
 pub const density_min = TuningFloat(0.32);
 pub const density_max = TuningFloat(0.9);
 
-/// Returns a struct with an extractable `value: f64` and `getF32()` functions.
-/// Allows for types to act like variables in Debug mode and constant-fold in all Release modes.
-fn TuningFloat(comptime default_value: f64) type {
+/// Returns a struct with an a `value: f64` and `getF32()`.
+/// Allows for numbers to act like variables in Debug mode and constant-fold in all Release modes.
+inline fn TuningFloat(comptime default_value: f64) type {
     if (root.is_debug) {
         return struct {
             pub var value: f64 = default_value;
@@ -48,7 +46,9 @@ fn TuningFloat(comptime default_value: f64) type {
     }
 }
 
-fn TuningBool(comptime default_value: bool) type {
+/// Returns a struct with an a `value: bool`. (TODO: switch to using this instead of current heatmap logic)
+/// Allows for booleans to act like variables in Debug mode and dead code elimination in all Release modes.
+inline fn TuningBool(comptime default_value: bool) type {
     if (root.is_debug) {
         return struct {
             pub var value: bool = default_value;
@@ -80,17 +80,51 @@ const BaseTerrainData = struct {
     density: f32,
 };
 
+/// Adds larger structures across multiple blocks in a deterministic fashion. Water is a structure.
+/// Continues from steps 1-3 in `getBaseSpriteType()`.
+///
+/// 4. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
+pub fn addStructures(wx: u32, wy: u32, struct_seed: Vec2u) ?Sprite {
+    // Can we PROVE that getBaseSpriteType() will return the same moisture (biome) within a certain region in reasonable time?
+    // Or, very high odds of correctness through heuristic? Must factor in FBM. Can combine moisture AND density.
+    // TODO: figure out a reliable algorithm for this that's performant...perhaps a method that gets a "ring" around the blocks
+    // Can use some sort of rolling SimBuffer cache; testing indicates a max budget of no more than 4 getBaseSpriteType() calls is acceptable.
+    // Ideally, only 1 or 2; already almost 50% to performance constraints on lower-end devices.
+
+    // If so, we use a seed with a certain pre-determined area or block size to flatten to build structures on.
+    // We may need to do some algorithm adjustment.
+    _ = .{ wx, wy, struct_seed };
+    return null;
+}
+
+// fn isValidPlacement(ox: u32, oy: u32) bool {
+//     // check ground first
+//     if (getBaseSpriteType(
+//         ox / 16,
+//         oy / 16,
+//         @intCast(ox % 16),
+//         @intCast(oy % 16),
+//     ).sprite.isEmpty()) {
+//         return false;
+//     }
+//     return true;
+// }
+
 /// Generates a block for seeding (based on previous procedural generation logic).
 /// The terms moisture/density are used extremely loosely here.
+/// Moisture is over a larger area, acting as the "biome" for structure logic.
 pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
     // check is_debug because these will always be off in non-dev
     // sprite IDs in this range create a heatmap
-    if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(density * 256.0)));
+    if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
+        return @enumFromInt(65000 + @as(u20, @intFromFloat(moisture * 256.0)));
     if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
-    if (moisture < 0.12) {
-        return .water; // TODO: make more robust
-    } else if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
+    // if (moisture <= 0.12) {
+    //     return .water; // TODO: improve
+    // }
+
+    if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
         return .blue_strange_stone;
     } else if (density <= density_min.getF32() or density >= density_max.getF32()) {
         return if (moisture >= 0.93 and moisture <= 0.97) .purple_strange_stone else .none;
@@ -101,7 +135,8 @@ pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
     if (moisture >= 0.50 and density <= 0.53 and density <= 0.6) return .green_stone;
 
     if (moisture >= 0.58 and density >= 0.83) return .seagreen_stone;
-    if (moisture <= 0.65 and density >= 0.60 and density <= 0.65) return .blue_stone;
+    if (moisture <= 0.65 and density >= 0.60 and density <= 0.7) return .blue_stone;
+    if (density >= 0.40 and density <= 0.55) return .contrast_blue_stone;
 
     if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
     if (moisture >= 0.98) return .old_stone;
@@ -113,27 +148,26 @@ pub inline fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
 /// 1. Generate an initial terrain density+moisture value using the seed vectors.
 /// 2. Generate a block from those values.
 /// 3. Generates larger structures with FBM Worley and valid placement checks.
-pub fn getBaseSpriteType(
-    vec1: Vec2u,
-    vec2: Vec2u,
+pub inline fn getBaseSpriteType(
     chunk_x: u32,
     chunk_y: u32,
     block_x: u4,
     block_y: u4,
 ) BaseTerrainData {
-    std.debug.assert(chunk_x < 1 << 16 and chunk_y < 1 << 16); // reasonable values
     const moisture = getFbmWorleyValue( // acts as a biome
-        vec2,
+        memory.game.seed2[0..2].*, // code is INLINED, so this is okay presumably
+        // .{ 0, 0 },
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
         .{
             .cell_size = 400.0, // very LARGE cells for biome generation
-            .fbm_shift_size = 160.0,
+            .fbm_shift_size = 260.0,
             .horizontally_wide = false,
         },
     );
     const density = getFbmWorleyValue(
-        vec1,
+        memory.game.seed2[2..4].*,
+        // .{ 0, 0 },
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
         .{
@@ -236,6 +270,7 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
     }
 
     if (options.use_f2_f1) {
+        // clamp necessary
         return @min((@sqrt(d2_sq) - @sqrt(d1_sq)) / cell_size, 1.0);
     } else {
         return @min(@sqrt(d1_sq) / cell_size, 1.0);
@@ -277,9 +312,9 @@ fn getDualValueNoise(seed: Vec2u, x: u64, y: u64) memory.Vec2f32 {
 }
 
 /// Generates ores over certain types of blocks, returning a sprite type (possibly changed to an ore type).
-/// Continues from steps 1-3 in `getBaseSpriteType()`.
+/// Continues from step 4 in `getStructureBlock()`.
 ///
-/// 4. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
+/// 5. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
 pub fn addOres(
     base_data: BaseTerrainData,
     seed_vector_1: Vec2u,
@@ -413,7 +448,8 @@ const SpritePair = struct { Sprite, Sprite };
 
 /// Reads like a sentence: returns the new sprite if condition holds and v is between min and max, but the old sprite otherwise.
 ///
-/// Technical definition: returns the second `Sprite` in the pair if `condition` is satisfied `range[0]` falls within `range[1]`, and the first `Sprite` otherwise.
+/// Technical definition: returns the second `Sprite` in the pair if `condition` is satisfied `range[0]` falls within `range[1]`.
+/// Returns the first `Sprite` otherwise.
 ///
 /// Example usage:
 /// ```zig
@@ -440,19 +476,53 @@ pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
 }
 
 /// Generates decorative blocks (such as mushrooms or ceiling plants).
-/// Continues from step 4 in `addOres()`.
+/// Continues from step 5 in `addOres()`.
 ///
-/// 5. Adds decorative blocks.
+/// 6. Adds decorative blocks.
 pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void {
     // Extra decor passes (doesn't worry about cross-chunk sadly)
     for (0..CHUNK_SIZE) |block_y| {
+        var forced_next_sprite_type: Sprite = .none; // .none means nothing is forced
         for (0..CHUNK_SIZE) |block_x| {
             const id = block_x + block_y * CHUNK_SIZE;
             var block = &target_chunk.blocks[id];
+            if (forced_next_sprite_type != .none) {
+                // semantically .none makes sense rather than .empty
+                block.id = forced_next_sprite_type;
+                forced_next_sprite_type = .none;
+                continue;
+            }
+
             if (!block.isEmpty()) continue;
             if (block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
                 const val = rng1.next();
-                if (val <= oddsNum(0.2)) {
+                const is_left = block_x % 2 == 0;
+
+                if (is_left) {
+                    // returns Z+1 if Z is even and Z-1 if Z is odd
+                    const other_block_x = block_x ^ 1; // guaranteed to be from 0-15, no OOB block x
+
+                    // Only if the other block is also empty AND can have a decor do we create a 2x1 decor sprite!
+                    const other_block = &target_chunk.blocks[other_block_x + block_y * CHUNK_SIZE];
+                    if (other_block.isEmpty() and other_block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
+                        if (val >= oddsNum(0.94)) {
+                            // we are modifying the block on the left. force the block to the right's type as well
+                            block.id = .big_tree1_left;
+                            forced_next_sprite_type = .big_tree1_right;
+                        } else if (val >= oddsNum(0.9)) {
+                            block.id = .big_tree2_left;
+                            forced_next_sprite_type = .big_tree2_right;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (val <= oddsNum(0.03)) {
+                    block.id = .bush;
+                } else if (val <= oddsNum(0.1)) {
+                    block.id = .rock;
+                } else if (val <= oddsNum(0.2)) {
                     block.id = .mushroom;
                 }
             }

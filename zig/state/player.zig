@@ -83,20 +83,20 @@ pub fn move(logic_speed: f64) void {
     if (KeyBits.isSet(KeyBits.left, game.keys_held_mask)) move_input -= PLAYER_BASE_SPEED;
     if (KeyBits.isSet(KeyBits.right, game.keys_held_mask)) move_input += PLAYER_BASE_SPEED;
 
-    const f_x = 1.0 - FRICTION_X;
-    const f_y = 1.0 - FRICTION_Y;
-    const pow_fx = std.math.pow(f64, f_x, dt);
-    const pow_fy = std.math.pow(f64, f_y, dt);
+    const x_mult = 1.0 - FRICTION_X;
+    const y_mult = 1.0 - FRICTION_Y;
+    const pow_fx = std.math.pow(f64, x_mult, dt);
+    const pow_fy = std.math.pow(f64, y_mult, dt);
 
     // Update x-velocity
     game.player_velocity[0] = game.player_velocity[0] * pow_fx;
     if (FRICTION_X < 1e-4) {
         // maybe there's a better alternative to this? to find in the future, maybe
         game.player_velocity[0] +=
-            move_input * f_x;
+            move_input * x_mult;
     } else {
         game.player_velocity[0] +=
-            (move_input * f_x * (1.0 - pow_fx) / FRICTION_X);
+            (move_input * x_mult * (1.0 - pow_fx) / FRICTION_X);
     }
 
     // Update y velocity with gravity
@@ -106,7 +106,7 @@ pub fn move(logic_speed: f64) void {
         coyote_frames = 0;
     } else {
         game.player_velocity[1] = game.player_velocity[1] * pow_fy;
-        game.player_velocity[1] += if (FRICTION_Y < 1e-4) GRAVITY * f_y else ((GRAVITY * f_y * (1.0 - pow_fy) / FRICTION_Y));
+        game.player_velocity[1] += if (FRICTION_Y < 1e-4) GRAVITY * y_mult else ((GRAVITY * y_mult * (1.0 - pow_fy) / FRICTION_Y));
     }
 
     // Physics displacement using average velocity!

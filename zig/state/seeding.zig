@@ -6,8 +6,11 @@ const logger = root.logger;
 const memory = root.memory;
 const testing = std.testing;
 
+/// Represents 2^32.
+pub const POW_2_32 = 4294967296;
 /// Represents 2^64.
 pub const POW_2_64 = 18446744073709551616;
+
 const Vec2u = memory.Vec2u;
 
 /// A 512-bit seed state (useful for hashing and procedural generation).

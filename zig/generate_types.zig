@@ -80,7 +80,7 @@ pub fn main(init: std.process.Init) !void {
         // Extract all functions from root.zig. (ALL functions from root.zig should be marked as "pub".)
         if (@typeInfo(T) == .@"fn") {
             const fn_info = @typeInfo(T).@"fn";
-            if (!std.mem.eql(u8, struct_declaration.name, "panic")) {
+            if (!(std.mem.eql(u8, struct_declaration.name, "panic") or std.mem.eql(u8, struct_declaration.name, "GenerateOffsets"))) {
                 try writer.print("\n    readonly {s}: (", .{struct_declaration.name});
 
                 inline for (fn_info.params, 0..) |param, i| {

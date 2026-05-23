@@ -8,22 +8,30 @@ const procedural = root.procedural;
 /// Index where stone-like sprites begin.
 const STONE_START = 4;
 /// Index where stone-like sprites end.
-const STONE_END = STONE_START + 10;
+const STONE_END = STONE_START + 11;
 
 /// Index where ore sprites begin.
 const ORE_START = STONE_END + 4;
 
 /// Index where gem sprites begin.
-const GEM_START = ORE_START + 4;
+pub const GEM_START = ORE_START + 4;
+
+/// Number of gem sprites.
+pub const GEM_COUNT = 4;
 
 /// Index where gem masks (not gem sprites) begin.
-const MASK_START = GEM_START + 4;
+const MASK_START = GEM_START + GEM_COUNT * 2;
 /// Index after the HP mask ends, and decorations begin.
 /// Between `MASK_START` and `MASK_END` are 8 ore masks and 16 HP masks.
 const DECOR_START = MASK_START + 24;
 
+/// Number of fruit sprites.
+const FRUIT_COUNT = 10;
+/// ID for `Sprite.gear`, which is after 10 fruit.
+const GEAR_ID = DECOR_START + 7 + FRUIT_COUNT;
+
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = DECOR_START + 14;
+pub const INVENTORY_START = GEAR_ID + 15;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 3;
 
@@ -42,6 +50,7 @@ pub const Sprite = enum(u16) {
     blue_strange_stone = STONE_START,
     purple_strange_stone,
     blue_stone,
+    contrast_blue_stone,
     red_stone,
     seagreen_stone,
     green_stone,
@@ -62,22 +71,40 @@ pub const Sprite = enum(u16) {
     amethyst = GEM_START,
     sapphire,
     emerald,
-    ruby = MASK_START - 1,
+    ruby,
 
     // Internal assets (not valid for placement/foundation)
     gem_mask = MASK_START, // 8 masks
     hp_mask = MASK_START + 8, // 16 masks
 
     // Decor (THIS IS COUPLED TO WGSL CODE)
-    spiral_plant = DECOR_START,
-    ceiling_flower = DECOR_START + 1, // 2 variations
-    mushroom = DECOR_START + 3, // 3 variations
-    big_mushroom = DECOR_START + 6, // 3 variations
-    forest_furnace = DECOR_START + 9,
-    lava_furnace = DECOR_START + 10,
+    rock = DECOR_START,
+    bush,
+    small_tree,
+    big_tree1_left,
+    big_tree1_right,
+    big_tree2_left,
+    big_tree2_right,
+    fruit_blue_lemon = GEAR_ID - FRUIT_COUNT,
+    fruit_teal_lemon,
+    fruit_splitty,
+    fruit_ruby_candy,
+    copperfruit,
+    ploopus1,
+    ploopus2,
+    divato,
+    circuspin,
+    bacon,
+    gear = GEAR_ID,
+    spiral_plant = GEAR_ID + 1,
+    ceiling_flower = GEAR_ID + 2, // 2 variations
+    mushroom = GEAR_ID + 4, // 3 variations
+    big_mushroom = GEAR_ID + 7, // 3 variations
+    forest_furnace = GEAR_ID + 10,
+    lava_furnace = GEAR_ID + 11,
     torch,
     chest,
-    portal,
+    portal = INVENTORY_START - 1,
 
     /// Unselected inventory sprite.
     inventory = INVENTORY_START,
@@ -95,8 +122,8 @@ pub const Sprite = enum(u16) {
     pickaxe,
     /// Generic water block (filled). Default internal water type.
     water,
-    // Generic water block (top, with small waves) is the ID afterward.
-    // That gets processed and added in chunk.zig.
+    /// Generic water block (top, with small waves). This gets processed and added in chunk.zig.
+    water_wavy,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
     unselected = 65535,
@@ -118,12 +145,23 @@ pub const Sprite = enum(u16) {
         // do note that heatmap isn't valid
         return switch (self) {
             .none,
+
+            .rock,
+            .bush,
+            .small_tree,
+            .big_tree1_left,
+            .big_tree1_right,
+            .big_tree2_left,
+            .big_tree2_right,
+
             .spiral_plant,
             .ceiling_flower,
             .mushroom,
             .big_mushroom,
+
             .forest_furnace,
             .lava_furnace,
+
             .torch,
             .chest,
             .water,
@@ -135,7 +173,7 @@ pub const Sprite = enum(u16) {
 
                 const id = @intFromEnum(self);
                 return (id >= STONE_START and id <= STONE_END) or
-                    (id >= ORE_START and id < MASK_START);
+                    (id >= ORE_START and id < GEM_START + GEM_COUNT) or (id >= GEAR_ID - FRUIT_COUNT and id < GEAR_ID);
             },
         };
     }

@@ -10,6 +10,7 @@ import SHADER_SOURCE from "./shader.wgsl?raw"; // sadly not possible to use .DEV
 import SPRITE_SHEET_URL from "./assets/main.png?url";
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_MASK_URL from "./assets/mainMasked.png?url";
+import { CONFIG } from "./main";
 
 /** Creates a new GameEngine, sets up WebGPU shaders, and calls init() from Zig. */
 export async function create(
@@ -144,6 +145,11 @@ export async function create(
     const memory = exports.memory as WebAssembly.Memory;
 
     // Make the shader!
+    if (CONFIG.verbose) {
+        console.log(
+            `Tile size: ${exports.getTilesPerRow()}x${exports.getTilesPerColumn()}`,
+        );
+    }
     const shaderModule = device.createShaderModule({
         label: "Main shader",
         // constant patching, basically override keyword in WGSL
@@ -174,6 +180,10 @@ export async function create(
             .replace(
                 "/* DECOR_START */ 1 /* DECOR_START */",
                 "" + exports.getDecorStart(),
+            )
+            .replace(
+                "/* WATER_START */ 1 /* WATER_START */",
+                "" + exports.getWaterStart(),
             ),
     });
 

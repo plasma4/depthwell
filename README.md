@@ -15,7 +15,9 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 ### Building
 
-Run `zig build` for the main build of Zig code, `zig test "zig/root.zig"` to run (all) tests, and `zig build -Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.) To build `node_modules`, run `npm install`.
+To build `node_modules`, run `npm install`.
+
+Run `zig build` to build Zig code and automatically update detect `main.aseprite` changes, `zig test "zig/root.zig"` to run (all) tests, and `zig build -Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
 
 Useful variables to customize include `CONFIG` in `src/main.ts`, `engine.wireframeOpacity`, `engine.baseSpeed`, and `zig/player.zig` config options.
 
