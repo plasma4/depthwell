@@ -167,6 +167,13 @@ export class GameEngine {
     // public LOGGING_PREFIX = location.origin + "/zig/";
     public LOGGING_PREFIX = "";
 
+    /** The Web Audio API context for sound effects. */
+    private audioCtx: AudioContext | null = null;
+    /** Cached sound effect audio buffers. */
+    private readonly audioBuffers = new Map<number, AudioBuffer>();
+    /** Outstanding loading promises for sound effects. */
+    private readonly audioLoading = new Map<number, Promise<AudioBuffer>>();
+
     public constructor(
         canvas: HTMLCanvasElement,
         adapter: GPUAdapter,
@@ -211,20 +218,27 @@ export class GameEngine {
     // GPU Textures/Tilemaps
     // -----
 
+    /** Loads the image URL to the WGSL device as a texture. */
     public static async loadTexture(
         device: GPUDevice,
         url: string,
+        format?: GPUTextureFormat, // Add optional format argument
     ): Promise<GPUTexture> {
         const response = await fetch(url);
         const blob = await response.blob();
         const imageBitmap = await createImageBitmap(blob);
 
+        // Fallback to canvas support defaults if no format is provided
+        const targetFormat =
+            format ||
+            (device.features.has("canvas-rgba16float-support")
+                ? "rgba16float"
+                : "bgra8unorm");
+
         const texture = device.createTexture({
             label: `Texture from ${url}`,
             size: [imageBitmap.width, imageBitmap.height],
-            format: device.features.has("canvas-rgba16float-support")
-                ? "rgba16float"
-                : "bgra8unorm",
+            format: targetFormat,
             usage:
                 GPUTextureUsage.TEXTURE_BINDING |
                 GPUTextureUsage.COPY_DST |
@@ -451,6 +465,99 @@ export class GameEngine {
                 ],
             });
         }
+    }
+
+    // -----
+    // Sound
+    // -----
+
+    /**
+     * Resolves and caches the AudioBuffer for a given sound effect ID.
+     */
+    private async getAudioBuffer(id: number): Promise<AudioBuffer> {
+        if (this.audioBuffers.has(id)) {
+            return this.audioBuffers.get(id)!;
+        }
+        if (this.audioLoading.has(id)) {
+            return this.audioLoading.get(id)!;
+        }
+
+        // Lazy initialize context safely
+        if (!this.audioCtx) {
+            this.audioCtx = new (
+                window.AudioContext || (window as any).webkitAudioContext
+            )();
+        }
+        const ctx = this.audioCtx;
+
+        const loadPromise = (async () => {
+            try {
+                const response = await fetch(`assets/mining${id}.mp3`);
+
+                if (!response.ok) {
+                    // Correct way to check for 404/500 errors
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const arrayBuffer = await response.arrayBuffer();
+                const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+                this.audioBuffers.set(id, audioBuffer);
+                return audioBuffer;
+            } catch (error) {
+                // cleanup!
+                this.audioLoading.delete(id);
+                throw error;
+            } finally {
+                this.audioLoading.delete(id);
+            }
+        })();
+
+        this.audioLoading.set(id, loadPromise);
+        return loadPromise;
+    }
+
+    /** Plays a sound effect with pitch and volume variation. */
+    public playSound(
+        id: number,
+        baseVolume: number,
+        volumeVariation: number,
+        pitchVariation: number,
+    ): void {
+        if (this.audioCtx && this.audioCtx.state === "suspended") {
+            this.audioCtx.resume();
+        }
+
+        this.getAudioBuffer(id)
+            .then((buffer) => {
+                const ctx = this.audioCtx!;
+                const source = ctx.createBufferSource();
+                source.buffer = buffer;
+                const gainNode = ctx.createGain();
+
+                // Apply volume variation within [1.0 - variation, 1.0 + variation]
+                const volFactor =
+                    1.0 + (Math.random() * 2 - 1) * volumeVariation;
+                gainNode.gain.setValueAtTime(
+                    Math.max(0, volFactor * baseVolume),
+                    ctx.currentTime,
+                );
+
+                // Apply random pitch (playbackRate) variation, same with volume
+                const pitchFactor =
+                    1.0 + (Math.random() * 2 - 1) * pitchVariation;
+                source.playbackRate.setValueAtTime(
+                    Math.max(0.05, pitchFactor),
+                    ctx.currentTime,
+                );
+
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                source.start(0);
+            })
+            .catch((err) => {
+                console.warn(`Could not play sound ${id}:`, err);
+            });
     }
 
     // -----

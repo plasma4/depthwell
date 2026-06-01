@@ -20,9 +20,8 @@ pub const GEM_START = ORE_START + 4;
 pub const GEM_COUNT = 4;
 
 /// Index where gem masks (not gem sprites) begin.
-const MASK_START = GEM_START + GEM_COUNT * 2;
+pub const MASK_START = GEM_START + GEM_COUNT * 2;
 /// Index after the HP mask ends, and decorations begin.
-/// Between `MASK_START` and `MASK_END` are 8 ore masks and 16 HP masks.
 const DECOR_START = MASK_START + 24;
 
 /// Number of fruit sprites.
@@ -35,8 +34,315 @@ pub const INVENTORY_START = GEAR_ID + 15;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 3;
 
-/// Sprite IDs with values based on their sprite sheet location
-/// Packed sprite sheet located at src/main.png.
+/// Hitbox geometry variants for various block shapes.
+pub const HitboxKind = enum(u3) {
+    full,
+    small_bottom_decor,
+    large_bottom_decor,
+    ceiling_decor,
+    thin_strip,
+};
+
+/// Consolidated properties of each sprite.
+pub const SpriteProps = struct {
+    in_world: bool = false,
+    item: bool = false,
+    solid: bool = false,
+    liquid: bool = false,
+    foundation: bool = false,
+    stone: bool = false,
+    ore: bool = false,
+    gem: bool = false,
+    strength: u64 = 0,
+    hitbox: HitboxKind = .full,
+    drops: []const Sprite = &.{},
+    evolves_to: ?Sprite = null,
+};
+
+/// Tightly packed 16-bit struct for high-performance, cache-friendly lookups.
+pub const SpriteFlags = packed struct(u16) {
+    in_world: bool = false,
+    item: bool = false,
+    solid: bool = false,
+    liquid: bool = false,
+    foundation: bool = false,
+    stone: bool = false,
+    ore: bool = false,
+    gem: bool = false,
+    hitbox: HitboxKind = .full,
+    padding: u5 = 0, // TODO: do we want this?
+};
+
+/// Targeting selector for assigning properties at comptime.
+const Target = union(enum) {
+    single: Sprite,
+    range: [2]Sprite,
+    list: []const Sprite,
+};
+
+/// Contains targets describing what to select and what SpriteProps to apply to them.
+const SpriteRule = struct {
+    Target, // unnamed tuples are cool
+    SpriteProps,
+};
+
+/// Centralized database describing all sprite properties.
+/// Rules are checked in order, with later rules overriding earlier ones.
+const rules = [_]SpriteRule{
+    // Stone blocks
+    .{
+        .{ .range = .{ .blue_strange_stone, .stone } },
+        .{
+            .in_world = true,
+            .item = true,
+            .solid = true,
+            .foundation = true,
+            .stone = true,
+            .strength = 15,
+        },
+    },
+    // Ores
+    .{
+        .{ .range = .{ .copper, .gold } },
+        .{
+            .in_world = true,
+            .item = true,
+            .solid = true,
+            .foundation = true,
+            .ore = true,
+            .strength = 30,
+        },
+    },
+    // Gems
+    .{
+        .{ .range = .{ .amethyst, .ruby } },
+        .{
+            .in_world = true,
+            .item = true,
+            .solid = true,
+            .foundation = true,
+            .gem = true,
+            .strength = 15,
+        },
+    },
+    // Edge stone
+    .{
+        .{ .single = .edge_stone },
+        .{ .solid = true },
+    },
+    // Normal decor
+    .{
+        .{ .list = &[_]Sprite{
+            .rock,           .bush,     .small_tree,   .spiral_plant,
+            .ceiling_flower, .mushroom, .big_mushroom, .forest_furnace,
+            .lava_furnace,   .torch,    .chest,        .portal,
+        } },
+        .{
+            .in_world = true,
+            .item = true,
+        },
+    },
+    // Non-item decor (corresponds to small_tree)
+    .{
+        .{ .list = &[_]Sprite{
+            .big_tree1_left,
+            .big_tree1_right,
+            .big_tree2_left,
+            .big_tree2_right,
+        } },
+        .{
+            .in_world = true,
+        },
+    },
+    // Solid interactive decor
+    .{
+        .{ .list = &[_]Sprite{
+            .forest_furnace,
+            .lava_furnace,
+        } },
+        .{ .solid = true },
+    },
+    // Liquids
+    .{
+        .{ .single = .water },
+        .{
+            .in_world = true,
+            .item = true,
+            .liquid = true,
+        },
+    },
+    // empty block
+    .{
+        .{ .single = .none },
+        .{ .in_world = true },
+    },
+    // Fruits
+    .{
+        .{
+            .range = .{ .fruit_blue_lemon, .bacon },
+        },
+        .{ .item = true },
+    },
+    // specific overrides
+    .{
+        .{ .single = .bush },
+        .{ .strength = 1 },
+    },
+    .{
+        .{ .single = .iron },
+        .{ .strength = 35 },
+    },
+    .{
+        .{ .single = .mushroom },
+        .{ .hitbox = .small_bottom_decor },
+    },
+    .{
+        .{ .single = .mossy_stone },
+        .{ .evolves_to = .spiral_plant },
+    },
+};
+
+/// Helper function to match target variants at compile time.
+fn matchesTarget(s: Sprite, target: Target) bool {
+    switch (target) {
+        .single => |t| return s == t,
+        .range => |r| {
+            const val = @intFromEnum(s);
+            const min_val = @min(@intFromEnum(r[0]), @intFromEnum(r[1]));
+            const max_val = @max(@intFromEnum(r[0]), @intFromEnum(r[1]));
+            return val >= min_val and val <= max_val;
+        },
+        .list => |list| {
+            for (list) |t| {
+                if (s == t) return true;
+            }
+            return false;
+        },
+    }
+}
+
+/// Recursively merges specified properties from `src` into the default/destination struct `dest`.
+fn mergeProps(dest: *SpriteProps, src: SpriteProps) void {
+    if (src.in_world) dest.in_world = src.in_world;
+    if (src.item) dest.item = src.item;
+    if (src.solid) dest.solid = src.solid;
+    if (src.liquid) dest.liquid = src.liquid;
+    if (src.foundation) dest.foundation = src.foundation;
+    if (src.stone) dest.stone = src.stone;
+    if (src.ore) dest.ore = src.ore;
+    if (src.gem) dest.gem = src.gem;
+    if (src.strength != 0) dest.strength = src.strength;
+    if (src.hitbox != .full) dest.hitbox = src.hitbox;
+    if (src.drops.len != 0) dest.drops = src.drops;
+    if (src.evolves_to != null) dest.evolves_to = src.evolves_to;
+}
+
+/// Evaluates compile-time rules to build properties for a specific `Sprite`.
+fn getPropsForSprite(comptime s: Sprite) SpriteProps {
+    @setEvalBranchQuota(70000);
+    var p = SpriteProps{};
+    for (rules) |rule| {
+        if (matchesTarget(s, rule[0])) {
+            mergeProps(&p, rule[1]);
+        }
+    }
+    if (is_debug and s == .inventory_selected_invalid) {
+        p.in_world = true;
+        p.item = true;
+    }
+    return p;
+}
+
+/// Maximum valid sprite ID (exclusive upper bound for dense table).
+pub const MAX_SPRITE_ID = blk: {
+    @setEvalBranchQuota(1000);
+    var max_val: u16 = 0;
+    const fields = @typeInfo(Sprite).@"enum".fields;
+
+    for (fields) |field| {
+        if (std.mem.eql(u8, field.name, "unselected")) continue;
+        if (field.value > max_val) {
+            if (field.value >= 60000)
+                @compileError("Sprite enum values must not be between the reserved range of 60000-65534.");
+            max_val = @intCast(field.value);
+        }
+    }
+    break :blk max_val + 1; // Make it an exclusive limit
+};
+
+/// Constant alias to map perfectly with older reference pointers.
+pub const max_sprite_value = MAX_SPRITE_ID - 1;
+
+/// Precomputed full SpriteProps LUT.
+const dense_props_table: [MAX_SPRITE_ID]SpriteProps = blk: {
+    @setEvalBranchQuota(20000);
+    var table: [MAX_SPRITE_ID]SpriteProps = undefined;
+
+    var i: u16 = 0;
+    while (i < MAX_SPRITE_ID) : (i += 1) {
+        const exists = blk2: {
+            const fields = @typeInfo(Sprite).@"enum".fields;
+            for (fields) |field| {
+                if (field.value == i) break :blk2 true;
+            }
+            break :blk2 false;
+        };
+
+        if (!exists) {
+            table[i] = SpriteProps{};
+            continue;
+        }
+
+        table[i] = getPropsForSprite(@enumFromInt(i));
+    }
+    break :blk table;
+};
+
+/// Precomputed compact `SpriteFlags` LUT.
+const dense_flags_table: [MAX_SPRITE_ID]SpriteFlags = blk: {
+    @setEvalBranchQuota(20000);
+    var table: [MAX_SPRITE_ID]SpriteFlags = undefined;
+
+    for (0..MAX_SPRITE_ID) |i| {
+        const p = dense_props_table[i];
+        table[i] = SpriteFlags{
+            .in_world = p.in_world,
+            .item = p.item,
+            .solid = p.solid,
+            .liquid = p.liquid,
+            .foundation = p.foundation,
+            .stone = p.stone,
+            .ore = p.ore,
+            .gem = p.gem,
+            .hitbox = p.hitbox,
+        };
+    }
+    break :blk table;
+};
+
+/// Sparse fallback values for `.unselected` (65535)
+const unselected_props = getPropsForSprite(.unselected);
+const unselected_flags = SpriteFlags{
+    .in_world = unselected_props.in_world,
+    .item = unselected_props.item,
+    .solid = unselected_props.solid,
+    .liquid = unselected_props.liquid,
+    .foundation = unselected_props.foundation,
+    .stone = unselected_props.stone,
+    .ore = unselected_props.ore,
+    .gem = unselected_props.gem,
+    .hitbox = unselected_props.hitbox,
+};
+
+/// Constant-time lookup of precomputed packed sprite flags. O(1) array access.
+pub inline fn getSpriteFlags(s: Sprite) SpriteFlags {
+    const val = @intFromEnum(s);
+    if (val < MAX_SPRITE_ID) return dense_flags_table[val];
+    if (s == .unselected) return unselected_flags;
+    return SpriteFlags{};
+}
+
+/// Sprite IDs with numbers based on their location in the sprite sheet.
 pub const Sprite = enum(u16) {
     /// Empty (air) sprite.
     none = 0,
@@ -58,7 +364,7 @@ pub const Sprite = enum(u16) {
     redder_stone,
     mossy_stone,
     old_stone,
-    /// "Plain" stone type, with 2x2 variations to prevent a tiling look.
+    /// "Plain" stone type, with 2x2 variations to prevent an overly tiling look.
     stone = STONE_END,
 
     // ores!
@@ -127,72 +433,42 @@ pub const Sprite = enum(u16) {
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
     unselected = 65535,
-
     _, // non-exhaustive for heatmaps
+
+    /// Retrieves the fully compile-time property data for this sprite.
+    pub inline fn props(self: @This()) SpriteFlags {
+        return getSpriteFlags(self);
+    }
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
     /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
     pub inline fn isFoundation(self: @This()) bool {
-        const id = @intFromEnum(self);
-        return id >= STONE_START and id < MASK_START;
+        return self.props().foundation;
     }
 
     /// Determines if the sprite's type is a valid block that could exist in any chunk.
+    /// Separate from `isItem()`.
     /// Includes the empty block, and excludes entities.
     ///
     /// If this code is wrong, invalid (or unnamed) enums may appear and wreak havoc.
-    pub fn isValid(self: @This()) bool {
-        // do note that heatmap isn't valid
-        return switch (self) {
-            .none,
+    pub inline fn isInWorld(self: @This()) bool {
+        return self.props().in_world;
+    }
 
-            .rock,
-            .bush,
-            .small_tree,
-            .big_tree1_left,
-            .big_tree1_right,
-            .big_tree2_left,
-            .big_tree2_right,
-
-            .spiral_plant,
-            .ceiling_flower,
-            .mushroom,
-            .big_mushroom,
-
-            .forest_furnace,
-            .lava_furnace,
-
-            .torch,
-            .chest,
-            .water,
-            .portal,
-            => true,
-            else => {
-                // may be used for testing visually, as it's a clean sprite
-                if (is_debug and self == .inventory_selected_invalid) return true;
-
-                const id = @intFromEnum(self);
-                return (id >= STONE_START and id <= STONE_END) or
-                    (id >= ORE_START and id < GEM_START + GEM_COUNT) or (id >= GEAR_ID - FRUIT_COUNT and id < GEAR_ID);
-            },
-        };
+    /// Determines if the sprite's type is something that could be in the player's inventory.
+    pub inline fn isItem(self: @This()) bool {
+        return self.props().item;
     }
 
     /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
     /// This returns true for edge stone, unlike `is_solid`.
-    pub fn isSolid(self: @This()) bool {
-        if (self == Sprite.none or self == .player) return false;
-        if (is_debug and self == .inventory_selected_invalid) return false;
-        if (self == .forest_furnace or self == .lava_furnace) return true;
-
-        const id = @intFromEnum(self);
-        if (id >= MASK_START) return false;
-        return true;
+    pub inline fn isSolid(self: @This()) bool {
+        return self.props().solid;
     }
 
     /// Determines if the sprite's type is a liquid (such as water).
-    pub fn isLiquid(self: @This()) bool {
-        return self == .water;
+    pub inline fn isLiquid(self: @This()) bool {
+        return self.props().liquid;
     }
 
     /// Determines if the sprite's type is `none` (air/void).
@@ -202,20 +478,17 @@ pub const Sprite = enum(u16) {
 
     /// Determines if the sprite is stone (or a variation). Excludes edge stone.
     pub inline fn isStone(self: @This()) bool {
-        const id = @intFromEnum(self);
-        return id >= STONE_START and id <= STONE_END;
+        return self.props().stone;
     }
 
     /// Determines if the sprite is an ore.
     pub inline fn isOre(self: @This()) bool {
-        const id = @intFromEnum(self);
-        return id >= ORE_START and id < GEM_START;
+        return self.props().ore;
     }
 
     /// Determines if the sprite is a gem.
     pub inline fn isGem(self: @This()) bool {
-        const id = @intFromEnum(self);
-        return id >= GEM_START and id < MASK_START;
+        return self.props().gem;
     }
 
     /// Determines if the sprite is a heatmap (between types 65000-65256).
@@ -225,54 +498,32 @@ pub const Sprite = enum(u16) {
     }
 };
 
-/// The total number of valid sprites that are considered valid (according to `isValid()`).
-pub const valid_sprite_count: usize = blk: {
+/// The total number of valid sprites that are considered valid items.
+pub const item_sprite_count: usize = blk: {
     @setEvalBranchQuota(1e6);
-    const fields = @typeInfo(Sprite).@"enum".fields;
     var count: usize = 0;
-    for (fields) |field| {
-        const sprite: Sprite = @enumFromInt(field.value);
-        if (sprite.isValid()) {
-            count += 1;
-        }
+    for (0..MAX_SPRITE_ID) |i| {
+        if (dense_flags_table[i].item) count += 1;
     }
+    if (unselected_flags.item) count += 1;
     break :blk count;
 };
 
-/// An array of all `Sprite` values that are considered valid (according to `isValid()`).
-pub const valid_sprites = blk: {
+/// An array of all `Sprite` values that could be items using lookups.
+pub const possible_item_sprites = blk: {
     @setEvalBranchQuota(1e6);
     const fields = @typeInfo(Sprite).@"enum".fields;
-    var result: [valid_sprite_count]Sprite = undefined;
+    var result: [item_sprite_count]Sprite = undefined;
     var index: usize = 0;
 
-    // Populate the array!
     for (fields) |field| {
         const sprite: Sprite = @enumFromInt(field.value);
-        if (sprite.isValid()) {
+        if (sprite.isItem()) {
             result[index] = sprite;
             index += 1;
         }
     }
-
     break :blk result;
-};
-
-/// Maximum possible sprite value.
-pub const max_sprite_value = blk: {
-    @setEvalBranchQuota(1e6);
-    var max_val: u16 = 0;
-    const fields = @typeInfo(Sprite).@"enum".fields;
-
-    for (fields) |field| {
-        if (std.mem.eql(u8, field.name, "unselected")) continue;
-        if (field.value > max_val) {
-            if (field.value >= 60000)
-                @compileError("Sprite enum values must not be between the reserved range of 60000-65534.");
-            max_val = @intCast(field.value);
-        }
-    }
-    break :blk max_val;
 };
 
 /// Empty block of id `Sprite.none`.
@@ -284,21 +535,21 @@ pub const AIR_BLOCK: memory.Block = .{
     .edge_flags = 0xFF,
 };
 
+// Comptime sanity validation check
 comptime {
     @setEvalBranchQuota(1e6);
-    // Check if isValid() is being reasonable and isn't producing unmapped results.
-    // Mapped but invalid results can be checked by setting `SHOW_ALL_INVENTORY_ITEMS` to true in the zig/input/inventory.zig file.
+    if ((@as(Sprite, @enumFromInt(65535))).isInWorld())
+        @compileError("isInWorld() returned true for the unselected type! Ranges are wrong.");
+
     var i: u16 = 0;
     var wentToHeatmap = false;
-    if (@as(Sprite, @enumFromInt(65535)).isValid()) @compileError("isValid() returned true for the unselected type! Ranges are wrong.");
     while (i < 65535) : (i += 1) {
         if (!wentToHeatmap and i == max_sprite_value + 256) {
-            // skip some checking
             i = 60000;
             wentToHeatmap = true;
         }
         const s: Sprite = @enumFromInt(i);
-        if (s.isValid()) {
+        if (s.isInWorld()) {
             var is_mapped = false;
             for (@typeInfo(Sprite).@"enum".fields) |field| {
                 if (field.value == i) {
@@ -307,7 +558,7 @@ comptime {
                 }
             }
             if (!is_mapped) {
-                @compileError("isValid() returned true for an unmapped sprite ID! Ranges are wrong.");
+                @compileError("isInWorld() returned true for an unmapped sprite ID! Ranges are wrong.");
             }
         }
     }

@@ -17,10 +17,16 @@ pub var mining_speed: u64 = 10;
 pub var mining_strength: u4 = 1;
 
 /// Current selected block's HP. Should be from 0-15 normally, and 255 if block is empty.
-pub var selected_hp: u8 = 1;
+pub var selected_hp: u8 = 0;
+
+/// Frame for mining (for sound effects); reset when not mining for long enough with `not_mining_frame`.
+pub var mining_frame: u64 = 0;
+
+/// Frame count for not mining.
+pub var not_mining_frame: u64 = 0;
 
 /// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
-pub fn handleMiningAndPlacing() void {
+pub fn handleMiningAndPlacing(logic_speed: f64) void {
     if (mouse.just_mouse_down and inventory.getHoveredInventorySprite() != null) {
         // use mouse states to prevent the player from placing blocks when actually selecting something from the inventory
         mouse.mouse_state = .inventory;
@@ -46,7 +52,6 @@ pub fn handleMiningAndPlacing() void {
 
     const mouse_block = mouse.getMouseBlock();
     if (mouse_block) |block| {
-
         // Don't mine a block of the same type you're trying to place!
         if (sprite_type != .none and block.id == sprite_type) {
             selected_hp = 0;
@@ -57,7 +62,10 @@ pub fn handleMiningAndPlacing() void {
         // Are we breaking something, or placing into empty air?
         if (sprite_type.isEmpty() or !block.isEmpty()) {
             // mining or replacing case
-            mining_progress += mining_speed;
+            mining_progress += if (logic_speed == 1.0)
+                mining_speed
+            else
+                @as(u64, @intFromFloat(@as(f64, @floatFromInt(mining_speed)) * logic_speed));
             // strength function is inline, so this is fine
             const strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
 
@@ -65,7 +73,7 @@ pub fn handleMiningAndPlacing() void {
                 mining_progress = 0;
                 // sprite type being none check also prevents unneeded memory waste with data update
                 const was_deleted = block.isEmpty() or world.modifyBlockHp(
-                    mouse.mouse_chunk.?, // mouse block successful, this must be valid then!
+                    mouse.mouse_chunk_coord.?, // mouse block successful, this must be valid then!
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
                     block,
@@ -73,15 +81,34 @@ pub fn handleMiningAndPlacing() void {
                     if (!inventory.IN_CREATIVE and strength > 0) mining_strength else 0,
                 );
 
+                if (block.isSolid()) {
+                    @setFloatMode(.optimized);
+                    const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE) 3 else @max(120 / mining_speed, 3);
+                    not_mining_frame = 0;
+                    if (mining_frame % FRAMES_PER_SOUND == 0)
+                        root.sound.playSound(
+                            @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
+                            0.6 + 0.4 * @as(f32, @floatFromInt(mining_strength)),
+                            0.3,
+                            0.4,
+                        );
+                    mining_frame += 1;
+                }
+
                 if (was_deleted) {
                     if (!block.isEmpty()) {
-                        inventory.addToInventory(block.id);
+                        inventory.dropItem(
+                            block.id,
+                            mouse.mouse_chunk_coord.?,
+                            mouse.mouse_block_x,
+                            mouse.mouse_block_y,
+                        );
 
                         // Only auto-replace if the block being mined is different from the held item.
                         if (sprite_type != .none and sprite_type != .unselected) {
                             if (inventory.removeFromInventory(sprite_type)) { // make sure it's possible to use
                                 if (world.modifyBlockType(
-                                    mouse.mouse_chunk.?, // mouse block successful already
+                                    mouse.mouse_chunk_coord.?, // mouse block successful already
                                     mouse.mouse_block_x,
                                     mouse.mouse_block_y,
                                     sprite_type,
@@ -107,7 +134,7 @@ pub fn handleMiningAndPlacing() void {
             // placing into empty air!
             if (inventory.removeFromInventory(sprite_type)) {
                 if (world.modifyBlockType(
-                    mouse.mouse_chunk.?,
+                    mouse.mouse_chunk_coord.?,
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
                     sprite_type,
@@ -122,6 +149,8 @@ pub fn handleMiningAndPlacing() void {
             }
         }
     } else {
+        not_mining_frame += 1;
+        if (not_mining_frame == 60) mining_frame = 0;
         selected_hp = 255;
     }
 }
@@ -158,7 +187,7 @@ comptime {
         const field_sprite: Sprite = @enumFromInt(field.value);
 
         // If it's a valid, solid block, it MUST have a defined mining strength.
-        if (field_sprite.isValid() and field_sprite.isSolid()) {
+        if (field_sprite.isInWorld() and field_sprite.isSolid()) {
             if (getSpriteStrength(field_sprite) == null) {
                 @compileError("Sprite is valid and solid but missing a strength value in get_sprite_strength: " ++ field.name);
             }

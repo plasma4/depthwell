@@ -35,10 +35,10 @@ pub const AncestorCache = struct {
     /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
     pub const NUM_TIERS = HORIZON_DEPTH;
 
-    var keys: [NUM_TIERS][TIER_SIZE]DepthCoordinate = .{.{DepthCoordinate.invalid} ** TIER_SIZE} ** NUM_TIERS;
+    var keys: [NUM_TIERS][TIER_SIZE]DepthCoordinate = @splat(@splat(DepthCoordinate.invalid));
     var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
-    var clock: [NUM_TIERS]std.StaticBitSet(TIER_SIZE) = [_]std.StaticBitSet(TIER_SIZE){std.StaticBitSet(TIER_SIZE).initEmpty()} ** NUM_TIERS;
-    var hand: [NUM_TIERS]usize = [_]usize{0} ** NUM_TIERS; // or std.mem.zeroes([NUM_TIERS]usize)
+    var clock: [NUM_TIERS]std.StaticBitSet(TIER_SIZE) = @splat(std.StaticBitSet(TIER_SIZE).initEmpty());
+    var hand: [NUM_TIERS]usize = @splat(0);
 
     /// Retrieves a chunk by DepthCoordinate. Searches the specific depth tier.
     /// Returns a mutable pointer to allow for in-place updates or direct reads.
@@ -363,7 +363,7 @@ pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Block {
     const start_py = @as(i32, @intCast(p_info_origin.by)) - 1;
 
     // Small local cache for the 1-4 parent chunks required for this neighborhood
-    var cached_chunks: [4]?*const Chunk = .{null} ** 4;
+    var cached_chunks: [4]?*const Chunk = @splat(null);
     var cached_coords: [4]Coordinate = undefined;
 
     for (0..6) |y_idx| {

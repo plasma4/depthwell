@@ -12,11 +12,42 @@ const addEntity = root.entity.addEntity;
 const drawNumber = root.entity.drawNumber;
 
 /// Debug option, allowing for unlimited block placement.
+/// NOT a comptime value because we may want this in the future during a release build.
 pub var IN_CREATIVE = false;
 /// Debug option, changing whether to show all inventory item slots and items or not.
 pub const SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is.
 const inventory_width = 10;
+
+/// How many frames (logical) before an item enters the player's inventory.
+fn getMaxItemDropLifespan() u16 {
+    return if (IN_CREATIVE) 20 else 100;
+}
+
+/// Represents a single dropped item, including its type, position, and frames until addition to inventory.
+const DroppedItem = struct {
+    /// Which item is dropped.
+    id: Sprite,
+    /// Which chunk the dropped item is in.
+    position: memory.Coordinate,
+    /// Which subpixel X-coordinate the dropped item is in within the chunk position.
+    /// May be temporarily negative or above 4096.
+    subpixel_x: i32,
+    /// Which subpixel Y-coordinate the dropped item is in within the chunk position.
+    /// May be temporarily negative or above 4096.
+    subpixel_y: i32,
+    /// The previous chunk coordinate of the dropped item.
+    last_position: memory.Coordinate,
+    /// The subpixel X-coordinate of the dropped item for the previous frame.
+    last_subpixel_x: i32,
+    /// The subpixel Y-coordinate of the dropped item for the previous frame.
+    last_subpixel_y: i32,
+    /// How many frames before the item will be added to the player's inventory.
+    frames_left: u16,
+    /// Direction of sprite rotation.
+    is_clockwise: bool,
+};
+pub var dropped_items: root.Fifo(DroppedItem) = .{};
 
 pub inline fn isInCreative() bool {
     return root.is_debug and IN_CREATIVE;
@@ -30,19 +61,19 @@ pub inline fn shouldShowAllItems() bool {
 pub var selected_row: u16 = 0;
 
 /// Slice array tyoe for possible slots.
-pub const SlotBuffer = [sprite.valid_sprite_count + 1]Sprite;
+pub const SlotBuffer = [sprite.item_sprite_count + 1]Sprite;
 
 /// Current sprite selected to place.
 pub var selected_sprite: Sprite = .none;
 
 /// Dense storage: index is `@intFromEnum(Sprite)`, value is the number of that item in the inventory.
-pub var inventory_counts = [_]u64{0} ** (sprite.max_sprite_value + 1);
+pub var inventory_counts: [sprite.max_sprite_value + 1]u64 = @splat(0);
 
 /// Animation progress for each potential slot. Always between 0 (idle) and 1 (fully triggered).
-pub var inventory_anim_progress = [_]f32{0.0} ** (sprite.max_sprite_value + 1);
+pub var inventory_anim_progress: [sprite.max_sprite_value + 1]f32 = @splat(0.0);
 
 /// Animation progress for the wobble effect of text. Always between -1 and 1; 0 if idle.
-pub var inventory_wobble_progress = [_]f32{0.0} ** (sprite.max_sprite_value + 1);
+pub var inventory_wobble_progress: [sprite.max_sprite_value + 1]f32 = @splat(0.0);
 
 /// Logs data on what is inside the inventory.
 pub fn logInventory() void {
@@ -51,23 +82,177 @@ pub fn logInventory() void {
     logger.quick(.{ "{h}Selected sprite", selected_sprite });
 }
 
-/// Increments the count for a mined block.
-pub fn addToInventory(id: Sprite) void {
+/// Increments the amount of an item in the inventory, bypassing dropping.
+pub fn addToInventory(id: Sprite, amount: u64) void {
     const idx = @intFromEnum(id);
     if (idx < inventory_counts.len) {
-        inventory_counts[idx] += 1;
+        inventory_counts[idx] += amount;
         if (inventory_wobble_progress[idx] == 0.0) inventory_wobble_progress[idx] = 1.0;
     }
 }
 
-/// Decrements the count for a block. Returns whether successful.
+/// Amount of dropped item sprites that were created.
+var item_count: u64 = 0;
+
+/// Creates an item drop animation and adds a `DroppedItem`.
+pub fn dropItem(id: Sprite, chunk: memory.Coordinate, block_x: u4, block_y: u4) void {
+    // Drop at the center of the block horizontally (+128), and the bottom vertically (+256)
+    const px = @as(i32, block_x) * 256 + 128;
+    const py = @as(i32, block_y) * 256 + 256;
+    const seed = root.seeding.FastHash.hash2d(
+        memory.game.seed2[14..16].*,
+        memory.game.frame,
+        item_count,
+    );
+    item_count +%= 1;
+    addToInventory(id, 1);
+    dropped_items.addOne(.{
+        .id = id,
+        .position = chunk,
+        .subpixel_x = px + @as(i32, @intCast(seed % 128)) - 64,
+        .subpixel_y = py + @as(i32, @intCast(seed / 128 % 128)) - 64,
+        .last_position = chunk,
+        .last_subpixel_x = px,
+        .last_subpixel_y = py,
+        .is_clockwise = (seed / (128 * 128) % 2 == 1),
+        .frames_left = getMaxItemDropLifespan() * 3 / 4 +
+            // monumentally silly code to get a block position to influence frames left
+            // TODO: maybe this indicates we should really simplify things?
+            @as(u16, @intCast((seed / (128 * 128 * 2)) % (getMaxItemDropLifespan() * 1 / 4))),
+    }, root.world.alloc) catch memory.oom();
+}
+
+/// Calls `addEntity()` for each element in `dropped_items`, handling camera pan logic.
+pub fn addDroppedItemsAsEntities(time_diff: f64) void {
+    @setFloatMode(.optimized);
+    _ = time_diff;
+    const Context = struct {
+        fn render_item(_: void, item: *DroppedItem) void {
+            const player_coord = memory.game.getPlayerCoord();
+
+            // Previous tick position
+            const prev_diff_x = @as(i64, @bitCast(item.last_position.suffix[0] -% player_coord.suffix[0]));
+            const prev_diff_y = @as(i64, @bitCast(item.last_position.suffix[1] -% player_coord.suffix[1]));
+            const prev_item_sp_x = prev_diff_x * 4096 + @as(i64, item.last_subpixel_x);
+            const prev_item_sp_y = prev_diff_y * 4096 + @as(i64, item.last_subpixel_y);
+
+            // Current tick position
+            const curr_diff_x = @as(i64, @bitCast(item.position.suffix[0] -% player_coord.suffix[0]));
+            const curr_diff_y = @as(i64, @bitCast(item.position.suffix[1] -% player_coord.suffix[1]));
+            const curr_item_sp_x = curr_diff_x * 4096 + @as(i64, item.subpixel_x);
+            const curr_item_sp_y = curr_diff_y * 4096 + @as(i64, item.subpixel_y);
+
+            // Interpolate using the global dt from chunk rendering
+            const dt = root.chunks.current_dt + 1.0;
+            const interp_item_sp_x = @as(f64, @floatFromInt(prev_item_sp_x)) +
+                @as(f64, @floatFromInt(curr_item_sp_x - prev_item_sp_x)) * dt;
+            const interp_item_sp_y = @as(f64, @floatFromInt(prev_item_sp_y)) +
+                @as(f64, @floatFromInt(curr_item_sp_y - prev_item_sp_y)) * dt;
+
+            // Camera interpolated position
+            const cam_vel_x = memory.game.camera_pos[0] - memory.game.last_camera_pos[0];
+            const cam_vel_y = memory.game.camera_pos[1] - memory.game.last_camera_pos[1];
+            const interp_cam_x = @as(f64, @floatFromInt(memory.game.camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
+            const interp_cam_y = @as(f64, @floatFromInt(memory.game.camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
+
+            const delta_x_sp = interp_item_sp_x - interp_cam_x;
+            const delta_y_sp = interp_item_sp_y - interp_cam_y;
+
+            // do the same interpolation change
+            const interpolated_zoom = memory.game.camera_scale * std.math.pow(f64, memory.game.camera_scale_change, dt);
+
+            // Translate subpixels offset to screen space (1 pixel becomes 16 subpixels!)
+            const screen_x = @as(f32, @floatCast(@as(f64, root.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0)));
+            const screen_y = @as(f32, @floatCast(@as(f64, root.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0)));
+
+            const half_lifespan = getMaxItemDropLifespan() / 2;
+            const life_fraction = @min(@as(f32, @floatFromInt(item.frames_left)) / half_lifespan, 1.0);
+            // Shrink as it approaches player
+            const item_size = if (life_fraction == 1.0) 16.0 else 4.0 + 12.0 * life_fraction;
+            const rotation_mult: f32 = if (item.is_clockwise) 1 else -1;
+            // Rotate as it flies (so peak)
+            const rotation: f32 = if (life_fraction == 1.0) 0.0 else @as(f32, @floatFromInt(half_lifespan - item.frames_left)) *
+                (std.math.pi / @as(f32, half_lifespan)) * rotation_mult;
+
+            addEntity(.{
+                .sprite = item.id,
+                .position = .{ screen_x, screen_y },
+                .size = item_size * @as(f32, @floatCast(interpolated_zoom)),
+                .rotation = rotation,
+                .lcha = .{ 1.0, 0.0, 0.0, @min(life_fraction * 1.8 - 0.8, 0.6) },
+            });
+        }
+    };
+
+    dropped_items.forEach({}, Context.render_item);
+}
+
+/// Executes logical updates for dropped items once a frame (60FPS).
+pub fn tickDroppedItems() void {
+    @setFloatMode(.optimized);
+    const Context = struct {
+        fn update(_: void, item: *DroppedItem) void {
+            if (item.frames_left == 0) return;
+            item.last_position = item.position;
+            item.last_subpixel_x = item.subpixel_x;
+            item.last_subpixel_y = item.subpixel_y;
+
+            const player_coord = memory.game.getPlayerCoord();
+            const diff_x = @as(i64, @bitCast(item.position.suffix[0] -% player_coord.suffix[0]));
+            const diff_y = @as(i64, @bitCast(item.position.suffix[1] -% player_coord.suffix[1]));
+
+            const item_sp_x_float: f64 = @floatFromInt(diff_x * 4096 + @as(i64, item.subpixel_x));
+            const item_sp_y_float: f64 = @floatFromInt(diff_y * 4096 + @as(i64, item.subpixel_y));
+
+            const target_sp_x = memory.game.player_pos[0];
+            const target_sp_y = memory.game.player_pos[1];
+
+            // Magnetic factor (per frame) gradually increases to 100% as frames run out
+            const factor = 0.96 / std.math.pow(f64, @as(f64, @floatFromInt(item.frames_left)), 0.8) + 0.04;
+
+            const next_sp_x = item_sp_x_float +
+                (@as(f64, @floatFromInt(target_sp_x)) - item_sp_x_float) * factor;
+            const next_sp_y = item_sp_y_float +
+                (@as(f64, @floatFromInt(target_sp_y)) - item_sp_y_float) * factor;
+
+            const chunk_dx = @as(i64, @intFromFloat(@floor(next_sp_x / 4096.0)));
+            const chunk_dy = @as(i64, @intFromFloat(@floor(next_sp_y / 4096.0)));
+
+            if (player_coord.move(.{ chunk_dx, chunk_dy })) |new_coord| {
+                item.position = new_coord;
+            }
+
+            const rem_x = next_sp_x - @as(f64, @floatFromInt(chunk_dx)) * 4096.0;
+            const rem_y = next_sp_y - @as(f64, @floatFromInt(chunk_dy)) * 4096.0;
+            item.subpixel_x = @intFromFloat(rem_x);
+            item.subpixel_y = @intFromFloat(rem_y);
+
+            item.frames_left -= 1;
+        }
+    };
+
+    dropped_items.forEach({}, Context.update);
+
+    // Filter and collect items that reached their target at the head of the FIFO
+    while (dropped_items.count > 0) {
+        const head_item = &dropped_items.buf[dropped_items.head];
+        if (head_item.frames_left == 0) {
+            // addToInventory(head_item.id);
+            _ = dropped_items.pop();
+        } else {
+            break;
+        }
+    }
+}
+
+/// Decrements the amount of an item in the inventory by 1.
+/// Returns whether the removal was successful (as in, if there was at least one item, and the decrement worked).
 pub fn removeFromInventory(id: Sprite) bool {
     if (id.isEmpty() or id == .unselected) return false;
 
     const idx = @intFromEnum(id);
     if (!isInCreative()) {
         if (idx >= inventory_counts.len or inventory_counts[idx] == 0) return false;
-
         inventory_counts[idx] -= 1;
     }
     if (inventory_wobble_progress[idx] == 0.0) inventory_wobble_progress[idx] = -1.0;
@@ -88,7 +273,7 @@ pub fn getSpritesInInventory(buffer: *SlotBuffer) []Sprite {
     buffer[0] = .none; // slot 0 (pickaxe) must always exist
 
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
-    inline for (sprite.valid_sprites) |s| {
+    inline for (sprite.possible_item_sprites) |s| {
         if (s.isEmpty()) continue;
         if (shouldShowAllItems() or inventory_counts[@intFromEnum(s)] > 0) {
             buffer[count] = s;
@@ -105,7 +290,7 @@ pub fn getSelectedIndex() u16 {
     if (selected_sprite.isEmpty() or selected_sprite == .unselected) return 0;
     var count: usize = 1;
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
-    inline for (sprite.valid_sprites) |s| {
+    inline for (sprite.possible_item_sprites) |s| {
         if (s.isEmpty()) continue;
         if (shouldShowAllItems() or inventory_counts[@intFromEnum(s)] > 0) {
             if (s == selected_sprite) return @intCast(count);

@@ -14,7 +14,7 @@ const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframeOpacity: f64) void;
+extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframe_opacity: f64) void;
 
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
 pub inline fn handleVisibleChunks(opacity: f64, wireframeOpacity: f64) void {

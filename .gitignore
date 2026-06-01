@@ -3,5 +3,5 @@ compile_commands.json
 **/.DS_Store
 /.zig-cache
 /node_modules
-/src/assets/*.aseprite
-!/src/assets/main.aseprite
+/public/assets/*.aseprite
+!/public/assets/main.aseprite

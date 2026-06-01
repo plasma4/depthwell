@@ -40,7 +40,7 @@ const number_widths: [10]f32 = .{
 var entity_byte_count_before_end: usize = 0;
 
 /// Current number of entities (reset every frame).
-var entity_count: u64 = undefined;
+pub var entity_count: u64 = 0;
 
 /// Updates all entities by adding them to the scratch buffer. Does not actually inform JS by calling `handleVisibleEntities()`.
 /// Every entity needs a position, size, rotation, LCHA, and sprite associated with it.
@@ -49,6 +49,8 @@ pub fn updateEntities(time_diff: f64) void {
     memory.scratchReset();
     entity_count = 0;
     entity_byte_count_before_end = 0;
+
+    inventory.addDroppedItemsAsEntities(time_diff); // delta time in ms
 
     if (root.is_debug and preview_tile_size > 0.0) {
         // draw a rectangle background for preview, and then the chunk inside!
@@ -76,7 +78,7 @@ pub fn updateEntities(time_diff: f64) void {
 
         // Fetch neighbor chunks for border flag visualization
         const neighbors = blk: {
-            var n: [8]?root.memory.Chunk = [_]?root.memory.Chunk{null} ** 8;
+            var n: [8]?root.memory.Chunk = @splat(null);
             const offsets = [8]root.memory.Vec2i{
                 .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 }, // N, S, W, E
                 .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 1, 1 }, // NW, NE, SW, SE
@@ -103,26 +105,24 @@ pub fn updateEntities(time_diff: f64) void {
                 };
 
                 // Draw base block
-                if (!block.isEmpty()) {
-                    if (block.isHeatmap()) {
-                        addEntity(.{
-                            .sprite = .rectangle,
-                            .position = block_pos,
-                            .size = tile_size,
-                            .lcha = .{
-                                (@as(f32, @intFromEnum(block.id)) - 65000.0) / 256.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                            },
-                        });
-                    } else {
-                        addEntity(.{
-                            .sprite = block.id,
-                            .position = block_pos,
-                            .size = tile_size,
-                        });
-                    }
+                if (block.isHeatmap()) {
+                    addEntity(.{
+                        .sprite = .rectangle,
+                        .position = block_pos,
+                        .size = tile_size,
+                        .lcha = .{
+                            (@as(f32, @intFromEnum(block.id)) - 65000.0) / 256.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                        },
+                    });
+                } else {
+                    addEntity(.{
+                        .sprite = block.id,
+                        .position = block_pos,
+                        .size = tile_size,
+                    });
                 }
 
                 if (block.isFoundation()) {
@@ -345,7 +345,6 @@ pub fn updateEntities(time_diff: f64) void {
                             preview_y_ancestor + @as(f32, @floatFromInt(y)) * tile_size,
                         },
                         .size = tile_size,
-                        .lcha = memory.DEFAULT_ENTITY_LCHA,
                     });
                 }
             }
@@ -375,7 +374,6 @@ pub fn updateEntities(time_diff: f64) void {
             .sprite = .player,
             .position = origin + @as(Vec2f32, @floatFromInt(relative_pos)) * @as(Vec2f32, @splat(scale)),
             .size = tile_size,
-            .lcha = memory.DEFAULT_ENTITY_LCHA,
         };
         var player_entity_bg = player_entity;
 
@@ -634,10 +632,26 @@ fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
 
 /// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
 /// No-op if the sprite type is `none`.
+/// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
+/// No-op if the sprite type is `none`.
 pub inline fn addEntity(entity: Entity) void {
-    entity_count += 1;
     const id = @intFromEnum(entity.sprite);
     if (entity.sprite.isEmpty()) return;
+    if (entity.size <= 0.0) return;
+    if (entity.lcha[3] <= 0.0) return;
+
+    // Viewport-based culling (accounting for rotation)
+    const half_diagonal = if (entity.rotation == 0.0) entity.size * 0.5 else entity.size * (1.0 / std.math.sqrt(2.0));
+    const min_x = entity.position[0] - half_diagonal;
+    const max_x = entity.position[0] + half_diagonal;
+    const min_y = entity.position[1] - half_diagonal;
+    const max_y = entity.position[1] + half_diagonal;
+
+    if (max_x < 0.0 or min_x > root.SCREEN_WIDTH or max_y < 0.0 or min_y > root.SCREEN_HEIGHT) {
+        return;
+    }
+
+    entity_count += 1;
     const wgsl_entity = memory.scratchAllocType(WGSLEntity, &entity_byte_count_before_end);
     wgsl_entity.* = .{
         .lcha = entity.lcha,

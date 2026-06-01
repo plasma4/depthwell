@@ -68,7 +68,6 @@ pub fn build(b: *std.Build) void {
         exe.lto = .full;
     }
     exe.rdynamic = true; // export functions with "export" keyword
-    exe.entry = .disabled; // No main()
     exe.stack_size = 8 * 65536; // 512KiB, can increase as necessary
 
     // removed since Zig manages pointers automatically
@@ -135,21 +134,21 @@ pub fn build(b: *std.Build) void {
         const export_main = addAsepriteStep(
             b,
             path,
-            "src/assets/main.aseprite",
+            "public/assets/main.aseprite",
             "main",
             "main.png",
         );
         const export_masked = addAsepriteStep(
             b,
             path,
-            "src/assets/main.aseprite",
+            "public/assets/main.aseprite",
             "masks", // Ensure this matches the layer name exactly (or "Group/masks")
             "mainMasked.png",
         );
 
         // Install the generated files from the cache into your src directory
-        const install_main = b.addInstallFile(export_main, "src/assets/main.png");
-        const install_masked = b.addInstallFile(export_masked, "src/assets/mainMasked.png");
+        const install_main = b.addInstallFile(export_main, "public/assets/main.png");
+        const install_masked = b.addInstallFile(export_masked, "public/assets/mainMasked.png");
 
         // Make the WASM build depend on the installation of assets
         exe.step.dependOn(&install_main.step);

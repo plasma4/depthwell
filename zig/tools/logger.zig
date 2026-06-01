@@ -114,12 +114,12 @@ pub inline fn testLogs(skipError: bool) void {
     defer arena.deinit();
     var list: std.ArrayList(u8) = .empty;
 
-    list.append(allocator, 'H') catch @panic("character append failed");
-    list.append(allocator, 'e') catch @panic("character append failed");
-    list.append(allocator, 'l') catch @panic("character append failed");
-    list.append(allocator, 'l') catch @panic("character append failed");
-    list.append(allocator, 'o') catch @panic("character append failed");
-    list.appendSlice(allocator, " World (using ArrayList, within an unnamed struct)!") catch @panic("string append failed");
+    list.append(allocator, 'H') catch memory.oom();
+    list.append(allocator, 'e') catch memory.oom();
+    list.append(allocator, 'l') catch memory.oom();
+    list.append(allocator, 'l') catch memory.oom();
+    list.append(allocator, 'o') catch memory.oom();
+    list.appendSlice(allocator, " World (using ArrayList, within an unnamed struct)!") catch memory.oom();
     logger.quick(.{ "{h}Quick log with header and 3 values", 12.34, "string", .{list} });
 
     logger.log(@src(), "This log should be multiple lines.\n-----\nTesting logging with a truncated string below:", .{});

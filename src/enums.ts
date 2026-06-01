@@ -32,7 +32,8 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
 
     readonly SegmentedList: (arg0: unknown, arg1: number) => unknown;
-    readonly setup: () => void;
+    readonly Fifo: (arg0: unknown) => unknown;
+    readonly main: () => void;
     readonly init: () => void;
     readonly prepareVisibleData: (arg0: number, arg1: number, arg2: number, arg3: number) => void;
     readonly getTilesPerRow: () => number;

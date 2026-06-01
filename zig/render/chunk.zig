@@ -8,9 +8,12 @@ const HORIZON_DEPTH = memory.HORIZON_DEPTH;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
 
+pub var current_dt: f64 = 0.0;
+
 /// Adds visible chunk data to the scratch buffer, as well as properties.
 /// This is used in `render.prepareVisibleData()`.
 pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
+    current_dt = dt; // Store current interpolation fraction
     _ = canvas_h;
     const game = &memory.game;
     // calculate effective zoom
@@ -54,10 +57,9 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
 
     memory.scratchReset(); // scratch allocator always needs to be reset!
     const out = memory.scratchAllocSlice(memory.Block, wb * hb);
-
     const player_coord = game.getPlayerCoord();
 
-    var chunk: memory.Chunk = undefined;
+    var chunk: memory.Chunk align(memory.MAIN_ALIGN_BYTES) = undefined;
     for (0..ch) |gy| {
         const offset_y = @as(i64, @intCast(min_cy)) + @as(i64, @intCast(gy));
 
@@ -199,8 +201,10 @@ inline fn updateRenderProperties(
         });
 
         logger.writeOnce(1, .{
-            "{h}Velocity",
+            "{mh}Velocity",
             game.player_velocity,
+            "{mh}Rendered entity count",
+            root.entity.entity_count,
         });
 
         // logger.clear(1);

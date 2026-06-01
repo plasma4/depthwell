@@ -101,21 +101,21 @@ pub const GameState = extern struct {
     keys_held_mask: u32 = 0,
 
     /// The initial or "global" seed from which all generation starts.
-    seed: seeding.Seed align(16) = std.mem.zeroes(seeding.Seed),
+    seed: seeding.Seed align(16) = @splat(0),
 
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
-    seed2: [16]u64 align(16) = std.mem.zeroes([16]u64),
+    seed2: [16]u64 align(16) = @splat(0),
 
     /// Gets the player's current chunk location as a `Coordinate`.
     pub inline fn getPlayerCoord(self: *const @This()) Coordinate {
         return .{ .quadrant = @intCast(self.player_quadrant), .suffix = self.player_chunk };
     }
 
-    /// Gets which (x-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
+    /// Gets which (X-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
     pub inline fn getBlockXInChunk(self: *const @This()) u4 {
         return @intCast(@divTrunc(self.player_pos[0], CHUNK_SIZE_SQ));
     }
-    /// Gets which (y-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
+    /// Gets which (Y-coordinate) block the player is "on" within a chunk. Based on the player's center, rounded down.
     pub inline fn getBlockYInChunk(self: *const @This()) u4 {
         return @intCast(@divTrunc(self.player_pos[1], CHUNK_SIZE_SQ));
     }
@@ -225,12 +225,14 @@ pub const Block = packed struct(u64) {
     light: u8,
 
     /// Per-block seed for procedural variation in the shader.
-    seed: u28,
-    /// How "mined" the block is. 0 is least mined, 15 is most mined.
+    seed: u20,
+    /// How "mined" the block is. 0 means unmined, 15 is most mined.
     hp: u4,
+    /// TODO: do something with this
+    padding: u8 = 0,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
-    /// Uses the BOTTOM 28 bits from `seed_bits` to place into `seed`.
+    /// Uses the BOTTOM 21 bits from `seed_bits` to place into `seed`.
     pub inline fn makeBasicBlock(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
@@ -318,13 +320,13 @@ pub const Coordinate = struct {
     }
 
     /// Adds both an X and Y value, creating a new `Coordinate` and handling quadrants.
-    /// Returns `null` if this change would exceed a quadrant's boundaries at the game's current depth.
+    /// Returns null if this change would exceed a quadrant's boundaries at the game's current depth.
     pub inline fn move(self: @This(), shift: Vec2i) ?Coordinate {
         return self.moveAtDepth(shift, game.depth);
     }
 
     /// Adds both an X and Y value, creating a new `Coordinate` and handling quadrants for a specific depth.
-    /// Returns `null` if this change would exceed boundaries.
+    /// Returns null if this change would exceed boundaries.
     pub inline fn moveAtDepth(self: @This(), shift: Vec2i, depth: u64) ?Coordinate {
         const dx = shift[0];
         const dy = shift[1];
@@ -364,32 +366,15 @@ pub const Coordinate = struct {
     }
 
     /// Adds a certain X value, creating a new Coordinate and handling quadrants.
-    /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    /// Returns null if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
     pub inline fn moveX(self: @This(), x: i64) ?Coordinate {
         return self.move(.{ x, 0 });
     }
 
     /// Adds a certain Y value, creating a new Coordinate and handling quadrants.
-    /// Returns `null` if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
+    /// Returns null if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
     pub inline fn moveY(self: @This(), y: i64) ?Coordinate {
         return self.move(.{ 0, y });
-    }
-};
-
-/// Dense storage for a modified chunk.
-pub const ModifiedChunk = struct {
-    /// 256 bits representing which blocks have been modified.
-    /// Bit index corresponds to (y * 16 + x).
-    modified_mask: [4]u64,
-    /// The specific modified block IDs. Only indices with a 1 in `modified_mask` are valid.
-    blocks: [CHUNK_SIZE_SQ]Sprite align(MAIN_ALIGN_BYTES),
-
-    /// Helper to check if a specific local block has been modified.
-    pub inline fn isModified(self: *const @This(), lx: u4, ly: u4) bool {
-        const index = (@as(u8, ly) << CHUNK_SIZE_LOG2) | @as(u8, lx);
-        const slot = index >> 6;
-        const bit: u6 = @truncate(index);
-        return (self.modified_mask[slot] & (@as(u64, 1) << bit)) != 0;
     }
 };
 
@@ -515,6 +500,13 @@ pub fn wasmFree(ptr: [*]u8, len: usize) void {
     main_allocator.free(ptr[0..len]);
 }
 
+/// Calls `@panic()` for an out-of-memory issue.
+/// Use with `catch memory.oom()` when performing an allocation.
+pub fn oom() noreturn {
+    @branchHint(.cold);
+    @panic("Ran out of memory when attempting to perform an allocation!");
+}
+
 /// Determines if scratch_buffer has at least `len` additional available capacity while aligning with `MAIN_ALIGN`.
 /// If not, expands with the system's page allocator.
 /// Does NOT set the `scratch_len` property; only allocates sufficiently (using `scratch_capacity`).
@@ -541,15 +533,15 @@ fn growScratchBuffer(len: usize, new_scratch_len: usize) [*]u8 {
 
     // Final capacity becomes 256KiB, 1.5x growth, or the requested length, whichever is largest.
     const growth_150_percent = scratch_buffer.len + (scratch_buffer.len >> 1);
-    const clamped_growth = @min(growth_150_percent, scratch_buffer.len + (32 * MemorySizes.MiB));
-    const new_cap = @max(STARTING_SCRATCH_BUFFER_SIZE, clamped_growth, new_scratch_len);
+    // const clamped_growth = @min(growth_150_percent, scratch_buffer.len + (32 * MemorySizes.MiB));
+    const new_cap = @max(STARTING_SCRATCH_BUFFER_SIZE, growth_150_percent, new_scratch_len);
 
     if (!is_dynamic_scratch) {
         @branchHint(.cold);
-        scratch_buffer = page_allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch @panic("Ran out of memory for scratch allocation!");
+        scratch_buffer = page_allocator.alignedAlloc(u8, MAIN_ALIGN, new_cap) catch oom();
         is_dynamic_scratch = true;
     } else {
-        scratch_buffer = page_allocator.realloc(scratch_buffer, new_cap) catch @panic("Ran out of memory for scratch allocation!");
+        scratch_buffer = page_allocator.realloc(scratch_buffer, new_cap) catch oom();
     }
 
     // Update JS metadata
@@ -566,7 +558,7 @@ fn growScratchBuffer(len: usize, new_scratch_len: usize) [*]u8 {
 /// Allocates one instance of a type in a scratch buffer.
 /// This is the ideal fast way to write generic data (like entities) if the total amount is unknown.
 ///
-/// The `byte_count_before_end` property, if `null`, makes the data aligned to `MAIN_ALIGN_BYTES`.
+/// The `byte_count_before_end` property, if null, makes the data aligned to `MAIN_ALIGN_BYTES`.
 /// If unaligned, it is required to start the data at an aligned location (such as right after `scratch_reset` or `mem.scratch_len` set).
 pub inline fn scratchAllocType(comptime T: type, byte_count_before_end: ?*usize) *T {
     const type_size: usize = @sizeOf(T);
@@ -678,11 +670,11 @@ pub inline fn getFloatScratchProp(index: usize) f64 {
     return @bitCast(mem.scratch_properties[index]);
 }
 
-const _ = {
-    if (STARTING_SCRATCH_BUFFER_SIZE <= 0 || (STARTING_SCRATCH_BUFFER_SIZE % @alignOf(@TypeOf(scratch_buffer)) != 0)) {
+comptime {
+    if (STARTING_SCRATCH_BUFFER_SIZE <= 0 or (STARTING_SCRATCH_BUFFER_SIZE % @alignOf(@TypeOf(scratch_buffer)) != 0)) {
         @compileError("Buffer size must be a positive multiple of its alignment.");
     }
-    if (MAIN_ALIGN_BYTES < 16 || (MAIN_ALIGN_BYTES % 16 > 0)) {
+    if (MAIN_ALIGN_BYTES < 16 or (MAIN_ALIGN_BYTES % 16 > 0)) {
         @compileError("MAIN_ALIGN_BYTES should be a positive multiple of 16 for SIMD alignment.");
     }
     if (@sizeOf(Block) != 8) {
@@ -691,4 +683,4 @@ const _ = {
     if (@sizeOf(WGSLEntity) != 48) {
         @compileError("WGSL entity must be 48 bytes!");
     }
-};
+}

@@ -4,7 +4,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// Set to true if the CPU architecture is set to `wasm32` or `wasm64`.
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
+/// Set to true if either test mode or `Debug` mode is used.
 pub const is_debug = builtin.is_test or builtin.mode == .Debug;
 
 pub const memory = @import("memory.zig");
@@ -22,11 +24,12 @@ pub const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 pub const utils = @import("internal/utils.zig");
 pub const GenerateOffsets = @import("internal/offsets.zig").GenerateOffsets;
 pub const SegmentedList = @import("internal/SegmentedList.zig").SegmentedList;
+pub const Fifo = @import("internal/fifo.zig").UnboundedFifo;
 pub const ColorRGBA = @import("visual/color_rgba.zig").ColorRGBA;
 
 pub const render = @import("render/render.zig");
+pub const sound = @import("render/sound.zig");
 pub const chunks = @import("render/chunk.zig");
-pub const particle = @import("render/particle.zig");
 pub const entity = @import("render/entity.zig");
 
 pub const types = @import("types/types.zig");
@@ -49,11 +52,22 @@ pub const inventory = @import("input/inventory.zig");
 pub const mining = @import("input/mining.zig");
 pub const mouse = @import("input/mouse.zig");
 
-pub export fn setup() void {
+pub fn main() callconv(.c) void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
     memory.game = .{}; // initialize GameState
-    world.mod_store = world.ModificationStore.init(world.alloc);
+    world.flag_worklist = std.ArrayList(world.UpdateItem).initCapacity(world.alloc, 1024) catch unreachable;
+    world.mod_store = .init(world.alloc);
 }
+
+comptime {
+    if (is_wasm) {
+        @export(&main, .{
+            .name = "main",
+            .linkage = .strong,
+        });
+    }
+}
+
 pub export fn init() void {
     startup.init();
 }
@@ -77,7 +91,7 @@ pub export fn getGemStart() u32 {
     return @intCast(@intFromEnum(Sprite.amethyst));
 }
 pub export fn getGemMaskStart() u32 {
-    return @intCast(@intFromEnum(Sprite.gem_mask));
+    return sprite.MASK_START;
 }
 pub export fn getDecorStart() u32 {
     return @intCast(@intFromEnum(Sprite.spiral_plant));
@@ -93,7 +107,7 @@ pub export fn handleMouse(mouse_x: f64, mouse_y: f64, action: u32) void {
 /// Sets if the Z key should increase the depth recursively until D=32 is reached.
 var debug_recursively_increase_depth = false;
 
-pub export fn tick(speed: f64, iterations: u32) void {
+pub export fn tick(logic_speed: f64, iterations: u32) void {
     var buffer: inventory.SlotBuffer = undefined;
     const active_slots = inventory.getSpritesInInventory(&buffer);
 
@@ -142,8 +156,10 @@ pub export fn tick(speed: f64, iterations: u32) void {
         }
     }
 
+    // of course, we must TODO: also make this switch when portal logic happens
+    const just_increased_depth = is_debug and KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask);
     // increase the depth (testing hotkey)
-    if (is_debug and KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask)) {
+    if (just_increased_depth) {
         world.pushLayer(
             Sprite.none,
             memory.game.getPlayerCoord(),
@@ -155,23 +171,25 @@ pub export fn tick(speed: f64, iterations: u32) void {
             memory.game.depth < memory.HORIZON_DEPTH * 2 + startup.STARTING_ZOOM_TIMES)
         {
             var key = memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth);
-            while (key.depth > memory.HORIZON_DEPTH) {
+            const target_depth = memory.game.depth - memory.HORIZON_DEPTH;
+            while (key.depth > target_depth) {
                 key = key.getParent();
             }
             logger.quick(.{ "{h}Resulting key/current depth", memory.game.depth, key });
         }
 
         mining.selected_hp = 255;
-        mouse.mouse_chunk = null;
-    } else {
-        // mouse block and mining/placing logic all updated in this function
-        mining.handleMiningAndPlacing();
+        mouse.mouse_chunk_coord = null;
     }
 
     for (0..iterations) |_| { // iterations is guaranteed to be positive
-        player.move(speed);
+        if (!just_increased_depth) mining.handleMiningAndPlacing(logic_speed); // mouse block and mining/placing logic all updated in this function
+        player.move(logic_speed);
         memory.game.frame +%= 1;
     }
+
+    // Process item animation ticks and inventory collection!
+    inventory.tickDroppedItems();
 
     // Generate chunks around the SimBuffer in the background.
     world.SimBuffer.precacheChunks(
@@ -183,18 +201,19 @@ pub export fn tick(speed: f64, iterations: u32) void {
 
     // give some helpful info! logging is a bit hacky
     // we use a {h} header but can write multiple lines, this gets cleared every frame since writeOnce() is used
-    logger.writeOnce(3, .{
-        \\{h}Left-clicking places blocks; click on inventory slots directly to select block types.
-        \\Use the pickaxe icon to mine and WASD/arrow keys to move around.
-        \\
-        \\For inventory hotkeys:
-        \\- Use backquote and 0-9 keys to change inventory selection.
-        \\- Q moves up a row in the inventory while E moves down a row.
-        \\
-        \\Selected sprite ID
-        ,
-        inventory.selected_sprite,
-    });
+    // TODO: re-enable this when exporting
+    // logger.writeOnce(3, .{
+    //     \\{h}Left-clicking places blocks; click on inventory slots directly to select block types.
+    //     \\Use the pickaxe icon to mine and WASD/arrow keys to move around.
+    //     \\
+    //     \\For inventory hotkeys:
+    //     \\- Use backquote and 0-9 keys to change inventory selection.
+    //     \\- Q moves up a row in the inventory while E moves down a row.
+    //     \\
+    //     \\Selected sprite ID
+    //     ,
+    //     inventory.selected_sprite,
+    // });
 }
 
 pub export fn mixSeed(number: u64) i64 {
@@ -302,6 +321,7 @@ comptime {
 pub const panic = std.debug.FullPanic(customPanic);
 
 fn customPanic(msg: []const u8, ret_addr: ?usize) noreturn {
+    @branchHint(.cold);
     if (ret_addr) |addr| {
         logger.err(@src(), "PANIC [addr: 0x{x}]: {s}", .{ addr, msg });
     } else logger.err(@src(), "PANIC: {s}", .{msg});

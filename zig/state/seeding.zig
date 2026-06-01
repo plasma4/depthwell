@@ -108,8 +108,8 @@ pub inline fn oddsNum(chance: comptime_float) u64 {
 }
 
 /// A high-performance, stateless hash.
-/// Significantly faster than both ChaCha12/Xoshiro512** for procedural generation
-/// Acts like a diffuser for `x`/`y`: assumes `seed` is securely generated from BLAKE3 already.
+/// Significantly faster than both ChaCha12/Xoshiro512** for procedural generation.
+/// Fully deterministic and highly optimized across both WASM and 64-bit Native targets.
 pub const FastHash = struct {
     const secret = [_]u64{
         0xa0761d6478bd642f,
@@ -118,10 +118,16 @@ pub const FastHash = struct {
         0x589965cc75374cc3,
     };
 
-    /// A multiply-unrolled-multiply mixer.
+    /// A pure 64-bit platform-independent mixer.
+    /// Combines inputs additively to avoid a zero-sink.
     inline fn mix(a: u64, b: u64) u64 {
-        const res = @as(u128, a) *% b;
-        return @as(u64, @truncate(res)) ^ @as(u64, @truncate(res >> 64));
+        var x = a +% b;
+        x ^= x >> 30;
+        x *%= 0xbf58476d1ce4e5b9;
+        x ^= x >> 27;
+        x *%= 0x94d049bb133111eb;
+        x ^= x >> 31;
+        return x;
     }
 
     /// Returns a 64-bit hash value, assuming `seed_vector` is securely generated from BLAKE3 already.
@@ -133,10 +139,14 @@ pub const FastHash = struct {
         return mix(v[0] ^ secret[2], v[1] ^ secret[3]); // combine lanes and mix
     }
 
-    /// Returns a float value (64-bit), assuming `seed_vector` is securely generated from BLAKE3 already.
+    /// Returns a float value from [0, 1), assuming `seed_vector` is securely generated from BLAKE3 already.
     pub inline fn float2d(seed_vector: Vec2u, x: u64, y: u64) f64 {
+        @setFloatMode(.strict); // just in case ig
+
         const h = hash2d(seed_vector, x, y);
-        return @as(f64, @floatFromInt(h)) / POW_2_64;
+        // Shift right by 11 to obtain 53 bits of entropy, fitting perfectly inside the f64 significand.
+        const entropy_53 = h >> 11;
+        return @as(f64, @floatFromInt(entropy_53)) * (1.0 / 9007199254740992.0); // 1.0 / 2^53
     }
 };
 
@@ -149,7 +159,7 @@ pub const ChaCha12 = struct {
     row3: @Vector(4, u32),
 
     /// Pre-generated keystream buffer (64 bytes).
-    keystream: [8]u64 align(16) = std.mem.zeroes([8]u64),
+    keystream: [8]u64 align(16) = @splat(0),
     /// Which u64 index in keystream to serve next.
     position: u32,
 
@@ -246,7 +256,7 @@ pub const ChaCha12 = struct {
         @compileError("Only floats up to 64-bit precision are supported.");
     }
 
-    /// Expensive stateless 2D hash (using the first 384 seed bits), returning 128 bits of data.
+    /// Expensive stateless 2D hash (using the first 384 seed bits), returning 121 bits of data.
     /// Treats X and Y as the `ChaCha12` nonce/counter to return a random value.
     pub fn hash2d128(comptime T: type, seed_data: *const Seed, x: u64, y: u64) @Vector(2, T) {
         const s: [16]u32 = @bitCast(seed_data);
@@ -279,7 +289,7 @@ pub const ChaCha12 = struct {
         x0 +%= orig0;
         x1 +%= orig1;
 
-        // Return 128 bits of data (as two u64s)
+        // Return 121 bits of data (as two u64s)
         if (T == f64) {
             return .{
                 @as(f64, @floatFromInt(@as(u64, x0[0]) | (@as(u64, x0[1]) << 32))) / POW_2_64,
@@ -428,7 +438,7 @@ pub const ChaCha12 = struct {
 };
 
 test "basic determinism" {
-    var seed = std.mem.zeroes(Seed);
+    var seed: Seed = @splat(0);
     seed[0] = 42;
 
     var rng1 = ChaCha12.init(seed);
@@ -440,7 +450,7 @@ test "basic determinism" {
 }
 
 test "skip produces same values" {
-    var seed = std.mem.zeroes(Seed);
+    var seed: Seed = @splat(0);
     seed[0] = 123;
     seed[5] = 77;
 
@@ -462,7 +472,7 @@ test "skip produces same values" {
 }
 
 test "skip forward matches sequential" {
-    var seed = std.mem.zeroes(Seed);
+    var seed: Seed = @splat(0);
     seed[3] = 0xAB;
 
     var rng1 = ChaCha12.init(seed);
@@ -483,7 +493,7 @@ test "skip forward matches sequential" {
 }
 
 test "cross-block boundary skip" {
-    var seed = std.mem.zeroes(Seed);
+    var seed: Seed = @splat(0);
     seedFromBytes("my-game-seed", &seed);
 
     var rng = ChaCha12.init(seed);
@@ -500,7 +510,7 @@ test "cross-block boundary skip" {
 }
 
 test "float range" {
-    var seed = std.mem.zeroes(Seed);
+    var seed: Seed = @splat(0);
     seedFromBytes("my-game-seed", &seed);
 
     var rng = ChaCha12.init(seed);
@@ -573,7 +583,8 @@ pub inline fn staffordMix13(value: u64) u64 {
 /// BROKEN WHEN EXPORTING, DO NOT USE FOR WASM, AS JS LOGIC EXISTS ALREADY. Converts a base-26 [a-z]-only string to 64 bytes. Input should  too no larger than 100 characters.
 pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {
     // Initialize out_seed to 0
-    @memset(out_seed, 0);
+    // @memset(out_seed, 0);
+    out_seed.* = @splat(0); // awkward performance thing
 
     for (input) |char| {
         const char_val = @as(u64, char - 'a') + 1;

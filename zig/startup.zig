@@ -19,7 +19,7 @@ pub const STARTING_ZOOM_TIMES = 4;
 /// Sets the player's spawn randomly (if `STARTING_ZOOM_TIMES` is positive).
 const SET_PLAYER_SPAWN_RANDOMLY = true;
 
-const _ = {
+comptime {
     // technically, floating-point inaccuracies start to ~3% influence procedural generation at STARTING_ZOOM_TIMES = 7
     // since the max coordinate from a block perspective is 2 ^ (7 * ZOOM_LOG2 + 4) and 2 ^ (7 * ZOOM_LOG2) from a chunk perspective
     // that ends up meaning that you're using 18 of 23 bits of precision in f32
@@ -29,7 +29,7 @@ const _ = {
     if (STARTING_ZOOM_TIMES < 0 or STARTING_ZOOM_TIMES > 7) {
         @compileError("STARTING_ZOOM_TIMES must be between 0 and 7 to prevent floating point or logic issues!");
     }
-};
+}
 
 var alreadyStarted = false;
 

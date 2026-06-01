@@ -78,7 +78,7 @@ struct TileOutput {
     @location(4) @interpolate(flat) edge_flags: u32,
     @location(5) @interpolate(flat) light: f32,
     @location(6) @interpolate(flat) hp: u32,
-    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 28 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
+    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 21 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
 };
 
 struct TileData {
@@ -108,8 +108,9 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     // out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
 
     out.light = 1.0;
-    out.hp = extractBits(data.word1, 28u, 4u);
-    let s1 = data.word1; // hp takes up the top 4 bits perfectly
+    out.hp = extractBits(data.word1, 20u, 4u);
+    // hp takes up the top 4 bits perfectly, 24-bit total
+    let s1 = murmurmix32(extractBits(data.word1, 0u, 24u));
     let s2 = murmurmix32(s1);
     let s3 = murmurmix32(s2);
     out.seeds = vec3u(s1, s2, s3);
@@ -936,16 +937,19 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     // Both the original sprite and the mask are sampled. The mask is pre-made: for many sprites it is white.
     // For gems, there's a special gem mask, and ores have a rounded rectangular mask with darkening.
     // This is multiplied with RGBA instead of OKLCH for simplicity.
+
+    // in the future we can also make the sample of either change over time for some neat effects
     let raw_tex = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
     let raw_mask = textureSampleLevel(sprite_atlas_mask, pixel_sampler, final_uv, 0.0);
 
     // make raw mask stronger
-    let tex_color = vec4f(srgb_to_linear(raw_tex.rgb * raw_mask.rgb), raw_tex.a * raw_mask.a);
+    let tex_rgb = srgb_to_linear(raw_tex.rgb * raw_mask.rgb);
+    let tex_a = raw_tex.a * raw_mask.a;
     // Early discard if the pixel is fully transparent (maybe)
     // if tex_color.a <= 0.0 {
     //     discard;
     // }
-    var lab = linear_srgb_to_oklab(tex_color.rgb);
+    var lab = linear_srgb_to_oklab(tex_rgb);
     var lch = oklab_to_oklch(lab);
 
     // Apply modifications from lcha (vec4f: L, C, H, A), see zig/render/entity.zig
@@ -957,7 +961,7 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     let final_rgb = oklab_to_linear_srgb(lab);
 
     // apply alpha after being back to RGB!
-    let final_a = tex_color.a * in.lcha.w;
+    let final_a = tex_a * in.lcha.w;
     return vec4f(apply_color_management(final_rgb), final_a);
 }
 

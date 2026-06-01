@@ -7,9 +7,9 @@ import WASM_URL from "./main.wasm?url";
 /** The URL for the WebGPU shader code. ADD ?raw FOR DEBUGGING SHADER. */
 import SHADER_SOURCE from "./shader.wgsl?raw"; // sadly not possible to use .DEV env detection
 /** The URL for the sprite sheet. */
-import SPRITE_SHEET_URL from "./assets/main.png?url";
+import SPRITE_SHEET_URL from "../public/assets/main.png?url";
 /** The URL for the sprite sheet. */
-import SPRITE_SHEET_MASK_URL from "./assets/mainMasked.png?url";
+import SPRITE_SHEET_MASK_URL from "../public/assets/mainMasked.png?url";
 import { CONFIG } from "./main";
 
 /** Creates a new GameEngine, sets up WebGPU shaders, and calls init() from Zig. */
@@ -138,6 +138,18 @@ export async function create(
                 ) => engine!.handleVisibleChunks(opacity, wireframeOpacity),
                 jsHandleVisibleEntities: () => engine!.handleVisibleEntities(),
                 jsSetMouseType: (type: number) => engine!.setMouseType(type),
+                jsPlaySound: (
+                    id: number,
+                    baseVolume: number,
+                    volumeVariation: number,
+                    pitchVariation: number,
+                ) =>
+                    engine!.playSound(
+                        id,
+                        baseVolume,
+                        volumeVariation,
+                        pitchVariation,
+                    ),
             },
         },
     );
@@ -319,7 +331,7 @@ export async function create(
         bgPipeline,
         entityPipeline,
     );
-    engine.exports.setup();
+    engine.exports.main();
     await engine.setSeed(Seeding.makeSeed(100));
     // its a random seed that looks nice
     // await engine.setSeed(
@@ -359,6 +371,7 @@ export async function create(
     const atlasTextureMask = await GameEngine.loadTexture(
         device,
         SPRITE_SHEET_MASK_URL,
+        "rgba8unorm",
     );
 
     // Create sampler (nearest neighbor for pixel art)

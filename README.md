@@ -11,7 +11,7 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 ![Inventory example](images/inventory.png)
 
-![Sprite sheet](src/assets/main.png)
+![Sprite sheet](public/assets/main.png)
 
 ### Building
 
@@ -379,7 +379,7 @@ pub var mod_store: ModificationStore = undefined;
 /// Stores what location a modification with an active suffix and quadrant, as well as its depth, to easily identify it.
 pub const DepthCoordinate = struct {
     /// Represents an invalid `DepthCoordinate`, which has `depth` equal to 0.
-    /// Semantically equivalent to `null`.
+    /// Semantically equivalent to null.
     pub const invalid = DepthCoordinate{
         .depth = 0,
         .quadrant = undefined,

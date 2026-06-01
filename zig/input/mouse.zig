@@ -38,7 +38,7 @@ pub var mouse_type: MouseType = .initial;
 
 /// Chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
-pub var mouse_chunk: ?memory.Coordinate = null;
+pub var mouse_chunk_coord: ?memory.Coordinate = null;
 /// Subpixel of the chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
 pub var mouse_subpixel: ?memory.Vec2u = null;
@@ -56,7 +56,7 @@ pub var block_position_changed = true;
 /// Assume to be invalid if values are negative (both will be -1.0 if invalid).
 pub var uv_position: memory.Vec2f = .{ -1.0, -1.0 };
 
-/// Determines if the mouse was just set to be down; reset at the end of a render frame.
+/// Determines if the mouse was just set to be down; reset on pointerup.
 pub var just_mouse_down: bool = false;
 
 /// Handles mouse logic, where `x` and `y` values are between 0-1, acting like a UV over the whole canvas from HTML.
@@ -80,7 +80,7 @@ pub fn handleMouse(x: f64, y: f64, action: u32) void {
 /// Updates the block/chunk the mouse is in for logic.
 pub fn updateMouseLocation() void {
     if (uv_position[0] < 0) {
-        mouse_chunk = null;
+        mouse_chunk_coord = null;
         mouse_subpixel = null;
         return; // position must be invalid!
     }
@@ -95,13 +95,13 @@ pub fn updateMouseLocation() void {
     const target_sx = game.camera_pos[0] + @as(i64, @round(world_dx));
     const target_sy = game.camera_pos[1] + @as(i64, @round(world_dy));
 
-    const old_coord = mouse_chunk;
+    const old_coord = mouse_chunk_coord;
     const chunk_offset_x = @divFloor(target_sx, memory.SUBPIXELS_IN_CHUNK);
     const chunk_offset_y = @divFloor(target_sy, memory.SUBPIXELS_IN_CHUNK);
 
     const player_coord = game.getPlayerCoord();
     if (player_coord.move(.{ chunk_offset_x, chunk_offset_y })) |coord| {
-        mouse_chunk = coord;
+        mouse_chunk_coord = coord;
 
         const lx = @mod(target_sx, memory.SUBPIXELS_IN_CHUNK); // no need to use % trick, @mod optimizes down to & instruction
         const ly = @mod(target_sy, memory.SUBPIXELS_IN_CHUNK);
@@ -116,16 +116,17 @@ pub fn updateMouseLocation() void {
             mouse_block_y != old_y or
             !(old_coord != null and memory.Coordinate.eql(coord, old_coord.?));
     } else {
-        mouse_chunk = null;
+        mouse_chunk_coord = null;
         mouse_subpixel = null;
         block_position_changed = true; // prevent funny edge cases
     }
 }
 
 /// Gets what block the mouse is over (assuming `updateMouseLocation()` has been called).
-/// Returns null if no block is being hovered over. Takes into account sprite hitbox sizes such as for mushrooms.
+/// Returns null if no block is being hovered over.
+/// Takes into account sprite hitbox sizes, such as for mushrooms.
 pub fn getMouseBlock() ?memory.Block {
-    if (mouse_chunk) |chunk| {
+    if (mouse_chunk_coord) |chunk| {
         const block = world.getChunk(chunk).getBlock(mouse_block_x, mouse_block_y);
         const s = block.id;
 
@@ -133,14 +134,18 @@ pub fn getMouseBlock() ?memory.Block {
         const loc = (mouse_subpixel.? / memory.Vec2u{ memory.CHUNK_SIZE, memory.CHUNK_SIZE }) %
             memory.Vec2u{ memory.CHUNK_SIZE, memory.CHUNK_SIZE };
 
-        // create smaller hitboxes for some decor sprites (with a little bit of leniency involved)
-        if (s == .mushroom and loc[1] <= 10) {
+        const hitbox = s.props().hitbox;
+        // create smaller hitboxes for some decor sprites (with a little bit of leniency involved still)
+        if (hitbox == .large_bottom_decor and loc[1] <= 5) {
+            // same as mushroom but greater valid area, such as for bushes
+            return null;
+        } else if (hitbox == .small_bottom_decor and loc[1] <= 10) {
             // If your mouse is over the TOP PART of the mushroom block then that's not part of its "hitbox"
             return null;
-        } else if (s == .ceiling_flower and loc[1] >= 9) {
+        } else if (hitbox == .ceiling_decor and loc[1] >= 9) {
             // for ceiling flower, it's invalid if your mouse is over the BOTTOM PART
             return null;
-        } else if (s == .spiral_plant and (loc[0] < 4 or loc[0] >= 12)) {
+        } else if (hitbox == .thin_strip and (loc[0] < 4 or loc[0] >= 12)) {
             // plant is fully vertical
             // x=0,1,2,3 or 12,13,14,15
             return null;
