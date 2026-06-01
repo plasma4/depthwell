@@ -1,8 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// An amortized O(1) unbounded first-in, first-out (FIFO) queue implemented
-/// as a dynamic circular ring buffer.
+/// An amortized O(1) unbounded first-in, first-out (FIFO) dynamic circular ring buffer queue.
 pub fn UnboundedFifo(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -23,17 +22,19 @@ pub fn UnboundedFifo(comptime T: type) type {
                 try self.grow(allocator);
             }
 
+            std.debug.assert(self.buf.len > 0 and (self.buf.len & (self.buf.len - 1)) == 0);
             self.buf[self.tail] = item;
-            self.tail = (self.tail + 1) % self.buf.len;
+            self.tail = (self.tail + 1) & (self.buf.len - 1);
             self.count += 1;
         }
 
         /// Pops an item from the front of the FIFO. Returns null if empty.
         pub fn pop(self: *Self) ?T {
             if (self.count == 0) return null;
+            std.debug.assert(self.buf.len > 0 and (self.buf.len & (self.buf.len - 1)) == 0);
 
             const item = self.buf[self.head];
-            self.head = (self.head + 1) % self.buf.len;
+            self.head = (self.head + 1) & (self.buf.len - 1);
             self.count -= 1;
 
             // Reset indices if empty to keep memory linear
@@ -45,21 +46,32 @@ pub fn UnboundedFifo(comptime T: type) type {
             return item;
         }
 
-        /// Internal growth algorithm to double capacity and unwrap the ring buffer
+        /// Internal growth algorithm that doubles capacity and unwraps the ring buffer.
         fn grow(self: *Self, allocator: Allocator) !void {
             const old_capacity = self.buf.len;
             const new_capacity = if (old_capacity == 0) 8 else old_capacity * 2;
 
-            // Try to resize the existing buffer in-place
+            // try to resize the existing buffer in-place
             if (old_capacity > 0 and allocator.resize(self.buf, new_capacity)) {
-                self.buf.len = new_capacity;
+                self.buf = self.buf.ptr[0..new_capacity];
 
-                // If the data was wrapped around, we have to fix the broken ring
-                if (self.tail <= self.head and self.count > 0) {
+                if (self.head > 0) {
                     const first_part_len = old_capacity - self.head;
-                    // Shift the wrapped elements to the end of the newly expanded buffer
-                    std.mem.copyBackwards(T, self.buf[new_capacity - first_part_len .. new_capacity], self.buf[self.head..old_capacity]);
-                    self.head = new_capacity - first_part_len;
+                    const second_part_len = self.head;
+
+                    if (second_part_len < first_part_len) {
+                        // copy the smaller second part to the new space to unwrap the ring
+                        @memcpy(self.buf[old_capacity .. old_capacity + second_part_len], self.buf[0..second_part_len]);
+                        self.tail = old_capacity + second_part_len;
+                    } else {
+                        // copy the smaller first part to the end of the new space
+                        const dst_idx = new_capacity - first_part_len;
+                        @memcpy(self.buf[dst_idx..new_capacity], self.buf[self.head..old_capacity]);
+                        self.head = dst_idx;
+                    }
+                } else {
+                    // No copying needed if data was not wrapped
+                    self.tail = old_capacity;
                 }
                 return;
             }
@@ -68,13 +80,13 @@ pub fn UnboundedFifo(comptime T: type) type {
             const new_buf = try allocator.alloc(T, new_capacity);
 
             if (self.count > 0) {
-                if (self.head < self.tail) {
-                    @memcpy(new_buf[0..self.count], self.buf[self.head..self.tail]);
+                if (self.head == 0) {
+                    @memcpy(new_buf[0..self.count], self.buf[0..self.count]);
                 } else {
                     const first_part = self.buf[self.head..];
-                    const second_part = self.buf[0..self.tail];
+                    const second_part = self.buf[0..self.head];
                     @memcpy(new_buf[0..first_part.len], first_part);
-                    @memcpy(new_buf[first_part.len .. first_part.len + second_part.len], second_part);
+                    @memcpy(new_buf[first_part.len..self.count], second_part);
                 }
             }
 
@@ -86,7 +98,7 @@ pub fn UnboundedFifo(comptime T: type) type {
 
         /// Iterates over every active element in the FIFO out-of-order.
         /// Passes a pointer to each item to the provided callback function.
-        pub fn forEach(self: *Self, context: anytype, comptime callback: fn (ctx: @TypeOf(context), item: *T) void) void {
+        pub inline fn forEach(self: *Self, context: anytype, comptime callback: fn (ctx: @TypeOf(context), item: *T) void) void {
             if (self.count == 0) return;
 
             if (self.head < self.tail) {

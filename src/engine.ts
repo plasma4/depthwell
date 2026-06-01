@@ -472,7 +472,7 @@ export class GameEngine {
     // -----
 
     /**
-     * Resolves and caches the AudioBuffer for a given sound effect ID.
+     * Resolves and caches the `AudioBuffer` for a given sound effect ID.
      */
     private async getAudioBuffer(id: number): Promise<AudioBuffer> {
         if (this.audioBuffers.has(id)) {
@@ -495,7 +495,7 @@ export class GameEngine {
                 const response = await fetch(`assets/mining${id}.mp3`);
 
                 if (!response.ok) {
-                    // Correct way to check for 404/500 errors
+                    // standard error handling
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
