@@ -91,7 +91,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                         if (mining_frame % FRAMES_PER_SOUND == 0)
                             root.sound.playSound(
                                 @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
-                                0.6 + 0.4 * @as(f32, @floatFromInt(mining_strength)),
+                                0.7 + 0.3 * @as(f32, @floatFromInt(mining_strength)),
                                 0.3,
                                 0.4,
                             );
@@ -100,7 +100,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                         // play a grassy sound
                         root.sound.playSound(
                             4,
-                            0.6 + 0.4 * @as(f32, @floatFromInt(mining_strength)),
+                            0.8, // 80% volume
                             0.3,
                             0.4,
                         );

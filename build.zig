@@ -1,8 +1,9 @@
 const std = @import("std");
 
-// Run zig build normally, and zig build -Doptimize=ReleaseFast for a quick production version test, and zig build -Dwasm-opt to use ReleaseFast AND highly aggressive wasm-opt changes. Use zig build -Dgen-enums as well to automatically construct src/enums.ts and zig test "zig/root.zig" to run all tests across the codebase.
-
-// (Add --memory64 for 64-bit builds)
+// Run zig build normally, and zig build -Doptimize=ReleaseFast for a quick production version test.
+// Use zig build -Dwasm-opt to use ReleaseFast AND highly aggressive wasm-opt (from Binaryen).
+// Use zig build -Dgen-enums as well to automatically construct src/enums.ts and zig test "zig/root.zig" to run all tests across the codebase.
+// (Add --memory64 for 64-bit builds.)
 
 pub fn build(b: *std.Build) void {
     // TODO add in wasm-opt for ReleaseFast builds for even more optimization!
