@@ -492,7 +492,15 @@ export class GameEngine {
 
         const loadPromise = (async () => {
             try {
-                const response = await fetch(`assets/mining${id}.mp3`);
+                const response = await fetch(
+                    [
+                        ``,
+                        `assets/mining${id}.mp3`,
+                        `assets/mining${id}.mp3`,
+                        `assets/mining${id}.mp3`,
+                        `assets/grass.mp3`,
+                    ][id],
+                );
 
                 if (!response.ok) {
                     // standard error handling

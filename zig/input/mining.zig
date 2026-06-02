@@ -81,18 +81,31 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     if (!inventory.IN_CREATIVE and strength > 0) mining_strength else 0,
                 );
 
-                if (block.isSolid()) {
-                    @setFloatMode(.optimized);
-                    const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE) 3 else @max(120 / mining_speed, 3);
-                    not_mining_frame = 0;
-                    if (mining_frame % FRAMES_PER_SOUND == 0)
+                {
+                    // Sound effects time!
+                    if (block.isSolid()) {
+                        @setFloatMode(.optimized);
+                        const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE) 3 else @max(90 / mining_speed, 3);
+                        not_mining_frame = 0;
+                        // create a mining sound every so often!
+                        if (mining_frame % FRAMES_PER_SOUND == 0)
+                            root.sound.playSound(
+                                @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
+                                0.6 + 0.4 * @as(f32, @floatFromInt(mining_strength)),
+                                0.3,
+                                0.4,
+                            );
+                        mining_frame += 1;
+                    } else if (was_deleted and !block.isEmpty() and !block.isFoundation()) {
+                        // play a grassy sound
                         root.sound.playSound(
-                            @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
+                            4,
                             0.6 + 0.4 * @as(f32, @floatFromInt(mining_strength)),
                             0.3,
                             0.4,
                         );
-                    mining_frame += 1;
+                        mining_frame += 1;
+                    }
                 }
 
                 if (was_deleted) {
