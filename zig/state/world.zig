@@ -1094,7 +1094,9 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 // Cascade logic
                 // TODO: migrate this to use robust sprite.zig rules logic!
                 var broken = false;
-                if (current_sprite == .mushroom or current_sprite == .big_mushroom or current_sprite == .bush or current_sprite == .rock) {
+                if (current_sprite == .mushroom or current_sprite == .big_mushroom or current_sprite == .bush or current_sprite == .rock or
+                    current_sprite == .big_tree1_left or current_sprite == .big_tree1_right or current_sprite == .big_tree2_left or current_sprite == .big_tree2_right)
+                {
                     const below = if (lby < 15)
                         getBlockAt(target_coord, lbx, lby + 1, memory.game.depth).id
                     else
@@ -1320,6 +1322,7 @@ pub fn clearCaches(comptime clear_ancestors: bool) void {
 pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
     clearCaches(true);
+    root.inventory.dropped_items.clear(null);
     memory.game.depth += 1;
     const depth = memory.game.depth;
 

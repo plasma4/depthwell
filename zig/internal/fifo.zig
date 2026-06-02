@@ -116,5 +116,34 @@ pub fn UnboundedFifo(comptime T: type) type {
                 }
             }
         }
+
+        /// Clears the FIFO, resetting it to an empty state.
+        /// If `T` owns resources, pass a deinitialization callback function.
+        /// Pass `null` for primitives or basic structs.
+        pub fn clear(self: *Self, deinit_item: ?fn (item: T) void) void {
+            if (deinit_item) |cb| {
+                if (self.count > 0) {
+                    if (self.head < self.tail) {
+                        // Elements are contiguous
+                        for (self.buf[self.head..self.tail]) |item| {
+                            cb(item);
+                        }
+                    } else {
+                        // Elements wrap around the boundary
+                        for (self.buf[self.head..]) |item| {
+                            cb(item);
+                        }
+                        for (self.buf[0..self.tail]) |item| {
+                            cb(item);
+                        }
+                    }
+                }
+            }
+
+            // O(1) reset for the tracking state
+            self.head = 0;
+            self.tail = 0;
+            self.count = 0;
+        }
     };
 }

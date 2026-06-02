@@ -70,13 +70,28 @@
             background-color: white;
         }
 
+        #textContainer {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        #logicText,
+        #renderText {
+            position: fixed;
+        }
+
         #text1,
         #text2,
         #text3,
         #text4,
         #logicText,
         #renderText {
-            position: fixed;
             font-family: monospace;
             user-select: text;
             font-size: 20px;
@@ -93,28 +108,17 @@
         #text2,
         #text3,
         #text4 {
-            position: relative;
-            display: inline-block;
-            max-width: 45%;
-        }
-
-        #textTop,
-        #textBottom {
-            position: fixed;
-            display: flex;
-            justify-content: space-between;
-            width: calc(100% - 8px);
-            flex-wrap: wrap;
-        }
-
-        #textTop {
-            top: 20px;
-            left: 4px;
-        }
-
-        #textBottom {
-            bottom: 4px;
-            left: 4px;
+            font-family: monospace;
+            user-select: text;
+            font-size: 20px;
+            padding: 6px;
+            margin: 0;
+            line-height: 1.15;
+            transition: background-color 250ms;
+            background-color: #0008;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            text-align: right;
         }
 
         #text1:hover,

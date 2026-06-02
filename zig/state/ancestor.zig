@@ -273,13 +273,7 @@ pub fn applyAncestorLogic(
         }
     }
 
-    var evolved_sprite: Sprite = switch (parent_sprite) {
-        .mossy_stone => .spiral_plant,
-        .purple_strange_stone => .red_stone,
-        .red_stone => .redder_stone,
-        .redder_stone => .lava_stone,
-        else => parent_sprite,
-    };
+    var evolved_sprite: Sprite = parent_sprite.evolvesTo();
 
     const noise: u8 = @truncate(noise_hash_1);
     noise_hash_1 >>= @bitSizeOf(@TypeOf(noise));

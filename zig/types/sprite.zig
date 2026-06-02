@@ -43,6 +43,70 @@ pub const HitboxKind = enum(u3) {
     thin_strip,
 };
 
+/// Strategy to resolve block drop items upon destruction.
+pub const DropStrategy = enum {
+    /// Drops itself if `.isItem()` returns `true`.
+    self,
+    /// Guaranteed to drop nothing.
+    none,
+    /// Drops a predetermined list of static items.
+    static,
+    /// Runs a custom function to determine drops.
+    dynamic,
+};
+
+/// Type signature for deterministic coordinate-based drop calculations.
+pub const DropFn = *const fn (coord: memory.Coordinate, bx: u4, by: u4) []const Sprite;
+
+/// Configuration defining how a block drops items.
+pub const DropConfig = struct {
+    strategy: DropStrategy = .self,
+    static_items: []const Sprite = &.{},
+    dynamic_fn: ?DropFn = null,
+};
+
+/// Contains custom functions for `dynamic_fn` in the `DropConfig`.
+pub const DropHandlers = struct {
+    /// Converts a bush drop to various fruits based on world coordinates and seeds.
+    pub fn bushDrop(coord: memory.Coordinate, bx: u4, by: u4) []const Sprite {
+        const depth = memory.game.depth;
+        const key = coord.asDepthCoordinate(depth);
+        const chunk_seeds = root.world.quad_cache.getChunkSeeds(key);
+
+        // Deterministic hash based on the absolute block coordinate in the world
+        const abs_x = coord.suffix[0] * 16 + bx;
+        const abs_y = coord.suffix[1] * 16 + by;
+        const seed_val = root.seeding.FastHash.hash2d(
+            chunk_seeds[3][0..2].*,
+            abs_x,
+            abs_y,
+        );
+
+        const roll = seed_val % 100;
+        if (roll < 5) {
+            return &[_]Sprite{.fruit_ruby_candy};
+        } else if (roll < 15) {
+            return &[_]Sprite{.fruit_splitty};
+        } else if (roll < 30) {
+            return &[_]Sprite{.fruit_teal_lemon};
+        } else if (roll < 50) {
+            return &[_]Sprite{.fruit_blue_lemon};
+        } else if (roll < 60) {
+            return &[_]Sprite{.copperfruit};
+        } else if (roll < 70) {
+            return &[_]Sprite{.ploopus1};
+        } else if (roll < 80) {
+            return &[_]Sprite{.ploopus2};
+        } else if (roll < 88) {
+            return &[_]Sprite{.divato};
+        } else if (roll < 96) {
+            return &[_]Sprite{.circuspin};
+        } else {
+            return &[_]Sprite{.bacon};
+        }
+    }
+};
+
 /// Consolidated properties of each sprite.
 pub const SpriteProps = struct {
     in_world: bool = false,
@@ -55,7 +119,7 @@ pub const SpriteProps = struct {
     gem: bool = false,
     strength: u64 = 0,
     hitbox: HitboxKind = .full,
-    drops: []const Sprite = &.{},
+    drops: DropConfig = .{ .strategy = .self },
     evolves_to: ?Sprite = null,
 };
 
@@ -183,10 +247,17 @@ const rules = [_]SpriteRule{
         },
         .{ .item = true },
     },
+
     // specific overrides
     .{
         .{ .single = .bush },
-        .{ .strength = 1 },
+        .{
+            .strength = 1,
+            .drops = .{
+                .strategy = .dynamic,
+                .dynamic_fn = &DropHandlers.bushDrop,
+            },
+        },
     },
     .{
         .{ .single = .iron },
@@ -199,6 +270,33 @@ const rules = [_]SpriteRule{
     .{
         .{ .single = .mossy_stone },
         .{ .evolves_to = .spiral_plant },
+    },
+    .{
+        .{ .single = .purple_strange_stone },
+        .{ .evolves_to = .red_stone },
+    },
+    .{
+        .{ .single = .red_stone },
+        .{ .evolves_to = .redder_stone },
+    },
+    .{
+        .{ .single = .redder_stone },
+        .{ .evolves_to = .lava_stone },
+    },
+    .{
+        .{ .list = &[_]Sprite{
+            .big_tree1_left,
+            .big_tree1_right,
+            .big_tree2_left,
+            .big_tree2_right,
+        } },
+        .{
+            .in_world = true,
+            .drops = .{
+                .strategy = .static,
+                .static_items = &[_]Sprite{.small_tree},
+            },
+        },
     },
 };
 
@@ -233,8 +331,18 @@ fn mergeProps(dest: *SpriteProps, src: SpriteProps) void {
     if (src.gem) dest.gem = src.gem;
     if (src.strength != 0) dest.strength = src.strength;
     if (src.hitbox != .full) dest.hitbox = src.hitbox;
-    if (src.drops.len != 0) dest.drops = src.drops;
+    if (src.drops.strategy != .self or src.drops.static_items.len != 0 or src.drops.dynamic_fn != null) {
+        dest.drops = src.drops;
+    }
     if (src.evolves_to != null) dest.evolves_to = src.evolves_to;
+}
+
+/// Constant-time lookup of precomputed full sprite properties.
+pub inline fn getSpriteProps(s: Sprite) SpriteProps {
+    const val = @intFromEnum(s);
+    if (val < MAX_SPRITE_ID) return dense_props_table[val];
+    if (s == .unselected) return unselected_props;
+    return SpriteProps{};
 }
 
 /// Evaluates compile-time rules to build properties for a specific `Sprite`.
@@ -495,6 +603,18 @@ pub const Sprite = enum(u16) {
     pub inline fn isHeatmap(self: @This()) bool {
         const id = @intFromEnum(self);
         return is_debug and id >= 65000 and id <= 65256;
+    }
+
+    /// Extracts the evolved form of this sprite at compile time.
+    /// If it doesn't evolve, returns itself!
+    pub inline fn evolvesTo(self: @This()) Sprite {
+        const val = @intFromEnum(self);
+        if (val < MAX_SPRITE_ID) {
+            if (dense_props_table[val].evolves_to) |evolution| {
+                return evolution;
+            }
+        }
+        return self;
     }
 };
 

@@ -82,7 +82,7 @@ pub fn logInventory() void {
     logger.quick(.{ "{h}Selected sprite", selected_sprite });
 }
 
-/// Increments the amount of an item in the inventory, bypassing dropping.
+/// Increments the amount of an item (`Sprite` type) in the inventory, bypassing dropping.
 pub fn addToInventory(id: Sprite, amount: u64) void {
     const idx = @intFromEnum(id);
     if (idx < inventory_counts.len) {
@@ -94,8 +94,55 @@ pub fn addToInventory(id: Sprite, amount: u64) void {
 /// Amount of dropped item sprites that were created.
 var item_count: u64 = 0;
 
+/// Resolves drop strategies for a broken block and spawns the resulting items.
+/// Eventually creates a `DroppedItem`.
+pub fn dropItem(broken_sprite: Sprite, chunk: memory.Coordinate, block_x: u4, block_y: u4) void {
+    const props_data = sprite.getSpriteProps(broken_sprite);
+    const drop_cfg = props_data.drops;
+
+    switch (drop_cfg.strategy) {
+        .none => {},
+        .self => {
+            dropSingleItem(broken_sprite, chunk, block_x, block_y);
+        },
+        .static => {
+            for (drop_cfg.static_items) |item_id| {
+                dropSingleItem(item_id, chunk, block_x, block_y);
+            }
+        },
+        .dynamic => {
+            if (drop_cfg.dynamic_fn) |func| {
+                const items = func(chunk, block_x, block_y);
+                for (items) |item_id| {
+                    dropSingleItem(item_id, chunk, block_x, block_y);
+                }
+            }
+        },
+    }
+}
+
+/// Computes the relative offset in chunks from `from` to `to`.
+/// Returns `null` if the coordinates are too far apart (over 4096 chunks) or cannot be resolved.
+/// Should be used for non-critical logic like dropped items that would be sensitive to teleports.
+fn getRelativeOffset(from: memory.Coordinate, to: memory.Coordinate) ?memory.Vec2i {
+    // Estimate closest wrapped distance
+    const dx = @as(i64, @bitCast(to.suffix[0] -% from.suffix[0]));
+    const dy = @as(i64, @bitCast(to.suffix[1] -% from.suffix[1]));
+
+    // Sanity limit check
+    if (@abs(dx) > 4096 or @abs(dy) > 4096) return null;
+
+    // Verify using native quadrant-handling transitions
+    if (from.move(.{ dx, dy })) |moved| {
+        if (moved.eql(to)) {
+            return .{ dx, dy };
+        }
+    }
+    return null;
+}
+
 /// Creates an item drop animation and adds a `DroppedItem`.
-pub fn dropItem(id: Sprite, chunk: memory.Coordinate, block_x: u4, block_y: u4) void {
+fn dropSingleItem(id: Sprite, chunk: memory.Coordinate, block_x: u4, block_y: u4) void {
     // Drop at the center of the block horizontally (+128), and the bottom vertically (+256)
     const px = @as(i32, block_x) * 256 + 128;
     const py = @as(i32, block_y) * 256 + 256;
@@ -130,17 +177,15 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
         fn render_item(_: void, item: *DroppedItem) void {
             const player_coord = memory.game.getPlayerCoord();
 
-            // Previous tick position
-            const prev_diff_x = @as(i64, @bitCast(item.last_position.suffix[0] -% player_coord.suffix[0]));
-            const prev_diff_y = @as(i64, @bitCast(item.last_position.suffix[1] -% player_coord.suffix[1]));
-            const prev_item_sp_x = prev_diff_x * 4096 + @as(i64, item.last_subpixel_x);
-            const prev_item_sp_y = prev_diff_y * 4096 + @as(i64, item.last_subpixel_y);
+            // Resolve relative chunk positions safely using the move-validation helper
+            const prev_offset = getRelativeOffset(player_coord, item.last_position) orelse return;
+            const curr_offset = getRelativeOffset(player_coord, item.position) orelse return;
 
-            // Current tick position
-            const curr_diff_x = @as(i64, @bitCast(item.position.suffix[0] -% player_coord.suffix[0]));
-            const curr_diff_y = @as(i64, @bitCast(item.position.suffix[1] -% player_coord.suffix[1]));
-            const curr_item_sp_x = curr_diff_x * 4096 + @as(i64, item.subpixel_x);
-            const curr_item_sp_y = curr_diff_y * 4096 + @as(i64, item.subpixel_y);
+            const prev_item_sp_x = prev_offset[0] * 4096 + @as(i64, item.last_subpixel_x);
+            const prev_item_sp_y = prev_offset[1] * 4096 + @as(i64, item.last_subpixel_y);
+
+            const curr_item_sp_x = curr_offset[0] * 4096 + @as(i64, item.subpixel_x);
+            const curr_item_sp_y = curr_offset[1] * 4096 + @as(i64, item.subpixel_y);
 
             // Interpolate using the global dt from chunk rendering
             const dt = root.chunks.current_dt + 1.0;
@@ -187,8 +232,10 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
     dropped_items.forEach({}, Context.render_item);
 }
 
-/// Executes logical updates for dropped items once a frame (60FPS).
+/// Executes updates for `DroppedItem` entities once every logical frame.
+/// Interpolation occurs when rendering.
 pub fn tickDroppedItems() void {
+    // (ticks happen at 60fps)
     @setFloatMode(.optimized);
     const Context = struct {
         fn update(_: void, item: *DroppedItem) void {
@@ -198,11 +245,15 @@ pub fn tickDroppedItems() void {
             item.last_subpixel_y = item.subpixel_y;
 
             const player_coord = memory.game.getPlayerCoord();
-            const diff_x = @as(i64, @bitCast(item.position.suffix[0] -% player_coord.suffix[0]));
-            const diff_y = @as(i64, @bitCast(item.position.suffix[1] -% player_coord.suffix[1]));
 
-            const item_sp_x_float: f64 = @floatFromInt(diff_x * 4096 + @as(i64, item.subpixel_x));
-            const item_sp_y_float: f64 = @floatFromInt(diff_y * 4096 + @as(i64, item.subpixel_y));
+            // Delete the item if it exceeds 4096 chunks or cannot be resolved
+            const offset = getRelativeOffset(player_coord, item.position) orelse {
+                item.frames_left = 0;
+                return;
+            };
+
+            const item_sp_x_float: f64 = @floatFromInt(offset[0] * 4096 + @as(i64, item.subpixel_x));
+            const item_sp_y_float: f64 = @floatFromInt(offset[1] * 4096 + @as(i64, item.subpixel_y));
 
             const target_sp_x = memory.game.player_pos[0];
             const target_sp_y = memory.game.player_pos[1];

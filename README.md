@@ -13,6 +13,16 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 ![Sprite sheet](public/assets/main.png)
 
+### How to play
+
+Left-clicking places blocks; click on inventory slots directly to select block types.
+Use the pickaxe icon to mine and WASD/arrow keys to move around.
+
+For inventory hotkeys:
+
+- Use backquote and 0-9 keys to change inventory selection.
+- Q moves up a row in the inventory while E moves down a row.
+
 ### Building
 
 To build `node_modules`, run `npm install`.

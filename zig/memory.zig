@@ -283,6 +283,12 @@ pub const Block = packed struct(u64) {
         return self.id.isHeatmap();
     }
 
+    /// Extracts the evolved form of this sprite at compile time.
+    /// If it doesn't evolve, returns itself!
+    pub inline fn evolvesTo(self: @This()) Sprite {
+        return self.id.evolvesTo();
+    }
+
     /// Determines if there is a solid block adjacent based on edge flags.
     pub inline fn isAdjacentBlockSolid(self: @This(), direction: comptime_int) bool {
         return (self.edge_flags & direction) != 0;

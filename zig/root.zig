@@ -201,19 +201,10 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
 
     // give some helpful info! logging is a bit hacky
     // we use a {h} header but can write multiple lines, this gets cleared every frame since writeOnce() is used
-    // TODO: re-enable this when exporting
-    // logger.writeOnce(3, .{
-    //     \\{h}Left-clicking places blocks; click on inventory slots directly to select block types.
-    //     \\Use the pickaxe icon to mine and WASD/arrow keys to move around.
-    //     \\
-    //     \\For inventory hotkeys:
-    //     \\- Use backquote and 0-9 keys to change inventory selection.
-    //     \\- Q moves up a row in the inventory while E moves down a row.
-    //     \\
-    //     \\Selected sprite ID
-    //     ,
-    //     inventory.selected_sprite,
-    // });
+    logger.writeOnce(3, .{
+        "{h}Selected sprite ID",
+        inventory.selected_sprite,
+    });
 }
 
 pub export fn mixSeed(number: u64) i64 {
