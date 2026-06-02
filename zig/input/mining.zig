@@ -93,10 +93,11 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                                 @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
                                 0.7 + 0.3 * @as(f32, @floatFromInt(mining_strength)),
                                 0.3,
-                                0.4,
+                                if (block.isGem()) 0.7 else if (block.isOre()) 0.55 else 0.45,
                             );
                         mining_frame += 1;
                     } else if (was_deleted and !block.isEmpty() and !block.isFoundation()) {
+                        not_mining_frame = 0;
                         // play a grassy sound
                         root.sound.playSound(
                             4,
@@ -104,7 +105,6 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                             0.3,
                             0.4,
                         );
-                        mining_frame += 1;
                     }
                 }
 
