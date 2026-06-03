@@ -3,6 +3,7 @@ const std = @import("std");
 const root = @import("../root.zig");
 const sprite = root.sprite;
 const Sprite = sprite.Sprite;
+const memory = root.memory;
 const inventory = root.inventory;
 const world = root.world;
 const mouse = root.mouse;
@@ -114,17 +115,17 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                         not_mining_frame = 0;
                         // play a grassy sound
                         root.sound.playSound(
-                            4,
-                            0.8, // 80% volume
+                            4 + (memory.game.frame % 2),
+                            0.3, // 30% volume
+                            0.1,
                             0.3,
-                            0.4,
                         );
                     }
                 }
 
                 if (was_deleted) {
                     if (!block.isEmpty()) {
-                        root.memory.game.items_mined +%= 1;
+                        memory.game.items_mined +%= 1;
                         inventory.dropItem(
                             block.id,
                             mouse.mouse_chunk_coord.?,
@@ -183,14 +184,14 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
     }
 
     // pickaxe upgrade testing
-    if (root.memory.game.items_mined >= 20) {
+    if (memory.game.items_mined >= 20) {
         pickaxe_type = .silver;
         mining_speed = 12;
         mining_strength = 2;
-    } else if (root.memory.game.items_mined >= 8) {
+    } else if (memory.game.items_mined >= 8) {
         pickaxe_type = .iron;
         mining_speed = 15;
-    } else if (root.memory.game.items_mined >= 2) {
+    } else if (memory.game.items_mined >= 2) {
         pickaxe_type = .bronze;
         mining_speed = 11;
     }

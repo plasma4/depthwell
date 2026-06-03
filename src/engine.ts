@@ -498,7 +498,8 @@ export class GameEngine {
                         `assets/mining${id}.mp3`,
                         `assets/mining${id}.mp3`,
                         `assets/mining${id}.mp3`,
-                        `assets/grass.mp3`,
+                        `assets/grass1.mp3`,
+                        `assets/grass2.mp3`,
                     ][id],
                 );
 
@@ -526,12 +527,7 @@ export class GameEngine {
     }
 
     /** Plays a sound effect with pitch and volume variation. */
-    public playSound(
-        id: number,
-        baseVolume: number,
-        volumeVariation: number,
-        pitchVariation: number,
-    ): void {
+    public playSound(id: number, volume: number, pitch: number): void {
         if (this.audioCtx && this.audioCtx.state === "suspended") {
             this.audioCtx.resume();
         }
@@ -543,21 +539,9 @@ export class GameEngine {
                 source.buffer = buffer;
                 const gainNode = ctx.createGain();
 
-                // Apply volume variation within [1.0 - variation, 1.0 + variation]
-                const volFactor =
-                    1.0 + (Math.random() * 2 - 1) * volumeVariation;
-                gainNode.gain.setValueAtTime(
-                    Math.max(0, volFactor * baseVolume),
-                    ctx.currentTime,
-                );
-
-                // Apply random pitch (playbackRate) variation, same with volume
-                const pitchFactor =
-                    1.0 + (Math.random() * 2 - 1) * pitchVariation;
-                source.playbackRate.setValueAtTime(
-                    Math.max(0.05, pitchFactor),
-                    ctx.currentTime,
-                );
+                // variation RNG is handled in Zig
+                gainNode.gain.setValueAtTime(volume, ctx.currentTime);
+                source.playbackRate.setValueAtTime(pitch, ctx.currentTime);
 
                 source.connect(gainNode);
                 gainNode.connect(ctx.destination);

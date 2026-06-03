@@ -138,18 +138,8 @@ export async function create(
                 ) => engine!.handleVisibleChunks(opacity, wireframeOpacity),
                 jsHandleVisibleEntities: () => engine!.handleVisibleEntities(),
                 jsSetMouseType: (type: number) => engine!.setMouseType(type),
-                jsPlaySound: (
-                    id: number,
-                    baseVolume: number,
-                    volumeVariation: number,
-                    pitchVariation: number,
-                ) =>
-                    engine!.playSound(
-                        id,
-                        baseVolume,
-                        volumeVariation,
-                        pitchVariation,
-                    ),
+                jsPlaySound: (id: number, volume: number, pitch: number) =>
+                    engine!.playSound(id, volume, pitch),
             },
         },
     );

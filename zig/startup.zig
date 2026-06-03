@@ -45,6 +45,7 @@ pub fn init() void {
     }
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 2));
+    root.sound.seed = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 3));
     for (0..STARTING_ZOOM_TIMES) |_| {
         // Set the player position to somewhere random in the current chunk
         if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.setPlayerPosDumb(.{

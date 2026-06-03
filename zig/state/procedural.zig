@@ -66,15 +66,29 @@ pub var USE_BASE_HEATMAP = false;
 /// Determines whether to use a heatmap or not for ore generation. Ignored if `root.is_debug` is false.
 pub var USE_ORE_HEATMAP = false;
 
-/// Options for the FBM+Worley implementation.
+/// Configuration options passed to the FBM (Fractal Brownian Motion) and Worley
+/// noise generation algorithm (`getFbmWorleyValue`).
 const TerrainOptions = struct {
+    /// Controls the scale of the primary noise grid cells.
+    /// Larger values stretch out the noise patterns.
     cell_size: comptime_float,
+
+    /// The maximum offset distance applied during the FBM domain warping step.
+    /// Higher values cause more severe "displacement" or squiggly distortion in the terrain.
+    /// Setting this to 0 eliminates any distortion.
     fbm_shift_size: comptime_float,
+
+    /// When true, stretches out the vertical sampling coordinates by a factor of 2 (horizontal stretching of 2x).
     horizontally_wide: bool = false,
+
+    /// Determines whether the algorithm computes true Worley cellular noise metrics (F2 - F1 distance).
+    ///
+    /// - If `true`, performs an optimized 4-tap cellular distance check (essential for jagged cave walls or sharp ore veins).
+    /// - If `false`, bypasses cellular logic entirely and falls back to a much faster, basic bilinear value noise interpolation.
     use_f2_f1: bool = true,
 };
 
-/// Base data for sprites
+/// Temporary data produced during the first pass of structural generation.
 const BaseTerrainData = struct {
     sprite: Sprite,
     moisture: f32,
@@ -198,7 +212,7 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
     var amp: f32 = options.fbm_shift_size;
     amp /= fbm_scale.getF32();
     if (amp > 0) {
-        // Reduced/Inlined FBM warping
+        // basic FBM warping
         inline for (0..fbm_octaves) |_| {
             const noise = getDualValueNoise(seed_vector, x * freq, y * freq);
             warp_x += noise[0] * amp;
