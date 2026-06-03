@@ -135,14 +135,14 @@ pub fn build(b: *std.Build) void {
         const export_main = addAsepriteStep(
             b,
             path,
-            "public/assets/main.aseprite",
+            "aseprite/main.aseprite",
             "main",
             "main.png",
         );
         const export_masked = addAsepriteStep(
             b,
             path,
-            "public/assets/main.aseprite",
+            "aseprite/main.aseprite",
             "masks", // Ensure this matches the layer name exactly (or "Group/masks")
             "mainMasked.png",
         );
