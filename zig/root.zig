@@ -54,7 +54,6 @@ pub const mouse = @import("input/mouse.zig");
 
 pub fn main() callconv(.c) void {
     // TODO destroy World/GameState values as needed if !alreadyStarted
-    memory.game = .{}; // initialize GameState
     world.flag_worklist = std.ArrayList(world.UpdateItem).initCapacity(world.alloc, 1024) catch unreachable;
     world.mod_store = .init(world.alloc);
 }
@@ -199,11 +198,14 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
         4,
     );
 
-    // give some helpful info! logging is a bit hacky
-    // we use a {h} header but can write multiple lines, this gets cleared every frame since writeOnce() is used
+    // give some helpful info!
+    // this gets cleared every frame since writeOnce() is used
+
     logger.writeOnce(3, .{
-        "{h}Selected sprite ID",
+        "{mh}Selected sprite ID",
         inventory.selected_sprite,
+        "{mh}Hovered sprite details",
+        if (mouse.mouse_chunk_coord) |coord| world.getChunk(coord).getBlock(mouse.mouse_block_x, mouse.mouse_block_y) else null,
     });
 }
 

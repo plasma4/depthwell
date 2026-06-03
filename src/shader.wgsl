@@ -78,7 +78,8 @@ struct TileOutput {
     @location(4) @interpolate(flat) edge_flags: u32,
     @location(5) @interpolate(flat) light: f32,
     @location(6) @interpolate(flat) hp: u32,
-    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 21 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
+    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 20 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
+    @location(8) @interpolate(flat) waterlogged: u32,
 };
 
 struct TileData {
@@ -93,6 +94,7 @@ struct UnpackedTile {
     hp: u32,
     seeds: vec3u,
     edge_flags: u32,
+    waterlogged: u32,
 };
 
 // Extracts the specific bit ranges in the Block type (see zig/memory.zig).
@@ -114,6 +116,7 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     let s2 = murmurmix32(s1);
     let s3 = murmurmix32(s2);
     out.seeds = vec3u(s1, s2, s3);
+    out.waterlogged = extractBits(data.word1, 28u, 4u);
     return out;
 }
 
@@ -213,30 +216,77 @@ fn vs_tile(
     out.tile_coords = tile_coords;
     out.light = tile.light;
     out.local_uv = local_pos;
+    out.waterlogged = tile.waterlogged;
     return out;
 }
 
 @fragment
-fn fs_main(in: TileOutput) -> @location(0) vec4f {
+fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
     let id = in.sprite_id /* & 65535 */;
-    if id == WATER_START || id == WATER_START + 1u { return water_body(in); }
+    if id == WATER_START || id == WATER_START + 1u {
+        let has_top = (in.edge_flags & EDGE_TOP) != 0u;
+
+        if !has_top {
+            // This is the top surface of the water body!
+            let t = scene.time;
+            let world_pos = vec2f(in.tile_coords) * TILE_SIZE + in.local_uv * TILE_SIZE;
+
+            // Sine-wave ripple effect at the surface
+            let base_height = 1.0 - (f32(in.hp) / 21.0);
+            let ripple = sin(world_pos.x * 0.4 + t * 5.0) * 0.08 * base_height;
+            let current_height = base_height + ripple - 0.2;
+
+            // If the pixel is above the water surface, discard it
+            if in.local_uv.y < (1.0 - current_height) {
+                discard;
+            }
+        }
+        return water_body(in);
+    }
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
     if in.edge_flags != 0xFFu {
         erode_mask = erosion(in.local_uv, in.edge_flags, in.seeds[1], in.seeds[2]);
         if scene.wireframe_opacity == 0.0 && erode_mask == 0u {
+            if in.waterlogged != 0u {
+                let is_water_top = (in.waterlogged & 1u) != 0u;
+                let apply_ripple = (in.waterlogged & 2u) != 0u;
+                let is_water_left = (in.waterlogged & 4u) != 0u;
+                let is_water_right = (in.waterlogged & 8u) != 0u;
+
+                var is_water_pixel = false;
+                if is_water_top && in.local_uv.y < 0.5 {
+                    is_water_pixel = true;
+                }
+                if is_water_left && in.local_uv.x < 0.5 {
+                    is_water_pixel = true;
+                }
+                if is_water_right && in.local_uv.x >= 0.5 {
+                    is_water_pixel = true;
+                }
+
+                if is_water_pixel {
+                    if apply_ripple {
+                        let t = scene.time;
+                        let world_pos = vec2f(in.tile_coords) * TILE_SIZE + in.local_uv * TILE_SIZE;
+
+                        // Sine-wave ripple effect at the surface
+                        let base_height = 1.0 - (f32(in.hp) / 21.0);
+                        let ripple = sin(world_pos.x * 0.4 + t * 5.0) * 0.08 * base_height;
+                        let current_height = base_height + ripple - 0.2;
+
+                        // Fall back to the solid block texture above the ripple line
+                        if in.local_uv.y < (1.0 - current_height) {
+                            is_water_pixel = false;
+                        }
+                    }
+                }
+
+                if is_water_pixel { return water_body(in); }
+            }
             discard; // discard early
         }
-    }
-
-    if id >= 65000u && id <= 65256u {
-        // Heatmap logic...
-        let color = (f32(id - 65000u)) / 256.0;
-        var lch = vec3f(0.2 + color * 0.8, 0.25, 1.0);
-        let lab = oklch_to_oklab(lch);
-        let final_rgb = oklab_to_linear_srgb(lab);
-        return vec4f(final_rgb, 1.0);
     }
 
     let seed = in.seeds[0];
@@ -629,31 +679,30 @@ fn water_world(in: TileOutput) -> vec2f {
 
 // Shared base LCH that cycles hue between teal and blue
 fn water_base_lch(t: f32) -> vec3f {
-    // sin has period 2π/0.12 ≈ 52 s; H sweeps ±0.85 rad around 3.35 (≈192°, blue-teal)
-    let H = 3.35 + sin(t * 0.12) * 0.85;
+    let H = 3.8 + sin(t * 0.12) * 0.34;
     return vec3f(0.42, 0.12, H);
 }
 
-// Two crossing diagonal caustic streaks → additive brightness scalar [0, ~0.46]
+// Two crossing diagonal caustic streaks!
 fn water_caustics(world: vec2f, t: f32) -> f32 {
     // Layer A: two near-frequency waves on same diagonal interference bands
     let d_a = world.x * 0.906 - world.y * 0.423;
     let a1 = sin((d_a + t * 30.0) / 44.0 * TAU) * 0.5 + 0.5;
     let a2 = sin((d_a + t * 26.0) / 40.0 * TAU) * 0.5 + 0.5;
-    let band_a = pow(a1 * a2, 2.5) * 0.55;
+    let band_a = pow(a1 * a2, 2.5) * 0.24;
 
     // Layer B: crossing direction, slower, creates the diamond mesh
     let d_b = world.x * 0.643 - world.y * -0.766;
     let b1 = sin((d_b + t * 14.0) / 32.0 * TAU) * 0.5 + 0.5;
     let b2 = sin((d_b + t * 11.0) / 28.0 * TAU) * 0.5 + 0.5;
-    let band_b = pow(b1 * b2, 3.0) * 0.35;
+    let band_b = pow(b1 * b2, 3.0) * 0.11;
 
     // pixelate
     let px_world = floor(world);
     let d_px_a = px_world.x * 0.906 + px_world.y * 0.423;
-    let pixel_a = pow(max(0.0, sin((d_px_a + t * 30.0) / 44.0 * TAU)), 4.0) * 0.2;
+    let pixel_a = max(0.0, sin((d_px_a + t * 30.0) / 44.0 * TAU));
 
-    return band_a + band_b + pixel_a;
+    return band_a + band_b + pixel_a * pixel_a * 0.2;
 }
 
 fn water_shimmer(world: vec2f, t: f32, speed: f32, density: f32) -> f32 {
@@ -685,9 +734,9 @@ fn water_body(in: TileOutput) -> vec4f {
     // Depth gradient: lighter near y=0 (surface), darker going down.
     // world.y increases downward in your coordinate system.
     // Tune the divisor to match how tall your water bodies typically are.
-    let depth_t = clamp(world.y / 192.0, 0.0, 1.0); // 192px ≈ 12 tiles deep
-    lch.x = mix(0.52, 0.34, depth_t);   // light surface → dark deep
-    lch.y = mix(0.10, 0.14, depth_t);   // slightly more saturated deep
+    let depth_t = clamp(world.y / 192.0, 0.0, 1.0); // 192px
+    lch.x = mix(0.52, 0.34, depth_t); // light surface
+    lch.y = mix(0.10, 0.14, depth_t);// slightly more saturated deep
 
     // Horizontal color band (Celeste's characteristic depth striping)
     // A slow vertical sine adds subtle banding that shifts over time
@@ -698,10 +747,10 @@ fn water_body(in: TileOutput) -> vec4f {
     lch.x = clamp(lch.x + caustic, 0.26, 0.90);
     lch.y = clamp(lch.y + caustic * 0.10, 0.04, 0.28);
 
-    lch.x += water_shimmer(world, t, 1.4, 0.025) * 0.18;
+    // lch.x += water_shimmer(world, t, 1.4, 0.025) * 0.18;
 
     let rgb = oklab_to_linear_srgb(oklch_to_oklab(lch));
-    return vec4f(apply_color_management(rgb), 0.8);
+    return vec4f(apply_color_management(rgb), 0.5);
 }
 
 /*

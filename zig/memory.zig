@@ -78,6 +78,9 @@ pub const GameState = extern struct {
     /// Current frame ID. 32-bit; expect wrap-arounds and access with powers-of-2 checks.
     frame: u32 align(4) = 0,
 
+    /// The amount of items the player has mined.
+    items_mined: u64 = 0,
+
     // /// Represents if the grid needs to be recalculated/passed to WGSL.
     // grid_dirty: bool = true,
     // last_grid_min_bx: u32 = 0,
@@ -161,7 +164,7 @@ pub const GameState = extern struct {
 };
 
 /// The state of the current game, containing pre-allocated properties.
-pub var game: GameState = undefined;
+pub var game: GameState = .{};
 
 /// System-level allocator for pages (or testing allocator when running tests).
 /// On WASM, this grows the linear heap. On native, this requests pages from the OS.
@@ -211,7 +214,6 @@ pub const MemorySizes = struct {
     pub const wasm_page = 64 * 1024;
 };
 
-/// A single block within a chunk. Each block uses 8 bytes.
 pub const Block = packed struct(u64) {
     /// A block with an `id` of `none`.
     pub const empty: Block = .makeBasicBlock(.none, 0);
@@ -228,11 +230,16 @@ pub const Block = packed struct(u64) {
     seed: u20,
     /// How "mined" the block is. 0 means unmined, 15 is most mined.
     hp: u4,
-    /// TODO: do something with this
-    padding: u8 = 0,
+
+    // TODO: mutex union for block bits here so less bits are wasted (stick with u64 instead of u128)
+    /// Padding to align fields.
+    padding: u4 = 0,
+    /// Directional waterlogging: bits represent cardinal directions. See the WGSL code for how this is strategically used.
+    /// (bit 0: top, bit 1: whether ripple occurs from the top, bit 2: left, bit 3: right)
+    waterlogged: u4 = 0,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
-    /// Uses the BOTTOM 21 bits from `seed_bits` to place into `seed`.
+    /// Uses the BOTTOM 20 bits from `seed_bits` to place into `seed`.
     pub inline fn makeBasicBlock(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
@@ -240,6 +247,7 @@ pub const Block = packed struct(u64) {
             .edge_flags = 0,
             .light = 0,
             .seed = @truncate(seed_bits),
+            .waterlogged = 0,
         };
     }
 
@@ -280,7 +288,7 @@ pub const Block = packed struct(u64) {
 
     /// Returns the cascade anchoring rules for this sprite.
     pub inline fn anchor(self: @This()) root.sprite.AnchorKind {
-        return self.id.isGem();
+        return self.id.anchor();
     }
 
     /// Determines if the sprite is a heatmap (types 65000-65256).

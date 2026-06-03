@@ -159,8 +159,10 @@ Of course, to have a fractal _mining_ game, you must store if the player has mod
 But wait, what is a block? Here is `zig/memory.zig`:
 
 ```zig
-/// A single block within a chunk. Each block uses 8 bytes.
 pub const Block = packed struct(u64) {
+    /// A block with an `id` of `none`.
+    pub const empty: Block = .makeBasicBlock(.none, 0);
+
     /// Internal sprite ID.
     id: Sprite,
     /// Edge flags: which neighbors are air (for edge-darkening and culling).
@@ -170,9 +172,13 @@ pub const Block = packed struct(u64) {
     light: u8,
 
     /// Per-block seed for procedural variation in the shader.
-    seed: u28,
-    /// How "mined" the block is. 0 is least mined, 15 is most mined.
+    seed: u20,
+    /// How "mined" the block is. 0 means unmined, 15 is most mined.
     hp: u4,
+    /// Padding to align fields.
+    padding: u4 = 0,
+    /// Directional waterlogging: bits represent cardinal directions (e.g. bit 0: top, bit 1: bottom, bit 2: left, bit 3: right).
+    waterlogged: u4 = 0,
 };
 ```
 

@@ -34,7 +34,7 @@ pub var JUMP_FORCE: f64 = 8.0;
 /// Friction of player movement (horizontal).
 pub var FRICTION_X: f64 = 0.2;
 /// Friction of player movement (vertical).
-pub var FRICTION_Y: f64 = 0.02;
+pub var FRICTION_Y: f64 = 0.025;
 /// How many frames the player can still jump after leaving a ledge.
 const COYOTE_TIME_FRAMES: u8 = 3;
 

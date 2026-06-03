@@ -240,7 +240,7 @@ export async function create(
         },
         fragment: {
             module: shaderModule,
-            entryPoint: "fs_main",
+            entryPoint: "fs_tile",
             targets: [
                 {
                     format: format,

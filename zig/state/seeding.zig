@@ -391,7 +391,7 @@ pub const ChaCha12 = struct {
         x0 +%= orig0;
         x1 +%= orig1;
 
-        // Return 121 bits of data (as two u64s)
+        // Return 128 bits of data (as two u64s)
         if (T == f64) {
             return .{
                 @as(f64, @floatFromInt(@as(u64, x0[0]) | (@as(u64, x0[1]) << 32))) / POW_2_64,

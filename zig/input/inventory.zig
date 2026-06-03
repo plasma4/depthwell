@@ -437,7 +437,10 @@ pub fn drawInventory(time_diff: f64) void {
         const bg_pos = inventory_pos - Vec2f32{ bg_size / 4.0, bg_size / 4.0 };
 
         // replace with pickaxe for UI
-        const rendered_sprite = if (is_mine_type) Sprite.pickaxe else active_sprite;
+        const rendered_sprite: Sprite = if (is_mine_type)
+            @enumFromInt(@intFromEnum(Sprite.pickaxe) + @intFromEnum(root.mining.pickaxe_type))
+        else
+            active_sprite;
         addEntity(.{
             .sprite = if (is_selected) .inventory_selected else .inventory,
             .position = bg_pos,

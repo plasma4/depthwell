@@ -158,7 +158,7 @@ pub fn getBilinearValueNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32)
     const ix0: u64 = @intFromFloat(x0);
     const iy0: u64 = @intFromFloat(y0);
 
-    // Fade curves (Hermite/Smoothstep formulation)
+    // Fade curves (hermite/smoothstep variant basically)
     const u = tx * tx * (3.0 - 2.0 * tx);
     const v = ty * ty * (3.0 - 2.0 * ty);
 
@@ -261,9 +261,9 @@ pub fn generateSpriteFromValues(moisture: f64, density: f64) Sprite {
         return @enumFromInt(65000 + @as(u20, @intFromFloat(moisture * 256.0)));
     if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
-    // if (moisture <= 0.12) {
-    //     return .water; // TODO: improve
-    // }
+    if (moisture <= 0.12) {
+        return .water; // TODO: improve
+    }
 
     if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
         return .blue_strange_stone;
@@ -393,7 +393,7 @@ pub fn addOres(
             .cell_size = 20.0,
             .fbm_shift_size = 30.0,
             .horizontally_wide = false,
-            .use_f2_f1 = false,
+            .use_f2_f1 = true,
         },
     );
     const v2 = getFbmWorleyValue( // larger cells, much more FBM variation
@@ -404,7 +404,7 @@ pub fn addOres(
             .cell_size = 36.0,
             .fbm_shift_size = 60.0,
             .horizontally_wide = false,
-            .use_f2_f1 = false,
+            .use_f2_f1 = true,
         },
     );
 
@@ -429,7 +429,7 @@ pub fn addOres(
 
         sprite = selectSprite(
             .{ sprite, .silver },
-            base_data.density <= 0.55,
+            base_data.density <= 0.48,
             .{ v1, 0.2, 0.26 },
         );
         sprite = selectSprite(
@@ -441,7 +441,7 @@ pub fn addOres(
 
         sprite = selectSprite(
             .{ sprite, .gold },
-            base_data.density >= 0.62 or (base_data.density >= 0.58 and base_data.sprite == .lava_stone),
+            base_data.density >= 0.63 or (base_data.density >= 0.59 and base_data.sprite == .lava_stone),
             .{ v2, 0.3, 0.4 },
         );
         if (sprite == .gold) return sprite;

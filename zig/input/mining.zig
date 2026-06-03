@@ -11,7 +11,7 @@ const mouse = root.mouse;
 pub var mining_progress: u64 = 0;
 
 /// How much the player increases `mining_progress` every tick.
-pub var mining_speed: u64 = 10;
+pub var mining_speed: u64 = 8;
 
 /// How much `hp` the tool takes off the block every time `mining_progress` reaches the block's strength.
 pub var mining_strength: u4 = 1;
@@ -24,6 +24,17 @@ pub var mining_frame: u64 = 0;
 
 /// Frame count for not mining.
 pub var not_mining_frame: u64 = 0;
+
+/// List of possible pickaxe type options (player starts with stone).
+pub const PickaxeType = enum {
+    stone,
+    bronze,
+    iron,
+    silver,
+};
+
+/// Type of pickaxe equipped.
+pub var pickaxe_type: PickaxeType = .stone;
 
 /// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
 pub fn handleMiningAndPlacing(logic_speed: f64) void {
@@ -85,7 +96,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     // Sound effects time!
                     if (block.isSolid()) {
                         @setFloatMode(.optimized);
-                        const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE) 3 else @max(90 / mining_speed, 3);
+                        const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE) 3 else std.math.clamp(240 / (mining_speed - 1) + 1, 3, 12);
                         not_mining_frame = 0;
                         // create a mining sound every so often!
                         if (mining_frame % FRAMES_PER_SOUND == 0)
@@ -95,7 +106,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                                 0.3,
                                 if (block.isGem()) 0.7 else if (block.isOre()) 0.55 else 0.45,
                             );
-                        mining_frame += 1;
+                        mining_frame +%= 1;
                     } else if (was_deleted and !block.isEmpty() and !block.isFoundation()) {
                         not_mining_frame = 0;
                         // play a grassy sound
@@ -110,6 +121,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 
                 if (was_deleted) {
                     if (!block.isEmpty()) {
+                        root.memory.game.items_mined +%= 1;
                         inventory.dropItem(
                             block.id,
                             mouse.mouse_chunk_coord.?,
@@ -118,7 +130,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                         );
 
                         // Only auto-replace if the block being mined is different from the held item.
-                        if (sprite_type != .none and sprite_type != .unselected) {
+                        if (sprite_type.isInWorld()) {
                             if (inventory.removeFromInventory(sprite_type)) { // make sure it's possible to use
                                 if (world.modifyBlockType(
                                     mouse.mouse_chunk_coord.?, // mouse block successful already
@@ -143,7 +155,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     selected_hp = block.hp + mining_strength;
                 }
             }
-        } else if (block.isEmpty() and sprite_type != .none) {
+        } else if (block.isEmpty() and sprite_type.isInWorld()) {
             // placing into empty air!
             if (inventory.removeFromInventory(sprite_type)) {
                 if (world.modifyBlockType(
@@ -162,15 +174,29 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
             }
         }
     } else {
-        not_mining_frame += 1;
+        not_mining_frame +%= 1;
         if (not_mining_frame == 60) mining_frame = 0;
         selected_hp = 255;
+    }
+
+    // pickaxe upgrade testing
+    if (root.memory.game.items_mined >= 20) {
+        pickaxe_type = .silver;
+        mining_speed = 12;
+        mining_strength = 2;
+    } else if (root.memory.game.items_mined >= 8) {
+        pickaxe_type = .iron;
+        mining_speed = 15;
+    } else if (root.memory.game.items_mined >= 2) {
+        pickaxe_type = .bronze;
+        mining_speed = 11;
     }
 }
 
 /// Returns how "strong" a `Sprite` is; how much mining_progress must be contributed to increase `hp` of a block.
 inline fn getSpriteStrength(s: Sprite) ?u64 {
     if (!s.isSolid()) {
+        if (s.isLiquid()) return 1;
         return 0;
     } else if (s == .forest_furnace or s == .lava_furnace) {
         return std.math.maxInt(u64);

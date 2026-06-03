@@ -134,7 +134,7 @@ pub const ColorRGBA = extern union {
         // sqrt(0.299*R² + 0.587*G² + 0.114*B²), integer approx
         const v_wide: @Vector(4, u32) = self.v;
         const v_sq = v_wide * v_wide;
-        // weights: 77/256 ≈ 0.299, 150/256 ≈ 0.587, 29/256 ≈ 0.114
+        // weights: 77/256 is about 0.299, 150/256 is about 0.587, 29/256 is about 0.114
         const weights = @Vector(4, u32){ 77, 150, 29, 0 };
         const weighted = @reduce(.Add, v_sq * weights) >> 8;
         return @intCast(std.math.sqrt(weighted));
