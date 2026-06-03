@@ -43,6 +43,14 @@ pub const HitboxKind = enum(u3) {
     thin_strip,
 };
 
+/// Strategy to resolve cascade block-breaking checks for decorations.
+pub const AnchorKind = enum(u2) {
+    none = 0,
+    floor = 1,
+    ceiling = 2,
+    spiral = 3,
+};
+
 /// Strategy to resolve block drop items upon destruction.
 pub const DropStrategy = enum {
     /// Drops itself if `.isItem()` returns `true`.
@@ -119,6 +127,7 @@ pub const SpriteProps = struct {
     gem: bool = false,
     strength: u64 = 0,
     hitbox: HitboxKind = .full,
+    anchor: AnchorKind = .none,
     drops: DropConfig = .{ .strategy = .self },
     evolves_to: ?Sprite = null,
 };
@@ -133,11 +142,12 @@ pub const SpriteFlags = packed struct(u16) {
     stone: bool = false,
     ore: bool = false,
     gem: bool = false,
-    hitbox: HitboxKind = .full,
-    padding: u5 = 0, // TODO: do we want this?
+    hitbox: HitboxKind = .full, // 3 bits
+    anchor: AnchorKind = .none, // 2 bits
+    padding: u3 = 0,
 };
 
-/// Targeting selector for assigning properties at comptime.
+/// Targeting selector for assigning properties at compile-time.
 const Target = union(enum) {
     single: Sprite,
     range: [2]Sprite,
@@ -298,6 +308,33 @@ const rules = [_]SpriteRule{
             },
         },
     },
+
+    // Floor rules!
+    // Floor-anchored decorations
+    .{
+        .{ .list = &[_]Sprite{
+            .rock,
+            .bush,
+            .mushroom,
+            .big_mushroom,
+            .chest,
+            .big_tree1_left,
+            .big_tree1_right,
+            .big_tree2_left,
+            .big_tree2_right,
+        } },
+        .{ .anchor = .floor },
+    },
+    // Ceiling-anchored decorations
+    .{
+        .{ .single = .ceiling_flower },
+        .{ .anchor = .ceiling },
+    },
+    // Spiral plant specific anchor
+    .{
+        .{ .single = .spiral_plant },
+        .{ .anchor = .spiral },
+    },
 };
 
 /// Helper function to match target variants at compile time.
@@ -331,6 +368,7 @@ fn mergeProps(dest: *SpriteProps, src: SpriteProps) void {
     if (src.gem) dest.gem = src.gem;
     if (src.strength != 0) dest.strength = src.strength;
     if (src.hitbox != .full) dest.hitbox = src.hitbox;
+    if (src.anchor != .none) dest.anchor = src.anchor;
     if (src.drops.strategy != .self or src.drops.static_items.len != 0 or src.drops.dynamic_fn != null) {
         dest.drops = src.drops;
     }
@@ -423,6 +461,7 @@ const dense_flags_table: [MAX_SPRITE_ID]SpriteFlags = blk: {
             .ore = p.ore,
             .gem = p.gem,
             .hitbox = p.hitbox,
+            .anchor = p.anchor,
         };
     }
     break :blk table;
@@ -440,6 +479,7 @@ const unselected_flags = SpriteFlags{
     .ore = unselected_props.ore,
     .gem = unselected_props.gem,
     .hitbox = unselected_props.hitbox,
+    .anchor = unselected_props.anchor,
 };
 
 /// Constant-time lookup of precomputed packed sprite flags. O(1) array access.
@@ -597,6 +637,11 @@ pub const Sprite = enum(u16) {
     /// Determines if the sprite is a gem.
     pub inline fn isGem(self: @This()) bool {
         return self.props().gem;
+    }
+
+    /// Returns the cascade anchoring rules for this sprite.
+    pub inline fn anchor(self: @This()) AnchorKind {
+        return self.props().anchor;
     }
 
     /// Determines if the sprite is a heatmap (between types 65000-65256).

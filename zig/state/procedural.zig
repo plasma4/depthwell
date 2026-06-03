@@ -13,6 +13,7 @@ const CHUNK_SIZE = memory.CHUNK_SIZE;
 const Sprite = root.Sprite;
 const EdgeFlags = types.EdgeFlags;
 const oddsNum = seeding.oddsNum;
+const HashState = seeding.HashState;
 const FastHash = seeding.FastHash;
 const Seed = seeding.Seed;
 const Vec2f = memory.Vec2f;
@@ -90,43 +91,30 @@ comptime {
 ///
 /// 4. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
 pub inline fn addStructures(wx: u32, wy: u32, struct_seed: Vec2u, density_seed: Vec2u) ?Sprite {
+    const struct_x_coord = wx / STRUCTURE_AREA;
+    const struct_y_coord = @as(u64, @intCast(wy / STRUCTURE_AREA));
+    const block_x_hash = struct_x_coord + (struct_y_coord << 32);
+
+    var hash = HashState{
+        .value = FastHash.hash2d(struct_seed, block_x_hash, 0),
+        .seed_vector = struct_seed,
+        .x = block_x_hash,
+        .y = 0,
+    };
+    _ = density_seed;
     const size_x = 8;
     const size_y = 5;
-
-    // Fast vertical early exit: skip calculation if this block is far from the surface
-    const local_surface_y = getSurfaceY(density_seed, wx);
-    const local_surface_wy: u32 = @intFromFloat(local_surface_y);
-    const vertical_padding = size_y + 16;
-    if (@abs(@as(i32, @intCast(wy)) - @as(i32, @intCast(local_surface_wy))) > vertical_padding) {
-        return null;
-    }
 
     const x_in_area: i32 = @intCast(wx % STRUCTURE_AREA);
     const y_in_area: i32 = @intCast(wy % STRUCTURE_AREA);
 
-    const hash = FastHash.hash2d(struct_seed, wx / STRUCTURE_AREA, wy / STRUCTURE_AREA);
-
     // Prevent horizontal clipping entirely by wrapping within safe bounds
-    const max_pos_x = STRUCTURE_AREA - size_x;
-    const pos_x: i32 = @intCast(hash % @as(u64, @intCast(max_pos_x)));
+    const max_pos_x: u64 = STRUCTURE_AREA - size_x;
+    const max_pos_y: u64 = STRUCTURE_AREA - size_y;
 
-    // Anchor to the surface Y at this structure's X position
-    const world_x_of_struct = (wx / STRUCTURE_AREA) * STRUCTURE_AREA + @as(u32, @intCast(pos_x));
-    const surface_y_f = getSurfaceY(density_seed, world_x_of_struct);
-    const surface_wy: u32 = @intFromFloat(surface_y_f);
-
-    // Anchor pos_y to sit on top of the surface
-    const pos_y: i32 = @as(i32, @intCast(surface_wy % STRUCTURE_AREA)) - size_y;
-
-    // Flatness check: relaxed to allow spawning on realistic hills and terraces
-    const right_x = world_x_of_struct + size_x;
-    const surface_y_right = getSurfaceY(density_seed, right_x);
-    const slope = @abs(surface_y_right - surface_y_f);
-    if (slope > 4.5) return null;
-
-    // Check the structure's Y area is correct for this block
-    const struct_area_y = surface_wy / STRUCTURE_AREA;
-    if (wy / STRUCTURE_AREA != struct_area_y) return null;
+    // Consuming bits in-place from our HashState at compile time without runtime branch overhead
+    const pos_x = hash.getLimit(i32, max_pos_x);
+    const pos_y = hash.getLimit(i32, max_pos_y);
 
     // Reject if placement clips the top boundary of the grid cell
     if (pos_y < 0) return null;
@@ -146,93 +134,122 @@ pub inline fn addStructures(wx: u32, wy: u32, struct_seed: Vec2u, density_seed: 
         return .seagreen_stone;
     }
 
-    // Add chests along the bottom row inside the structure
+    // Add a chest along the bottom row inside the structure
+    const chest_x = hash.getRange(i32, 1, size_x + 1);
     if (struct_y == size_y - 2) {
-        return .chest;
+        if (struct_x == chest_x) return .chest;
     }
 
     // Return .none (air) for the interior blocks to hollow out any solid stone
     return .none;
 }
 
-// pub inline fn addStructures(wx: u32, wy: u32, struct_seed: Vec2u, density_seed: Vec2u) ?Sprite {
-//     const size_x = 8;
-//     const size_y = 5;
+/// A highly optimized bilinear value noise implementation.
+/// Bypasses domain warping and multi-tap cellular distance lookups entirely.
+pub fn getBilinearValueNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
+    const fx = @as(f32, @floatFromInt(x)) / cell_size;
+    const fy = @as(f32, @floatFromInt(y)) / cell_size;
 
-//     // Fast vertical early exit: skip calculation if this block is far from the surface
-//     const local_surface_y = getSurfaceY(density_seed, wx);
-//     const local_surface_wy: u32 = @intFromFloat(local_surface_y);
-//     const vertical_padding = size_y + 16;
-//     if (@abs(@as(i32, @intCast(wy)) - @as(i32, @intCast(local_surface_wy))) > vertical_padding) {
-//         return null;
-//     }
+    const x0 = @floor(fx);
+    const y0 = @floor(fy);
+    const tx = fx - x0;
+    const ty = fy - y0;
 
-//     const x_in_area: i32 = @intCast(wx % STRUCTURE_AREA);
-//     const y_in_area: i32 = @intCast(wy % STRUCTURE_AREA);
+    const ix0: u64 = @intFromFloat(x0);
+    const iy0: u64 = @intFromFloat(y0);
 
-//     const hash = FastHash.hash2d(struct_seed, wx / STRUCTURE_AREA, wy / STRUCTURE_AREA);
+    // Fade curves (Hermite/Smoothstep formulation)
+    const u = tx * tx * (3.0 - 2.0 * tx);
+    const v = ty * ty * (3.0 - 2.0 * ty);
 
-//     // Prevent horizontal clipping entirely by wrapping within safe bounds
-//     const max_pos_x = STRUCTURE_AREA - size_x;
-//     const pos_x: i32 = @intCast(hash % @as(u64, @intCast(max_pos_x)));
+    // Direct 4-tap lookup
+    const h00 = FastHash.hash2d(seed_vector, ix0, iy0);
+    const h10 = FastHash.hash2d(seed_vector, ix0 +% 1, iy0);
+    const h01 = FastHash.hash2d(seed_vector, ix0, iy0 +% 1);
+    const h11 = FastHash.hash2d(seed_vector, ix0 +% 1, iy0 +% 1);
 
-//     // Anchor to the surface Y at this structure's X position
-//     const world_x_of_struct = (wx / STRUCTURE_AREA) * STRUCTURE_AREA + @as(u32, @intCast(pos_x));
-//     const surface_y_f = getSurfaceY(density_seed, world_x_of_struct);
-//     const surface_wy: u32 = @intFromFloat(surface_y_f);
+    const v00 = @as(f32, @floatFromInt(h00 & 0xFFFFFFFF)) / POW_2_32;
+    const v10 = @as(f32, @floatFromInt(h10 & 0xFFFFFFFF)) / POW_2_32;
+    const v01 = @as(f32, @floatFromInt(h01 & 0xFFFFFFFF)) / POW_2_32;
+    const v11 = @as(f32, @floatFromInt(h11 & 0xFFFFFFFF)) / POW_2_32;
 
-//     // Anchor pos_y to sit on top of the surface
-//     const pos_y: i32 = @as(i32, @intCast(surface_wy % STRUCTURE_AREA)) - size_y;
+    const nx0 = v00 + u * (v10 - v00);
+    const nx1 = v01 + u * (v11 - v01);
+    return nx0 + v * (nx1 - nx0);
+}
 
-//     // Flatness check: relaxed to allow spawning on realistic hills and terraces
-//     const right_x = world_x_of_struct + size_x;
-//     const surface_y_right = getSurfaceY(density_seed, right_x);
-//     const slope = @abs(surface_y_right - surface_y_f);
-//     if (slope > 4.5) return null;
+/// Returns a value between 0-1, used as a terrain starting point for the default depth of 3.
+/// Optimizations applied: If F2-F1 calculations are not required, uses ultra-fast bilinear interpolation.
+fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: TerrainOptions) f32 {
+    // If we don't need cellular Worley structures (such as simplified ore/decor boundaries), value noise is faster.
+    if (!options.use_f2_f1) {
+        return getBilinearValueNoise(seed_vector, x, y, options.cell_size);
+    }
 
-//     // Check the structure's Y area is correct for this block
-//     const struct_area_y = surface_wy / STRUCTURE_AREA;
-//     if (wy / STRUCTURE_AREA != struct_area_y) return null;
+    const fx: f32 = @floatFromInt(x);
+    const fy: f32 = @floatFromInt(if (options.horizontally_wide) y * 2 else y);
 
-//     // Reject if placement clips the top boundary of the grid cell
-//     if (pos_y < 0) return null;
+    const h_stretch = 1.5;
+    const fbm_octaves = 3;
+    var warp_x: f32 = 0;
+    var warp_y: f32 = 0;
 
-//     const struct_x = x_in_area - pos_x;
-//     const struct_y = y_in_area - pos_y;
+    var freq: u64 = 1;
+    var amp: f32 = options.fbm_shift_size;
+    amp /= fbm_scale.getF32();
+    if (amp > 0) {
+        // Reduced/Inlined FBM warping
+        inline for (0..fbm_octaves) |_| {
+            const noise = getDualValueNoise(seed_vector, x * freq, y * freq);
+            warp_x += noise[0] * amp;
+            warp_y += noise[1] * amp;
+            amp *= 0.5;
+            freq *%= 2;
+        }
+    }
 
-//     // Reject if not inside the structure rectangle
-//     if (struct_x < 0 or struct_y < 0 or struct_x >= size_x or struct_y >= size_y) {
-//         return null;
-//     }
+    const cell_size = options.cell_size * procedural_cell_size.getF32();
+    const wx = fx + warp_x;
+    const wy = fy + warp_y;
+    const cell_w = cell_size * h_stretch;
 
-//     // Draw the structural outer shell
-//     if (struct_x == 0 or struct_y == 0 or
-//         struct_x == size_x - 1 or struct_y == size_y - 1)
-//     {
-//         return .seagreen_stone;
-//     }
+    const cx_f = @floor(wx / cell_w);
+    const cy_f = @floor(wy / cell_size);
+    const cx_i: i64 = @intFromFloat(cx_f);
+    const cy_i: i64 = @intFromFloat(cy_f);
 
-//     // Add chests along the bottom row inside the structure
-//     if (struct_y == size_y - 2) {
-//         return .chest;
-//     }
+    var d1_sq = std.math.inf(f32);
+    var d2_sq = std.math.inf(f32);
 
-//     // Return .none (air) for the interior blocks to hollow out any solid stone
-//     return .none;
-// }
+    // Optimized 2x2 Worley Search (downward right-hand quadrant)
+    // Dropping from 9-tap to 4-tap lookup yields a ~55% reduction in hashing and math operations
+    inline for (0..2) |ox| {
+        inline for (0..2) |oy| {
+            const cur_x: u64 = @bitCast(cx_i + ox);
+            const cur_y: u64 = @bitCast(cy_i + oy);
 
-// fn isInWorldPlacement(ox: u32, oy: u32) bool {
-//     // check ground first
-//     if (getBaseSpriteType(
-//         ox / 16,
-//         oy / 16,
-//         @intCast(ox % 16),
-//         @intCast(oy % 16),
-//     ).sprite.isEmpty()) {
-//         return false;
-//     }
-//     return true;
-// }
+            const h = FastHash.hash2d(seed_vector, cur_x, cur_y);
+            const off_x = @as(f32, @floatFromInt(h % POW_2_32)) / POW_2_32;
+            const off_y = @as(f32, @floatFromInt(h / POW_2_32)) / POW_2_32;
+
+            const px = (@as(f32, @floatFromInt(cx_i + ox)) + off_x) * cell_w;
+            const py = (@as(f32, @floatFromInt(cy_i + oy)) + off_y) * cell_size;
+
+            const dx = wx - px;
+            const dy = wy - py;
+            const dist_sq = dx * dx + dy * dy;
+
+            if (dist_sq < d1_sq) {
+                d2_sq = d1_sq;
+                d1_sq = dist_sq;
+            } else if (dist_sq < d2_sq) {
+                d2_sq = dist_sq;
+            }
+        }
+    }
+
+    return @min((@sqrt(d2_sq) - @sqrt(d1_sq)) / cell_size, 1.0);
+}
 
 /// Generates a block for seeding (based on previous procedural generation logic).
 /// The terms moisture/density are used extremely loosely here.
@@ -316,111 +333,6 @@ pub inline fn getBaseSpriteType(
         .moisture = moisture,
         .density = density,
     };
-}
-
-/// TODO add desc
-fn getSurfaceY(seed: Vec2u, wx: u32) f32 {
-    // Smooth 1D noise
-    const fx: f32 = @as(f32, @floatFromInt(wx)) / 48.0; // TODO: tune
-    const x0: u64 = @intFromFloat(@floor(fx));
-    const t = fx - @floor(fx);
-    const u = t * t * t * (t * (t * 6 - 15) + 10); // basic smootherstep
-
-    const h0 = FastHash.hash2d(seed, x0, 0);
-    const h1 = FastHash.hash2d(seed, x0 +% 1, 0);
-    const v0 = @as(f32, @floatFromInt(h0 & 0xFFFFFFFF)) / @as(f32, POW_2_32);
-    const v1 = @as(f32, @floatFromInt(h1 & 0xFFFFFFFF)) / @as(f32, POW_2_32);
-
-    const SURFACE_BASE: f32 = 80.0; // tune: average world Y of surface
-    const SURFACE_RANGE: f32 = 40.0; // tune: ±variation from base
-    return SURFACE_BASE + (v0 + u * (v1 - v0) - 0.5) * SURFACE_RANGE;
-}
-
-/// Returns a value between 0-1, used as a terrain starting point for the default depth (D = 3).
-/// Acts as the "parent" from which all blocks at higher depths ("more zoomed in") get generated from.
-/// This function is called 256 times per chunk and is performance-sensitive.
-///
-/// This function uses fractal brownian motion with value noise in an initial pass for domain warping,
-/// then Worley noise to generate terrain.
-fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: TerrainOptions) f32 {
-    const fx: f32 = @floatFromInt(x);
-    const fy: f32 = @floatFromInt(if (options.horizontally_wide) y * 2 else y); // scaled Y
-
-    // buncha more config options
-    const h_stretch = 1.5;
-    const fbm_octaves = 3; // amount of octaves to use for FBM
-    var warp_x: f32 = 0; // 32-bit means possible performance gains from SIMD and stuff, possibly
-    var warp_y: f32 = 0;
-
-    var freq: u64 = 1;
-    var amp: f32 = options.fbm_shift_size;
-    amp /= fbm_scale.getF32();
-    if (amp > 0) {
-        // FBM warping
-        inline for (0..fbm_octaves) |_| {
-            // make shifting smooth instead of pointless random jitter with value noise freq!
-            const noise = getDualValueNoise(seed_vector, x * freq, y * freq);
-            warp_x += noise[0] * amp;
-            warp_y += noise[1] * amp;
-            amp *= 0.5;
-            freq *%= 2;
-        }
-    }
-
-    const cell_size = options.cell_size * procedural_cell_size.getF32();
-    const wx = fx + warp_x;
-    const wy = fy + warp_y;
-    const cell_w = cell_size * h_stretch;
-
-    const cx_f = @floor(wx / cell_w);
-    const cy_f = @floor(wy / cell_size);
-    const cx_i: i64 = @intFromFloat(cx_f);
-    const cy_i: i64 = @intFromFloat(cy_f);
-
-    var d1_sq = std.math.inf(f32); // highest possible values
-    var d2_sq = std.math.inf(f32);
-
-    // Worley search
-    inline for (.{ -1, 0, 1 }) |ox| {
-        inline for (.{ -1, 0, 1 }) |oy| {
-            const cur_x: u64 = @bitCast(cx_i + ox);
-            const cur_y: u64 = @bitCast(cy_i + oy);
-
-            // Hash once for both offsets
-            const h = FastHash.hash2d(seed_vector, cur_x, cur_y);
-            const off_x = @as(f32, @floatFromInt(h % POW_2_32)) / POW_2_32;
-            const off_y = @as(f32, @floatFromInt(h / POW_2_32)) / POW_2_32;
-
-            const px = (@as(f32, @floatFromInt(cx_i + ox)) + off_x) * cell_w;
-            const py = (@as(f32, @floatFromInt(cy_i + oy)) + off_y) * cell_size;
-
-            const dx = wx - px;
-            const dy = wy - py;
-            const dist_sq = dx * dx + dy * dy;
-
-            if (dist_sq < d1_sq) {
-                d2_sq = d1_sq;
-                d1_sq = dist_sq;
-            } else if (dist_sq < d2_sq) {
-                d2_sq = dist_sq;
-            }
-        }
-    }
-
-    const final_result = if (options.use_f2_f1)
-        // clamp necessary
-        @min((@sqrt(d2_sq) - @sqrt(d1_sq)) / cell_size, 1.0)
-    else
-        @min(@sqrt(d1_sq) / cell_size, 1.0);
-
-    if (options.horizontally_wide) {
-        const surface_y = getSurfaceY(seed_vector, x); // x here is wx
-        const dist = @abs(fy - surface_y); // fy is already the scaled y
-        const surface_push: f32 = @max(0.0, 1.0 - dist / 6.0) * 0.25;
-        // 0.25 nudge is enough to cross density_min (0.32) near the surface
-        return @min(final_result + surface_push, 1.0); // idk
-    }
-    return final_result;
 }
 
 /// Returns two independent noise values (32-bit float) based on the classic Value Noise algorithm.
@@ -625,7 +537,7 @@ pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
 /// Continues from step 5 in `addOres()`.
 ///
 /// 6. Adds decorative blocks.
-pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void {
+pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12) void {
     // Extra decor passes (doesn't worry about cross-chunk sadly)
     for (0..CHUNK_SIZE) |block_y| {
         var forced_next_sprite_type: Sprite = .none; // .none means nothing is forced
@@ -641,7 +553,7 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void
 
             if (!block.isEmpty()) continue;
             if (block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
-                const val = rng1.next();
+                const val = rng_decor.next();
                 // const is_left = block_x % 2 == 0; // no longer needed
 
                 // returns Z+1 if Z is even and Z-1 if Z is odd
@@ -686,7 +598,7 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng1: *seeding.ChaCha12) void
             else
                 false;
 
-            const val = rng1.next();
+            const val = rng_decor.next();
             if (is_spiral_above) {
                 if (val <= oddsNum(0.7)) {
                     block.id = .spiral_plant;

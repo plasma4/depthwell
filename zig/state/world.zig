@@ -1091,25 +1091,31 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 const current_block = getBlockAt(target_coord, lbx, lby, memory.game.depth);
                 const current_sprite = current_block.id;
 
-                // Cascade logic
-                // TODO: migrate this to use robust sprite.zig rules logic!
+                // Do cascade logic using edge flags (if a block is resting in an impossible state)
                 var broken = false;
-                if (current_sprite == .mushroom or current_sprite == .big_mushroom or current_sprite == .bush or current_sprite == .rock or
-                    current_sprite == .big_tree1_left or current_sprite == .big_tree1_right or current_sprite == .big_tree2_left or current_sprite == .big_tree2_right)
-                {
-                    const below = if (lby < 15)
-                        getBlockAt(target_coord, lbx, lby + 1, memory.game.depth).id
-                    else
-                        getBlockAt(target_coord.moveY(1) orelse target_coord, lbx, 0, memory.game.depth).id;
-                    if (!below.isSolid()) broken = true;
-                } else if (current_sprite == .ceiling_flower or current_sprite == .spiral_plant) {
-                    const above = if (lby > 0)
-                        getBlockAt(target_coord, lbx, lby - 1, memory.game.depth).id
-                    else
-                        getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
-                    if (current_sprite == .ceiling_flower) {
+                switch (current_sprite.anchor()) {
+                    .none => {},
+                    .floor => {
+                        const below = if (lby < 15)
+                            getBlockAt(target_coord, lbx, lby + 1, memory.game.depth).id
+                        else
+                            getBlockAt(target_coord.moveY(1) orelse target_coord, lbx, 0, memory.game.depth).id;
+                        if (!below.isSolid()) broken = true;
+                    },
+                    .ceiling => {
+                        const above = if (lby > 0)
+                            getBlockAt(target_coord, lbx, lby - 1, memory.game.depth).id
+                        else
+                            getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
                         if (!above.isSolid()) broken = true;
-                    } else if (!above.isSolid() and above != .spiral_plant) broken = true;
+                    },
+                    .spiral => {
+                        const above = if (lby > 0)
+                            getBlockAt(target_coord, lbx, lby - 1, memory.game.depth).id
+                        else
+                            getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
+                        if (!above.isSolid() and above != .spiral_plant) broken = true;
+                    },
                 }
 
                 if (broken) {

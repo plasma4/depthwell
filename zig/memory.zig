@@ -278,6 +278,11 @@ pub const Block = packed struct(u64) {
         return self.id.isGem();
     }
 
+    /// Returns the cascade anchoring rules for this sprite.
+    pub inline fn anchor(self: @This()) root.sprite.AnchorKind {
+        return self.id.isGem();
+    }
+
     /// Determines if the sprite is a heatmap (types 65000-65256).
     pub inline fn isHeatmap(self: @This()) bool {
         return self.id.isHeatmap();

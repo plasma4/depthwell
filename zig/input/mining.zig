@@ -192,7 +192,7 @@ inline fn getSpriteStrength(s: Sprite) ?u64 {
             .ruby => 100,
             else => 100,
         };
-    } else if (root.is_debug) return null;
+    } else return null;
 }
 
 comptime {
