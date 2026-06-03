@@ -1,12 +1,10 @@
-//! Automatically generates enum data and WASM export signatures for TypeScript.
+//! Automatically generates enum data and WASM export signatures as TypeScript.
 const std = @import("std");
 
 /// Points to definitions from zig/root.zig.
 pub const root = @import("root.zig");
 
 const types = root.types; // Get types through the game root
-
-pub const is_generate_types = true;
 
 /// Maps primitive Zig types to TypeScript type names.
 fn zigTypeToTs(comptime T: type) []const u8 {

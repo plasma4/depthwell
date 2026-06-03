@@ -96,14 +96,17 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     // Sound effects time!
                     if (block.isSolid()) {
                         @setFloatMode(.optimized);
-                        const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE) 3 else std.math.clamp(240 / (mining_speed - 1) + 1, 3, 12);
+                        const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE)
+                            3
+                        else
+                            std.math.clamp(240 / (mining_speed - 1) + 1, 3, 12);
                         not_mining_frame = 0;
                         // create a mining sound every so often!
                         if (mining_frame % FRAMES_PER_SOUND == 0)
                             root.sound.playSound(
                                 @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
-                                0.7 + 0.3 * @as(f32, @floatFromInt(mining_strength)),
-                                0.3,
+                                if (inventory.IN_CREATIVE) 1 else (0.4 + 0.6 * @as(f32, @floatFromInt(mining_strength))),
+                                0.2,
                                 if (block.isGem()) 0.7 else if (block.isOre()) 0.55 else 0.45,
                             );
                         mining_frame +%= 1;
