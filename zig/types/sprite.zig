@@ -511,7 +511,7 @@ pub const Sprite = enum(u16) {
     lava_stone,
     redder_stone,
     mossy_stone,
-    old_stone,
+    ancient_stone,
     /// "Plain" stone type, with 2x2 variations to prevent an overly tiling look.
     stone = STONE_END,
 
@@ -574,8 +574,10 @@ pub const Sprite = enum(u16) {
     rectangle,
     /// Pickaxe icon.
     pickaxe,
+    /// Simple up arrow icon.
+    arrow,
     /// Generic water block (filled). Default internal water type.
-    water = NUMBER_START + 12 + (@as(u16, @intCast(@intFromEnum(root.mining.PickaxeType.silver))) + 1),
+    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(root.mining.PickaxeType.silver))) + 1),
     /// Generic water block (top, with small waves). This gets processed and added in chunk.zig.
     water_wavy,
 

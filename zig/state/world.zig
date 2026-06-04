@@ -959,7 +959,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
     const is_base = (depth == STARTING_ZOOM_TIMES);
     const seeds = memory.game.seed2;
 
-    // Resolve adjacent chunks from cache once to optimize border generation
+    // Resolve adjacent chunks from cache once for faster border generation!
     var neighbor_chunks: [3][3]?*const Chunk = undefined;
     inline for (.{ -1, 0, 1 }) |dy| {
         inline for (.{ -1, 0, 1 }) |dx| {
@@ -1005,6 +1005,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                 );
                 var s = base_data.sprite;
 
+                // Critically, ores can be skipped because structure code is "blind" to which type of solid the block is.
                 s = procedural.addStructures(
                     s,
                     @as(u32, @intCast(abs_nc[0] * 16)) + lx,
@@ -1180,6 +1181,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                             getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
                         if (!above.isSolid() and above != .spiral_plant) broken = true;
                     },
+                    // TODO: add needs_pair_left and needs_pair_right for larger plants
                 }
 
                 if (broken) {

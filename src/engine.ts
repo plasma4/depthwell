@@ -519,6 +519,7 @@ export class GameEngine {
                         `assets/mining${id}.mp3`,
                         `assets/grass1.mp3`,
                         `assets/grass2.mp3`,
+                        `assets/place.mp3`,
                     ][id],
                 );
 

@@ -95,7 +95,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 
                 {
                     // Sound effects time!
-                    if (block.isSolid()) {
+                    if (block.isFoundation()) {
                         @setFloatMode(.optimized);
                         const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE)
                             3
@@ -172,6 +172,13 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     // This fixes funny issues involving instant deselection with invalid placement
                     // (for example: placing your last ceiling flower in an invalid spot would deselect without this)
                     inventory.selected_sprite = sprite_type;
+                } else {
+                    root.sound.playSound(
+                        6,
+                        if (sprite_type.isFoundation()) 0.75 else 0.2,
+                        0.1,
+                        0.2,
+                    );
                 }
                 selected_hp = 0;
                 mining_progress = 0;

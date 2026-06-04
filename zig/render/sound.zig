@@ -22,7 +22,7 @@ pub fn playSound(id: u32, base_volume: f64, volume_variation: f64, pitch_variati
     }
 }
 
-/// Generates a number from -mult to mult using `seed`.
+/// Generates a number from -mult to +mult by advancing `seed`.
 pub fn generateVariation(mult: f64) f64 {
     return @as(f64, @floatFromInt(seed.next())) * (std.math.pow(f64, 2, -63) * mult);
 }

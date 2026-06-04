@@ -808,55 +808,72 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let absolute_camera = scene.grid_origin.zw;
     let t = scene.time;
 
-    // Far background layer
-    let st0 = (in.screen_offset + absolute_camera * 0.03125) * base_scale;
-    let angle0 = (t / 180.0) * TAU; // Slow 3-minute cycle!
-    let drift0_x = vec2f(cos(angle0), sin(angle0)) * 1.0;
-    let drift0_y = vec2f(sin(angle0), -cos(angle0)) * 0.8;
+    // The farthest background layer (64x "slower")
+    let st1 = (in.screen_offset + absolute_camera * 0.015625) * base_scale;
+    let angle1 = (t / 600.0) * TAU; // 10-minute cycle!
+    let drift1 = vec2f(cos(angle1), sin(angle1)) * 0.5;
 
-    var q0 = vec2f(0.0);
-    q0.x = noise(st0 * 0.3 + drift0_x * 0.1);
-    q0.y = noise(st0 * 0.3 + vec2f(1.0, 0.3) + drift0_y * 0.1);
+    let q1 = noise(st1 * 0.45 + drift1);
+    let f1 = noise(st1 * 0.85 + q1 * 1.5);
 
-    let f0 = fbm_3(st0 * 0.5 + 2.0 * q0);
+    let color1 = mix(
+        vec3f(0.12, 0.22, 0.05),
+        vec3f(0.12, 0.11, 0.03),
+        f1
+    );
+
+    let layer1_intensity = clamp(f1 * f1 * 0.4, 0.1, 1.0);
+    let layer1_rgb = layer1_intensity * color1;
+
+    // Far background layer (32x "slower")
+    let st2 = (in.screen_offset + absolute_camera * 0.03125) * base_scale;
+    let angle2 = (t / 180.0) * TAU; // 3-minute cycle
+    let drift2_x = vec2f(cos(angle2), sin(angle2)) * 1.0;
+    let drift2_y = vec2f(sin(angle2), -cos(angle2)) * 0.8;
+
+    var q2 = vec2f(0.0);
+    q2.x = noise(st2 * 0.3 + drift2_x * 0.1);
+    q2.y = noise(st2 * 0.3 + vec2f(1.0, 0.3) + drift2_y * 0.1);
+
+    let f2 = fbm_3(st2 * 0.5 + 2.0 * q2);
 
     let mix_blue = mix(0.0, 0.4, in.time);
-    let color0 = mix(
+    let color2 = mix(
         vec3f(0.0, 0.005, mix_blue * mix_blue * 0.5),
         vec3f(0.05, 0.15, 0.25),
-        clamp(f0 * f0 * 3.0, 0.0, 1.0)
+        clamp(f2 * f2 * 3.0, 0.0, 1.0)
     );
-    let layer0_intensity = max(f0 * f0 * sqrt(f0) * 1.5 - 0.1, 0.0);
-    let layer0_rgb = layer0_intensity * color0;
+    let layer2_intensity = max(f2 * f2 * sqrt(f2) * 1.5 - 0.1, 0.0);
+    let layer2_rgb = layer2_intensity * color2;
 
-    // Middle background layer
-    let st1 = (in.screen_offset + absolute_camera * 0.125) * base_scale;
-    let angle1 = (t / 90.0) * TAU; // Faster 90s cycle
-    let drift1_x = vec2f(cos(angle1), sin(angle1)) * 1.8;
-    let drift1_y = vec2f(sin(angle1), -cos(angle1)) * 1.5;
+    // Middle background layer (8x "slower")
+    let st3 = (in.screen_offset + absolute_camera * 0.125) * base_scale;
+    let angle3 = (t / 60.0) * TAU; // only 60s
+    let drift3_x = vec2f(cos(angle3), sin(angle3)) * 1.8;
+    let drift3_y = vec2f(sin(angle3), -cos(angle3)) * 1.5;
 
-    var q1 = vec2f(0.0);
-    q1.x = noise(st1 * 0.6 + drift1_x * 0.2);
-    q1.y = noise(st1 * 0.6 + vec2f(2.4, 1.1) + drift1_y * 0.2);
+    var q3 = vec2f(0.0);
+    q3.x = noise(st3 * 0.6 + drift3_x * 0.2);
+    q3.y = noise(st3 * 0.6 + vec2f(2.4, 1.1) + drift3_y * 0.2);
 
-    var r1 = vec2f(0.0);
-    r1.x = fbm_2(st1 * 1.8 + 3.0 * q1 + drift1_x);
-    r1.y = fbm_2(st1 * 1.8 + 3.0 * q1 + drift1_y);
+    var r3 = vec2f(0.0);
+    r3.x = fbm_2(st3 * 1.8 + 3.0 * q3 + drift3_x);
+    r3.y = fbm_2(st3 * 1.8 + 3.0 * q3 + drift3_y);
 
-    let f1 = fbm_4(st1 * 1.2 + 2.5 * r1);
+    let f3 = fbm_4(st3 * 1.2 + 2.5 * r3);
 
     let mix_red = mix(0.0, 0.3, in.time + in.time2);
     let mix_green = mix(0.0, 0.6, in.time2);
-    let color1 = mix(
+    let color3 = mix(
         vec3f(0.01, 0.05, 0.1),
         vec3f(mix_red * mix_red, mix_green * mix_green, 0.5),
-        clamp(length(q1 * r1), 0.0, 1.0)
+        clamp(length(q3 * r3), 0.0, 1.0)
     );
-    let layer1_intensity = max(f1 * f1 * f1 * 2.5 - 0.2, 0.0);
-    let layer1_rgb = layer1_intensity * color1;
+    let layer3_intensity = max(f3 * f3 * f3 * 2.5 - 0.2, 0.0);
+    let layer3_rgb = layer3_intensity * color3;
 
     // Additive screen blend of both seamless layers
-    let final_rgb = layer0_rgb + layer1_rgb;
+    let final_rgb = layer1_rgb + layer2_rgb + layer3_rgb;
 
     let opacity = scene.chunk_opacity;
     return vec4f(final_rgb * opacity, opacity);
