@@ -17,7 +17,7 @@ const Vec2f = memory.Vec2f;
 /// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
 ///
 /// Setting this to a very small value is useful for testing cache validity or performance, however.
-pub const CAMERA_MIN_ZOOM = 1.0 / 3.0;
+pub const CAMERA_MIN_ZOOM = 1.0 / 300.0;
 
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
 /// Any more and it would look weird, and camera deadzone would start to no longer work.

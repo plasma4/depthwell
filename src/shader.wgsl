@@ -49,7 +49,8 @@ struct SceneUniforms {
     player_screen_pos: vec2f,
     map_size: vec2u,
     flags: vec4u, // .a: is_p3; .b: is_8bit (.b is unused)
-    _extra_padding: array<vec4u, 12>, // Pad to 256 bytes for dynamic offsets
+    grid_origin: vec4f, // absolute position of min_cx/min_cy in tiles (.xy used)
+    _extra_padding: array<vec4u, 11>, // pad to 256 bytes for dynamic offsets
 };
 
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
@@ -230,11 +231,12 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         if !has_top {
             // This is the top surface of the water body!
             let t = scene.time;
-            let world_pos = vec2f(in.tile_coords) * TILE_SIZE + in.local_uv * TILE_SIZE;
+            let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
-            // Sine-wave ripple effect at the surface
+            // Sine-wave ripple effect at the surface (frequency is periodic over 65536.0 pixels)
             let base_height = 1.0 - (f32(in.hp) / 21.0);
-            let ripple = sin(world_pos.x * 0.4 + t * 5.0) * 0.08 * base_height;
+            let ripple_freq = 4172.0 * TAU / 65536.0;
+            let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.08 * base_height;
             let current_height = base_height + ripple - 0.2;
 
             // If the pixel is above the water surface, discard it
@@ -269,11 +271,12 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
                 if is_water_pixel {
                     if apply_ripple {
                         let t = scene.time;
-                        let world_pos = vec2f(in.tile_coords) * TILE_SIZE + in.local_uv * TILE_SIZE;
+                        let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
-                        // Sine-wave ripple effect at the surface
+                        // Sine-wave ripple effect at the surface (frequency adjusted to be periodic over 65536.0 pixels)
                         let base_height = 1.0 - (f32(in.hp) / 21.0);
-                        let ripple = sin(world_pos.x * 0.4 + t * 5.0) * 0.08 * base_height;
+                        let ripple_freq = 4172.0 * TAU / 65536.0;
+                        let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.08 * base_height;
                         let current_height = base_height + ripple - 0.2;
 
                         // Fall back to the solid block texture above the ripple line
@@ -672,56 +675,62 @@ fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 
     return max(max(edge_darkenings.x, edge_darkenings.y), max(edge_darkenings.z, edge_darkenings.w));
 }
 
+/*
+    ----
+    WATER
+    ----
+*/
+
+fn wrap_water_coords(coords: vec2f) -> vec2f {
+    return coords - floor(coords / 65536.0) * 65536.0;
+}
+
 // World-space pixel coordinate of this fragment (floating point, any value)
 fn water_world(in: TileOutput) -> vec2f {
-    return vec2f(in.tile_coords) * TILE_SIZE + in.local_uv * TILE_SIZE;
+    return (vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE;
 }
 
-// Shared base LCH that cycles hue between teal and blue
+// Shared base LCH that cycles hue between teal and blue.
 fn water_base_lch(t: f32) -> vec3f {
-    let H = 3.8 + sin(t * 0.12) * 0.34;
+    let H = 3.8 + sin(t * (TAU / 3600.0)) * 0.34;
     return vec3f(0.42, 0.12, H);
 }
+fn water_effect(coord: vec2f, t: f32) -> f32 {
+    let R = 256.0; // grid repeat period
+    let L_FREQ = TAU / 3600.0; // base frequency per time loop
+    // Every multiplier below is now an exact integer multiplied by L_FREQ
+    let warp_val = sin((coord.y * 2.0) / R * TAU + t * (20.0 * L_FREQ)) * 4.0 + cos((coord.x * 3.0) / R * TAU - t * (12.0 * L_FREQ)) * 4.0;
 
-// Two crossing diagonal caustic streaks!
-fn water_caustics(world: vec2f, t: f32) -> f32 {
-    // Layer A: two near-frequency waves on same diagonal interference bands
+    let world = coord + vec2f(warp_val, -warp_val);
+
+    // First caustic layer
+    // All layers are mades ure to be periodic every 65536 pixels.
     let d_a = world.x * 0.906 - world.y * 0.423;
-    let a1 = sin((d_a + t * 30.0) / 44.0 * TAU) * 0.5 + 0.5;
-    let a2 = sin((d_a + t * 26.0) / 40.0 * TAU) * 0.5 + 0.5;
+    let a1 = sin((d_a + t * 15.0) / (65536.0 / 1489.0) * TAU) * 0.5 + 0.5;
+    let a2 = sin((d_a * 1.1 + t * 13.0) / (65536.0 / 1638.0) * TAU) * 0.5 + 0.5;
     let band_a = pow(a1 * a2, 2.5) * 0.24;
 
-    // Layer B: crossing direction, slower, creates the diamond mesh
+    // Second layer (which crosses directions)
     let d_b = world.x * 0.643 - world.y * -0.766;
-    let b1 = sin((d_b + t * 14.0) / 32.0 * TAU) * 0.5 + 0.5;
-    let b2 = sin((d_b + t * 11.0) / 28.0 * TAU) * 0.5 + 0.5;
-    let band_b = pow(b1 * b2, 3.0) * 0.11;
+    let b1 = sin((d_b * 3.2 + t * 4.0) / 32.0 * TAU) * 0.5 + 0.5;
+    let b2 = sin((d_b + 4.2 + t * 5.42) / (65536.0 / 2341.0) * TAU) * 0.5 + 0.5;
+    let band_b = pow(b1 * b2, 3.0) * 0.03;
 
-    // pixelate
-    let px_world = floor(world);
-    let d_px_a = px_world.x * 0.906 + px_world.y * 0.423;
-    let pixel_a = max(0.0, sin((d_px_a + t * 30.0) / 44.0 * TAU));
+    let d_c = world.x * 0.906 + world.y * 0.423;
+    let band_c = max(0.0, sin((d_c + t * 15.0) / (65536.0 / 1489.0) * TAU));
 
-    return band_a + band_b + pixel_a * pixel_a * 0.2;
-}
+    // Warping distortion using periodic wavelengths
+    let warp_y_freq = 1043.0 * TAU / 65536.0;
+    let warp_x_freq = 834.0 * TAU / 65536.0;
+    let warp = sin(world.y * warp_y_freq + t * 0.3) * 4.0 + cos(world.x * warp_x_freq - t * 0.3) * 4.0;
 
-fn water_shimmer(world: vec2f, t: f32, speed: f32, density: f32) -> f32 {
-    // Bubbles rise at ~20px/s; x is stable per column, y drifts up
-    let risen_y = world.y - t / 50.0; // TODO fix
-    let cell = vec2u(
-        u32(abs(floor(world.x))),
-        u32(abs(floor(risen_y))),
-    );
-    let h = murmurmix32((cell.x * 2654435761u) ^ murmurmix32(cell.y * 2246822519u));
-    // Additional horizontal wobble using a slower hash
-    let wobble_h = murmurmix32(cell.y * 1234567u);
-    let wobble = (f32(wobble_h & 15u) - 7.5) / 7.5; // ±1.0
-    let cell_x_wobbled = u32(abs(floor(world.x + wobble)));
-    let h2 = murmurmix32((cell_x_wobbled * 2654435761u) ^ murmurmix32(cell.y * 2246822519u));
+    // Apply warp to a new diagonal direction for the curvy streak
+    let d_curvy = (world.x + warp) * 0.5 + (world.y - warp) * 0.866;
+    let c1 = sin((d_curvy + t * 1.2) / (65536.0 / 1311.0) * TAU) * 0.5 + 0.5;
+    let c2 = cos((d_curvy - t * 0.35) / (65536.0 / 1872.0) * TAU) * 0.5 + 0.5;
+    let curvy_streak = pow(c1 * c2, 6.0) * 0.3;
 
-    let off = f32(h2 >> 8u) / 16777216.0;
-    let phase = fract(off + t * speed);
-    return step(1.0 - density, phase);
+    return band_a + band_b + band_c * band_c * 0.2 + curvy_streak;
 }
 
 // Procedural effect for all but the top water sprite
@@ -732,22 +741,17 @@ fn water_body(in: TileOutput) -> vec4f {
     var lch = water_base_lch(t);
 
     // Depth gradient: lighter near y=0 (surface), darker going down.
-    // world.y increases downward in your coordinate system.
-    // Tune the divisor to match how tall your water bodies typically are.
     let depth_t = clamp(world.y / 192.0, 0.0, 1.0); // 192px
     lch.x = mix(0.52, 0.34, depth_t); // light surface
     lch.y = mix(0.10, 0.14, depth_t);// slightly more saturated deep
 
     // Horizontal color band (Celeste's characteristic depth striping)
-    // A slow vertical sine adds subtle banding that shifts over time
     let band_t = sin(world.y / 24.0 + t * 0.4) * 0.5 + 0.5;
     lch.x += band_t * 0.04;
 
-    let caustic = water_caustics(world, t);
+    let caustic = water_effect(world, t);
     lch.x = clamp(lch.x + caustic, 0.26, 0.90);
     lch.y = clamp(lch.y + caustic * 0.10, 0.04, 0.28);
-
-    // lch.x += water_shimmer(world, t, 1.4, 0.025) * 0.18;
 
     let rgb = oklab_to_linear_srgb(oklch_to_oklab(lch));
     return vec4f(apply_color_management(rgb), 0.5);
@@ -778,7 +782,12 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
     out.position = vec4f(x, y, 0.0, 1.0);
 
     let screen_uv = vec2f(x, -y) * 0.5 + 0.5;
-    out.world_uv = (screen_uv * scene.viewport_size) / scene.zoom + scene.camera;
+
+    // Reconstruct the wrap-invariant absolute camera position in pixels
+    let absolute_camera = scene.camera + scene.grid_origin.xy * TILE_SIZE;
+
+    // Center the scale pivot to the screen center (camera and player viewport center)
+    out.world_uv = ((screen_uv - 0.5) * scene.viewport_size) / scene.zoom + absolute_camera;
 
     // Zig-zag wrapping for colors
     var t_wrap = (scene.time * 0.3) % 2.0;
@@ -795,20 +804,31 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
 
 @fragment
 fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
-    const base_scale = 0.015;
-    let parallax_offset = scene.camera * 0.02;
+    const base_scale = 0.015625; // Exactly 1.0 / 64.0 for seamless 256-chunk alignment
+
+    // Parallax factor set to exactly 1/32 (0.03125) to cleanly cycle noise over 256-chunk wrapping
+    let parallax_offset = scene.grid_origin.zw * 0.03125;
     let st = (in.world_uv + parallax_offset) * base_scale;
     let t = scene.time;
 
+    // Map linear time to a circular trajectory in 2D space for seamless FBM looping
+    let loop_period = 120.0;
+    let angle = (t / loop_period) * TAU;
+    let time_offset_x = vec2f(cos(angle), sin(angle)) * 1.5;
+    let time_offset_y = vec2f(sin(angle), -cos(angle)) * 1.2;
+
+    // Initial low-frequency distortion pass to establish large-scale flow directions
     var q = vec2f(0.0);
-    q.x = noise(st);
-    q.y = noise(st + vec2f(1.0));
+    q.x = noise(st * 0.4 + time_offset_x * 0.2);
+    q.y = noise(st * 0.4 + vec2f(1.0, 0.3) + time_offset_y * 0.2);
 
+    // Secondary medium-frequency warp with a higher scale multiplier to inject sheer and turbulence
     var r = vec2f(0.0);
-    r.x = fbm_2(st + 1.0 * q + vec2f(1.7, 9.2) + 0.15 * t);
-    r.y = fbm_2(st + 1.0 * q + vec2f(8.3, 2.8) + 0.126 * t);
+    r.x = fbm_2(st * 1.5 + 4.0 * q + vec2f(1.7, 9.2) + time_offset_x);
+    r.y = fbm_2(st * 1.5 + 4.0 * q + vec2f(8.3, 2.8) + time_offset_y);
 
-    let f = fbm_4(st + r);
+    // Final high-frequency FBM pass evaluated in deeply warped space to extract sharp, gaseous wisps
+    let f = fbm_4(st * 0.94 + 3.5 * r);
 
     let mix_blue = mix(0.0, 0.4, in.time);
     var color = mix(
@@ -823,10 +843,12 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     color = mix(
         color,
         vec3f(mix_red * mix_red, mix_green * mix_green, 0.8),
-        clamp(length(q), 0.0, 1.0)
+        clamp(length(q * r), 0.0, 1.0)// Mutated color blending by combined warp vectors for varied gaseous boundaries
     );
 
-    let intensity = f * 1.5 - 0.4; // controls wispiness
+    // Shape the noise curve using an exponential power for sharp, thin smoke filaments and dark voids
+    let smoke_profile = pow(f, 3.0) * 2.2;
+    let intensity = smoke_profile - 0.15; // controls wispiness
     let final_rgb = max(intensity, 0.0) * color;
 
     let opacity = scene.chunk_opacity;
@@ -837,10 +859,9 @@ fn noise(st: vec2f) -> f32 {
     let i = vec2u(vec2i(floor(st)));
     let f = fract(st);
 
-    // Grid corners: (0,0), (1,0), (0,1), (1,1)
-    // Vectorized construction of coordinate vectors
-    let ix = i.x + vec4u(0u, 1u, 0u, 1u);
-    let iy = i.y + vec4u(0u, 0u, 1u, 1u);
+    // Make the grid noise perfectly periodic with a period of 32 units
+    let ix = (i.x + vec4u(0u, 1u, 0u, 1u)) % vec4u(32u);
+    let iy = (i.y + vec4u(0u, 0u, 1u, 1u)) % vec4u(32u);
 
     let h = hash_2d(ix, iy);
 

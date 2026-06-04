@@ -119,7 +119,7 @@ pub fn UnboundedFifo(comptime T: type) type {
 
         /// Clears the FIFO, resetting it to an empty state.
         /// If `T` owns resources, pass a deinitialization callback function.
-        /// Pass `null` for primitives or basic structs.
+        /// Pass null for primitives or basic structs.
         pub fn clear(self: *Self, deinit_item: ?fn (item: T) void) void {
             if (deinit_item) |cb| {
                 if (self.count > 0) {

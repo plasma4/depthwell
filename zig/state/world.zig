@@ -800,9 +800,9 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
     for (0..CHUNK_SIZE) |block_y| {
         for (0..CHUNK_SIZE) |block_x| {
             const idx = block_x + block_y * CHUNK_SIZE;
-            const current_sprite = target_chunk.getBlock(@intCast(block_x), @intCast(block_y)).id;
-            if (current_sprite.isEmpty()) continue;
             const current_block = &target_chunk.blocks[idx];
+            const current_sprite = current_block.id;
+            if (current_sprite.isEmpty()) continue;
             if (!shouldHaveEdgeFlags(current_sprite)) {
                 current_block.edge_flags = 0xFF;
                 current_block.waterlogged = 0;
@@ -919,14 +919,13 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
                 @intCast(cx * 16 + block_x),
                 @intCast(cy * 16 + block_y),
             );
-            if (procedural.addStructures(
+            sprite = procedural.addStructures(
+                sprite,
                 @as(u32, @intCast(cx * 16)) + @as(u32, @intCast(block_x)),
                 @as(u32, @intCast(cy * 16)) + @as(u32, @intCast(block_y)),
                 seed_vec7,
                 seed_vec2,
-            )) |sp| {
-                sprite = sp;
-            }
+            );
 
             // if (procedural.getStructureBlock(block_x, block_y, seeds[12..14].*)) |sp| {
             //     sprite = sp;
@@ -1006,14 +1005,13 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                 );
                 var s = base_data.sprite;
 
-                if (procedural.addStructures(
+                s = procedural.addStructures(
+                    s,
                     @as(u32, @intCast(abs_nc[0] * 16)) + lx,
                     @as(u32, @intCast(abs_nc[1] * 16)) + ly,
                     seeds[12..14].*,
                     seeds[2..4].*,
-                )) |sp| {
-                    s = sp;
-                }
+                );
                 break :blk s;
             } else root.ancestor.getInheritedMaterial(
                 target_nc.asDepthCoordinate(depth),
@@ -1032,12 +1030,12 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
             inline for (.{ -1, 0, 1 }) |dy| {
                 inline for (.{ -1, 0, 1 }) |dx| {
                     if (dx == 0 and dy == 0) continue;
-                    const neighbor_sprite = halo[@intCast(y + @as(usize, 1 + dy))][@intCast(x + @as(usize, 1 + dx))];
+                    const sprite = halo[@intCast(y + @as(usize, 1 + dy))][@intCast(x + @as(usize, 1 + dx))];
 
-                    const is_solid_or_liquid = neighbor_sprite.isSolid() or neighbor_sprite.isLiquid();
-                    if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(neighbor_sprite)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
+                    const is_solid_or_liquid = sprite.isSolid() or sprite.isLiquid();
+                    if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(sprite)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
                         flags |= types.EdgeFlags.getFlagBit(dx, dy);
-                    } else if (neighbor_sprite.isLiquid()) {
+                    } else if (sprite.isLiquid()) {
                         if (dx == 0 and dy == -1) {
                             waterlogged |= 1; // Top
                         } else if (dx == -1 and dy == 0) {
@@ -1224,8 +1222,8 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid()) continue;
 
                 // Recalculate flags for foundation blocks
-                var new_flags: u8 = 0;
-                var new_waterlogged: u4 = 0;
+                var flags: u8 = 0;
+                var waterlogged: u4 = 0;
                 inline for (.{ -1, 0, 1 }) |ndy| {
                     inline for (.{ -1, 0, 1 }) |ndx| {
                         if (ndx == 0 and ndy == 0) continue;
@@ -1241,13 +1239,14 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                         );
 
                         const is_solid_or_liquid = neighbor_block.isSolid() or neighbor_block.isLiquid();
+                        logger.quick(.{ dx, dy, current_sprite, neighbor_block.id });
                         if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(neighbor_block.id)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
-                            new_flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
+                            flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
                         } else if (neighbor_block.isLiquid()) {
                             if (ndx == 0 and ndy == -1) {
-                                new_waterlogged |= 1; // Top
+                                waterlogged |= 1; // Top
                             } else if (ndx == -1 and ndy == 0) {
-                                new_waterlogged |= 4; // Left
+                                waterlogged |= 4; // Left
                                 const above_left = getBlockAt(
                                     target_coord.move(.{
                                         @divFloor(@as(i32, lbx) - 1, CHUNK_SIZE),
@@ -1258,10 +1257,10 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                                     memory.game.depth,
                                 );
                                 if (!above_left.isLiquid()) {
-                                    new_waterlogged |= 2; // Apply top ripple cutoff
+                                    waterlogged |= 2; // Apply top ripple cutoff
                                 }
                             } else if (ndx == 1 and ndy == 0) {
-                                new_waterlogged |= 8; // Right
+                                waterlogged |= 8; // Right
                                 const above_right = getBlockAt(
                                     target_coord.move(.{
                                         @divFloor(@as(i32, lbx) + 1, CHUNK_SIZE),
@@ -1272,7 +1271,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                                     memory.game.depth,
                                 );
                                 if (!above_right.isLiquid()) {
-                                    new_waterlogged |= 2; // Apply top ripple cutoff
+                                    waterlogged |= 2; // Apply top ripple cutoff
                                 }
                             }
                         }
@@ -1280,17 +1279,17 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 }
 
                 if (SimBuffer.get(target_coord)) |c| {
-                    c.blocks[block_id].edge_flags = new_flags;
-                    c.blocks[block_id].waterlogged = new_waterlogged;
+                    c.blocks[block_id].edge_flags = flags;
+                    c.blocks[block_id].waterlogged = waterlogged;
                 }
                 if (ChunkCache.findIndex(target_coord)) |index| {
-                    ChunkCache.chunks[index].blocks[block_id].edge_flags = new_flags;
-                    ChunkCache.chunks[index].blocks[block_id].waterlogged = new_waterlogged;
+                    ChunkCache.chunks[index].blocks[block_id].edge_flags = flags;
+                    ChunkCache.chunks[index].blocks[block_id].waterlogged = waterlogged;
                 }
                 const m_key = DepthCoordinate.from(target_coord);
                 if (mod_store.index.get(m_key)) |id| {
-                    mod_store.history.at(id).blocks[block_id].edge_flags = new_flags;
-                    mod_store.history.at(id).blocks[block_id].waterlogged = new_waterlogged;
+                    mod_store.history.at(id).blocks[block_id].edge_flags = flags;
+                    mod_store.history.at(id).blocks[block_id].waterlogged = waterlogged;
                 }
             }
         }

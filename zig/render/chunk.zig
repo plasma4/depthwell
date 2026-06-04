@@ -143,6 +143,18 @@ inline fn updateRenderProperties(
     const player_render_x = (player_interpolated_x - grid_origin_sub_x - CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT / 2) / CHUNK_SIZE_FLOAT;
     const player_render_y = (player_interpolated_y - grid_origin_sub_y - CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT / 2) / CHUNK_SIZE_FLOAT;
 
+    // Modulo every 256 chunks to seamlessly loop the background!
+    const player_cx_mod = @as(i64, @intCast(game.player_chunk[0] % 256));
+    const player_cy_mod = @as(i64, @intCast(game.player_chunk[1] % 256));
+    const abs_grid_cx = @mod(player_cx_mod + min_cx, 256);
+    const abs_grid_cy = @mod(player_cy_mod + min_cy, 256);
+
+    const abs_grid_x = @as(f64, @floatFromInt(abs_grid_cx * @as(i32, memory.CHUNK_SIZE)));
+    const abs_grid_y = @as(f64, @floatFromInt(abs_grid_cy * @as(i32, memory.CHUNK_SIZE)));
+
+    const abs_cam_x = cam_x_shader + (abs_grid_x * 16.0);
+    const abs_cam_y = cam_y_shader + (abs_grid_y * 16.0);
+
     // Update scratch properties that JS reads
     memory.setScratchProp(0, wb);
     memory.setScratchProp(1, hb);
@@ -151,6 +163,10 @@ inline fn updateRenderProperties(
     memory.setScratchProp(4, effective_zoom);
     memory.setScratchProp(5, player_render_x);
     memory.setScratchProp(6, player_render_y);
+    memory.setScratchProp(7, abs_grid_x);
+    memory.setScratchProp(8, abs_grid_y);
+    memory.setScratchProp(9, abs_cam_x);
+    memory.setScratchProp(10, abs_cam_y);
 
     if (root.is_debug) {
         const qc = world.quad_cache;

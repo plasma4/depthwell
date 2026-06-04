@@ -122,7 +122,7 @@ pub fn dropItem(broken_sprite: Sprite, chunk: memory.Coordinate, block_x: u4, bl
 }
 
 /// Computes the relative offset in chunks from `from` to `to`.
-/// Returns `null` if the coordinates are too far apart (over 4096 chunks) or cannot be resolved.
+/// Returns null if the coordinates are too far apart (over 4096 chunks) or cannot be resolved.
 /// Should be used for non-critical logic like dropped items that would be sensitive to teleports.
 fn getRelativeOffset(from: memory.Coordinate, to: memory.Coordinate) ?memory.Vec2i {
     // Estimate closest wrapped distance

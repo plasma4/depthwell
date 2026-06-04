@@ -17,6 +17,7 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 Left-clicking places blocks; click on inventory slots directly to select block types.
 Use the pickaxe icon to mine and WASD/arrow keys to move around.
+Use the M key to open or close the debug menu options.
 
 For inventory hotkeys:
 

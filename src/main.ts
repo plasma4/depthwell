@@ -362,7 +362,7 @@ engine.canvas.style.touchAction = "none"; // prevent touch gesture interception
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Build the fancy debug UI in the corner!
-if (engine.isDebug) {
+if (is_dev && engine.isDebug) {
     // Populate scratch buffer with JSON data about the debug UI, and parse it!
     engine.exports.debugBuildUiMetadata();
     const jsonStr = engine.readStr();
@@ -374,6 +374,15 @@ if (engine.isDebug) {
     const container = document.getElementById(
         "debugContainer",
     ) as HTMLDivElement;
+    container.style.display = "none";
+    document.addEventListener("keydown", function (e) {
+        if (e.code === "KeyM") {
+            if (container.style.display === "none")
+                container.removeAttribute("style");
+            else container.style.display = "none";
+        }
+    });
+
     meta.buttons.forEach((b: any) => {
         const btn = document.createElement("button");
         btn.textContent = b.name;

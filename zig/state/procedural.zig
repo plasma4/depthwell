@@ -100,11 +100,17 @@ comptime {
     if (!std.math.isPowerOfTwo(STRUCTURE_AREA)) @compileError("Structure position area must be a positive power of 2.");
 }
 
-/// Adds larger structures across multiple blocks in a deterministic fashion. Water is a structure.
+/// Adds larger structures across multiple blocks in a deterministic fashion.
 /// Continues from steps 1-3 in `getBaseSpriteType()`.
 ///
 /// 4. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
-pub inline fn addStructures(wx: u32, wy: u32, struct_seed: Vec2u, density_seed: Vec2u) ?Sprite {
+pub inline fn addStructures(
+    starting_sprite: Sprite,
+    wx: u32,
+    wy: u32,
+    struct_seed: Vec2u,
+    density_seed: Vec2u,
+) Sprite {
     const struct_x_coord = wx / STRUCTURE_AREA;
     const struct_y_coord = @as(u64, @intCast(wy / STRUCTURE_AREA));
     const block_x_hash = struct_x_coord + (struct_y_coord << 32);
@@ -126,22 +132,22 @@ pub inline fn addStructures(wx: u32, wy: u32, struct_seed: Vec2u, density_seed: 
     const max_pos_x: u64 = STRUCTURE_AREA - size_x;
     const max_pos_y: u64 = STRUCTURE_AREA - size_y;
 
-    // Consuming bits in-place from our HashState at compile time without runtime branch overhead
+    // Get a random position number from 0 to max_pos_x/y - 1
     const pos_x = hash.getLimit(i32, max_pos_x);
     const pos_y = hash.getLimit(i32, max_pos_y);
 
     // Reject if placement clips the top boundary of the grid cell
-    if (pos_y < 0) return null;
+    if (pos_y < 0) return starting_sprite;
 
     const struct_x = x_in_area - pos_x;
     const struct_y = y_in_area - pos_y;
 
     // Reject if not inside the structure rectangle
     if (struct_x < 0 or struct_y < 0 or struct_x >= size_x or struct_y >= size_y) {
-        return null;
+        return starting_sprite;
     }
 
-    // Draw the structural outer shell
+    // Draw the structural outer shell of the structure
     if (struct_x == 0 or struct_y == 0 or
         struct_x == size_x - 1 or struct_y == size_y - 1)
     {
@@ -155,7 +161,7 @@ pub inline fn addStructures(wx: u32, wy: u32, struct_seed: Vec2u, density_seed: 
     }
 
     // Return .none (air) for the interior blocks to hollow out any solid stone
-    return .none;
+    return if (starting_sprite.isLiquid()) starting_sprite else .none;
 }
 
 /// A highly optimized bilinear value noise implementation.

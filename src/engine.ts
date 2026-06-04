@@ -214,9 +214,11 @@ export class GameEngine {
         this.destroyedError = error;
     }
 
-    // -----
-    // GPU Textures/Tilemaps
-    // -----
+    /*
+        -----
+        GPU Textures/Tilemaps
+        -----
+    */
 
     /** Loads the image URL to the WGSL device as a texture. */
     public static async loadTexture(
@@ -377,6 +379,10 @@ export class GameEngine {
         const effectiveZoom = this.getScratchProperty(4, WasmTypeCode.Float64);
         const playerX = this.getScratchProperty(5, WasmTypeCode.Float64);
         const playerY = this.getScratchProperty(6, WasmTypeCode.Float64);
+        const gridOriginX = this.getScratchProperty(7, WasmTypeCode.Float64);
+        const gridOriginY = this.getScratchProperty(8, WasmTypeCode.Float64);
+        const absCamX = this.getScratchProperty(9, WasmTypeCode.Float64);
+        const absCamY = this.getScratchProperty(10, WasmTypeCode.Float64);
 
         this.sceneDataF32[0] = camX; // camera pos
         this.sceneDataF32[1] = camY;
@@ -384,20 +390,23 @@ export class GameEngine {
         this.sceneDataF32[3] = this.canvas.height;
 
         // Some cycling logic for animations: 32-bit floating point can become imprecise otherwise
-        const cycleLength = 120000;
-        const elapsed = performance.now() - this.startTime + this.startDelta;
-        const cyclePos = elapsed % (cycleLength * 2);
+        // const cycleLength = 120000;
+        // const elapsed = performance.now() - this.startTime + this.startDelta;
+        // const cyclePos = elapsed % (cycleLength * 2);
 
-        let shaderTime;
-        if (cyclePos < cycleLength) {
-            // Going forward
-            shaderTime = cyclePos / 1000.0;
-        } else {
-            // Going backward (smoothly reverses "wind" direction)
-            shaderTime = (cycleLength - (cyclePos - cycleLength)) / 1000.0;
-        }
+        // let shaderTime;
+        // if (cyclePos < cycleLength) {
+        //     // Going forward
+        //     shaderTime = cyclePos / 1000.0;
+        // } else {
+        //     // Going backward (smoothly reverses "wind" direction)
+        //     shaderTime = (cycleLength - (cyclePos - cycleLength)) / 1000.0;
+        // }
 
-        this.sceneDataF32[4] = shaderTime; // time value for animating
+        this.sceneDataF32[4] =
+            ((performance.now() - this.startTime + this.startDelta) %
+                (3600 * 1000)) /
+            1000; // time value for animating (cycles every hour)
 
         this.sceneDataF32[5] = effectiveZoom; // zoom to scale with
         this.sceneDataF32[6] = effectiveZoom < 0.25 ? 0 : this.wireframeOpacity; // wireframe opacity: hidden if zoom is too small
@@ -409,6 +418,14 @@ export class GameEngine {
         this.sceneDataU32[11] = tileDataHeight;
         this.sceneDataU32[12] = this.isP3 ? 1 : 0; // color space properties
         this.sceneDataU32[13] = this.is8Bit ? 1 : 0; // (unused currently)
+
+        // this.sceneDataU32[14] = 0;
+        // this.sceneDataU32[15] = 0;
+
+        this.sceneDataF32[16] = gridOriginX; // grid origin x (modulo 256 chunks)
+        this.sceneDataF32[17] = gridOriginY; // grid origin y (modulo 256 chunks)
+        this.sceneDataF32[18] = absCamX; // grid origin z (modulo 256 chunks, absolute camera x)
+        this.sceneDataF32[19] = absCamY; // grid origin w (modulo 256 chunks, absolute camera y)
 
         this.device.queue.writeBuffer(
             this.uniformBuffer,
@@ -467,9 +484,11 @@ export class GameEngine {
         }
     }
 
-    // -----
-    // Sound
-    // -----
+    /*
+        -----
+        SFX
+        -----
+    */
 
     /**
      * Resolves and caches the `AudioBuffer` for a given sound effect ID.
@@ -552,9 +571,11 @@ export class GameEngine {
             });
     }
 
-    // -----
-    // Memory Management
-    // -----
+    /*
+        -----
+        Memory Management
+        -----
+    */
 
     /** Returns the number of MB (fractional) that the memory's buffer is for WASM. */
     public getWASMMemoryMB() {
@@ -734,9 +755,11 @@ export class GameEngine {
         );
     }
 
-    // -----
-    // Resize/Rendering
-    // -----
+    /*
+        -----
+        Resizing/Rendering
+        -----
+    */
 
     /** Updates the canvas CSS style. */
     public updateCanvasStyle() {

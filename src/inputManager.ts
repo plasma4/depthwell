@@ -71,7 +71,7 @@ export function initInput(): InputState {
 
     window.addEventListener("keydown", (e: KeyboardEvent) => {
         if (e.repeat) return;
-        // Ramble here. Actually, for some reason, I tested this out, and it turns out that MacOS just bypasses all of this if you three-fingers swipe up. WHY??????
+        // Ramble here. I tested out ways to block key-holding exploits and it turns out that MacOS just bypasses all of this if you three-fingers swipe up. WHY??????
         // It's kind of dumb, and there's also not really a solution.
         // But if you don't try to disable at all, you'll end up with buggy key-counts logic. So we kind of still have to do it.
         if (e.ctrlKey || e.metaKey) {
