@@ -707,14 +707,15 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     // All layers are mades ure to be periodic every 65536 pixels.
     let d_a = world.x * 0.906 - world.y * 0.423;
     let a1 = sin((d_a + t * 15.0) / (65536.0 / 1489.0) * TAU) * 0.5 + 0.5;
-    let a2 = sin((d_a * 1.1 + t * 13.0) / (65536.0 / 1638.0) * TAU) * 0.5 + 0.5;
-    let band_a = pow(a1 * a2, 2.5) * 0.24;
+    let a2 = sin((d_a * 1.15 + t * 13.0) / (65536.0 / 1638.0) * TAU) * 0.5 + 0.5;
+    let band_a = a1 * a2 * 0.24;
 
     // Second layer (which crosses directions)
     let d_b = world.x * 0.643 - world.y * -0.766;
     let b1 = sin((d_b * 3.2 + t * 4.0) / 32.0 * TAU) * 0.5 + 0.5;
-    let b2 = sin((d_b + 4.2 + t * 5.42) / (65536.0 / 2341.0) * TAU) * 0.5 + 0.5;
-    let band_b = pow(b1 * b2, 3.0) * 0.03;
+    let b2 = sin((d_b * 4.2 + t * 5.42) / (65536.0 / 2341.0) * TAU) * 0.5 + 0.5;
+    let temp_b = b1 * b2;
+    let band_b = temp_b * temp_b * 0.03;
 
     let d_c = world.x * 0.906 + world.y * 0.423;
     let band_c = max(0.0, sin((d_c + t * 15.0) / (65536.0 / 1489.0) * TAU));
@@ -728,7 +729,9 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     let d_curvy = (world.x + warp) * 0.5 + (world.y - warp) * 0.866;
     let c1 = sin((d_curvy + t * 1.2) / (65536.0 / 1311.0) * TAU) * 0.5 + 0.5;
     let c2 = cos((d_curvy - t * 0.35) / (65536.0 / 1872.0) * TAU) * 0.5 + 0.5;
-    let curvy_streak = pow(c1 * c2, 6.0) * 0.3;
+    let temp_c = c1 * c2;
+    let temp_c2 = temp_c * temp_c;
+    let curvy_streak = temp_c2 * temp_c2 * temp_c2 * 0.3;
 
     return band_a + band_b + band_c * band_c * 0.2 + curvy_streak;
 }
@@ -766,7 +769,7 @@ fn water_body(in: TileOutput) -> vec4f {
 // FBM background logic
 struct BackgroundOutput {
     @builtin(position) position: vec4f,
-    @location(0) world_uv: vec2f,
+    @location(0) screen_offset: vec2f,
     @location(1) time: f32,
     @location(2) time2: f32,
 };
@@ -775,19 +778,16 @@ struct BackgroundOutput {
 @vertex
 fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
     // Full-screen triangle to draw: [(-1, -1), (3, -1), (-1, 3)]
-    let x = f32(i32(vertex_index & 1u) << 2u) - 1.0;
-    let y = f32(i32(vertex_index & 2u) << 1u) - 1.0;
+    let x = f32((i32(vertex_index & 1u) << 2u) - 1);
+    let y = f32((i32(vertex_index & 2u) << 1u) - 1);
 
     var out: BackgroundOutput;
     out.position = vec4f(x, y, 0.0, 1.0);
 
     let screen_uv = vec2f(x, -y) * 0.5 + 0.5;
 
-    // Reconstruct the wrap-invariant absolute camera position in pixels
-    let absolute_camera = scene.camera + scene.grid_origin.xy * TILE_SIZE;
-
     // Center the scale pivot to the screen center (camera and player viewport center)
-    out.world_uv = ((screen_uv - 0.5) * scene.viewport_size) / scene.zoom + absolute_camera;
+    out.screen_offset = ((screen_uv - 0.5) * scene.viewport_size) / scene.zoom;
 
     // Zig-zag wrapping for colors
     var t_wrap = (scene.time * 0.3) % 2.0;
@@ -805,54 +805,61 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
 @fragment
 fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     const base_scale = 0.015625; // Exactly 1.0 / 64.0 for seamless 256-chunk alignment
-
-    // Parallax factor set to exactly 1/32 (0.03125) to cleanly cycle noise over 256-chunk wrapping
-    let parallax_offset = scene.grid_origin.zw * 0.03125;
-    let st = (in.world_uv + parallax_offset) * base_scale;
+    let absolute_camera = scene.grid_origin.zw;
     let t = scene.time;
 
-    // Map linear time to a circular trajectory in 2D space for seamless FBM looping
-    let loop_period = 120.0;
-    let angle = (t / loop_period) * TAU;
-    let time_offset_x = vec2f(cos(angle), sin(angle)) * 1.5;
-    let time_offset_y = vec2f(sin(angle), -cos(angle)) * 1.2;
+    // Far background layer
+    let st0 = (in.screen_offset + absolute_camera * 0.03125) * base_scale;
+    let angle0 = (t / 180.0) * TAU; // Slow 3-minute cycle!
+    let drift0_x = vec2f(cos(angle0), sin(angle0)) * 1.0;
+    let drift0_y = vec2f(sin(angle0), -cos(angle0)) * 0.8;
 
-    // Initial low-frequency distortion pass to establish large-scale flow directions
-    var q = vec2f(0.0);
-    q.x = noise(st * 0.4 + time_offset_x * 0.2);
-    q.y = noise(st * 0.4 + vec2f(1.0, 0.3) + time_offset_y * 0.2);
+    var q0 = vec2f(0.0);
+    q0.x = noise(st0 * 0.3 + drift0_x * 0.1);
+    q0.y = noise(st0 * 0.3 + vec2f(1.0, 0.3) + drift0_y * 0.1);
 
-    // Secondary medium-frequency warp with a higher scale multiplier to inject sheer and turbulence
-    var r = vec2f(0.0);
-    r.x = fbm_2(st * 1.5 + 4.0 * q + vec2f(1.7, 9.2) + time_offset_x);
-    r.y = fbm_2(st * 1.5 + 4.0 * q + vec2f(8.3, 2.8) + time_offset_y);
-
-    // Final high-frequency FBM pass evaluated in deeply warped space to extract sharp, gaseous wisps
-    let f = fbm_4(st * 0.94 + 3.5 * r);
+    let f0 = fbm_3(st0 * 0.5 + 2.0 * q0);
 
     let mix_blue = mix(0.0, 0.4, in.time);
-    var color = mix(
-        vec3f(0.0, 0.01, mix_blue * mix_blue),
-        vec3f(0.1, 0.4, 0.2),
-        clamp((f * f) * 4.0, 0.0, 1.0)
+    let color0 = mix(
+        vec3f(0.0, 0.005, mix_blue * mix_blue * 0.5),
+        vec3f(0.05, 0.15, 0.25),
+        clamp(f0 * f0 * 3.0, 0.0, 1.0)
     );
+    let layer0_intensity = max(f0 * f0 * sqrt(f0) * 1.5 - 0.1, 0.0);
+    let layer0_rgb = layer0_intensity * color0;
 
-    // Apply secondary color masks with tighter thresholds for contrast
-    let mix_red = mix(0.0, 0.6 * 0.5, in.time + in.time2);
-    let mix_green = mix(0.0, 1.0, in.time2);
-    color = mix(
-        color,
-        vec3f(mix_red * mix_red, mix_green * mix_green, 0.8),
-        clamp(length(q * r), 0.0, 1.0)// Mutated color blending by combined warp vectors for varied gaseous boundaries
+    // Middle background layer
+    let st1 = (in.screen_offset + absolute_camera * 0.125) * base_scale;
+    let angle1 = (t / 90.0) * TAU; // Faster 90s cycle
+    let drift1_x = vec2f(cos(angle1), sin(angle1)) * 1.8;
+    let drift1_y = vec2f(sin(angle1), -cos(angle1)) * 1.5;
+
+    var q1 = vec2f(0.0);
+    q1.x = noise(st1 * 0.6 + drift1_x * 0.2);
+    q1.y = noise(st1 * 0.6 + vec2f(2.4, 1.1) + drift1_y * 0.2);
+
+    var r1 = vec2f(0.0);
+    r1.x = fbm_2(st1 * 1.8 + 3.0 * q1 + drift1_x);
+    r1.y = fbm_2(st1 * 1.8 + 3.0 * q1 + drift1_y);
+
+    let f1 = fbm_4(st1 * 1.2 + 2.5 * r1);
+
+    let mix_red = mix(0.0, 0.3, in.time + in.time2);
+    let mix_green = mix(0.0, 0.6, in.time2);
+    let color1 = mix(
+        vec3f(0.01, 0.05, 0.1),
+        vec3f(mix_red * mix_red, mix_green * mix_green, 0.5),
+        clamp(length(q1 * r1), 0.0, 1.0)
     );
+    let layer1_intensity = max(f1 * f1 * f1 * 2.5 - 0.2, 0.0);
+    let layer1_rgb = layer1_intensity * color1;
 
-    // Shape the noise curve using an exponential power for sharp, thin smoke filaments and dark voids
-    let smoke_profile = pow(f, 3.0) * 2.2;
-    let intensity = smoke_profile - 0.15; // controls wispiness
-    let final_rgb = max(intensity, 0.0) * color;
+    // Additive screen blend of both seamless layers
+    let final_rgb = layer0_rgb + layer1_rgb;
 
     let opacity = scene.chunk_opacity;
-    return vec4f(final_rgb * opacity, opacity); // don't do color space stuff here
+    return vec4f(final_rgb * opacity, opacity);
 }
 
 fn noise(st: vec2f) -> f32 {
@@ -888,7 +895,20 @@ fn fbm_2(p: vec2f) -> f32 { // simple fractal brownian motion algorithm
     return v;
 }
 
-fn fbm_4(p: vec2f) -> f32 { // same as above but 4 iters
+fn fbm_3(p: vec2f) -> f32 { // same as above but 3 iters
+    var v = 0.0;
+    var a = 0.5;
+    var shift = vec2f(100.0);
+    var pos = p;
+    for (var i = 0; i < 3; i++) {
+        v += a * noise(pos);
+        pos = pos * 2.0 + shift;
+        a *= 0.5;
+    }
+    return v;
+}
+
+fn fbm_4(p: vec2f) -> f32 { // same as above but 4 iters (wow, who could have guessed!)
     var v = 0.0;
     var a = 0.5;
     var shift = vec2f(100.0);
