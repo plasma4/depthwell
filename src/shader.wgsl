@@ -237,7 +237,17 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
             let base_height = 1.0 - (f32(in.hp) / 21.0);
             let ripple_freq = 4172.0 * TAU / 65536.0;
             let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.08 * base_height;
-            let current_height = base_height + ripple - 0.2;
+            var current_height = base_height + ripple - 0.2;
+
+            // Interpolate height up if adjacent to higher water (gradually waterlogged)
+            if (in.edge_flags & 1u) != 0u {
+                let left_factor = 1.0 - in.local_uv.x;
+                current_height = mix(current_height, 1.0, left_factor * left_factor);
+            }
+            if (in.waterlogged & 2u) != 0u {
+                let right_factor = in.local_uv.x;
+                current_height = mix(current_height, 1.0, right_factor * right_factor);
+            }
 
             // If the pixel is above the water surface, discard it
             if in.local_uv.y < (1.0 - current_height) {

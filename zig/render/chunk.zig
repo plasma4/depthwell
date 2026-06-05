@@ -143,7 +143,7 @@ inline fn updateRenderProperties(
     const player_render_x = (player_interpolated_x - grid_origin_sub_x - CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT / 2) / CHUNK_SIZE_FLOAT;
     const player_render_y = (player_interpolated_y - grid_origin_sub_y - CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT / 2) / CHUNK_SIZE_FLOAT;
 
-    // Modulo every 256 chunks to seamlessly loop the background!
+    // Modulo every 256 chunks to seamlessly loop water coordinates
     const player_cx_mod = @as(i64, @intCast(game.player_chunk[0] % 256));
     const player_cy_mod = @as(i64, @intCast(game.player_chunk[1] % 256));
     const abs_grid_cx = @mod(player_cx_mod + min_cx, 256);
@@ -152,8 +152,17 @@ inline fn updateRenderProperties(
     const abs_grid_x = @as(f64, @floatFromInt(abs_grid_cx * @as(i32, memory.CHUNK_SIZE)));
     const abs_grid_y = @as(f64, @floatFromInt(abs_grid_cy * @as(i32, memory.CHUNK_SIZE)));
 
-    const abs_cam_x = cam_x_shader + (abs_grid_x * 16.0);
-    const abs_cam_y = cam_y_shader + (abs_grid_y * 16.0);
+    // Modulo every 512 chunks to seamlessly loop background coordinates (farthest layer needs 512-chunk period)
+    const player_cx_bg_mod = @as(i64, @intCast(game.player_chunk[0] % 512));
+    const player_cy_bg_mod = @as(i64, @intCast(game.player_chunk[1] % 512));
+    const abs_grid_bg_cx = @mod(player_cx_bg_mod + min_cx, 512);
+    const abs_grid_bg_cy = @mod(player_cy_bg_mod + min_cy, 512);
+
+    const abs_grid_bg_x = @as(f64, @floatFromInt(abs_grid_bg_cx * @as(i32, memory.CHUNK_SIZE)));
+    const abs_grid_bg_y = @as(f64, @floatFromInt(abs_grid_bg_cy * @as(i32, memory.CHUNK_SIZE)));
+
+    const abs_cam_x = cam_x_shader + (abs_grid_bg_x * 16.0);
+    const abs_cam_y = cam_y_shader + (abs_grid_bg_y * 16.0);
 
     // Update scratch properties that JS reads
     memory.setScratchProp(0, wb);
