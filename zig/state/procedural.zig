@@ -149,8 +149,8 @@ pub fn addStructures(
             const x_in_area: i32 = @intCast(wx % structure_area); // modulo optimized to AND
             const y_in_area: i32 = @intCast(wy % structure_area);
 
-            const max_pos_x: u32 = structure_area - size_x;
-            const max_pos_y: u32 = structure_area - size_y;
+            const max_pos_x = structure_area - size_x;
+            const max_pos_y = structure_area - size_y;
 
             // Extract values using the state generator instead of manual bit-slicing
             const pos_x = @as(i32, @intCast(state1.getLimit(u32, max_pos_x)));
@@ -194,9 +194,10 @@ pub fn addStructures(
             const x_in_area: i32 = @intCast(wx % structure_area);
             const y_in_area: i32 = @intCast(wy % structure_area);
 
-            const max_pos_x = @max(1, @as(i32, structure_area) - size_x);
-            const max_pos_y = @max(1, @as(i32, structure_area) - size_y);
+            const max_pos_x: i32 = @max(1, @as(i32, structure_area) - size_x);
+            const max_pos_y: i32 = @max(1, @as(i32, structure_area) - size_y);
 
+            // TODO: is it bad that these aren't comptime?
             const pos_x = state2.getLimit(i32, max_pos_x);
             const pos_y = state2.getLimit(i32, max_pos_y);
 
@@ -254,7 +255,7 @@ pub fn addStructures(
     }
 
     // Structure 3: Pillar thing
-    // Has water spawn at its bottom
+    // Spawns with water
     // SSSSSSSSSSSSSSSS
     // S   P     P    S
     // S   P     P    S
@@ -262,7 +263,7 @@ pub fn addStructures(
     // S     SSS      S
     // SSSSSSSSSSSSSSSS
     {
-        const structure_area = 32;
+        const structure_area = 128;
         var state3 = makeStructureHash(struct_seed, wx, wy, structure_area, 2);
 
         if (state3.getChance(0.08)) {
@@ -272,8 +273,8 @@ pub fn addStructures(
             const x_in_area: i32 = @intCast(wx % structure_area);
             const y_in_area: i32 = @intCast(wy % structure_area);
 
-            const max_pos_x: u32 = structure_area - size_x;
-            const max_pos_y: u32 = structure_area - size_y;
+            const max_pos_x = structure_area - size_x;
+            const max_pos_y = structure_area - size_y;
 
             const pos_x = @as(i32, @intCast(state3.getLimit(u32, max_pos_x)));
             const pos_y = @as(i32, @intCast(state3.getLimit(u32, max_pos_y)));
@@ -313,6 +314,8 @@ pub fn addStructures(
                 }
 
                 if (struct_y == size_y - 2) {
+                    return .water;
+                } else if (bit == 1 and struct_y == size_y - 3) {
                     return .water;
                 } else if (bit == 1 and struct_y == size_y - 3) {
                     return .water;
@@ -451,7 +454,8 @@ pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
     if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
     if (density <= density_min.getF32() or density >= density_max.getF32()) {
-        return if (moisture >= 0.93 and moisture <= 0.94) .purple_strange_stone else .none;
+        if (moisture >= 0.93 and moisture <= 0.94) return .purple_strange_stone;
+        return .none;
     } else if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
         return .blue_strange_stone;
     }
@@ -463,8 +467,9 @@ pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
     if (moisture >= 0.88 and moisture <= 0.92) return .lava_stone;
     if (moisture >= 0.50 and density <= 0.53 and density <= 0.6) return .green_stone;
 
-    if (moisture >= 0.58 and density >= 0.83) return .seagreen_stone;
-    if (moisture <= 0.65 and density >= 0.60 and density <= 0.7) return .blue_stone;
+    if (moisture >= 0.62 and density >= 0.83) return .seagreen_stone;
+    if (moisture <= 0.55 and density >= 0.60 and density <= 0.72) return .blue_stone;
+    if (density >= 0.45 and density <= 0.50) return .water;
     if (density >= 0.40 and density <= 0.55) return .contrast_blue_stone;
 
     if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;

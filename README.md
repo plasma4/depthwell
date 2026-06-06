@@ -1,15 +1,13 @@
 # Depthwell
 
-Depthwell is a procedural fractal mining incremental. How deep can you explore? Minimal demo releasing August 1st.
+Depthwell is a procedural fractal mining incremental. How deep can you explore? Minimal demo potentially releasing August 1st; may be delayed further.
 
 > [!WARNING]
 > The current `README` is **incomplete**, as this game is still in the pre-demo stage; more details will be added in the future and details might currently be out of date. Read the code for specific implementation details.
 
 ### Images
 
-![Basic terrain example](images/sample.png)
-
-![Inventory example](images/inventory.png)
+![Basic game screenshot (built with creative debug options)](images/sample.png)
 
 ![Sprite sheet](public/assets/main.png)
 
@@ -17,7 +15,7 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 Left-clicking places blocks; click on inventory slots directly to select block types.
 Use the pickaxe icon to mine and WASD/arrow keys to move around.
-Use the M key to open or close the debug menu options.
+Use the M key to open or close the debug menu options; use creative mode from within the menu to test blocks easily.
 
 For inventory hotkeys:
 
@@ -30,9 +28,8 @@ To build `node_modules`, run `npm install`.
 
 Run `zig build` to build Zig code and automatically update detect `main.aseprite` changes, `zig test "zig/root.zig"` to run (all) tests, and `zig build -Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
 
-Useful variables to customize include `CONFIG` in `src/main.ts`, `engine.wireframeOpacity`, `engine.baseSpeed`, and `zig/player.zig` config options.
-
-When building for production with Vite (using `npm run build` instead of `npm run dev`), use `zig build -Dgen-enums -Dwasm-opt` (with WASM optimizations from Binaryen). Or, use `git config core.hooksPath .githooks` to set this up on-commit.
+Useful variables to customize include `CONFIG` in `src/main.ts`, `engine.wireframeOpacity`, `engine.baseSpeed`, and `zig/state/player.zig` config options.
+When building for production with Vite (using `npm run build` instead of `npm run dev`), use `zig build -Dgen-enums -Dwasm-opt` (with WASM optimizations from Binaryen).
 
 For a final version, edit `SHADER_SOURCE` in `engineMaker.ts` to `"./shader.wgsl"` temporarily (without the `?raw` property) to actually compress `shader.wgsl`.
 
@@ -40,15 +37,14 @@ Currently, Depthwell does not utilize web worker technology, so custom headers a
 
 #### Easy building tips
 
-It is quite helpful to use the Zig Language Server in VSCode and set it to "watch" mode, which automatically builds the WASM while providing helpful error feedback.
+It is quite helpful to use the Zig Language Server in VSCode and set it to "watch" mode, which automatically builds the WASM while providing helpful error feedback to highlight. Clearing the console through shortcuts/ANSI escape codes can be useful if you're not using VSCode utilities.
 
-Alternatively, with a clear-screen command that uses ANSI-escape codes, you can clear the screen every time after building:
+To auto-build Vite before commit:
 
-```bash
-cls && zig build -Dgen-enums
+```sh
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit
 ```
-
-(Replace `cls` with `printf "\033c"` for Bash, or create a custom command in `$PATH`.)
 
 ### Architecture details
 
@@ -121,7 +117,7 @@ And here would be the `Coordinate` (again, assuming that the active suffix is on
 
 (Note that "expanding" these cached values is invalid in practice. These are really just one larger number, but it helps to separate these out when explaining. Also, this glosses over some details when the prefix stack is empty because the active suffix can successfully represent all possible places the player is in.)
 
-When zooming in, a new value is pushed to either the cache (if `depth` is beyond the rebasing horizon limit) or it's just added to each of the quad-caches if not. You can find specific implementations of the quad-cache and depth rebasing logic in `zig/world.zig`.
+When zooming in, a new value is pushed to either the cache (if `depth` is beyond the rebasing horizon limit) or it's just added to each of the quad-caches if not. You can find specific implementations of the quad-cache and depth rebasing logic in `zig/state/world.zig`.
 
 This explanation also highlights why we need 4 quad-caches: the player might be juuuust in between two possible prefix stacks for X, and two other possible ones for Y. Of course, the player doesn't have to worry about all this when enjoying the game. But sometimes it's nice to peek behind the curtain!
 
@@ -193,7 +189,7 @@ For each ancestor level, it traces upward and queries `ModificationStore` or eva
 
 #### Prefix stack and memoization
 
-You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/world.zig`, the big prefix path is stored using dynamic array allocations (`SegmentedList`).
+You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/state/world.zig`, the big prefix path is stored using dynamic array allocations (`SegmentedList`).
 
 #### Why memoize and make the logic so complicated?
 
@@ -371,6 +367,7 @@ pub const ModificationStore = struct {
         DepthCoordinateContext,
         std.hash_map.default_max_load_percentage,
     ),
+    /// Expandable list that stores modified `Chunk` data (256KiB pre-allocation).
     history: SegmentedList(Chunk, 128) = .{},
 
     pub fn init(allocator: std.mem.Allocator) ModificationStore {
@@ -389,8 +386,15 @@ pub const ModificationStore = struct {
         const id = self.index.get(key) orelse return null;
         return self.history.at(id);
     }
+
+    /// Completely wipes all user modifications. Should be followed by `world.clearCaches(true)`.
+    pub fn clear(self: *@This()) void {
+        self.index.clearRetainingCapacity();
+        self.history.clearRetainingCapacity();
+    }
 };
 
+/// Stores and handles modifications of chunks across various depths.
 pub var mod_store: ModificationStore = undefined;
 
 /// Stores what location a modification with an active suffix and quadrant, as well as its depth, to easily identify it.
@@ -404,106 +408,17 @@ pub const DepthCoordinate = struct {
     };
 
     /// Active suffix (stored as a vector). Should not be set manually; must call `getParent()` to decrease the depth for depths beyond `HORIZON_DEPTH`.
-    /// Most likely, a "path" of accessing D->D-1->D-2->...->D-32 will occur.
+    /// Most likely, a "path" of accessing D->D-1->D-2->...->H will occur.
     /// You can think of the active suffix like 32 `u2` values packed together for the X and Y coordinate.
-    /// This coordinate can then be merged with the correct `QuadCache` quadrant to go all the way to D-32, or H!
-    /// See `README.md` for more details.
+    /// This coordinate can then be merged with the correct `QuadCache` quadrant to go all the way to H.
+    /// See `README.md` for more details on what D/H mean.
     suffix: Vec2u,
     /// The depth of the modification.
     depth: u64,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u32,
-
-    /// Checks for equality between two `DepthCoordinate` values.
-    pub inline fn eql(a: DepthCoordinate, b: DepthCoordinate) bool {
-        return a.depth == b.depth and a.quadrant == b.quadrant and @reduce(.And, a.suffix == b.suffix);
-    }
-
-    /// Converts any `Coordinate` to a `DepthCoordinate` at the current depth.
-    pub inline fn from(coord: Coordinate) @This() {
-        return .{
-            .suffix = coord.suffix,
-            .quadrant = @intCast(coord.quadrant),
-            .depth = memory.game.depth,
-        };
-    }
-
-    /// Converts a `DepthCoordinate` to a `Coordinate`, removing information about depth.
-    pub inline fn asCoord(key: @This()) Coordinate {
-        return .{
-            .suffix = key.suffix,
-            .quadrant = @intCast(key.quadrant),
-        };
-    }
-
-    /// Gets the correct location of D-1, in a `DepthCoordinate` format.
-    /// Handles depth decrement, acting as the `pushLayer()` "inverse" for a `DepthCoordinate`.
-    pub inline fn getParent(self: @This()) @This() {
-        const parent_depth = self.depth - 1;
-
-        // No rebasing exists at or below the horizon so bit-shifting does the trick.
-        if (self.depth <= memory.HORIZON_DEPTH) {
-            return .{
-                .suffix = self.suffix >> @splat(memory.ZOOM_LOG2),
-                .depth = parent_depth,
-                .quadrant = self.quadrant, // below horizon, quadrant is always 0.
-            };
-        }
-
-        std.debug.assert(self.depth + memory.HORIZON_DEPTH >= memory.game.depth); // can't go to D-33
-
-        // Rebase case! child_depth is larger than the horizon (> 32).
-        // Recover the exact 3-bit rebase origin mapped to THIS depth transition.
-        const origin_x = quad_cache.getOriginX(self.depth);
-        const origin_y = quad_cache.getOriginY(self.depth);
-
-        // The absolute cell within the parent QuadCache uses BOTH the origin offset AND the child's quadrant.
-        const child_qx = self.quadrant % 2;
-        const child_qy = self.quadrant / 2;
-
-        const cell_x = origin_x + child_qx;
-        const cell_y = origin_y + child_qy;
-
-        // Parent quadrant is the macro-cell this child belonged to.
-        const parent_qx = cell_x / ZOOM_FACTOR;
-        const parent_qy = cell_y / ZOOM_FACTOR;
-        const parent_quadrant: u32 = @intCast(parent_qx + parent_qy * 2);
-
-        // The top bits that "fell off" are the remainder!
-        const top_x = cell_x % ZOOM_FACTOR;
-        const top_y = cell_y % ZOOM_FACTOR;
-
-        // Effectively, take bottom 4 bits of top X/Y, and add in the 62 significant bits of the original suffix at the bottom.
-        const shift: u6 = 64 - memory.ZOOM_LOG2;
-        const px = (top_x << shift) | (self.suffix[0] >> memory.ZOOM_LOG2);
-        const py = (top_y << shift) | (self.suffix[1] >> memory.ZOOM_LOG2);
-
-        return .{
-            .suffix = .{ px, py },
-            .depth = parent_depth,
-            .quadrant = parent_quadrant,
-        };
-    }
-};
-
-/// Context for the `DepthCoordinate` (providing hashing and equality checks).
-pub const DepthCoordinateContext = struct {
-    /// Basic hash function for modifications. Equality is checked if hashes are identical as a fallback.
-    pub inline fn hash(self: @This(), key: DepthCoordinate) u64 {
-        _ = self;
-        var hasher = std.hash.Wyhash.init(key.depth);
-        // Hash exact fields explicitly to avoid padding ambiguities
-        std.hash.autoHash(&hasher, key.quadrant);
-        std.hash.autoHash(&hasher, key.suffix);
-        return hasher.final();
-    }
-
-    /// Checks for equality between two `DepthCoordinate` values.
-    pub inline fn eql(self: @This(), a: DepthCoordinate, b: DepthCoordinate) bool {
-        _ = self;
-        return a.depth == b.depth and a.quadrant == b.quadrant and @reduce(.And, a.suffix == b.suffix);
-    }
-};
+    ...
+}
 ```
 
 ```zig
@@ -567,13 +482,13 @@ The algorithm does this each frame (with a budget of 2-4; budget increases if th
 
 1. The player's current velocity creates a "leading edge." Smart chunk loading here prioritizes generating chunks in the direction the player is currently heading. This is done by not considering diagonals, and only considering cardinal directions.
 2. Budget is spent on a 68-chunk ring outside the simulation window (based on the leading edge from the first part), using a persistent cursor.
-3. Finally, the `ChunkCache` provides a "second chance." Using a clock algorithm, the cache differentiates between chunks the player is moving toward and chunks the player has left behind, evicting the latter to keep the memory footprint stable.
+3. Finally, the `ChunkCache` provides a "second chance." This uses a 4-way set-associative cache (which is effectively $O(1)$ in more cases than a `HashMap`); implementation details can be seen in `zig/state/world.zig`.
 
 This system prevents frame spikes (as you may normally have to generate a whole 16 chunks/frame to keep `SimBuffer` happy)! Note that this logic doesn't at all change the _logic_: the player could still teleport trillions of chunks away in a frame: these would just get gradually neglected by the `ChunkCache` naturally.
 
 A little bit on the `ChunkCache`: it has 256 slots by default. When the cache is full and a new chunk needs to be stored, a "hand" sweeps through the slots. If a chunk's "reference bit" is 1 (meaning it was recently accessed), the bit is flipped to 0 and the hand moves on. If the bit is already 0, the chunk is evicted.
 
-Chunks that get accessed from the `SimBuffer` do not update the `ChunkCache`, although chunks generated for the purpose of being placed into `SimBuffer` do get placed into the cache. This provides a highly efficient approximation of "Least Recently Used" (LRU) logic without the overhead of tracking timestamps for every single block access (perfect here!).
+Chunks that get accessed from the `SimBuffer` do not update the `ChunkCache`, although chunks generated for the purpose of being placed into `SimBuffer` _do_ get placed into the cache. This is basically least-recently-used logic without the overhead of tracking timestamps or ordering for every single block access (perfect here!). The performance also doesn't degrade as the `ChunkCache` gets larger.
 
 #### Memory transfer
 
@@ -584,9 +499,9 @@ The interface between the TypeScript engine and the Zig core is managed via a pr
 
 ### Why WGSL (WebGPU)?
 
-WGSL offers several advantages (despite lower browser support). It lets you explicitly manage browser memory and is more efficient. Also, it's the more "modern" standard compared to things like WebGL, so might as well.
+WGSL offers several advantages (despite lower browser support). It lets you explicitly manage browser memory and is more efficient. Also, it's the more "modern" standard compared to things like WebGL 2, so might as well. Unlike using something naive like `drawImage()` it's also a lot faster and we can do a lot more with it! (See the entity system section.)
 
-Basically, the goal is to make sure that Zig handles as much of the state as possible, and Zig is the one that generates the data and places it into the scratch buffer. Then, this data is sent to WGSL and processed; Zig pre-processes the data, panning and converting to `f32` (so WebGPU doesn't encounter precision issues).
+The goal with using WGSL is to make sure that Zig handles as much of the state as possible, and Zig is the one that generates the data and places it into the scratch buffer. Then, this data is sent to WGSL and processed; Zig pre-processes the data, panning and converting to `f32` (so WebGPU doesn't encounter precision issues).
 
 Compared to using something like the native JS canvas manipulation, the use of GPU shaders blows that out of the water. `drawImage` is a good lazy way to do this, but it doesn't scale.
 
@@ -599,7 +514,7 @@ While Zig handles the logic, the visual fidelity of Depthwell is achieved throug
 To minimize the data sent to the GPU, each tile is packed into two 32-bit unsigned integers (`word0` and `word1`). The shader uses `extractBits` to reconstruct the `UnpackedTile` struct on the fly:
 
 - `word0`: Contains the Sprite ID (16 bits), Edge Flags (8 bits), and Light (8 bits).
-- `word1`: Contains the HP/Mined state (4 bits) and a 28-bit procedural seed.
+- `word1`: Contains the HP/mined state (4 bits) and a 28-bit procedural seed.
 
 This 28-bit seed provides a lot of variation. It is passed through a `murmurmix32` function to generate `seed2` and `seed3`, providing three independent streams of entropy for every single block on screen (with the other two seeds being used in erosion and edge flags).
 
@@ -627,17 +542,22 @@ Ores and gems are rendered using a multi-texture "masking" trick to save atlas s
 
 1.  The shader samples the background stone based on the block's world coordinates (preserving the 2x2 tiling).
 2.  It calculates a shifted UV for the gem itself using 8 bits of the seed, allowing the gem to appear at any of 256 sub-pixel offsets within the block.
-3.  It samples a Gem Mask and mixes the stone and gem colors based on the mask's red channel.
+3.  It samples a gem mask and mixes the stone and gem colors based on the mask's red channel.
 4.  Finally, it applies a random horizontal/vertical flip to the mask, ensuring that even gems with the same offset look distinct.
 
-#### Background
+#### Background and water
 
-The background isn't simply a static image. Instead it's created with a custom multi-octave Fractal Brownian Motion (FBM) implementation!
+The background isn't simply a static image. Instead it's created with a custom multi-octave fractal brownian motion (FBM) implementation!
 
-It uses a 2D noise function that is "panned" by the camera position at a scale of 0.02, creating a deep parallax effect. This still needs improvement to not constantly reset between chunks (which can be done by intermixing two backgrounds, but that's something in the future to do).
+It uses a 2D noise function (FBM, which you can find in The Book of Shaders webpage) and this is applied multiple times. For performance reasons the amount of octaves is heavily toned down, and there's a subtle parallax effect with 8x, 32x, and 64x "slower" layers versus the camera's movement.
+(As in, for every 64 pixels the players move, the 3 layers would move 8, 2, and 1 pixels respectively. These layers also have different RGB color choices and looks!)
 
-TODO, add parallax or similar effects in tandem
+You can imagine the specific position as effectively being `(chunk ID + sub-chunk location) modulo 512`, with a coordinate warping system, and basic trig-based lighting at the end.
+
+For the water, there's similar complicated modulo wrapping logic; however, this is based on the chunk's and subpixel position and is easier to reason about. (For water, it's modulo 256 instead of 512.)
+
+(There are a lot more details within `zig/state/chunk.zig` as to how this is exported. For the water, see `zig/state/water.zig` for update calculations.)
 
 ### Copyright
 
-Copyright (c) 2026 Leo Zhang. All rights reserved. Distribution of any portions of code without permission is strictly prohibited.
+Copyright (c) 2026 Leo Zhang. All rights reserved. Distribution of any portions of code or raw assets without explicit permission is strictly prohibited.

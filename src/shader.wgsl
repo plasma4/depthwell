@@ -11,7 +11,7 @@ const STONE_START: u32 = /* STONE_START */ 1 /* STONE_START */;
 const ORE_START: u32 = /* ORE_START */ 1 /* ORE_START */;
 const GEM_START: u32 = /* GEM_START */ 1 /* GEM_START */;
 const GEM_MASK_START: u32 = /* GEM_MASK_START */ 1 /* GEM_MASK_START */;
-const DECOR_START: u32 = /* DECOR_START */ 1 /* DECOR_START */;
+const GEAR_ID: u32 = /* GEAR_ID */ 1 /* GEAR_ID */;
 const WATER_START: u32 = /* WATER_START */ 1 /* WATER_START */;
 
 const PI = radians(180.0);
@@ -111,6 +111,7 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     // out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
 
     out.light = 1.0;
+
     out.hp = extractBits(data.word1, 20u, 4u);
     // hp takes up the top 4 bits perfectly, 24-bit total
     let s1 = murmurmix32(extractBits(data.word1, 0u, 24u));
@@ -168,7 +169,7 @@ fn vs_tile(
         0.0,
         2.0 * scene.zoom,
         // spiral plant, ceiling flower
-        id == DECOR_START + 0u || id == DECOR_START + 1u
+        id == GEAR_ID + 4u || id == GEAR_ID + 5u
     );
 
     // add to ID based on pre-determined shifts
@@ -180,8 +181,8 @@ fn vs_tile(
         // edge stone alternates in a checkerboard pattern
         let offset = (tile_coords.x & 1u) ^ (tile_coords.y & 1u);
         id += offset;
-    } else if id == DECOR_START + 1u {
-        // seed-based variation for ceiling flowers
+    } else if id == GEAR_ID + 2u || id == GEAR_ID + 5u {
+        // seed-based variation for bushes and ceiling flowers
         id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); // 50% odds to select the variation
 
         // for 25%:
@@ -189,9 +190,9 @@ fn vs_tile(
         // if random_mod == 0u {
         //     id++;
         // }
-    } else if id == DECOR_START + 5u || id == DECOR_START + 8u { // variation for mushrooms
+    } else if id == GEAR_ID + 7u || id == GEAR_ID + 10u { // variation for mushrooms
         let bits = extractBits(tile.seeds[0], 16u, 2u);
-        id -= select(0u, bits, bits == 3u); // select variation (0, +1, or +2, 50% odds of 0)
+        id += select(bits, 0u, bits == 3u); // select variation (0, +1, or +2, 50% odds of 0)
     }
 
     // apply to screen_pos.y before converting to normalized device coordinates
@@ -436,7 +437,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
 
 // Bijective mixer for 32-bit integers
 fn murmurmix32(number: u32) -> u32 {
-    var h = number;
+    var h = max(number, 1u);
     h ^= h >> 16;
     h *= 0x85ebca6b;
     h ^= h >> 13;

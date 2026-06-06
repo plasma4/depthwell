@@ -26,13 +26,13 @@ pub const CAMERA_MAX_ZOOM = 2.0; // 200%
 pub const STARTING_CAMERA_SCALE = 1.0; // 100%
 
 /// The base speed of the player.
-pub var PLAYER_BASE_SPEED: f64 = 1.0;
+pub var PLAYER_BASE_SPEED: f64 = 0.6;
 /// How strong the gravity is.
 pub var GRAVITY: f64 = 0.4;
 /// How high the player jumps.
-pub var JUMP_FORCE: f64 = 8.0;
+pub var JUMP_FORCE: f64 = 6.0;
 /// Friction of player movement (horizontal).
-pub var FRICTION_X: f64 = 0.2;
+pub var FRICTION_X: f64 = 0.15;
 /// Friction of player movement (vertical).
 pub var FRICTION_Y: f64 = 0.025;
 /// How many frames the player can still jump after leaving a ledge.

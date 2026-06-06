@@ -26,11 +26,11 @@ const DECOR_START = MASK_START + 24;
 
 /// Number of fruit sprites.
 const FRUIT_COUNT = 10;
-/// ID for `Sprite.gear`, which is after 10 fruit.
-const GEAR_ID = DECOR_START + 7 + FRUIT_COUNT;
+/// ID for `Sprite.gear`, which is after a list of fruit drops.
+const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = GEAR_ID + 15;
+pub const INVENTORY_START = GEAR_ID + 18;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 3;
 
@@ -202,7 +202,7 @@ const rules = [_]SpriteRule{
     // Edge stone
     .{
         .{ .single = .edge_stone },
-        .{ .solid = true },
+        .{ .in_world = true },
     },
     // Normal decor
     .{
@@ -224,9 +224,7 @@ const rules = [_]SpriteRule{
             .big_tree2_left,
             .big_tree2_right,
         } },
-        .{
-            .in_world = true,
-        },
+        .{ .in_world = true },
     },
     // Solid interactive decor
     .{
@@ -234,7 +232,7 @@ const rules = [_]SpriteRule{
             .forest_furnace,
             .lava_furnace,
         } },
-        .{ .solid = true },
+        .{ .solid = true, .item = true },
     },
     // Liquids
     .{
@@ -532,9 +530,7 @@ pub const Sprite = enum(u16) {
     hp_mask = MASK_START + 8, // 16 masks
 
     // Decor (THIS IS COUPLED TO WGSL CODE)
-    rock = DECOR_START,
-    bush,
-    small_tree,
+    small_tree = DECOR_START,
     big_tree1_left,
     big_tree1_right,
     big_tree2_left,
@@ -550,12 +546,14 @@ pub const Sprite = enum(u16) {
     circuspin,
     bacon,
     gear = GEAR_ID,
-    spiral_plant = GEAR_ID + 1,
-    ceiling_flower = GEAR_ID + 2, // 2 variations
-    mushroom = GEAR_ID + 4, // 3 variations
-    big_mushroom = GEAR_ID + 7, // 3 variations
-    forest_furnace = GEAR_ID + 10,
-    lava_furnace = GEAR_ID + 11,
+    rock,
+    bush, // 2 variations
+    spiral_plant = GEAR_ID + 4,
+    ceiling_flower = GEAR_ID + 5, // 2 variations
+    mushroom = GEAR_ID + 7, // 3 variations
+    big_mushroom = GEAR_ID + 10, // 3 variations
+    forest_furnace = GEAR_ID + 13,
+    lava_furnace,
     torch,
     chest,
     portal = INVENTORY_START - 1,

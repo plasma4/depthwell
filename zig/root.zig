@@ -93,8 +93,8 @@ pub export fn getGemStart() u32 {
 pub export fn getGemMaskStart() u32 {
     return sprite.MASK_START;
 }
-pub export fn getDecorStart() u32 {
-    return @intCast(@intFromEnum(Sprite.spiral_plant));
+pub export fn getGearStart() u32 {
+    return @intCast(@intFromEnum(Sprite.gear));
 }
 pub export fn getWaterStart() u32 {
     return @intCast(@intFromEnum(Sprite.water));

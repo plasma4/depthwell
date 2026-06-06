@@ -494,9 +494,6 @@ export class GameEngine {
      * Resolves and caches the `AudioBuffer` for a given sound effect ID.
      */
     private async getAudioBuffer(id: number): Promise<AudioBuffer> {
-        if (this.audioBuffers.has(id)) {
-            return this.audioBuffers.get(id)!;
-        }
         if (this.audioLoading.has(id)) {
             return this.audioLoading.get(id)!;
         }
@@ -546,26 +543,42 @@ export class GameEngine {
         return loadPromise;
     }
 
+    /** Plays a cached audio buffer immediately. */
+    private playAudioBuffer(
+        buffer: AudioBuffer,
+        volume: number,
+        pitch: number,
+    ): void {
+        const ctx = this.audioCtx!;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        const gainNode = ctx.createGain();
+
+        gainNode.gain.setValueAtTime(volume, ctx.currentTime);
+        source.playbackRate.setValueAtTime(pitch, ctx.currentTime);
+
+        source.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        source.start(0);
+    }
+
     /** Plays a sound effect with pitch and volume variation. */
     public playSound(id: number, volume: number, pitch: number): void {
         if (this.audioCtx && this.audioCtx.state === "suspended") {
             this.audioCtx.resume();
         }
 
+        // The sound is cached! Play directly.
+        const cachedBuffer = this.audioBuffers.get(id);
+        if (cachedBuffer) {
+            this.playAudioBuffer(cachedBuffer, volume, pitch);
+            return;
+        }
+
+        // Load asynchronously on first use
         this.getAudioBuffer(id)
             .then((buffer) => {
-                const ctx = this.audioCtx!;
-                const source = ctx.createBufferSource();
-                source.buffer = buffer;
-                const gainNode = ctx.createGain();
-
-                // variation RNG is handled in Zig
-                gainNode.gain.setValueAtTime(volume, ctx.currentTime);
-                source.playbackRate.setValueAtTime(pitch, ctx.currentTime);
-
-                source.connect(gainNode);
-                gainNode.connect(ctx.destination);
-                source.start(0);
+                this.playAudioBuffer(buffer, volume, pitch);
             })
             .catch((err) => {
                 console.warn(`Could not play sound ${id}:`, err);

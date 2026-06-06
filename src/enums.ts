@@ -42,7 +42,7 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly getOreStart: () => number;
     readonly getGemStart: () => number;
     readonly getGemMaskStart: () => number;
-    readonly getDecorStart: () => number;
+    readonly getGearStart: () => number;
     readonly getWaterStart: () => number;
     readonly handleMouse: (arg0: number, arg1: number, arg2: number) => void;
     readonly tick: (arg0: number, arg1: number) => void;

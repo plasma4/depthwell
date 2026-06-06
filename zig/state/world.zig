@@ -256,10 +256,6 @@ pub const SimBuffer = struct {
     /// Attempts to retrieve a chunk from the buffer, returning null if non-existent.
     pub fn get(coord: Coordinate) ?*Chunk {
         const og = origin orelse return null;
-        if (coord.quadrant != og.quadrant) {
-            return null;
-        }
-
         const dx = coord.suffix[0] -% og.suffix[0];
         const dy = coord.suffix[1] -% og.suffix[1];
 
@@ -526,7 +522,7 @@ pub const ChunkCache = struct {
     /// Where the hand is located in the clock data structure per set.
     var hands: [CHUNK_CACHE_SETS]u2 = @splat(0);
 
-    /// Finds the index of a `Coordinate` in the cache, marking it as "recently used".
+    /// Finds the index of a `Coordinate` in the cache, marking it as "recently used."
     /// Returns null if non-existent.
     pub inline fn findIndex(coord: Coordinate) ?usize {
         const h = coord.hash();
@@ -543,9 +539,8 @@ pub const ChunkCache = struct {
         return null;
     }
 
-    /// Evicts an entry using the clock algorithm and returns the index for the new coordinate.
+    /// Evicts an entry using the clock algorithm and returns the index for the new `Coordinate` inside the cache.
     pub inline fn allocateIndex(coord: Coordinate) usize {
-        logger.writeOnce(2, CHUNK_CACHE_SIZE);
         const h = coord.hash();
         const set_idx: usize = @intCast(h % CHUNK_CACHE_SETS);
         var hand_val = hands[set_idx];
@@ -1122,6 +1117,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
     }
 
     // Calculate flags using the static halo buffer
+    // TODO: Make it so that the waterlogged |= 2 only triggers if the water itself is at hp=15
     for (0..CHUNK_SIZE) |y| {
         for (0..CHUNK_SIZE) |x| {
             var flags: u8 = 0;
@@ -1182,7 +1178,6 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
 /// Is different from the final result in `root.chunks.updateVisibleChunks()`.
 inline fn shouldHaveEdgeFlags(sprite: Sprite) bool {
     return sprite.isFoundation();
-    // TODO: improve edge flag logic to make liquid only check with liquid, and solid only check with solid
 }
 
 /// Returns whether both sprites are liquids and should therefore use liquid-adjacent edge flags instead.
@@ -1274,7 +1269,16 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 const current_block = getBlockAt(target_coord, lbx, lby, memory.game.depth);
                 const current_sprite = current_block.id;
                 if (current_sprite == .water) {
-                    root.water.updateWaterEdgeFlags(nx, ny);
+                    // Translate the target chunk and block offset to absolute SimBuffer 256x256 coordinates
+                    if (SimBuffer.origin) |og| {
+                        const dcx = target_coord.suffix[0] -% og.suffix[0];
+                        const dcy = target_coord.suffix[1] -% og.suffix[1];
+                        if (dcx < SIM_BUFFER_WIDTH and dcy < SIM_BUFFER_WIDTH) {
+                            const abs_x = dcx * CHUNK_SIZE + lbx;
+                            const abs_y = dcy * CHUNK_SIZE + lby;
+                            root.water.updateWaterEdgeFlags(@intCast(abs_x), @intCast(abs_y));
+                        }
+                    }
                 }
 
                 // Do cascade logic using edge flags (if a block is resting in an impossible state)

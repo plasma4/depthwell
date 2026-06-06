@@ -180,8 +180,8 @@ export async function create(
                 "" + exports.getGemMaskStart(),
             )
             .replace(
-                "/* DECOR_START */ 1 /* DECOR_START */",
-                "" + exports.getDecorStart(),
+                "/* GEAR_ID */ 1 /* GEAR_ID */",
+                "" + exports.getGearStart(),
             )
             .replace(
                 "/* WATER_START */ 1 /* WATER_START */",

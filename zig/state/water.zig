@@ -9,9 +9,11 @@ const world = root.world;
 const Block = memory.Block;
 const Chunk = memory.Chunk;
 
+// TODO: make water actually update ModificationStore and waterlogging work properly
+
 /// Global bitset of active chunks in the current frame (16x16 chunk grid).
-var active_chunks = std.StaticBitSet(256).initEmpty();
-var water_updated = std.StaticBitSet(256 * 256).initEmpty();
+var active_chunks: std.StaticBitSet(256) = undefined;
+var water_updated: std.StaticBitSet(256 * 256) = undefined;
 
 /// Returns whether a block is empty (air) or a liquid.
 inline fn isFlowable(ptr: *Block) bool {
@@ -375,6 +377,7 @@ pub fn tickWater() void {
     }
 
     if (active_chunks.count() == 0) return;
+    water_updated = @TypeOf(water_updated).initEmpty();
 
     // Run water simulation ONLY on active chunks
     var chunk_y: i32 = 15;
@@ -426,13 +429,15 @@ pub fn tickWater() void {
                     var above_count: u8 = 0;
                     if (top) |t| {
                         var ty: usize = 15;
-                        while (ty >= 1 and above_count < 15) : (ty -= 1) {
+                        while (above_count < 15) {
                             const p = &t.blocks[(ty << 4) | @as(usize, @intCast(col_x))];
                             if (p.id == .water) {
                                 above_count += 1;
                             } else {
                                 break;
                             }
+                            if (ty == 0) break;
+                            ty -= 1;
                         }
                     }
 
