@@ -76,13 +76,13 @@ pub fn build(b: *std.Build) void {
 
     const install_wasm = b.addInstallFileWithDir(
         exe.getEmittedBin(),
-        .{ .custom = "src/" },
+        .{ .custom = "public/" },
         "main.wasm",
     );
     b.getInstallStep().dependOn(&install_wasm.step); // install
 
     if (wasm_opt) {
-        const optimize_wasm = b.addSystemCommand(&.{ "wasm-opt", "src/main.wasm", "-o", "src/main.wasm", "-O4" });
+        const optimize_wasm = b.addSystemCommand(&.{ "wasm-opt", "public/main.wasm", "-o", "public/main.wasm", "-O4" });
 
         // Add all those specific flags for more optimization!
         optimize_wasm.addArgs(&.{
@@ -120,7 +120,7 @@ pub fn build(b: *std.Build) void {
             optimize_wasm.addArg("--enable-relaxed-simd");
         }
 
-        // This ensures wasm-opt runs AFTER the file is installed to src/main.wasm
+        // This ensures wasm-opt runs AFTER the file is installed to public/main.wasm
         optimize_wasm.step.dependOn(&install_wasm.step);
         b.getInstallStep().dependOn(&optimize_wasm.step);
     }

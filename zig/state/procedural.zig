@@ -130,6 +130,7 @@ pub fn addStructures(
     density_seed: Vec2u,
 ) Sprite {
     _ = density_seed;
+    // IMPORTANT: structure areas should be a power of 2 so that the modulo becomes an & instruction.
 
     // Structure 1: basic rect with chest inside
     // SSSSSSSSSS
@@ -145,8 +146,8 @@ pub fn addStructures(
             const size_x = 8;
             const size_y = 5;
 
-            const x_in_area: i32 = @intCast(wx & 31); // modulo optimized to AND
-            const y_in_area: i32 = @intCast(wy & 31);
+            const x_in_area: i32 = @intCast(wx % structure_area); // modulo optimized to AND
+            const y_in_area: i32 = @intCast(wy % structure_area);
 
             const max_pos_x: u32 = structure_area - size_x;
             const max_pos_y: u32 = structure_area - size_y;
@@ -190,8 +191,8 @@ pub fn addStructures(
             const size_x = (base_radius_x + padding) * 2;
             const size_y = (base_radius_y + padding) * 2;
 
-            const x_in_area: i32 = @intCast(wx & 63);
-            const y_in_area: i32 = @intCast(wy & 63);
+            const x_in_area: i32 = @intCast(wx % structure_area);
+            const y_in_area: i32 = @intCast(wy % structure_area);
 
             const max_pos_x = @max(1, @as(i32, structure_area) - size_x);
             const max_pos_y = @max(1, @as(i32, structure_area) - size_y);
@@ -253,6 +254,7 @@ pub fn addStructures(
     }
 
     // Structure 3: Pillar thing
+    // Has water spawn at its bottom
     // SSSSSSSSSSSSSSSS
     // S   P     P    S
     // S   P     P    S
@@ -260,21 +262,22 @@ pub fn addStructures(
     // S     SSS      S
     // SSSSSSSSSSSSSSSS
     {
-        const structure_area = 128;
+        const structure_area = 32;
         var state3 = makeStructureHash(struct_seed, wx, wy, structure_area, 2);
 
-        if (state3.getChance(1.00)) {
+        if (state3.getChance(0.08)) {
             const size_x = 24;
             const size_y = 12;
 
-            const x_in_area: i32 = @intCast(wx & 127);
-            const y_in_area: i32 = @intCast(wy & 127);
+            const x_in_area: i32 = @intCast(wx % structure_area);
+            const y_in_area: i32 = @intCast(wy % structure_area);
 
             const max_pos_x: u32 = structure_area - size_x;
             const max_pos_y: u32 = structure_area - size_y;
 
             const pos_x = @as(i32, @intCast(state3.getLimit(u32, max_pos_x)));
             const pos_y = @as(i32, @intCast(state3.getLimit(u32, max_pos_y)));
+            const bit = state3.getLimit(u32, 1);
 
             const struct_x = x_in_area - pos_x;
             const struct_y = y_in_area - pos_y;
@@ -309,8 +312,13 @@ pub fn addStructures(
                     return .seagreen_stone; // Solid base under chest
                 }
 
-                // Fill the rest of the inner chamber with air
-                return if (starting_sprite.isLiquid()) starting_sprite else .none;
+                if (struct_y == size_y - 2) {
+                    return .water;
+                } else if (bit == 1 and struct_y == size_y - 3) {
+                    return .water;
+                }
+
+                return .none;
             }
         }
     }
@@ -441,10 +449,6 @@ pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
     if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
         return @enumFromInt(65000 + @as(u20, @intFromFloat(moisture * 256.0)));
     if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
-
-    if (moisture <= 0.12) {
-        return .water; // TODO: improve
-    }
 
     if (density <= density_min.getF32() or density >= density_max.getF32()) {
         return if (moisture >= 0.93 and moisture <= 0.94) .purple_strange_stone else .none;

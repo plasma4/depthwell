@@ -227,7 +227,7 @@ pub fn updateEntities(time_diff: f64) void {
         const bx_idx = memory.game.getBlockXInChunk();
         const by_idx = memory.game.getBlockYInChunk();
         const deeper_preview_x = preview_x_origin + background_margin + 18.5 * tile_size;
-        if (!root.procedural.USE_BASE_HEATMAP and !root.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
+        if (!root.isDebug() and !root.procedural.USE_BASE_HEATMAP and !root.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
             bg.position[0] = deeper_preview_x + tile_size * 2.5;
             bg.position[1] = preview_y_origin + tile_size * 2.5;
             bg.size = tile_size * (6.0 + background_margin);
@@ -662,7 +662,7 @@ pub inline fn addEntity(entity: Entity) void {
             entity.size / root.SCREEN_HEIGHT,
         },
         .rotation = entity.rotation,
-        .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else id,
+        .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else if (entity.sprite.isLiquid()) id + 1 else id,
     };
     // root.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
 }

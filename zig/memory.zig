@@ -243,7 +243,7 @@ pub const Block = packed struct(u64) {
     pub inline fn makeBasicBlock(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
-            .hp = 0,
+            .hp = if (sprite_type == .water) 15 else 0,
             .edge_flags = 0,
             .light = 0,
             .seed = @truncate(seed_bits),
@@ -328,9 +328,32 @@ pub const Coordinate = struct {
     quadrant: u2,
 
     /// Checks equality between two `Coordinate` values.
-    pub inline fn eql(a: Coordinate, b: Coordinate) bool {
+    pub inline fn eql(a: @This(), b: @This()) bool {
         return @reduce(.And, a.suffix == b.suffix) and
             a.quadrant == b.quadrant;
+    }
+
+    /// Pure 64-bit stateless hash.
+    pub inline fn hash(self: @This()) u64 {
+        const secret_0 = 0xa0761d6478bd642f;
+        const secret_1 = 0xe7037ed1a0b428db;
+
+        // Diffuse suffix using vector multiplication and folding
+        var v = self.suffix;
+        v *%= Vec2u{ secret_0, secret_1 };
+        v ^= v >> @as(Vec2u, @splat(32));
+
+        // Combine vector lanes with the quadrant metadata
+        const combined = v[0] ^ v[1] ^ @as(u64, self.quadrant);
+
+        // MurmurHash3 final mix
+        var x = combined;
+        x ^= x >> 30;
+        x *%= 0xbf58476d1ce4e5b9;
+        x ^= x >> 27;
+        x *%= 0x94d049bb133111eb;
+        x ^= x >> 31;
+        return x;
     }
 
     /// Converts a `Coordinate` to a `DepthCoordinate`, provided that a depth is given.

@@ -44,6 +44,7 @@ pub const procedural = @import("state/procedural.zig");
 pub const player = @import("state/player.zig");
 pub const world = @import("state/world.zig");
 pub const ancestor = @import("state/ancestor.zig");
+pub const water = @import("state/water.zig");
 
 pub const logger = @import("tools/logger.zig");
 pub const debug_ui = @import("tools/debug_ui.zig");
@@ -183,7 +184,8 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
 
     for (0..iterations) |_| { // iterations is guaranteed to be positive
         if (!just_increased_depth) mining.handleMiningAndPlacing(logic_speed); // mouse block and mining/placing logic all updated in this function
-        player.move(logic_speed);
+        player.move(logic_speed); // logic that moves the player/camera based on keys
+        water.tickWater(); // fluid sim
         memory.game.frame +%= 1;
     }
 

@@ -30,34 +30,36 @@ pub inline fn isHorizonDepth(depth: u64) bool {
 
 /// Optimized per-depth tier cache for ancestors of chunks. Fully cleared on depth increase.
 pub const AncestorCache = struct {
-    /// Amount of chunks per depth/tier; too low and performance regressions may occur.
-    pub const TIER_SIZE = 32;
+    /// Amount of chunks per depth/tier.
+    pub const TIER_SIZE = 64;
+    /// Number of associative slots per tier set.
+    /// Should be a power of two.
+    pub const TIER_WAYS = 4;
+    /// Number of sets per tier.
+    pub const TIER_SETS = TIER_SIZE / TIER_WAYS;
     /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
     pub const NUM_TIERS = HORIZON_DEPTH;
 
-    var keys: [NUM_TIERS][TIER_SIZE]DepthCoordinate = @splat(@splat(DepthCoordinate.invalid));
+    var keys: [NUM_TIERS][TIER_SETS][TIER_WAYS]DepthCoordinate = @splat(@splat(@splat(DepthCoordinate.invalid)));
     var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
-    var clock: [NUM_TIERS]std.StaticBitSet(TIER_SIZE) = @splat(std.StaticBitSet(TIER_SIZE).initEmpty());
-    var hand: [NUM_TIERS]usize = @splat(0);
+    var clock: [NUM_TIERS][TIER_SETS]u4 = @splat(@splat(0));
+    var hand: [NUM_TIERS][TIER_SETS]u2 = @splat(@splat(0));
 
     /// Retrieves a chunk by DepthCoordinate. Searches the specific depth tier.
     /// Returns a mutable pointer to allow for in-place updates or direct reads.
     pub fn get(key: DepthCoordinate) ?*Chunk {
-        std.debug.assert(!isHorizonDepth(key.depth)); // should've gone to quadrant fallback ):
+        std.debug.assert(!isHorizonDepth(key.depth));
 
-        // % is slow here if NUM_TIERS is not a power of 2 but it's insignificant
         const d: usize = @intCast(key.depth % NUM_TIERS);
+        const h = key.hash();
+        const set_idx: usize = @intCast(h % TIER_SETS);
 
-        for (&keys[d], 0..) |cache_key, i| {
-            if (i + 1 < TIER_SIZE) {
-                // small optimization
-                @prefetch(&keys[d][i + 1], .{ .rw = .read, .locality = 0, .cache = .data });
-            }
-
+        inline for (0..TIER_WAYS) |way| {
+            const cache_key = keys[d][set_idx][way];
             if (cache_key.depth != 0) {
                 if (cache_key.eql(key)) {
-                    clock[d].set(i);
-                    return &chunks[d][i];
+                    clock[d][set_idx] |= (@as(u4, 1) << way);
+                    return &chunks[d][set_idx * TIER_WAYS + way];
                 }
             }
         }
@@ -65,25 +67,28 @@ pub const AncestorCache = struct {
     }
 
     /// Allocates a slot in the appropriate tier based on depth and returns a mutable pointer.
-    /// This allows `generateChunk` to write directly into the cache memory.
-    ///
-    /// Does NOT handle quadrant fallback case; asserts `depth` is high enough.
+    /// This allows `generateChunk()` to write directly into the cache memory.
     pub fn allocateSlot(key: DepthCoordinate) *Chunk {
-        std.debug.assert(!isHorizonDepth(key.depth)); // should've gone to quadrant fallback ):
+        std.debug.assert(!isHorizonDepth(key.depth));
         const d: usize = @intCast(key.depth % NUM_TIERS);
+        const h = key.hash();
+        const set_idx: usize = @intCast(h % TIER_SETS);
 
+        var hand_val = hand[d][set_idx];
         while (true) {
-            const id = hand[d];
-            hand[d] = (id + 1) % TIER_SIZE;
+            const way = hand_val;
+            hand_val +%= 1; // % TIER_WAYS not needed, power of 2
 
-            if (clock[d].isSet(id)) {
+            const mask = @as(u4, 1) << way;
+            if ((clock[d][set_idx] & mask) != 0) {
                 // Give second chance and clear reference bit.
-                clock[d].setValue(id, false);
+                clock[d][set_idx] &= ~mask;
             } else {
                 // Found eviction candidate.
-                keys[d][id] = key;
-                clock[d].set(id); // Set reference bit for the new entry.
-                return &chunks[d][id];
+                keys[d][set_idx][way] = key;
+                clock[d][set_idx] |= mask;
+                hand[d][set_idx] = hand_val;
+                return &chunks[d][set_idx * TIER_WAYS + way];
             }
         }
     }
@@ -98,9 +103,9 @@ pub const AncestorCache = struct {
     /// Clears the `AncestorCache` and resets clock data.
     pub fn clear() void {
         for (0..NUM_TIERS) |i| {
-            @memset(&keys[i], .invalid);
-            clock[i] = std.StaticBitSet(TIER_SIZE).initEmpty();
-            hand[i] = 0;
+            @memset(&keys[i], @splat(DepthCoordinate.invalid));
+            @memset(&clock[i], 0);
+            @memset(&hand[i], 0);
         }
     }
 };

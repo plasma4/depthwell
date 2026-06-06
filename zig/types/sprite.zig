@@ -572,13 +572,13 @@ pub const Sprite = enum(u16) {
     particle = NUMBER_START + 10,
     /// Full rectangle sprite; no corner pixels cut off.
     rectangle,
-    /// Pickaxe icon.
-    pickaxe,
     /// Simple up arrow icon.
     arrow,
+    /// Pickaxe icon.
+    pickaxe,
     /// Generic water block (filled). Default internal water type.
-    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(root.mining.PickaxeType.silver))) + 1),
-    /// Generic water block (top, with small waves). This gets processed and added in chunk.zig.
+    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(root.mining.PickaxeType.gold))) + 1),
+    /// The item version of water.
     water_wavy,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.

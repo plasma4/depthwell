@@ -32,6 +32,7 @@ pub const PickaxeType = enum {
     bronze,
     iron,
     silver,
+    gold,
 };
 
 /// Type of pickaxe equipped.
@@ -81,7 +82,9 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
             // strength function is inline, so this is fine
             const strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
 
-            if (inventory.IN_CREATIVE or (strength != std.math.maxInt(u64) and mining_progress >= strength)) {
+            if (inventory.IN_CREATIVE or (strength != std.math.maxInt(u64) and mining_progress >= strength) and
+                (!block.isLiquid() or block.hp == 15))
+            {
                 mining_progress = 0;
                 // sprite type being none check also prevents unneeded memory waste with data update
                 const was_deleted = block.isEmpty() or world.modifyBlockHp(
@@ -155,7 +158,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     }
 
                     selected_hp = 255;
-                } else {
+                } else if (block.isLiquid()) {
                     selected_hp = block.hp + mining_strength;
                 }
             }
@@ -191,11 +194,15 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
     }
 
     // pickaxe upgrade testing
-    if (memory.game.items_mined >= 20) {
+    if (memory.game.items_mined >= 15) {
+        pickaxe_type = .gold;
+        mining_speed = 20;
+        mining_strength = 2;
+    } else if (memory.game.items_mined >= 10) {
         pickaxe_type = .silver;
         mining_speed = 12;
         mining_strength = 2;
-    } else if (memory.game.items_mined >= 8) {
+    } else if (memory.game.items_mined >= 5) {
         pickaxe_type = .iron;
         mining_speed = 15;
     } else if (memory.game.items_mined >= 2) {
@@ -207,7 +214,6 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 /// Returns how "strong" a `Sprite` is; how much mining_progress must be contributed to increase `hp` of a block.
 inline fn getSpriteStrength(s: Sprite) ?u64 {
     if (!s.isSolid()) {
-        if (s.isLiquid()) return 1;
         return 0;
     } else if (s == .forest_furnace or s == .lava_furnace) {
         return std.math.maxInt(u64);
