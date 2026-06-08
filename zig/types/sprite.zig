@@ -661,6 +661,19 @@ pub const Sprite = enum(u16) {
         }
         return self;
     }
+
+    /// Returns whether a block is empty (air), a liquid, or a waterloggable decoration.
+    /// Precondition: the sprite is valid.
+    pub inline fn isFlowable(self: @This()) bool {
+        return self.isEmpty() or self.isLiquid() or self.isDecor();
+    }
+
+    /// Returns whether a sprite is a decoration block.
+    /// Precondition: the sprite is valid.
+    pub inline fn isDecor(self: @This()) bool {
+        const val = @intFromEnum(self);
+        return val >= DECOR_START and self != .water;
+    }
 };
 
 /// The total number of valid sprites that are considered valid items.

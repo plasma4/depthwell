@@ -4,10 +4,14 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// Whether to force `is_debug` to true regardless of build mode.
+/// Goes without saying: these should be false in prod.
+pub const FORCE_DEBUG = true;
+
 /// Set to true if the CPU architecture is set to `wasm32` or `wasm64`.
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;
 /// Set to true if either test mode or `Debug` mode is used.
-pub const is_debug = builtin.is_test or builtin.mode == .Debug;
+pub const is_debug = FORCE_DEBUG or builtin.is_test or builtin.mode == .Debug;
 
 pub const memory = @import("memory.zig");
 pub const startup = @import("startup.zig");

@@ -19,6 +19,7 @@ const TAU = radians(360.0);
 
 const TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
 const HP_SAMPLE_START = GEM_MASK_START + 8; // there are 8 gem masks and 16 HP masks
+const DECOR_START: u32 = HP_SAMPLE_START + 16;
 
 const TILE_SIZE: f32 = 16.0;
 const PIXEL_UV_SIZE: f32 = 1.0 / TILE_SIZE;
@@ -98,7 +99,6 @@ struct UnpackedTile {
     waterlogged: u32,
 };
 
-// Extracts the specific bit ranges in the Block type (see zig/memory.zig).
 fn unpack_tile(data: TileData) -> UnpackedTile {
     var out: UnpackedTile;
 
@@ -114,11 +114,11 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
 
     out.hp = extractBits(data.word1, 20u, 4u);
     // hp takes up the top 4 bits perfectly, 24-bit total
-    let s1 = murmurmix32(extractBits(data.word1, 0u, 24u));
+    let s1 = murmurmix32(select(extractBits(data.word1, 0u, 24u), extractBits(data.word1, 0u, 20u), out.sprite_id >= DECOR_START));
     let s2 = murmurmix32(s1);
     let s3 = murmurmix32(s2);
     out.seeds = vec3u(s1, s2, s3);
-    out.waterlogged = extractBits(data.word1, 28u, 4u);
+    out.waterlogged = extractBits(data.word1, 27u, 5u); // Also see meaning in zig/memory.zig.
     return out;
 }
 
@@ -165,12 +165,14 @@ fn vs_tile(
 
     // normalize coordinates
     // first, make sure spiral plant and ceiling flower move up (visually) by 2 pixels
-    var vertical_offset = select(
-        0.0,
-        2.0 * scene.zoom,
-        // spiral plant, ceiling flower
-        id == GEAR_ID + 4u || id == GEAR_ID + 5u
-    );
+    // var vertical_offset = select(
+    //     0.0,
+    //     2.0 * scene.zoom,
+    //     // spiral plant, ceiling flower
+    //     id == GEAR_ID + 4u || id == GEAR_ID + 5u
+    // );
+    // update: this messes with water visually
+    const vertical_offset = 0;
 
     // add to ID based on pre-determined shifts
     if id == STONE_START {
@@ -226,8 +228,12 @@ fn vs_tile(
 fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var erode_mask: u32 = 1u;
     let id = in.sprite_id /* & 65535 */;
+    let is_decor = id >= DECOR_START;
+
     if id == WATER_START || id == WATER_START + 1u {
-        let has_top = (in.edge_flags & EDGE_TOP) != 0u;
+        let has_liquid_above = (in.waterlogged & 1u) != 0u;
+        let has_solid_above = ((in.edge_flags & EDGE_TOP) != 0u) && !has_liquid_above;
+        let has_top = has_liquid_above || (has_solid_above && (in.hp == 15u));
 
         if !has_top {
             // This is the top surface of the water body!
@@ -235,20 +241,10 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
             let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
             // Sine-wave ripple effect at the surface (frequency is periodic over 65536.0 pixels)
-            let base_height = f32(in.hp + 5) / 21.0;
+            let base_height = f32(in.hp) * 0.06 + 0.10;
             let ripple_freq = 4172.0 * TAU / 65536.0;
-            let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.08 * base_height;
-            var current_height = base_height + ripple - 0.2;
-
-            // Interpolate height up if adjacent to higher water (gradually waterlogged)
-            // if (in.edge_flags & 1u) != 0u {
-            //     let left_factor = 1.0 - in.local_uv.x;
-            //     current_height = mix(current_height, 1.0, left_factor * left_factor);
-            // }
-            // if (in.waterlogged & 2u) != 0u {
-            //     let right_factor = in.local_uv.x;
-            //     current_height = mix(current_height, 1.0, right_factor * right_factor);
-            // }
+            let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.05;
+            var current_height = base_height + ripple;
 
             // If the pixel is above the water surface, discard it
             if in.local_uv.y < (1.0 - current_height) {
@@ -257,19 +253,45 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         }
         return water_body(in);
     }
+
+    // Determine waterlogged decoration state
+    let is_waterlogged_decor = is_decor && in.hp > 0u;
+    var is_decor_pixel_underwater = false;
+    if is_waterlogged_decor {
+        let wl_top = (in.waterlogged & 1u) != 0u;
+        let wl_ripple = (in.waterlogged & 4u) != 0u;
+        let has_top = wl_top || (((in.edge_flags & EDGE_TOP) != 0u) && in.hp == 15u);
+        var current_height = 1.0;
+        if !has_top {
+            let base_height = f32(in.hp) * 0.06 + 0.10;
+            let t = scene.time;
+            let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
+            let ripple_freq = 4172.0 * TAU / 65536.0;
+            let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.05;
+            current_height = base_height + ripple;
+        }
+        if in.local_uv.y >= (1.0 - current_height) {
+            is_decor_pixel_underwater = true;
+        }
+    }
+
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
-    if in.edge_flags != 0xFFu {
+    if in.edge_flags != 0xFFu && !is_decor {
         erode_mask = erosion(in.local_uv, in.edge_flags, in.seeds[1], in.seeds[2]);
-        if scene.wireframe_opacity == 0.0 && erode_mask == 0u {
+        if erode_mask == 0u {
             if in.waterlogged != 0u {
                 let is_water_top = (in.waterlogged & 1u) != 0u;
-                let apply_ripple = (in.waterlogged & 2u) != 0u;
-                let is_water_left = (in.waterlogged & 4u) != 0u;
-                let is_water_right = (in.waterlogged & 8u) != 0u;
+                let is_water_bottom = (in.waterlogged & 2u) != 0u;
+                let apply_ripple = (in.waterlogged & 4u) != 0u;
+                let is_water_left = (in.waterlogged & 8u) != 0u;
+                let is_water_right = (in.waterlogged & 16u) != 0u;
 
                 var is_water_pixel = false;
                 if is_water_top && in.local_uv.y < 0.5 {
+                    is_water_pixel = true;
+                }
+                if is_water_bottom && in.local_uv.y >= 0.5 {
                     is_water_pixel = true;
                 }
                 if is_water_left && in.local_uv.x < 0.5 {
@@ -284,13 +306,13 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
                         let t = scene.time;
                         let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
-                        // Sine-wave ripple effect at the surface (frequency adjusted to be periodic over 65536.0 pixels)
-                        let base_height = f32(in.hp) / 21.0 + 0.15;
+                        // Synchronized ripple effect utilizing the adjacent water's actual volume
+                        // TODO
+                        let base_height = f32(15) * 0.06 + 0.10;
                         let ripple_freq = 4172.0 * TAU / 65536.0;
-                        let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.08 * base_height;
-                        let current_height = base_height + ripple - 0.2;
+                        let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.05;
+                        let current_height = base_height + ripple;
 
-                        // Fall back to the solid block texture above the ripple line
                         if in.local_uv.y < (1.0 - current_height) {
                             is_water_pixel = false;
                         }
@@ -318,12 +340,15 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         final_uv = in.sprite_uv_origin + safe_wrapped * vec2f(SPRITE_W, SPRITE_H);
     }
 
-    let hp_id = HP_SAMPLE_START + in.hp;
-    let hp_grid = vec2f(f32(hp_id % TILES_PER_ROW_U), f32(hp_id / TILES_PER_ROW_U));
-    let hp_uv = (hp_grid + safe_local_uv) * vec2f(SPRITE_W, SPRITE_H);
+    // Avoid HP mask texture sample for undamaged tiles or decor sprites
+    var hp_darkness_mult = 1.0;
+    if in.hp > 0u && !is_decor {
+        let hp_id = HP_SAMPLE_START + in.hp;
+        let hp_grid = vec2f(f32(hp_id % TILES_PER_ROW_U), f32(hp_id / TILES_PER_ROW_U));
+        let hp_uv = (hp_grid + safe_local_uv) * vec2f(SPRITE_W, SPRITE_H);
+        hp_darkness_mult = textureSampleLevel(sprite_atlas, pixel_sampler, hp_uv, 0.0).r;
+    }
 
-    // Sample the primary color (this will now be shifted for both Ores and Gems)
-    var hp_darkness_mult = textureSampleLevel(sprite_atlas, pixel_sampler, hp_uv, 0.0).r;
     var tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
     tex_color = vec4f(srgb_to_linear(tex_color.rgb) * hp_darkness_mult, tex_color.a);
 
@@ -425,6 +450,17 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     final_rgb = oklab_to_linear_srgb(lab);
 
     var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, id == 1u); // use chunk_opacity, unless this sprite is for the player
+
+    // Overlay semi-transparent water body if this decoration pixel is underwater
+    if is_decor_pixel_underwater {
+        let water_col = water_body_linear(in);
+
+        // Blending curve: maps original alpha to water weight
+        let weight = 1.0 - 0.5 * pow(tex_color.a, 7.0);
+
+        final_rgb = oklab_water(final_rgb, water_col.rgb, weight);
+        final_a = mix(water_col.a, 1.0, tex_color.a);
+    }
 
     if scene.wireframe_opacity != 0.0 {
         // Correctly mix the wireframe dynamically depending on whether the block exists below it.
@@ -710,25 +746,26 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     let R = 256.0; // grid repeat period
     let L_FREQ = TAU / 3600.0; // base frequency per time loop
     // Every multiplier below is now an exact integer multiplied by L_FREQ
-    let warp_val = sin((coord.y * 2.0) / R * TAU + t * (20.0 * L_FREQ)) * 4.0 + cos((coord.x * 3.0) / R * TAU - t * (12.0 * L_FREQ)) * 4.0;
+    let warp_val = sin((coord.y * 2.0) / R * TAU + t * (20.0 * L_FREQ)) * 5.5 + cos((coord.x * 3.0) / R * TAU - t * (12.0 * L_FREQ)) * 4.0;
 
     let world = coord + vec2f(warp_val, -warp_val);
+    let world2 = coord + vec2f(warp_val, -warp_val) * vec2f(1.8, 2.3);
 
     // First caustic layer
-    // All layers are mades ure to be periodic every 65536 pixels.
+    // All layers are made to be periodic every 65536 pixels.
     let d_a = world.x * 0.906 - world.y * 0.423;
     let a1 = sin((d_a + t * 15.0) / (65536.0 / 1489.0) * TAU) * 0.5 + 0.5;
     let a2 = sin((d_a * 1.15 + t * 13.0) / (65536.0 / 1638.0) * TAU) * 0.5 + 0.5;
     let band_a = a1 * a2 * 0.24;
 
     // Second layer (which crosses directions)
-    let d_b = world.x * 0.643 - world.y * -0.766;
+    let d_b = world2.x * 0.643 - world.y * -0.766;
     let b1 = sin((d_b * 3.2 + t * 4.0) / 32.0 * TAU) * 0.5 + 0.5;
     let b2 = sin((d_b * 4.2 + t * 5.42) / (65536.0 / 2341.0) * TAU) * 0.5 + 0.5;
     let temp_b = b1 * b2;
     let band_b = temp_b * temp_b * 0.03;
 
-    let d_c = world.x * 0.906 + world.y * 0.423;
+    let d_c = world.x * 0.906 + world2.y * 0.423;
     let band_c = max(0.0, sin((d_c + t * 15.0) / (65536.0 / 1489.0) * TAU));
 
     // Warping distortion using periodic wavelengths
@@ -747,8 +784,8 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     return band_a + band_b + band_c * band_c * 0.2 + curvy_streak;
 }
 
-// Procedural effect for all but the top water sprite
-fn water_body(in: TileOutput) -> vec4f {
+// Procedural effect for all but the top water sprite (returns linear sRGB)
+fn water_body_linear(in: TileOutput) -> vec4f {
     let world = water_world(in);
     let t = scene.time;
 
@@ -768,7 +805,21 @@ fn water_body(in: TileOutput) -> vec4f {
     lch.y = clamp(lch.y + caustic * 0.10, 0.04, 0.28);
 
     let rgb = oklab_to_linear_srgb(oklch_to_oklab(lch));
-    return vec4f(apply_color_management(rgb), 0.5);
+    return vec4f(rgb, 0.5);
+}
+
+// Procedural effect for all but the top water sprite (backwards compatible, returns color-managed sRGB)
+fn water_body(in: TileOutput) -> vec4f {
+    let water_col = water_body_linear(in);
+    return vec4f(apply_color_management(water_col.rgb), water_col.a);
+}
+
+// Perceptually blends sprite color with water in OKLAB space.
+fn oklab_water(sprite_rgb: vec3f, water_rgb: vec3f, weight: f32) -> vec3f {
+    let lab_sprite = linear_srgb_to_oklab(sprite_rgb);
+    let lab_water = linear_srgb_to_oklab(water_rgb);
+    let lab_mixed = mix(lab_sprite, lab_water, weight);
+    return oklab_to_linear_srgb(lab_mixed);
 }
 
 /*

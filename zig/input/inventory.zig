@@ -12,16 +12,17 @@ const addEntity = root.entity.addEntity;
 const drawNumber = root.entity.drawNumber;
 
 /// Debug option, allowing for unlimited block placement.
-/// NOT a comptime value because we may want this in the future during a release build.
+/// Use the `isInCreative()` function in order to check for creative mode.
 pub var IN_CREATIVE = false;
 /// Debug option, changing whether to show all inventory item slots and items or not.
+/// Use the `shouldShowAllItems()` function in order to check for this value correctly.
 pub const SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is.
 const inventory_width = 10;
 
 /// How many frames (logical) before an item enters the player's inventory.
 fn getMaxItemDropLifespan() u16 {
-    return if (IN_CREATIVE) 20 else 100;
+    return if (isInCreative()) 20 else 100;
 }
 
 /// Represents a single dropped item, including its type, position, and frames until addition to inventory.
@@ -326,7 +327,7 @@ pub fn getSpritesInInventory(buffer: *SlotBuffer) []Sprite {
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.possible_item_sprites) |s| {
         if (s.isEmpty()) continue;
-        if (shouldShowAllItems() or inventory_counts[@intFromEnum(s)] > 0) {
+        if ((shouldShowAllItems() and s.isInWorld()) or (!shouldShowAllItems() and inventory_counts[@intFromEnum(s)] > 0)) {
             buffer[count] = s;
             count += 1;
             // logger.quick(.{ s, buffer.len, sprite.max_sprite_value });
@@ -343,7 +344,7 @@ pub fn getSelectedIndex() u16 {
     // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.possible_item_sprites) |s| {
         if (s.isEmpty()) continue;
-        if (shouldShowAllItems() or inventory_counts[@intFromEnum(s)] > 0) {
+        if ((shouldShowAllItems() and s.isInWorld()) or (!shouldShowAllItems() and inventory_counts[@intFromEnum(s)] > 0)) {
             if (s == selected_sprite) return @intCast(count);
             count += 1;
         }

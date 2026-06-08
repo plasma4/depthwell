@@ -511,7 +511,7 @@ pub const ChunkCache = struct {
     /// Keys storing `Coordinate` values structured as a 4-way set-associative cache.
     var keys: [CHUNK_CACHE_SETS][CHUNK_CACHE_WAYS]?Coordinate = @splat(@splat(null));
     /// Chunks referenced by `keys` at the current depth.
-    var chunks: *[CHUNK_CACHE_SIZE]Chunk = chunk_pool[0..CHUNK_CACHE_SIZE];
+    pub var chunks: *[CHUNK_CACHE_SIZE]Chunk = chunk_pool[0..CHUNK_CACHE_SIZE];
 
     // crazy int-type creation tech (unused for simplicity)
     // const WaysBitType = std.meta.Int(.unsigned, CHUNK_CACHE_WAYS);
@@ -856,91 +856,6 @@ pub fn getCachedChunk(coord: Coordinate) ?*const Chunk {
     return null;
 }
 
-/// Adds edge flags for deeper depths by applying seeding logic.
-fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighborhood: [6][6]Block) void {
-    _ = parent_neighborhood; // No longer used for halo calculation to prevent indexing overflows
-    for (0..CHUNK_SIZE) |block_y| {
-        for (0..CHUNK_SIZE) |block_x| {
-            const idx = block_x + block_y * CHUNK_SIZE;
-            const current_block = &target_chunk.blocks[idx];
-            const current_sprite = current_block.id;
-            if (current_sprite.isEmpty()) continue;
-            if (!shouldHaveEdgeFlags(current_sprite)) {
-                current_block.edge_flags = 0xFF;
-                current_block.waterlogged = 0;
-                continue;
-            }
-
-            const getBlockHelper = struct {
-                inline fn getBlockHelper(tc: *Chunk, k: DepthCoordinate, rx: i32, ry: i32) Block {
-                    if (rx >= 0 and rx < CHUNK_SIZE and ry >= 0 and ry < CHUNK_SIZE) {
-                        return tc.blocks[@as(usize, @intCast(ry * CHUNK_SIZE + rx))];
-                    }
-                    const ndx = @divFloor(rx, CHUNK_SIZE);
-                    const ndy = @divFloor(ry, CHUNK_SIZE);
-                    const lx: u4 = @intCast(@mod(rx, CHUNK_SIZE));
-                    const ly: u4 = @intCast(@mod(ry, CHUNK_SIZE));
-                    const nc = k.asCoord().moveAtDepth(.{ ndx, ndy }, k.depth) orelse return .empty;
-                    if (getCachedChunk(nc)) |cached_chunk| {
-                        return cached_chunk.getBlock(lx, ly);
-                    }
-                    return root.ancestor.getInheritedMaterial(nc.asDepthCoordinate(k.depth), lx, ly);
-                }
-            }.getBlockHelper;
-
-            var flags: u8 = 0;
-            var waterlogged: u4 = 0;
-            inline for (.{ -1, 0, 1 }) |dy| {
-                inline for (.{ -1, 0, 1 }) |dx| {
-                    if (dx == 0 and dy == 0) continue;
-                    const nx = @as(i32, @intCast(block_x)) + dx;
-                    const ny = @as(i32, @intCast(block_y)) + dy;
-
-                    const block = getBlockHelper(target_chunk, key, nx, ny);
-                    const sprite = block.id;
-                    const is_solid_or_liquid = sprite.isSolid() or sprite.isLiquid();
-                    if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(sprite)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
-                        flags |= types.EdgeFlags.getFlagBit(dx, dy);
-
-                        // If current is liquid and neighbor is liquid, check for rising water
-                        if (current_sprite.isLiquid() and sprite.isLiquid()) {
-                            if (dx == -1 and dy == 0) {
-                                const above_left = getBlockHelper(target_chunk, key, nx, ny - 1);
-                                if (above_left.isLiquid() or (above_left.isEmpty() and block.hp < current_block.hp)) {
-                                    waterlogged |= 1; // Left neighbor has water above it or is taller surface water
-                                }
-                            } else if (dx == 1 and dy == 0) {
-                                const above_right = getBlockHelper(target_chunk, key, nx, ny - 1);
-                                if (above_right.isLiquid() or (above_right.isEmpty() and block.hp < current_block.hp)) {
-                                    waterlogged |= 2; // Right neighbor has water above it or is taller surface water
-                                }
-                            }
-                        }
-                    } else if (sprite.isLiquid()) {
-                        if (dx == 0 and dy == -1) {
-                            waterlogged |= 1; // Top
-                        } else if (dx == -1 and dy == 0) {
-                            waterlogged |= 4; // Left
-                            const above_left = getBlockHelper(target_chunk, key, nx, ny - 1);
-                            if (!above_left.isLiquid()) {
-                                waterlogged |= 2; // Apply top ripple cutoff
-                            }
-                        } else if (dx == 1 and dy == 0) {
-                            waterlogged |= 8; // Right
-                            const above_right = getBlockHelper(target_chunk, key, nx, ny - 1);
-                            if (!above_right.isLiquid()) {
-                                waterlogged |= 2; // Apply top ripple cutoff
-                            }
-                        }
-                    }
-                }
-            }
-            current_block.edge_flags = flags;
-            current_block.waterlogged = waterlogged;
-        }
-    }
-}
-
 /// Generates a starting chunk at depth `STARTING_ZOOM_TIMES`.
 /// Is procedural and does not require all other chunks are pre-calculated.
 /// As in, it does not use something like cellular noise that needs a whole map up front.
@@ -1019,6 +934,14 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     // Decorate the base chunk here so that child depths inherit the results
     var rng_decor = seeding.ChaCha12.init(quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth))[0]);
     procedural.addDecorations(chunk, &rng_decor);
+
+    // Reset edge flags to 0xFF for empty blocks after decorations are completed!
+    for (0..CHUNK_SIZE_SQ) |idx| {
+        const block = &chunk.blocks[idx];
+        if (block.isEmpty()) {
+            block.edge_flags = 0xFF;
+        }
+    }
 }
 
 /// Adds edge flags to an already generated chunk using a stack-safe halo buffer.
@@ -1035,23 +958,6 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
 
     const is_base = (depth == STARTING_ZOOM_TIMES);
     const seeds = memory.game.seed2;
-
-    const getBlockHelper = struct {
-        inline fn get(tc: *Chunk, coord_val: Coordinate, rx: i32, ry: i32) Block {
-            if (rx >= 0 and rx < CHUNK_SIZE and ry >= 0 and ry < CHUNK_SIZE) {
-                return tc.blocks[@as(usize, @intCast(ry * CHUNK_SIZE + rx))];
-            }
-            const ndx = @divFloor(rx, CHUNK_SIZE);
-            const ndy = @divFloor(ry, CHUNK_SIZE);
-            const lx: u4 = @intCast(@mod(rx, CHUNK_SIZE));
-            const ly: u4 = @intCast(@mod(ry, CHUNK_SIZE));
-            const nc = coord_val.moveAtDepth(.{ ndx, ndy }, STARTING_ZOOM_TIMES) orelse return .empty;
-            if (getCachedChunk(nc)) |cached_chunk| {
-                return cached_chunk.getBlock(lx, ly);
-            }
-            return .empty;
-        }
-    }.get;
 
     // Resolve adjacent chunks from cache once for faster border generation!
     var neighbor_chunks: [3][3]?*const Chunk = undefined;
@@ -1117,13 +1023,20 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
     }
 
     // Calculate flags using the static halo buffer
-    // TODO: Make it so that the waterlogged |= 2 only triggers if the water itself is at hp=15
     for (0..CHUNK_SIZE) |y| {
         for (0..CHUNK_SIZE) |x| {
             var flags: u8 = 0;
-            var waterlogged: u4 = 0;
             const current_sprite = halo[@intCast(y + 1)][@intCast(x + 1)];
-            const current_block_hp = target_chunk.blocks[y * CHUNK_SIZE + x].hp;
+
+            const left_nb = halo[@intCast(y + 1)][@intCast(x)];
+            const right_nb = halo[@intCast(y + 1)][@intCast(x + 2)];
+            const top_nb = halo[@intCast(y)][@intCast(x + 1)];
+            const bottom_nb = halo[@intCast(y + 2)][@intCast(x + 1)];
+            const above_left_nb = halo[@intCast(y)][@intCast(x)];
+            const above_right_nb = halo[@intCast(y)][@intCast(x + 2)];
+
+            const state = water.getWaterloggedStateSprites(top_nb, bottom_nb, left_nb, right_nb, above_left_nb, above_right_nb);
+
             inline for (.{ -1, 0, 1 }) |dy| {
                 inline for (.{ -1, 0, 1 }) |dx| {
                     if (dx == 0 and dy == 0) continue;
@@ -1132,51 +1045,87 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                     const is_solid_or_liquid = sprite.isSolid() or sprite.isLiquid();
                     if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(sprite)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
                         flags |= types.EdgeFlags.getFlagBit(dx, dy);
-
-                        // If current is liquid and neighbor is liquid, check for rising water
-                        if (current_sprite.isLiquid() and sprite.isLiquid()) {
-                            if (dx == -1 and dy == 0) {
-                                const left_block = getBlockHelper(target_chunk, coord, @as(i32, @intCast(x)) - 1, @as(i32, @intCast(y)));
-                                const above_left = getBlockHelper(target_chunk, coord, @as(i32, @intCast(x)) - 1, @as(i32, @intCast(y)) - 1);
-                                if (above_left.isLiquid() or (above_left.isEmpty() and left_block.hp < current_block_hp)) {
-                                    waterlogged |= 1; // Left neighbor has water above it or is taller surface water
-                                }
-                            } else if (dx == 1 and dy == 0) {
-                                const right_block = getBlockHelper(target_chunk, coord, @as(i32, @intCast(x)) + 1, @as(i32, @intCast(y)));
-                                const above_right = getBlockHelper(target_chunk, coord, @as(i32, @intCast(x)) + 1, @as(i32, @intCast(y)) - 1);
-                                if (above_right.isLiquid() or (above_right.isEmpty() and right_block.hp < current_block_hp)) {
-                                    waterlogged |= 2; // Right neighbor has water above it or is taller surface water
-                                }
-                            }
-                        }
-                    } else if (sprite.isLiquid()) {
-                        if (dx == 0 and dy == -1) {
-                            waterlogged |= 1; // Top
-                        } else if (dx == -1 and dy == 0) {
-                            waterlogged |= 4; // Left
-                            if (!halo[@intCast(y)][@intCast(x)].isLiquid()) {
-                                waterlogged |= 2; // Apply top ripple cutoff
-                            }
-                        } else if (dx == 1 and dy == 0) {
-                            waterlogged |= 8; // Right
-                            if (!halo[@intCast(y)][@intCast(x + 2)].isLiquid()) {
-                                waterlogged |= 2; // Apply top ripple cutoff
-                            }
-                        }
                     }
                 }
             }
 
             target_chunk.blocks[y * CHUNK_SIZE + x].edge_flags = flags;
-            target_chunk.blocks[y * CHUNK_SIZE + x].waterlogged = waterlogged;
+            target_chunk.blocks[y * CHUNK_SIZE + x].waterlogged = state.flags;
         }
     }
 }
 
-/// Returns whether a sprite should have edge flag logic applied to it.
-/// Can be modified for testing as necessary.
-/// Is different from the final result in `root.chunks.updateVisibleChunks()`.
-inline fn shouldHaveEdgeFlags(sprite: Sprite) bool {
+/// Adds edge flags for deeper depths by applying seeding logic.
+fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighborhood: [6][6]Block) void {
+    _ = parent_neighborhood; // No longer used for halo calculation to prevent indexing overflows
+
+    const getBlockHelper = struct {
+        inline fn func(tc: *Chunk, k: DepthCoordinate, rx: i32, ry: i32) Block {
+            if (rx >= 0 and rx < CHUNK_SIZE and ry >= 0 and ry < CHUNK_SIZE) {
+                return tc.blocks[@as(usize, @intCast(ry * CHUNK_SIZE + rx))];
+            }
+            const ndx = @divFloor(rx, CHUNK_SIZE);
+            const ndy = @divFloor(ry, CHUNK_SIZE);
+            const lx: u4 = @intCast(@mod(rx, CHUNK_SIZE));
+            const ly: u4 = @intCast(@mod(ry, CHUNK_SIZE));
+            const nc = k.asCoord().moveAtDepth(.{ ndx, ndy }, k.depth) orelse return .empty;
+            if (getCachedChunk(nc)) |cached_chunk| {
+                return cached_chunk.getBlock(lx, ly);
+            }
+            return root.ancestor.getInheritedMaterial(nc.asDepthCoordinate(k.depth), lx, ly);
+        }
+    }.func;
+
+    for (0..CHUNK_SIZE) |block_y| {
+        for (0..CHUNK_SIZE) |block_x| {
+            const idx = block_x + block_y * CHUNK_SIZE;
+            const current_block = &target_chunk.blocks[idx];
+            const current_sprite = current_block.id;
+            if (current_sprite.isEmpty()) continue;
+
+            const left_nb = getBlockHelper(target_chunk, key, @as(i32, @intCast(block_x)) - 1, @as(i32, @intCast(block_y)));
+            const right_nb = getBlockHelper(target_chunk, key, @as(i32, @intCast(block_x)) + 1, @as(i32, @intCast(block_y)));
+            const top_nb = getBlockHelper(target_chunk, key, @as(i32, @intCast(block_x)), @as(i32, @intCast(block_y)) - 1);
+            const bottom_nb = getBlockHelper(target_chunk, key, @as(i32, @intCast(block_x)), @as(i32, @intCast(block_y)) + 1);
+            const above_left_nb = getBlockHelper(target_chunk, key, @as(i32, @intCast(block_x)) - 1, @as(i32, @intCast(block_y)) - 1);
+            const above_right_nb = getBlockHelper(target_chunk, key, @as(i32, @intCast(block_x)) + 1, @as(i32, @intCast(block_y)) - 1);
+
+            const state = water.getWaterFlags(top_nb, bottom_nb, left_nb, right_nb, above_left_nb, above_right_nb);
+
+            if (current_sprite.isEmpty()) {
+                current_block.edge_flags = 0xFF;
+                current_block.waterlogged = 0;
+                continue;
+            }
+
+            var flags: u8 = 0;
+            inline for (.{ -1, 0, 1 }) |dy| {
+                inline for (.{ -1, 0, 1 }) |dx| {
+                    if (dx == 0 and dy == 0) continue;
+                    const nx = @as(i32, @intCast(block_x)) + dx;
+                    const ny = @as(i32, @intCast(block_y)) + dy;
+
+                    const block = getBlockHelper(target_chunk, key, nx, ny);
+                    const sprite = block.id;
+                    const is_solid_or_liquid = sprite.isSolid() or sprite.isLiquid();
+                    if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(sprite)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
+                        flags |= types.EdgeFlags.getFlagBit(dx, dy);
+                    }
+                }
+            }
+            current_block.edge_flags = flags;
+            current_block.waterlogged = state.flags;
+        }
+    }
+}
+
+/// Returns whether a sprite should have edge flag logic applied to it and be considered a "solid" by edge flag code.
+/// More specifically, this by default returns `isFoundation()` and determines if a block should:
+/// - Have solid-like edge flag calculations applied to it (default).
+/// - As an adjacent block, become considered as a "solid" and changing edge flags of adjacent blocks.
+///
+/// This may be modified for testing as necessary and is different from the final result in `root.chunks.updateVisibleChunks()`.
+pub inline fn shouldHaveEdgeFlags(sprite: Sprite) bool {
     return sprite.isFoundation();
 }
 
@@ -1203,16 +1152,18 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
         break :blk new_idx;
     };
 
+    const initial_hp: u4 = if (new_sprite == .water) 15 else 0;
+
     const c: *Chunk = mod_store.history.at(entry_idx);
     c.blocks[idx].id = new_sprite;
-    c.blocks[idx].hp = 0;
+    c.blocks[idx].hp = initial_hp;
     c.blocks[idx].edge_flags = 0xFF;
     c.blocks[idx].waterlogged = 0;
 
     if (SimBuffer.get(coord)) |sim_chunk| {
         const block: *Block = &sim_chunk.blocks[idx];
         block.id = new_sprite;
-        block.hp = 0;
+        block.hp = initial_hp;
         block.edge_flags = 0xFF;
         block.waterlogged = 0;
     }
@@ -1220,7 +1171,7 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
     if (ChunkCache.findIndex(coord)) |index| {
         const block: *Block = &ChunkCache.chunks[index].blocks[idx];
         block.id = new_sprite;
-        block.hp = 0;
+        block.hp = initial_hp;
         block.edge_flags = 0xFF;
         block.waterlogged = 0;
     }
@@ -1244,6 +1195,20 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
         .by = by,
     }) catch memory.oom();
     defer flag_worklist.clearRetainingCapacity();
+
+    const getBlockLocalOrNeighbor = struct {
+        inline fn func(c: Coordinate, bx_i: i32, by_i: i32, depth: u64) Block {
+            if (bx_i >= 0 and bx_i < CHUNK_SIZE and by_i >= 0 and by_i < CHUNK_SIZE) {
+                return getBlockAt(c, @intCast(bx_i), @intCast(by_i), depth);
+            }
+            const ndx = @divFloor(bx_i, CHUNK_SIZE);
+            const ndy = @divFloor(by_i, CHUNK_SIZE);
+            const lx: u4 = @intCast(@mod(bx_i, CHUNK_SIZE));
+            const ly: u4 = @intCast(@mod(by_i, CHUNK_SIZE));
+            const nc = c.move(.{ ndx, ndy }) orelse c;
+            return getBlockAt(nc, lx, ly, depth);
+        }
+    }.func;
 
     var original_block_broken = false;
     var checks_done: usize = 0; // prevent running out of memory
@@ -1346,91 +1311,43 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     continue;
                 }
 
-                if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid()) continue;
+                if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid() and !current_sprite.isDecor()) continue;
 
                 // Recalculate flags for foundation blocks
                 var flags: u8 = 0;
-                var waterlogged: u4 = 0;
-                const current_block_hp = current_block.hp;
-                inline for (.{ -1, 0, 1 }) |ndy| {
-                    inline for (.{ -1, 0, 1 }) |ndx| {
-                        if (ndx == 0 and ndy == 0) continue;
-                        const neighbor_block = getBlockAt(
-                            target_coord.move(.{
-                                @divFloor(@as(i32, lbx) + ndx, CHUNK_SIZE),
-                                @divFloor(@as(i32, lby) + ndy, CHUNK_SIZE),
-                            }) orelse
+                var waterlogged: u5 = 0;
+
+                const left_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx) - 1, @as(i32, lby), memory.game.depth);
+                const right_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx) + 1, @as(i32, lby), memory.game.depth);
+                const top_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx), @as(i32, lby) - 1, memory.game.depth);
+                const bottom_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx), @as(i32, lby) + 1, memory.game.depth);
+                const above_left_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx) - 1, @as(i32, lby) - 1, memory.game.depth);
+                const above_right_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx) + 1, @as(i32, lby) - 1, memory.game.depth);
+
+                const state = water.getWaterFlags(top_nb, bottom_nb, left_nb, right_nb, above_left_nb, above_right_nb);
+
+                if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid()) {
+                    flags = 0xFF;
+                    if (current_sprite.isDecor()) {
+                        waterlogged = state.flags;
+                    }
+                } else {
+                    waterlogged = state.flags;
+
+                    // Recalculate edge flags
+                    inline for (.{ -1, 0, 1 }) |ndy| {
+                        inline for (.{ -1, 0, 1 }) |ndx| {
+                            if (ndx == 0 and ndy == 0) continue;
+                            const neighbor_block = getBlockLocalOrNeighbor(
                                 target_coord,
-                            @intCast(@mod(@as(i32, lbx) + ndx, CHUNK_SIZE)),
-                            @intCast(@mod(@as(i32, lby) + ndy, CHUNK_SIZE)),
-                            memory.game.depth,
-                        );
+                                @as(i32, lbx) + ndx,
+                                @as(i32, lby) + ndy,
+                                memory.game.depth,
+                            );
 
-                        const is_solid_or_liquid = neighbor_block.isSolid() or neighbor_block.isLiquid();
-                        if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(neighbor_block.id)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
-                            flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
-
-                            // If current is liquid and neighbor is liquid, check for rising water
-                            if (current_sprite.isLiquid() and neighbor_block.isLiquid()) {
-                                if (ndx == -1 and ndy == 0) {
-                                    const above_left = getBlockAt(
-                                        target_coord.move(.{
-                                            @divFloor(@as(i32, lbx) - 1, CHUNK_SIZE),
-                                            @divFloor(@as(i32, lby) - 1, CHUNK_SIZE),
-                                        }) orelse target_coord,
-                                        @intCast(@mod(@as(i32, lbx) - 1, CHUNK_SIZE)),
-                                        @intCast(@mod(@as(i32, lby) - 1, CHUNK_SIZE)),
-                                        memory.game.depth,
-                                    );
-                                    if (above_left.isLiquid() or (above_left.isEmpty() and neighbor_block.hp < current_block_hp)) {
-                                        waterlogged |= 1; // Left neighbor has water above it or is taller surface water
-                                    }
-                                } else if (ndx == 1 and ndy == 0) {
-                                    const above_right = getBlockAt(
-                                        target_coord.move(.{
-                                            @divFloor(@as(i32, lbx) + 1, CHUNK_SIZE),
-                                            @divFloor(@as(i32, lby) - 1, CHUNK_SIZE),
-                                        }) orelse target_coord,
-                                        @intCast(@mod(@as(i32, lbx) + 1, CHUNK_SIZE)),
-                                        @intCast(@mod(@as(i32, lby) - 1, CHUNK_SIZE)),
-                                        memory.game.depth,
-                                    );
-                                    if (above_right.isLiquid() or (above_right.isEmpty() and neighbor_block.hp < current_block_hp)) {
-                                        waterlogged |= 2; // Right neighbor has water above it or is taller surface water
-                                    }
-                                }
-                            }
-                        } else if (neighbor_block.isLiquid()) {
-                            if (ndx == 0 and ndy == -1) {
-                                waterlogged |= 1; // Top
-                            } else if (ndx == -1 and ndy == 0) {
-                                waterlogged |= 4; // Left
-                                const above_left = getBlockAt(
-                                    target_coord.move(.{
-                                        @divFloor(@as(i32, lbx) - 1, CHUNK_SIZE),
-                                        @divFloor(@as(i32, lby) - 1, CHUNK_SIZE),
-                                    }) orelse target_coord,
-                                    @intCast(@mod(@as(i32, lbx) - 1, CHUNK_SIZE)),
-                                    @intCast(@mod(@as(i32, lby) - 1, CHUNK_SIZE)),
-                                    memory.game.depth,
-                                );
-                                if (!above_left.isLiquid()) {
-                                    waterlogged |= 2; // Apply top ripple cutoff
-                                }
-                            } else if (ndx == 1 and ndy == 0) {
-                                waterlogged |= 8; // Right
-                                const above_right = getBlockAt(
-                                    target_coord.move(.{
-                                        @divFloor(@as(i32, lbx) + 1, CHUNK_SIZE),
-                                        @divFloor(@as(i32, lby) - 1, CHUNK_SIZE),
-                                    }) orelse target_coord,
-                                    @intCast(@mod(@as(i32, lbx) + 1, CHUNK_SIZE)),
-                                    @intCast(@mod(@as(i32, lby) - 1, CHUNK_SIZE)),
-                                    memory.game.depth,
-                                );
-                                if (!above_right.isLiquid()) {
-                                    waterlogged |= 2; // Apply top ripple cutoff
-                                }
+                            const is_solid_or_liquid = neighbor_block.isSolid() or neighbor_block.isLiquid();
+                            if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(neighbor_block.id)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
+                                flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
                             }
                         }
                     }
@@ -1445,9 +1362,9 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     ChunkCache.chunks[index].blocks[block_id].waterlogged = waterlogged;
                 }
                 const m_key = DepthCoordinate.from(target_coord);
-                if (mod_store.index.get(m_key)) |id| {
-                    mod_store.history.at(id).blocks[block_id].edge_flags = flags;
-                    mod_store.history.at(id).blocks[block_id].waterlogged = waterlogged;
+                if (mod_store.index.get(m_key)) |id_val| {
+                    mod_store.history.at(id_val).blocks[block_id].edge_flags = flags;
+                    mod_store.history.at(id_val).blocks[block_id].waterlogged = waterlogged;
                 }
             }
         }

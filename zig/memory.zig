@@ -228,15 +228,22 @@ pub const Block = packed struct(u64) {
 
     /// Per-block seed for procedural variation in the shader.
     seed: u20,
-    /// How "mined" the block is. 0 means unmined, 15 is most mined.
+    /// Dual-purpose field depending on block type:
+    /// - For solid blocks: how "mined" the block is (0 means unmined, 15 is most mined).
+    /// - For liquid (water) and decoration blocks: the water volume level from 0 to 15.
     hp: u4,
 
-    // TODO: mutex union for block bits here so less bits are wasted (stick with u64 instead of u128)
     /// Padding to align fields.
-    padding: u4 = 0,
-    /// Directional waterlogging: bits represent cardinal directions. See the WGSL code for how this is strategically used.
-    /// (bit 0: top, bit 1: whether ripple occurs from the top, bit 2: left, bit 3: right)
-    waterlogged: u4 = 0,
+    padding: u3 = 0,
+    /// Dual-purpose directional waterlogging field:
+    /// - For liquid blocks: represents adjacent water heights/volumes.
+    /// - For non-liquid blocks: bits represent surrounding waterlogged cardinal directions.
+    ///   - bit 0: top (liquid block directly above)
+    ///   - bit 1: bottom (full liquid block directly below at HP=15)
+    ///   - bit 2: whether ripple occurs from the top (top ripple cutoff)
+    ///   - bit 3: left (liquid block directly to the left)
+    ///   - bit 4: right (liquid block directly to the right)
+    waterlogged: u5 = 0,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
     /// Uses the BOTTOM 20 bits from `seed_bits` to place into `seed`.
@@ -261,7 +268,7 @@ pub const Block = packed struct(u64) {
         return self.id.isSolid();
     }
 
-    /// Determines if the sprite's type is a liquid (such as water).
+    /// Determines if the block's type is a liquid (such as water).
     pub inline fn isLiquid(self: @This()) bool {
         return self.id.isLiquid();
     }
@@ -271,35 +278,47 @@ pub const Block = packed struct(u64) {
         return self.id.isEmpty();
     }
 
-    /// Determines if the sprite is stone (or a variation). Excludes edge stone.
+    /// Determines if the block is stone (or a variation). Excludes edge stone.
     pub inline fn isStone(self: @This()) bool {
         return self.id.isStone();
     }
 
-    /// Determines if the sprite is an ore.
+    /// Determines if the block is an ore.
     pub inline fn isOre(self: @This()) bool {
         return self.id.isOre();
     }
 
-    /// Determines if the sprite is a gem.
+    /// Determines if the block is a gem.
     pub inline fn isGem(self: @This()) bool {
         return self.id.isGem();
     }
 
-    /// Returns the cascade anchoring rules for this sprite.
-    pub inline fn anchor(self: @This()) root.sprite.AnchorKind {
+    /// Returns the cascade anchoring rules for this block.
+    pub inline fn anchor(self: @This()) root.block.AnchorKind {
         return self.id.anchor();
     }
 
-    /// Determines if the sprite is a heatmap (types 65000-65256).
+    /// Determines if the block is a heatmap (types 65000-65256).
     pub inline fn isHeatmap(self: @This()) bool {
         return self.id.isHeatmap();
     }
 
-    /// Extracts the evolved form of this sprite at compile time.
-    /// If it doesn't evolve, returns itself!
+    /// Extracts the evolved form of this block at compile time.
+    /// If it doesn't evolve, returns the original sprite type!
     pub inline fn evolvesTo(self: @This()) Sprite {
         return self.id.evolvesTo();
+    }
+
+    /// Returns whether a block is empty (air), a liquid, or a waterloggable decoration.
+    /// Precondition: the block's sprite type is valid.
+    pub inline fn isFlowable(self: @This()) bool {
+        return self.id.isFlowable();
+    }
+
+    /// Returns whether a block is a valid decoration block.
+    /// Precondition: the block's sprite type is valid.
+    pub inline fn isDecor(self: @This()) bool {
+        return self.id.isDecor();
     }
 
     /// Determines if there is a solid block adjacent based on edge flags.

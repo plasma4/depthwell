@@ -82,7 +82,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
             // strength function is inline, so this is fine
             const strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
 
-            if (inventory.IN_CREATIVE or (strength != std.math.maxInt(u64) and mining_progress >= strength) and
+            if (inventory.isInCreative() or (strength != std.math.maxInt(u64) and mining_progress >= strength) and
                 (!block.isLiquid() or block.hp == 15))
             {
                 mining_progress = 0;
@@ -93,14 +93,14 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     mouse.mouse_block_y,
                     block,
                     // instantly mine (0 value special-case in modifyBlockHp) if block type has no strength
-                    if (!inventory.IN_CREATIVE and strength > 0) mining_strength else 0,
+                    if (!inventory.isInCreative() and strength > 0) mining_strength else 0,
                 );
 
                 {
                     // Sound effects time!
                     if (block.isFoundation()) {
                         @setFloatMode(.optimized);
-                        const FRAMES_PER_SOUND = if (inventory.IN_CREATIVE)
+                        const FRAMES_PER_SOUND = if (inventory.isInCreative())
                             3
                         else
                             std.math.clamp(240 / (mining_speed - 1) + 1, 3, 12);
@@ -109,7 +109,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                         if (mining_frame % FRAMES_PER_SOUND == 0)
                             root.sound.playSound(
                                 @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
-                                if (inventory.IN_CREATIVE) 1 else (0.4 + 0.6 * @as(f32, @floatFromInt(mining_strength))),
+                                if (inventory.isInCreative()) 1 else (0.4 + 0.6 * @as(f32, @floatFromInt(mining_strength))),
                                 0.2,
                                 if (block.isGem()) 0.7 else if (block.isOre()) 0.55 else 0.45,
                             );
