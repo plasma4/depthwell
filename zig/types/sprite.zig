@@ -43,12 +43,17 @@ pub const HitboxKind = enum(u3) {
     thin_strip,
 };
 
-/// Strategy to resolve cascade block-breaking checks for decorations.
+/// Strategy to resolve whether a block was placed in a valid position.
+/// Works for all (valid) sprite types.
 pub const AnchorKind = enum(u2) {
+    /// No requirements: this sprite type can be placed anywhere.
     none = 0,
+    /// The sprite type must be directly above a solid block.
     floor = 1,
+    /// The sprite type must be directly below a solid block.
     ceiling = 2,
-    spiral = 3,
+    /// This sprite type must be directly below a solid block or itself.
+    suspended = 3,
 };
 
 /// Strategy to resolve block drop items upon destruction.
@@ -85,7 +90,7 @@ pub const DropHandlers = struct {
         const abs_x = coord.suffix[0] * 16 + bx;
         const abs_y = coord.suffix[1] * 16 + by;
         const seed_val = root.seeding.FastHash.hash2d(
-            chunk_seeds[3][0..2].*,
+            chunk_seeds.value[3].value[0..2].*,
             abs_x,
             abs_y,
         );
@@ -226,14 +231,6 @@ const rules = [_]SpriteRule{
         } },
         .{ .in_world = true },
     },
-    // Solid interactive decor
-    .{
-        .{ .list = &[_]Sprite{
-            .forest_furnace,
-            .lava_furnace,
-        } },
-        .{ .solid = true, .item = true },
-    },
     // Liquids
     .{
         .{ .single = .water },
@@ -307,8 +304,8 @@ const rules = [_]SpriteRule{
         },
     },
 
-    // Floor rules!
-    // Floor-anchored decorations
+    // Anchor rules!
+    // Floor-anchored decorations/interactables
     .{
         .{ .list = &[_]Sprite{
             .rock,
@@ -320,6 +317,9 @@ const rules = [_]SpriteRule{
             .big_tree1_right,
             .big_tree2_left,
             .big_tree2_right,
+            .portal,
+            .lava_furnace,
+            .forest_furnace,
         } },
         .{ .anchor = .floor },
     },
@@ -328,10 +328,10 @@ const rules = [_]SpriteRule{
         .{ .single = .ceiling_flower },
         .{ .anchor = .ceiling },
     },
-    // Spiral plant specific anchor
+    // Suspended anchor (like ceiling, but can be directly below itself too)
     .{
         .{ .single = .spiral_plant },
-        .{ .anchor = .spiral },
+        .{ .anchor = .suspended },
     },
 };
 
@@ -672,7 +672,7 @@ pub const Sprite = enum(u16) {
     /// Precondition: the sprite is valid.
     pub inline fn isDecor(self: @This()) bool {
         const val = @intFromEnum(self);
-        return val >= DECOR_START and self != .water;
+        return val >= DECOR_START and !self.isSolid() and self != .water;
     }
 };
 

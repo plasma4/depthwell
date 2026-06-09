@@ -29,7 +29,7 @@ pub const utils = @import("internal/utils.zig");
 pub const GenerateOffsets = @import("internal/offsets.zig").GenerateOffsets;
 pub const SegmentedList = @import("internal/SegmentedList.zig").SegmentedList;
 pub const Fifo = @import("internal/fifo.zig").UnboundedFifo;
-pub const ColorRGBA = @import("visual/color_rgba.zig").ColorRGBA;
+pub const ColorRgba = @import("visual/color_rgba.zig").ColorRgba;
 
 pub const render = @import("render/render.zig");
 pub const sound = @import("render/sound.zig");
@@ -218,11 +218,11 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
 pub export fn mixSeed(number: u64) i64 {
     // IMPORTANT! For some reason, it appears that this returns an `i64` even with `u64` return type.
     // Therefore, that's the type we return.
-    return @intCast(seeding.mixBaseSeed(&memory.game.seed, number)[0] >> 1);
+    return @intCast(seeding.mixBaseSeed(&memory.game.seed, number).value[0] >> 1);
 }
 pub export fn mixSeedF64(number: u64) f64 { // same thing as mix_seed but f64
     return @as(f64, @floatFromInt(
-        seeding.mixBaseSeed(&memory.game.seed, number)[0] >> 1,
+        seeding.mixBaseSeed(&memory.game.seed, number).value[0] >> 1,
     )) / seeding.POW_2_64;
 }
 

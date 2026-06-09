@@ -4,7 +4,7 @@ const root = @import("../root.zig");
 const SegmentedList = root.SegmentedList;
 const memory = root.memory;
 const sprite = root.sprite;
-const ColorRGBA = root.ColorRGBA;
+const ColorRgba = root.ColorRgba;
 const inventory = root.inventory;
 
 const CHUNK_SIZE = memory.CHUNK_SIZE;

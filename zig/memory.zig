@@ -6,7 +6,7 @@ const Sprite = root.Sprite;
 const types = root.types;
 const logger = root.logger;
 const player = root.player;
-const ColorRGBA = root.ColorRGBA;
+const ColorRgba = root.ColorRgba;
 const seeding = root.seeding;
 const world = root.world;
 
@@ -104,7 +104,7 @@ pub const GameState = extern struct {
     keys_held_mask: u32 = 0,
 
     /// The initial or "global" seed from which all generation starts.
-    seed: seeding.Seed align(16) = @splat(0),
+    seed: seeding.Seed = .{},
 
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
     seed2: [16]u64 align(16) = @splat(0),
@@ -448,7 +448,7 @@ pub const Particle = struct {
     d_position: Vec2f32,
 
     /// The color of the particle (alpha is multiplied by time and how long the particle lasts).
-    color: ColorRGBA,
+    color: ColorRgba,
     /// The size of the particle.
     size: f32,
     /// The opacity of the particle (based on time start/end).

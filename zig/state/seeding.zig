@@ -14,16 +14,16 @@ pub const POW_2_64 = 18446744073709551616;
 const Vec2u = memory.Vec2u;
 
 /// A 512-bit seed state (useful for hashing and procedural generation).
-pub const Seed = [8]u64;
+pub const Seed = extern struct { value: [8]u64 align(16) = @splat(0) };
 /// Contains 4 512-bit seed states, which are different for each chunk.
-pub const ChunkSeeds = [4][8]u64;
+pub const ChunkSeeds = extern struct { value: [4]Seed };
 
 test "basic usage example" {
     // Start with an arbitrary seed (NOTE: seed_from_bytes fails for WASM builds)
     var world_seed: Seed = undefined;
     seedFromBytes("my-game-seed", &world_seed);
 
-    var rng: Xoshiro512 = .{ .state = world_seed };
+    var rng: Xoshiro512 = .init(&world_seed);
     // change to quickWarn to see result from ZLS (maybe?)
     std.log.debug("{d}", .{rng.float(f32)});
     std.log.debug("{d}", .{rng.next()});
@@ -159,8 +159,40 @@ pub const HashState = struct {
     }
 
     /// Determines a boolean outcome for a given probability chance using `<= oddsNum()`.
+    /// Automatically optimizes near-power-of-two chances at compile-time to use the much faster and
+    /// entropy-preserving `get()` path instead of pulling a full 64-bit word with `getRaw()`.
     pub inline fn getChance(self: *HashState, comptime chance: comptime_float) bool {
-        return self.getRaw() <= oddsNum(chance);
+        const OptResult = struct { k: u8, n: u64 };
+        const Opt: ?OptResult = comptime find_opt: {
+            if (chance < 0.0 or chance > 1.0) {
+                @compileError("Chance must be in the range [0.0, 1.0]");
+            }
+            const margin = 1.0 / @as(comptime_float, POW_2_32);
+
+            // Search for the smallest power-of-two denominator (up to 2^24)
+            // that represents the chance within the margin of error.
+            var k: u8 = 1;
+            while (k <= 24) : (k += 1) {
+                const d: comptime_float = @floatFromInt(@as(u64, 1) << k);
+                const n_float = @round(chance * d);
+                const n: u64 = @intFromFloat(n_float);
+                const approx = n_float / d;
+                const diff = if (approx > chance) approx - chance else chance - approx;
+                if (diff <= margin) {
+                    break :find_opt .{ .k = k, .n = n };
+                }
+            }
+            break :find_opt null;
+        };
+
+        if (Opt) |opt| {
+            // happy path: exact or near-exact power of two probability matches.
+            // consumes only opt.k bits of entropy instead of pulling a whole 64-bit word.
+            return self.get(u64, 1 << opt.k) < opt.n;
+        } else {
+            // aw man
+            return self.getRaw() <= oddsNum(chance);
+        }
     }
 
     /// Performs a 64x64-bit widening multiplication returning a 128-bit product split into low and high halves.
@@ -286,28 +318,21 @@ pub const FastHash = struct {
 
 /// ChaCha12-based PRNG hard-coded to accept 512 bits of seeding and without certain features. Basically cryptographically secure, can generate 64-byte blocks at a time, and supports skipping.
 pub const ChaCha12 = struct {
-    // Internal state stored as vectors for SIMD!
-    row0: @Vector(4, u32),
-    row1: @Vector(4, u32),
-    row2: @Vector(4, u32),
-    row3: @Vector(4, u32),
+    /// Internal state.
+    state: [16]u32,
 
     /// Pre-generated keystream buffer (64 bytes).
     keystream: [8]u64 align(16) = @splat(0),
-    /// Which u64 index in keystream to serve next.
+    /// Which `u64` index in keystream to serve next.
     position: u32,
 
     const v4u32 = @Vector(4, u32);
 
     /// Creates a new instance of ChaCha12, without a nonce (utilizing all 512 seed bits).
     pub fn init(seed_data: Seed) ChaCha12 {
-        const s: [16]u32 = @bitCast(seed_data);
-
+        const s: [16]u32 = @bitCast(seed_data.value);
         return ChaCha12{
-            .row0 = @bitCast(s[0..4].*),
-            .row1 = @bitCast(s[4..8].*),
-            .row2 = @bitCast(s[8..12].*),
-            .row3 = @bitCast(s[12..16].*),
+            .state = s,
             .position = 8,
         };
     }
@@ -351,7 +376,7 @@ pub const ChaCha12 = struct {
 
         const remaining_u64s_in_block = 8 - self.position;
 
-        // If the skip lands within our currently generated block, just move the pointer, easy!
+        // If the skip lands within our currently generated block, just move the pointer
         if (count < remaining_u64s_in_block) {
             self.position += @as(u32, @truncate(count));
             return;
@@ -362,22 +387,23 @@ pub const ChaCha12 = struct {
         const blocks_to_skip = (count_after_block / 8) + 1;
         const new_pos = count_after_block % 8;
 
-        // Fast-forward the internal 64-bit counter
+        // Fast-forward the internal 64-bit counter (located in state[12..13])
         const counter_add = blocks_to_skip - 1;
         if (counter_add > 0) {
             const add_low: u32 = @as(u32, @truncate(counter_add));
             const add_high: u32 = @as(u32, @truncate(counter_add >> 32));
 
-            const low_before = self.row3[0];
-            self.row3[0] +%= add_low;
-            // Catch overflow for the low 32 bits
-            if (self.row3[0] < low_before) {
-                self.row3[1] +%= 1;
+            const low_before = self.state[12];
+            self.state[12] +%= add_low;
+
+            // Handle 32-bit overflow carry to the high counter word
+            if (self.state[12] < low_before) {
+                self.state[13] +%= 1;
             }
-            self.row3[1] +%= add_high;
+            self.state[13] +%= add_high;
         }
 
-        // Generate only the exact block we landed on!
+        // Generate only the exact block we landed on
         self.generateBlock();
         self.position = @as(u32, @truncate(new_pos));
     }
@@ -492,53 +518,34 @@ pub const ChaCha12 = struct {
 
     /// Generates the next 64 bytes of seeding data.
     fn generateBlock(self: *@This()) void {
-        var x0 = self.row0; // SIMD-optimized vectors
-        var x1 = self.row1;
-        var x2 = self.row2;
-        var x3 = self.row3;
+        var x = self.state; // LLVM will allocate this copy entirely to GPR registers
 
-        // 6 double-rounds
+        // 12 rounds total (6 double-rounds)
         inline for (0..6) |_| {
-            // Column rounds: QR on (0,4,8,12), (1,5,9,13), (2,6,10,14), (3,7,11,15)
-            // With row layout, columns are already aligned.
-            quarterRound(&x0, &x1, &x2, &x3);
+            // Odd rounds (columns)
+            quarterRound(&x[0], &x[4], &x[8], &x[12]);
+            quarterRound(&x[1], &x[5], &x[9], &x[13]);
+            quarterRound(&x[2], &x[6], &x[10], &x[14]);
+            quarterRound(&x[3], &x[7], &x[11], &x[15]);
 
-            // Diagonal rounds: QR on (0,5,10,15), (1,6,11,12), (2,7,8,13), (3,4,9,14)
-            // Rotate rows to align diagonals into columns.
-            x1 = @shuffle(u32, x1, undefined, [4]i32{ 1, 2, 3, 0 });
-            x2 = @shuffle(u32, x2, undefined, [4]i32{ 2, 3, 0, 1 });
-            x3 = @shuffle(u32, x3, undefined, [4]i32{ 3, 0, 1, 2 });
-
-            quarterRound(&x0, &x1, &x2, &x3);
-
-            // Rotate back.
-            x1 = @shuffle(u32, x1, undefined, [4]i32{ 3, 0, 1, 2 });
-            x2 = @shuffle(u32, x2, undefined, [4]i32{ 2, 3, 0, 1 });
-            x3 = @shuffle(u32, x3, undefined, [4]i32{ 1, 2, 3, 0 });
+            // Even rounds (diagonals)
+            quarterRound(&x[0], &x[5], &x[10], &x[15]);
+            quarterRound(&x[1], &x[6], &x[11], &x[12]);
+            quarterRound(&x[2], &x[7], &x[8], &x[13]);
+            quarterRound(&x[3], &x[4], &x[9], &x[14]);
         }
 
-        // Add original state
-        x0 +%= self.row0;
-        x1 +%= self.row1;
-        x2 +%= self.row2;
-        x3 +%= self.row3;
+        // Add original state and write back to the 64-byte keystream buffer
+        inline for (0..8) |i| {
+            const lo = x[i * 2] +% self.state[i * 2];
+            const hi = x[i * 2 + 1] +% self.state[i * 2 + 1];
+            self.keystream[i] = @as(u64, lo) | (@as(u64, hi) << 32);
+        }
 
-        // Interleave into u64 pairs and write to keystream.
-        // Row layout is x0 = [s0, s1, s2, s3], x1 = [s4, s5, s6, s7], and so on
-        // Then make keystream u64 values like (s0|s1), (s2|s3), (s4|s5), (s6|s7)
-        self.keystream[0] = packU64(x0, 0, 1); // these functions are optimized with comptime and inline
-        self.keystream[1] = packU64(x0, 2, 3);
-        self.keystream[2] = packU64(x1, 0, 1);
-        self.keystream[3] = packU64(x1, 2, 3);
-        self.keystream[4] = packU64(x2, 0, 1);
-        self.keystream[5] = packU64(x2, 2, 3);
-        self.keystream[6] = packU64(x3, 0, 1);
-        self.keystream[7] = packU64(x3, 2, 3);
-
-        // Increment counter (row3[0] is low word, row3[1] is high word)
-        self.row3[0] +%= 1;
-        if (self.row3[0] == 0) {
-            self.row3[1] +%= 1;
+        // Increment the state counter (ChaCha block counter)
+        self.state[12] +%= 1;
+        if (self.state[12] == 0) {
+            self.state[13] +%= 1;
         }
     }
 
@@ -552,28 +559,25 @@ pub const ChaCha12 = struct {
         return (v << shift_left) | (v >> shift_right);
     }
 
-    inline fn quarterRound(a: *v4u32, b: *v4u32, c: *v4u32, d: *v4u32) void {
+    inline fn quarterRound(a: *u32, b: *u32, c: *u32, d: *u32) void {
         a.* +%= b.*;
         d.* ^= a.*;
-        d.* = rotl(d.*, 16);
-
+        d.* = std.math.rotl(u32, d.*, 16);
         c.* +%= d.*;
         b.* ^= c.*;
-        b.* = rotl(b.*, 12);
-
+        b.* = std.math.rotl(u32, b.*, 12);
         a.* +%= b.*;
         d.* ^= a.*;
-        d.* = rotl(d.*, 8);
-
+        d.* = std.math.rotl(u32, d.*, 8);
         c.* +%= d.*;
         b.* ^= c.*;
-        b.* = rotl(b.*, 7);
+        b.* = std.math.rotl(u32, b.*, 7);
     }
 };
 
 test "basic determinism" {
-    var seed: Seed = @splat(0);
-    seed[0] = 42;
+    var seed: Seed = .{};
+    seed.value[0] = 42;
 
     var rng1 = ChaCha12.init(seed);
     var rng2 = ChaCha12.init(seed);
@@ -584,9 +588,9 @@ test "basic determinism" {
 }
 
 test "skip produces same values" {
-    var seed: Seed = @splat(0);
-    seed[0] = 123;
-    seed[5] = 77;
+    var seed: Seed = .{};
+    seed.value[0] = 123;
+    seed.value[5] = 77;
 
     var rng_sequential = ChaCha12.init(seed);
 
@@ -606,8 +610,8 @@ test "skip produces same values" {
 }
 
 test "skip forward matches sequential" {
-    var seed: Seed = @splat(0);
-    seed[3] = 0xAB;
+    var seed: Seed = .{};
+    seed.value[3] = 0xAB;
 
     var rng1 = ChaCha12.init(seed);
     var rng2 = ChaCha12.init(seed);
@@ -627,7 +631,7 @@ test "skip forward matches sequential" {
 }
 
 test "cross-block boundary skip" {
-    var seed: Seed = @splat(0);
+    var seed: Seed = .{};
     seedFromBytes("my-game-seed", &seed);
 
     var rng = ChaCha12.init(seed);
@@ -644,7 +648,7 @@ test "cross-block boundary skip" {
 }
 
 test "float range" {
-    var seed: Seed = @splat(0);
+    var seed: Seed = .{};
     seedFromBytes("my-game-seed", &seed);
 
     var rng = ChaCha12.init(seed);
@@ -661,22 +665,23 @@ test "float range" {
 /// Xoshiro512** (StarStar), public domain randomness function.
 /// A decent performance, all-purpose generator with a period of 2^512 - 1.
 pub const Xoshiro512 = struct {
-    state: Seed,
+    state: [8]u64 align(16),
 
     /// Creates a new instance with seed data.
-    pub fn init(seed_data: *const Seed) Xoshiro512 {
+    pub inline fn init(seed_data: *const Seed) Xoshiro512 {
         var check: u64 = 0;
-        if (seed_data[0] == 0) {
+        const val: *const [8]u64 align(16) = &seed_data.value;
+        if (val[0] == 0) {
             @branchHint(.unlikely);
-            for (seed_data[1..8]) |s| check |= s;
-            var state = seed_data.*;
+            for (val[1..8]) |s| check |= s;
+            var state = val.*; // copy
             if (check == 0) {
                 @branchHint(.unlikely);
                 state[0] = 0xbf58476d1ce4e5b9; // fill with some random constant (technically not needed with seeding.ts logic being sound)
             }
             return .{ .state = state };
         }
-        return .{ .state = seed_data.* };
+        return .{ .state = val.* };
     }
 
     /// Returns the next 64 bits of psuedo-random data.
@@ -718,7 +723,7 @@ pub inline fn staffordMix13(value: u64) u64 {
 pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {
     // Initialize out_seed to 0
     // @memset(out_seed, 0);
-    out_seed.* = @splat(0); // awkward performance thing
+    out_seed.*.value = @splat(0); // awkward performance thing: @memset is slower
 
     for (input) |char| {
         const char_val = @as(u64, char - 'a') + 1;
@@ -726,7 +731,7 @@ pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {
         var carry: u64 = char_val;
         // Manual 512-bit multiplication (total = total * 26 + char_val)
         // We iterate through our 8 limbs
-        for (out_seed) |*limb| {
+        for (&out_seed.value) |*limb| {
             // u128 is perfect for intermediate math to catch u64 overflow
             const prod = (@as(u128, limb.*) * 26) + carry;
             limb.* = @intCast(prod & 0xFFFFFFFFFFFFFFFF);
@@ -735,7 +740,7 @@ pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {
     }
 
     var borrow: u64 = 1;
-    for (out_seed) |*limb| {
+    for (&out_seed.value) |*limb| {
         if (limb.* >= borrow) {
             limb.* -= borrow;
             borrow = 0;
@@ -761,8 +766,8 @@ test "bijective seeding uniqueness" {
     seedFromBase26("a", &s1);
     seedFromBase26("b", &s2);
     seedFromBase26("c", &s3);
-    try testing.expect(!std.mem.eql(u64, &s1, &s2));
-    try testing.expect(!std.mem.eql(u64, &s2, &s3));
+    try testing.expect(!std.mem.eql(u64, &s1.value, &s2.value));
+    try testing.expect(!std.mem.eql(u64, &s2.value, &s3.value));
 }
 
 test "Xoshiro512** initialization/consistency" {
@@ -806,6 +811,6 @@ fn seedFromBytes(noalias input: []const u8, noalias out_seed: *Seed) void {
     // Write directly into the pointer provided
     inline for (0..8) |i| {
         const start = i * 8;
-        out_seed[i] = std.mem.readInt(u64, hash_out[start .. start + 8], .little);
+        out_seed.value[i] = std.mem.readInt(u64, hash_out[start .. start + 8], .little);
     }
 }

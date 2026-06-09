@@ -93,22 +93,20 @@ pub const DepthCoordinate = struct {
         const secret_0 = 0xa0761d6478bd642f;
         const secret_1 = 0xe7037ed1a0b428db;
 
-        // Diffuse suffix using vector multiplication and folding
-        var v = self.suffix;
-        v *%= Vec2u{ secret_0, secret_1 };
-        v ^= v >> @as(Vec2u, @splat(32));
+        // Force scalar execution paths
+        const x = (self.suffix[0] *% secret_0) ^ (self.suffix[0] >> 32);
+        const y = (self.suffix[1] *% secret_1) ^ (self.suffix[1] >> 32);
 
-        // Combine vector lanes with depth+quadrant metadata
-        const combined = v[0] ^ v[1] ^ self.depth ^ @as(u64, self.quadrant);
+        const combined = x ^ y ^ @as(u64, self.quadrant);
 
         // MurmurHash3 final mix
-        var x = combined;
-        x ^= x >> 30;
-        x *%= 0xbf58476d1ce4e5b9;
-        x ^= x >> 27;
-        x *%= 0x94d049bb133111eb;
-        x ^= x >> 31;
-        return x;
+        var r = combined;
+        r ^= r >> 30;
+        r *%= 0xbf58476d1ce4e5b9;
+        r ^= r >> 27;
+        r *%= 0x94d049bb133111eb;
+        r ^= r >> 31;
+        return r;
     }
 
     /// Checks for equality between two `DepthCoordinate` values.
@@ -637,7 +635,7 @@ pub const QuadCache = struct {
     /// Returns the 512-bit seed of a specified quadrant (or the global seed if the current depth is <= HORIZON_DEPTH).
     pub inline fn getQuadrantSeed(self: *const @This(), quadrant: u2, depth: u64) seeding.Seed {
         if (depth <= HORIZON_DEPTH) return memory.game.seed;
-        return self.path_hashes[quadrant];
+        return self.path_hashes.value[quadrant];
     }
 
     /// Resolves the chunk seeds. If depth > 32, uses the quadrant seeds.
@@ -803,7 +801,7 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
     }
 
     const chunk_seeds = quad_cache.getChunkSeeds(key);
-    var rng4 = seeding.ChaCha12.init(chunk_seeds[3]);
+    var rng4 = seeding.ChaCha12.init(chunk_seeds.value[3]);
 
     const parent_neighborhood = root.ancestor.getAncestorNeighborhood(key);
     for (0..CHUNK_SIZE) |block_y| {
@@ -874,7 +872,7 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     const seed_vec6: memory.Vec2u = seeds[10..12].*;
     const seed_vec7: memory.Vec2u = seeds[12..14].*;
 
-    var rng4 = seeding.ChaCha12.init(chunk_seeds[3]); // Visual touches only.
+    var rng4 = seeding.ChaCha12.init(chunk_seeds.value[3]); // Visual touches only.
 
     const suffix = coord.suffix;
     const cx = suffix[0];
@@ -932,7 +930,7 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
 
     addEdgeFlags(chunk, coord, depth);
     // Decorate the base chunk here so that child depths inherit the results
-    var rng_decor = seeding.ChaCha12.init(quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth))[0]);
+    var rng_decor = seeding.ChaCha12.init(quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth)).value[0]);
     procedural.addDecorations(chunk, &rng_decor);
 
     // Reset edge flags to 0xFF for empty blocks after decorations are completed!
@@ -1264,12 +1262,12 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                             getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
                         if (!above.isSolid()) broken = true;
                     },
-                    .spiral => {
+                    .suspended => {
                         const above = if (lby > 0)
                             getBlockAt(target_coord, lbx, lby - 1, memory.game.depth).id
                         else
                             getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
-                        if (!above.isSolid() and above != .spiral_plant) broken = true;
+                        if (!above.isSolid() and above != current_sprite) broken = true;
                     },
                     // TODO: add needs_pair_left and needs_pair_right for larger plants
                 }
@@ -1579,13 +1577,18 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     quad_cache.most_top = quad_cache.most_top and top_cell_y == 0;
     quad_cache.most_bottom = quad_cache.most_bottom and top_cell_y == highest_possible_top_left_cell;
 
-    const old_hashes: ChunkSeeds = if (depth == HORIZON_DEPTH + 1) @splat(memory.game.seed) else quad_cache.path_hashes;
+    const old_hashes: ChunkSeeds = if (depth == HORIZON_DEPTH + 1) .{ .value = @splat(memory.game.seed) } else quad_cache.path_hashes;
 
     inline for (0..4) |q_id| {
         const cell_x = left_cell_x + utils.intFromBool(u64, q_id % 2 == 1);
         const cell_y = top_cell_y + utils.intFromBool(u64, q_id >= 2);
         const old_q_id = utils.intFromBool(usize, cell_x >= ZOOM_FACTOR) + utils.intFromBool(usize, cell_y >= ZOOM_FACTOR) * 2;
-        quad_cache.path_hashes[q_id] = seeding.mixCoordinateSeed(&old_hashes[old_q_id], @intCast(cell_x % ZOOM_FACTOR), @intCast(cell_y % ZOOM_FACTOR), depth);
+        quad_cache.path_hashes.value[q_id] = seeding.mixCoordinateSeed(
+            &old_hashes.value[old_q_id],
+            @intCast(cell_x % ZOOM_FACTOR),
+            @intCast(cell_y % ZOOM_FACTOR),
+            depth,
+        );
     }
 
     const path_start_depth = memory.HORIZON_DEPTH + 1;

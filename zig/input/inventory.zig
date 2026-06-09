@@ -1,4 +1,4 @@
-//! Handles logic for inventory management.
+//! Handles logic for inventory management and how it should be drawn.
 const std = @import("std");
 const root = @import("../root.zig");
 const memory = root.memory;

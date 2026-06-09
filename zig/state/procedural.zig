@@ -278,7 +278,7 @@ pub fn addStructures(
 
             const pos_x = @as(i32, @intCast(state3.getLimit(u32, max_pos_x)));
             const pos_y = @as(i32, @intCast(state3.getLimit(u32, max_pos_y)));
-            const bit = state3.getLimit(u32, 1);
+            const bit = state3.getChance(0.5);
 
             const struct_x = x_in_area - pos_x;
             const struct_y = y_in_area - pos_y;
@@ -315,9 +315,9 @@ pub fn addStructures(
 
                 if (struct_y == size_y - 2) {
                     return .water;
-                } else if (bit == 1 and struct_y == size_y - 3) {
+                } else if (struct_y == size_y - 3) {
                     return .water;
-                } else if (bit == 1 and struct_y == size_y - 3) {
+                } else if (bit and struct_y == size_y - 3) {
                     return .water;
                 }
 
@@ -741,9 +741,11 @@ pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
 /// Generates decorative blocks (such as mushrooms or ceiling plants).
 /// Continues from step 5 in `addOres()`.
 ///
-/// 6. Adds decorative blocks.
+/// 6. Adds blocks, primarily decorations, that require certain anchor types (`AnchorKind` in zig/types/sprite.zig).
 pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12) void {
-    // Extra decor passes (doesn't worry about cross-chunk sadly)
+    // While these don't fully work across chunks, it's almost impossible to practically notice.
+
+    // First, we handle blocks with a floor anchor kind.
     for (0..CHUNK_SIZE) |block_y| {
         var forced_next_sprite_type: Sprite = .none; // .none means nothing is forced
         for (0..CHUNK_SIZE) |block_x| {
@@ -759,14 +761,12 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
             if (!block.isEmpty()) continue;
             if (block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
                 const val = rng_decor.next();
-                // const is_left = block_x % 2 == 0; // no longer needed
-
                 // returns Z+1 if Z is even and Z-1 if Z is odd
                 const other_block_x = block_x ^ 1; // guaranteed to be from 0-15, no OOB block x-value
 
                 // Only if the other block is also empty AND can have a decor do we create a 2x1 decor sprite!
                 const other_block = &target_chunk.blocks[other_block_x + block_y * CHUNK_SIZE];
-                if (other_block.isEmpty() and other_block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
+                if (other_block.isEmpty() and other_block.isAdjacentBlockSolid(EdgeFlags.BOTTOM) and block_x != CHUNK_SIZE - 1) {
                     if (val >= oddsNum(0.98)) {
                         // we are modifying the block on the left. force the type of the block to the right too!
                         block.id = .big_tree1_left;
@@ -785,11 +785,16 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
                     block.id = .rock;
                 } else if (val <= oddsNum(0.13)) {
                     block.id = .mushroom;
+                } else if (val <= oddsNum(0.14)) {
+                    block.id = .forest_furnace;
+                } else if (val <= oddsNum(0.15)) {
+                    block.id = .lava_furnace;
                 }
             }
         }
     }
 
+    // Now, we handle blocks with a ceiling/suspended anchor kind.
     for (0..CHUNK_SIZE) |block_y| {
         for (0..CHUNK_SIZE) |block_x| {
             const idx = block_x + block_y * CHUNK_SIZE;

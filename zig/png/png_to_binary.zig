@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ColorRGBA = @import("../visual/color_rgba.zig").ColorRGBA;
+const ColorRgba = @import("../visual/color_rgba.zig").ColorRgba;
 
 pub const PngError = error{
     InvalidSignature,
@@ -29,7 +29,7 @@ const ColorType = enum(u8) {
 pub const Bitmap = struct {
     width: u32,
     height: u32,
-    pixels: []ColorRGBA,
+    pixels: []ColorRgba,
     allocator: Allocator,
 
     pub fn deinit(self: *Bitmap) void {
@@ -174,7 +174,7 @@ pub const Bitmap = struct {
         }
 
         // Convert to RGBA
-        const pixels = try allocator.alloc(ColorRGBA, w * h);
+        const pixels = try allocator.alloc(ColorRgba, w * h);
         errdefer allocator.free(pixels);
 
         for (0..h) |y| {
@@ -185,7 +185,7 @@ pub const Bitmap = struct {
                 switch (color_type) {
                     .rgba => {
                         const si = x * 4;
-                        pixels[pi] = ColorRGBA.init(row[si], row[si + 1], row[si + 2], row[si + 3]);
+                        pixels[pi] = ColorRgba.init(row[si], row[si + 1], row[si + 2], row[si + 3]);
                     },
                     .rgb => {
                         const si = x * 3;
@@ -201,7 +201,7 @@ pub const Bitmap = struct {
                             }
                             break :blk 255;
                         } else 255;
-                        pixels[pi] = ColorRGBA.init(r, g, b, a);
+                        pixels[pi] = ColorRgba.init(r, g, b, a);
                     },
                     .grayscale => {
                         const v = row[x];
@@ -213,12 +213,12 @@ pub const Bitmap = struct {
                             }
                             break :blk 255;
                         } else 255;
-                        pixels[pi] = ColorRGBA.init(v, v, v, a);
+                        pixels[pi] = ColorRgba.init(v, v, v, a);
                     },
                     .grayscale_alpha => {
                         const si = x * 2;
                         const v = row[si];
-                        pixels[pi] = ColorRGBA.init(v, v, v, row[si + 1]);
+                        pixels[pi] = ColorRgba.init(v, v, v, row[si + 1]);
                     },
                     .indexed => {
                         const idx: usize = row[x];
@@ -228,7 +228,7 @@ pub const Bitmap = struct {
                                 (if (idx < t.len) t[idx] else 255)
                             else
                                 255;
-                            pixels[pi] = ColorRGBA.init(pal[idx * 3], pal[idx * 3 + 1], pal[idx * 3 + 2], a);
+                            pixels[pi] = ColorRgba.init(pal[idx * 3], pal[idx * 3 + 1], pal[idx * 3 + 2], a);
                         } else {
                             pixels[pi].word = 0;
                         }
@@ -246,24 +246,24 @@ pub const Bitmap = struct {
     }
 
     /// Get pixel at (x, y).
-    pub fn getPixel(self: *const Bitmap, x: u32, y: u32) ColorRGBA {
+    pub fn getPixel(self: *const Bitmap, x: u32, y: u32) ColorRgba {
         if (x >= self.width or y >= self.height) return .transparent;
         return self.pixels[@as(usize, y) * @as(usize, self.width) + @as(usize, x)];
     }
 
     /// Set pixel at (x, y).
-    pub fn setPixel(self: *Bitmap, x: u32, y: u32, color: ColorRGBA) void {
+    pub fn setPixel(self: *Bitmap, x: u32, y: u32, color: ColorRgba) void {
         if (x >= self.width or y >= self.height) return;
         self.pixels[@as(usize, y) * @as(usize, self.width) + @as(usize, x)] = color;
     }
 
     /// Average color of the entire image.
-    pub fn averageColor(self: *const Bitmap) ColorRGBA {
+    pub fn averageColor(self: *const Bitmap) ColorRgba {
         return averageOfSlice(self.pixels);
     }
 
     /// Average gamma perceptual color of a rectangular region (clamped to image bounds).
-    pub fn averageColorRect(self: *const Bitmap, rx: u32, ry: u32, rw: u32, rh: u32) ColorRGBA {
+    pub fn averageColorRect(self: *const Bitmap, rx: u32, ry: u32, rw: u32, rh: u32) ColorRgba {
         const x0: usize = @min(rx, self.width);
         const y0: usize = @min(ry, self.height);
         const x1: usize = @min(@as(usize, rx) + @as(usize, rw), self.width);
@@ -296,7 +296,7 @@ pub const Bitmap = struct {
 
         if (sum_a == 0) return .transparent;
 
-        return ColorRGBA.init(
+        return ColorRgba.init(
             @intCast(std.math.sqrt(sum_r / sum_a)),
             @intCast(std.math.sqrt(sum_g / sum_a)),
             @intCast(std.math.sqrt(sum_b / sum_a)),
@@ -306,12 +306,12 @@ pub const Bitmap = struct {
 
     /// Alpha-weighted average (premultiplied). More perceptually correct when
     /// averaging sprites with transparency.
-    pub fn averageColorWeighted(self: *const Bitmap) ColorRGBA {
+    pub fn averageColorWeighted(self: *const Bitmap) ColorRgba {
         return averageWeightedOfSlice(self.pixels);
     }
 
     /// Alpha-weighted average of a rectangular region.
-    pub fn averageColorRectWeighted(self: *const Bitmap, rx: u32, ry: u32, rw: u32, rh: u32) ColorRGBA {
+    pub fn averageColorRectWeighted(self: *const Bitmap, rx: u32, ry: u32, rw: u32, rh: u32) ColorRgba {
         const x0: usize = @min(rx, self.width);
         const y0: usize = @min(ry, self.height);
         const x1: usize = @min(@as(usize, rx) + @as(usize, rw), self.width);
@@ -336,7 +336,7 @@ pub const Bitmap = struct {
             }
         }
         if (sum_a == 0) return .transparent;
-        return ColorRGBA.init(
+        return ColorRgba.init(
             @intCast(sum_r / sum_a),
             @intCast(sum_g / sum_a),
             @intCast(sum_b / sum_a),
@@ -345,7 +345,7 @@ pub const Bitmap = struct {
     }
 
     /// Average a flat pixel slice (whole image fast path).
-    fn averageOfSlice(pixels: []const ColorRGBA) ColorRGBA {
+    fn averageOfSlice(pixels: []const ColorRgba) ColorRgba {
         if (pixels.len == 0) return .transparent;
         var sum_r: u64 = 0;
         var sum_g: u64 = 0;
@@ -358,7 +358,7 @@ pub const Bitmap = struct {
             sum_a += px.channels.a;
         }
         const n: u64 = pixels.len;
-        return ColorRGBA.init(
+        return ColorRgba.init(
             @intCast(sum_r / n),
             @intCast(sum_g / n),
             @intCast(sum_b / n),
@@ -366,7 +366,7 @@ pub const Bitmap = struct {
         );
     }
 
-    fn averageWeightedOfSlice(pixels: []const ColorRGBA) ColorRGBA {
+    fn averageWeightedOfSlice(pixels: []const ColorRgba) ColorRgba {
         if (pixels.len == 0) return .transparent;
         var sum_r: u64 = 0;
         var sum_g: u64 = 0;
@@ -380,7 +380,7 @@ pub const Bitmap = struct {
             sum_a += a;
         }
         if (sum_a == 0) return .transparent;
-        return ColorRGBA.init(
+        return ColorRgba.init(
             @intCast(sum_r / sum_a),
             @intCast(sum_g / sum_a),
             @intCast(sum_b / sum_a),
@@ -446,7 +446,7 @@ test "solid red 4x4" {
     try std.testing.expectEqual(@as(usize, 16), bmp.pixels.len);
 
     for (bmp.pixels) |px| {
-        try std.testing.expectEqual(ColorRGBA.init(255, 0, 0, 255), px);
+        try std.testing.expectEqual(ColorRgba.init(255, 0, 0, 255), px);
     }
 
     const avg = bmp.averageColor();
@@ -499,9 +499,9 @@ test "indexed 2x2" {
     try std.testing.expectEqual(@as(u32, 2), bmp.width);
     try std.testing.expectEqual(@as(u32, 2), bmp.height);
 
-    try std.testing.expect(bmp.getPixel(0, 0).eql(ColorRGBA.init(255, 0, 0, 255)));
-    try std.testing.expect(bmp.getPixel(1, 0).eql(ColorRGBA.init(0, 255, 0, 255)));
-    try std.testing.expect(bmp.getPixel(0, 1).eql(ColorRGBA.init(0, 0, 255, 255)));
+    try std.testing.expect(bmp.getPixel(0, 0).eql(ColorRgba.init(255, 0, 0, 255)));
+    try std.testing.expect(bmp.getPixel(1, 0).eql(ColorRgba.init(0, 255, 0, 255)));
+    try std.testing.expect(bmp.getPixel(0, 1).eql(ColorRgba.init(0, 0, 255, 255)));
     try std.testing.expect(bmp.getPixel(1, 1).isTransparent());
 }
 

@@ -211,8 +211,8 @@ pub fn applyAncestorLogic(
 
     if (parent_sprite.isEmpty()) return .empty;
     const seeds = world.quad_cache.getChunkSeeds(key);
-    var noise_hash_1 = seeding.FastHash.hash2d(.{ seeds[0][0], seeds[0][1] }, bx, by);
-    const noise_hash_2 = seeding.FastHash.hash2d(.{ seeds[0][2], seeds[0][3] }, bx, by);
+    var noise_hash_1 = seeding.FastHash.hash2d(.{ seeds.value[0].value[0], seeds.value[0].value[1] }, bx, by);
+    const noise_hash_2 = seeding.FastHash.hash2d(.{ seeds.value[0].value[2], seeds.value[0].value[3] }, bx, by);
     if (parent_sprite == .edge_stone)
         return Block.makeBasicBlock(parent_sprite, @truncate(noise_hash_2));
 
