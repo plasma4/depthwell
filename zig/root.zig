@@ -124,20 +124,21 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
     } else {
         const selected_column = KeyBits.getNumber(memory.game.keys_held_mask);
         if (!(inventory.selected_sprite == .unselected and selected_column == 65535)) {
+            const INVENTORY_WIDTH = inventory.INVENTORY_WIDTH;
             const slot_len = active_slots.len;
-            const current_column = inventory.getSelectedIndex() % 10;
+            const current_column = inventory.getSelectedIndex() % INVENTORY_WIDTH;
             inventory.selected_row = @min(
-                @as(u16, @intCast(slot_len / 10)), // zeroth row holds 10 slots, so this works out
+                @as(u16, @intCast(slot_len / INVENTORY_WIDTH)), // zeroth row holds 10 slots, so this works out
                 inventory.selected_row,
             );
             // get index of selected sprite by checking already selected sprite type
-            var selected_id = inventory.selected_row * 10 +
+            var selected_id = inventory.selected_row * INVENTORY_WIDTH +
                 if (selected_column == 65535) current_column else selected_column;
 
             // Only allow this selection if the slot actually exists
             if (selected_id >= slot_len) {
-                if (selected_id >= 10) {
-                    selected_id -= 10;
+                if (selected_id >= INVENTORY_WIDTH) {
+                    selected_id -= INVENTORY_WIDTH;
                     inventory.selected_row -= 1;
                 }
             } else {
@@ -160,7 +161,7 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
         }
     }
 
-    // of course, we must TODO: also make this switch when portal logic happens
+    // of course, we must TODO: also make this switch when we implement portal logic
     const just_increased_depth = is_debug and KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask);
     // increase the depth (testing hotkey)
     if (just_increased_depth) {
@@ -218,11 +219,11 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
 pub export fn mixSeed(number: u64) i64 {
     // IMPORTANT! For some reason, it appears that this returns an `i64` even with `u64` return type.
     // Therefore, that's the type we return.
-    return @intCast(seeding.mixBaseSeed(&memory.game.seed, number).value[0] >> 1);
+    return @intCast(seeding.mixBaseSeed(memory.game.seed, number).value[0] >> 1);
 }
 pub export fn mixSeedF64(number: u64) f64 { // same thing as mix_seed but f64
     return @as(f64, @floatFromInt(
-        seeding.mixBaseSeed(&memory.game.seed, number).value[0] >> 1,
+        seeding.mixBaseSeed(memory.game.seed, number).value[0] >> 1,
     )) / seeding.POW_2_64;
 }
 

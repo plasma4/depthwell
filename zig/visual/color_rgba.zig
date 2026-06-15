@@ -253,7 +253,7 @@ pub const ColorRgba = extern union {
     }
 };
 
-test "ColorRgba hex codes" {
+test "hex codes" {
     // Standard 6-character hex (no #)
     const c1 = comptime ColorRgba.fromHex("123456");
     try std.testing.expectEqual(@as(u8, 0x12), c1.channels.r);
@@ -283,7 +283,7 @@ test "ColorRgba hex codes" {
     try std.testing.expect(black.eql(ColorRgba.black));
 }
 
-test "ColorRgba color modification" {
+test "color modification" {
     // A color equal to rgb(8, 240, 0).
     var test_color = comptime ColorRgba.fromHex("#08f000");
     test_color.channels.a -|= 16; // saturating subtraction
@@ -300,7 +300,7 @@ test "ColorRgba color modification" {
     try std.testing.expectEqual(0xff, test_color.channels.g);
 }
 
-test "ColorRgba perceptual luminance" {
+test "perceptual luminance" {
     const pure_green = ColorRgba.init(0, 255, 0, 255);
     const pure_blue = ColorRgba.init(0, 0, 255, 255);
 
@@ -310,7 +310,7 @@ test "ColorRgba perceptual luminance" {
     try std.testing.expect(lum_g > lum_b * 9);
 }
 
-test "ColorRgba luminance calculation" {
+test "luminance calculation" {
     const gray = ColorRgba.init(100, 100, 100, 255);
     try std.testing.expectEqual(@as(u8, 100), gray.luminance());
 
@@ -321,7 +321,7 @@ test "ColorRgba luminance calculation" {
     try std.testing.expectEqual(@as(u8, 18), custom.luminance());
 }
 
-test "ColorRgba mix interpolation" {
+test "mix interpolation" {
     const red = ColorRgba.init(255, 0, 0, 255);
     const blue = ColorRgba.init(0, 0, 255, 255);
 
@@ -339,7 +339,7 @@ test "ColorRgba mix interpolation" {
     try std.testing.expectEqual(@as(u8, 0), mid.channels.g);
 }
 
-test "ColorRgba color distance" {
+test "color distance" {
     const c1 = ColorRgba.init(255, 0, 0, 255);
     const c2 = ColorRgba.init(255, 0, 0, 255);
     // Distance to self should ALWAYS be 0
@@ -351,7 +351,7 @@ test "ColorRgba color distance" {
     try std.testing.expect(dist > 100000.0 and dist < 1000000.0);
 }
 
-test "ColorRgba packed layout integrity" {
+test "packed layout integrity" {
     const color = ColorRgba.init(0xAA, 0xBB, 0xCC, 0xDD);
     const as_u32: u32 = color.word;
 
@@ -364,7 +364,7 @@ test "ColorRgba packed layout integrity" {
     }
 }
 
-test "ColorRgba eql" {
+test "eql" {
     const c1 = ColorRgba.init(10, 20, 30, 40);
     const c2 = ColorRgba.init(10, 20, 30, 40);
     const c3 = ColorRgba.init(11, 20, 30, 40);
@@ -373,7 +373,7 @@ test "ColorRgba eql" {
     try std.testing.expect(!c1.eql(c3));
 }
 
-test "ColorRgba hue" {
+test "hue" {
     // Primary / Secondary colors
     try std.testing.expectEqual(@as(u16, 0), ColorRgba.init(255, 0, 0, 255).hue());
     try std.testing.expectEqual(@as(u16, 120), ColorRgba.init(0, 255, 0, 255).hue());
@@ -386,7 +386,7 @@ test "ColorRgba hue" {
     try std.testing.expectEqual(@as(u16, 0), ColorRgba.black.hue());
 }
 
-test "ColorRgba saturation" {
+test "saturation" {
     try std.testing.expectEqual(@as(u8, 255), ColorRgba.init(255, 0, 0, 255).saturation());
     try std.testing.expectEqual(@as(u8, 0), ColorRgba.white.saturation());
     try std.testing.expectEqual(@as(u8, 0), ColorRgba.black.saturation());
@@ -395,7 +395,7 @@ test "ColorRgba saturation" {
     try std.testing.expectEqual(@as(u8, 127), ColorRgba.init(200, 100, 100, 255).saturation());
 }
 
-test "ColorRgba value and lightness" {
+test "value and lightness" {
     const c = ColorRgba.init(50, 128, 10, 255);
 
     // Value = max channel
@@ -411,7 +411,7 @@ test "ColorRgba value and lightness" {
     try std.testing.expectEqual(@as(u8, 0), ColorRgba.black.lightness());
 }
 
-test "ColorRgba brightness" {
+test "brightness" {
     try std.testing.expectEqual(@as(u8, 255), ColorRgba.white.brightness());
     try std.testing.expectEqual(@as(u8, 0), ColorRgba.black.brightness());
 
@@ -419,7 +419,7 @@ test "ColorRgba brightness" {
     try std.testing.expectEqual(@as(u8, 195), ColorRgba.init(0, 255, 0, 255).brightness());
 }
 
-test "ColorRgba opacity checks" {
+test "opacity checks" {
     try std.testing.expect(ColorRgba.white.isOpaque());
     try std.testing.expect(!ColorRgba.white.isTransparent());
 
@@ -432,7 +432,7 @@ test "ColorRgba opacity checks" {
     try std.testing.expect(!partial.isTransparent());
 }
 
-test "ColorRgba invert and grayscale" {
+test "invert and grayscale" {
     const c = ColorRgba.init(50, 100, 150, 200);
 
     const inv = c.invert();
@@ -449,7 +449,7 @@ test "ColorRgba invert and grayscale" {
     try std.testing.expectEqual(@as(u8, 200), gray.channels.a);
 }
 
-test "ColorRgba composite_over" {
+test "composite_over" {
     const bg = ColorRgba.init(255, 0, 0, 255); // Solid red
     const fg = ColorRgba.init(0, 0, 255, 127); // Semi-transparent blue
 
@@ -473,7 +473,7 @@ test "ColorRgba composite_over" {
     try std.testing.expectEqual(fg_solid.channels.r, blended_over_transparent.channels.r);
 }
 
-test "ColorRgba with_alpha and average" {
+test "with_alpha and average" {
     const c1 = ColorRgba.white;
     const c2 = c1.withAlpha(128);
     try std.testing.expectEqual(@as(u8, 255), c2.channels.r);

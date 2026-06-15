@@ -741,7 +741,7 @@ pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
 /// Generates decorative blocks (such as mushrooms or ceiling plants).
 /// Continues from step 5 in `addOres()`.
 ///
-/// 6. Adds blocks, primarily decorations, that require certain anchor types (`AnchorKind` in zig/types/sprite.zig).
+/// 6. Adds blocks, primarily decorations, that require certain anchor types (`AnchorKind` in types/sprite.zig).
 pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12) void {
     // While these don't fully work across chunks, it's almost impossible to practically notice.
 
@@ -759,23 +759,24 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
             }
 
             if (!block.isEmpty()) continue;
-            if (block.isAdjacentBlockSolid(EdgeFlags.BOTTOM)) {
+            // Check calculated bitmask directly to avoid isAdjacentBlockSolid logic discrepancies
+            if ((block.edge_flags & types.EdgeFlags.BOTTOM) != 0) {
                 const val = rng_decor.next();
-                // returns Z+1 if Z is even and Z-1 if Z is odd
-                const other_block_x = block_x ^ 1; // guaranteed to be from 0-15, no OOB block x-value
 
-                // Only if the other block is also empty AND can have a decor do we create a 2x1 decor sprite!
-                const other_block = &target_chunk.blocks[other_block_x + block_y * CHUNK_SIZE];
-                if (other_block.isEmpty() and other_block.isAdjacentBlockSolid(EdgeFlags.BOTTOM) and block_x != CHUNK_SIZE - 1) {
-                    if (val >= oddsNum(0.98)) {
-                        // we are modifying the block on the left. force the type of the block to the right too!
-                        block.id = .big_tree1_left;
-                        forced_next_sprite_type = .big_tree1_right;
-                        continue;
-                    } else if (val >= oddsNum(0.97)) {
-                        block.id = .big_tree2_left;
-                        forced_next_sprite_type = .big_tree2_right;
-                        continue;
+                // Only initiate 2x1 tree placement on even columns to prevent asymmetric overwrites
+                if (block_x % 2 == 0 and block_x != CHUNK_SIZE - 1) {
+                    const other_block_x = block_x + 1;
+                    const other_block = &target_chunk.blocks[other_block_x + block_y * CHUNK_SIZE];
+                    if (other_block.isEmpty() and ((other_block.edge_flags & types.EdgeFlags.BOTTOM) != 0)) {
+                        if (val >= oddsNum(0.98)) {
+                            block.id = .big_tree1_left;
+                            forced_next_sprite_type = .big_tree1_right;
+                            continue;
+                        } else if (val >= oddsNum(0.97)) {
+                            block.id = .big_tree2_left;
+                            forced_next_sprite_type = .big_tree2_right;
+                            continue;
+                        }
                     }
                 }
 
@@ -800,7 +801,8 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
             const idx = block_x + block_y * CHUNK_SIZE;
             var block = &target_chunk.blocks[idx];
             if (!block.isEmpty()) continue;
-            const has_ceiling = block.isAdjacentBlockSolid(types.EdgeFlags.getFlagBit(0, -1));
+            // Direct bitmask query to bypass isAdjacentBlockSolid inconsistencies
+            const has_ceiling = (block.edge_flags & types.EdgeFlags.TOP) != 0;
 
             // Local check for spiral plant growth (allowed to be chunk-local).
             const is_spiral_above = if (block_y > 0)

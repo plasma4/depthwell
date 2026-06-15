@@ -45,8 +45,8 @@ pub const AncestorCache = struct {
     var clock: [NUM_TIERS][TIER_SETS]u4 = @splat(@splat(0));
     var hand: [NUM_TIERS][TIER_SETS]u2 = @splat(@splat(0));
 
-    /// Retrieves a chunk by DepthCoordinate. Searches the specific depth tier.
-    /// Returns a mutable pointer to allow for in-place updates or direct reads.
+    /// Retrieves a chunk by `DepthCoordinate`; searches the specific depth tier.
+    /// Returns a mutable pointer.
     pub fn get(key: DepthCoordinate) ?*Chunk {
         std.debug.assert(!isHorizonDepth(key.depth));
 
@@ -250,6 +250,11 @@ pub fn applyAncestorLogic(
             .empty; // bypass edges logic too
     }
 
+    // Fallback for all other non-foundation blocks (decorations, chests, furnaces, liquids, etc.)
+    if (!parent_sprite.isFoundation()) {
+        return Block.makeBasicBlock(parent_sprite.evolvesTo(), @truncate(noise_hash_2));
+    }
+
     // var seed = parent_block.seed;
     if (parent_sprite.isFoundation()) { // we don't want non-solid blocks to become solid, since the player could be in them
         const edges_list = comptime get4x4List(
@@ -259,21 +264,23 @@ pub fn applyAncestorLogic(
             \\1111
         );
         inline for (edges_list) |id| {
-            if (noise_hash_1 % 4 == 0) {
-                // 25% odds to randomly take a parent neighbor's sprite type now!
+            if (id == local_id) {
+                if (noise_hash_1 % 4 == 0) {
+                    // 25% odds to randomly take a parent neighbor's sprite type now!
 
-                // each block gets different noise with right-shift
-                const noise: u3 = @truncate(noise_hash_1);
-                noise_hash_1 >>= @bitSizeOf(@TypeOf(noise));
+                    // each block gets different noise with right-shift
+                    const noise: u3 = @truncate(noise_hash_1);
+                    noise_hash_1 >>= @bitSizeOf(@TypeOf(noise));
 
-                const parent = parent_neighbors[noise];
-                if (!parent.isEmpty()) parent_sprite = parent.id;
-                if (parent_sprite == .edge_stone) return .empty;
-            } else if (noise_hash_1 % 8 == 2) {
-                // 12.5% odds for edges to become empty
-                const corner_id = getCornerId(id);
-                const is_corner_empty = !corners_nonempty[corner_id];
-                if (is_corner_empty) return .empty;
+                    const parent = parent_neighbors[noise];
+                    if (!parent.isEmpty()) parent_sprite = parent.id;
+                    if (parent_sprite == .edge_stone) return .empty;
+                } else if (noise_hash_1 % 8 == 2) {
+                    // 12.5% odds for edges to become empty
+                    const corner_id = getCornerId(id);
+                    const is_corner_empty = !corners_nonempty[corner_id];
+                    if (is_corner_empty) return .empty;
+                }
             }
         }
     }
@@ -361,10 +368,6 @@ pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Block {
     const start_px = @as(i32, @intCast(p_info_origin.bx)) - 1;
     const start_py = @as(i32, @intCast(p_info_origin.by)) - 1;
 
-    // Small local cache for the 1-4 parent chunks required for this neighborhood
-    var cached_chunks: [4]?*const Chunk = @splat(null);
-    var cached_coords: [4]Coordinate = undefined;
-
     for (0..6) |y_idx| {
         for (0..6) |x_idx| {
             const lx = start_px + @as(i32, @intCast(x_idx));
@@ -376,7 +379,6 @@ pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Block {
                 .{ chunk_off_x, chunk_off_y },
                 parent_depth,
             ) orelse {
-                // result[y_idx][x_idx] = if (parent_depth == STARTING_ZOOM_TIMES) .edge_stone else .empty;
                 result[y_idx][x_idx] = .empty;
                 continue;
             };
@@ -391,23 +393,9 @@ pub fn getAncestorNeighborhood(key: DepthCoordinate) [6][6]Block {
                 continue;
             }
 
-            var chunk: ?*const Chunk = null;
-            for (0..4) |i| {
-                if (cached_chunks[i]) |c| {
-                    if (cached_coords[i].eql(target_nc)) {
-                        chunk = c;
-                        break;
-                    }
-                } else {
-                    const new_chunk = getAncestorChunk(target_nc.asDepthCoordinate(parent_depth));
-                    cached_chunks[i] = new_chunk;
-                    cached_coords[i] = target_nc;
-                    chunk = new_chunk;
-                    break;
-                }
-            }
-
-            result[y_idx][x_idx] = chunk.?.blocks[
+            // Fetch parent chunk pointer and immediately extract block to avoid stack copies
+            const chunk_ptr = getAncestorChunk(target_nc.asDepthCoordinate(parent_depth));
+            result[y_idx][x_idx] = chunk_ptr.blocks[
                 (@as(usize, @intCast(@mod(ly, 16))) << 4) |
                     @as(usize, @intCast(@mod(lx, 16)))
             ];

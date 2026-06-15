@@ -38,7 +38,7 @@ pub const PickaxeType = enum {
 /// Type of pickaxe equipped.
 pub var pickaxe_type: PickaxeType = .stone;
 
-/// Updates mining and placing blocks. Should be called from `tick()` inside zig/root.zig.
+/// Updates mining and placing blocks. Should be called from `tick()` inside root.zig.
 pub fn handleMiningAndPlacing(logic_speed: f64) void {
     if (mouse.just_mouse_down and inventory.getHoveredInventorySprite() != null) {
         // use mouse states to prevent the player from placing blocks when actually selecting something from the inventory
@@ -243,7 +243,7 @@ comptime {
         const field_sprite: Sprite = @enumFromInt(field.value);
 
         // If it's a valid, solid block, it MUST have a defined mining strength.
-        if (field_sprite.isInWorld() and field_sprite.isSolid()) {
+        if (field_sprite.isInWorld() and field_sprite.isFoundation()) {
             if (getSpriteStrength(field_sprite) == null) {
                 @compileError("Sprite is valid and solid but missing a strength value in get_sprite_strength: " ++ field.name);
             }

@@ -73,8 +73,8 @@ pub const DepthCoordinate = struct {
     /// Semantically equivalent to null.
     pub const invalid = DepthCoordinate{
         .depth = 0,
-        .quadrant = undefined,
-        .suffix = undefined,
+        .quadrant = 0,
+        .suffix = .{ 0, 0 },
     };
 
     /// Active suffix (stored as a vector). Should not be set manually; must call `getParent()` to decrease the depth for depths beyond `HORIZON_DEPTH`.
@@ -135,13 +135,18 @@ pub const DepthCoordinate = struct {
     /// Handles depth decrement, acting as the `pushLayer()` "inverse" for a `DepthCoordinate`.
     pub inline fn getParent(self: @This()) @This() {
         const parent_depth = self.depth - 1;
+        const threshold = if (memory.game.depth <= memory.HORIZON_DEPTH)
+            memory.HORIZON_DEPTH
+        else
+            memory.game.depth - memory.HORIZON_DEPTH;
 
         // No rebasing exists at or below the horizon so bit-shifting does the trick.
         if (self.depth <= memory.HORIZON_DEPTH) {
+            const parent_quadrant: u32 = if (parent_depth < threshold) 0 else self.quadrant;
             return .{
                 .suffix = self.suffix >> @splat(memory.ZOOM_LOG2),
                 .depth = parent_depth,
-                .quadrant = self.quadrant, // below horizon, quadrant is always 0.
+                .quadrant = parent_quadrant,
             };
         }
 
@@ -162,7 +167,10 @@ pub const DepthCoordinate = struct {
         // Parent quadrant is the macro-cell this child belonged to.
         const parent_qx = cell_x / ZOOM_FACTOR;
         const parent_qy = cell_y / ZOOM_FACTOR;
-        const parent_quadrant: u32 = @intCast(parent_qx + parent_qy * 2);
+        var parent_quadrant: u32 = @intCast(parent_qx + parent_qy * 2);
+        if (parent_depth < threshold) {
+            parent_quadrant = 0;
+        }
 
         // The top bits that "fell off" are the remainder!
         const top_x = cell_x % ZOOM_FACTOR;
@@ -305,7 +313,7 @@ pub const SimBuffer = struct {
 
     /// Synchronizes the buffer to center on the provided coordinate/position.
     /// Safely handles shifts exceeding 1 chunk per frame via `shift`.
-    pub fn sync(coord: Coordinate, shift: Vec2i) void {
+    pub inline fn sync(coord: Coordinate, shift: Vec2i) void {
         const og = origin orelse {
             fullRefresh(getClampedMove(coord, -8, -8));
             return;
@@ -634,11 +642,57 @@ pub const QuadCache = struct {
 
     /// Returns the 512-bit seed of a specified quadrant (or the global seed if the current depth is <= HORIZON_DEPTH).
     pub inline fn getQuadrantSeed(self: *const @This(), quadrant: u2, depth: u64) seeding.Seed {
-        if (depth <= HORIZON_DEPTH) return memory.game.seed;
-        return self.path_hashes.value[quadrant];
+        std.debug.assert(memory.game.depth > 32 or quadrant == 0);
+        if (depth == memory.game.depth) {
+            return self.path_hashes.value[quadrant];
+        }
+
+        // Trace the exact quadrant sequence and path cells backwards
+        var q_seq: [32]u2 = undefined;
+        var x_seq: [32]u3 = undefined;
+        var y_seq: [32]u3 = undefined;
+
+        var curr_q: u2 = quadrant;
+        var step: u64 = @intCast(depth);
+        while (step > memory.HORIZON_DEPTH) : (step -= 1) {
+            const idx = step - memory.HORIZON_DEPTH - 1;
+            q_seq[@intCast(idx)] = curr_q;
+
+            const slot: usize = @intCast(idx / 21);
+            const shift: u6 = @intCast((idx % 21) * 3);
+            const left_cell_x = (self.left_path.at(slot).* >> shift) & 7;
+            const top_cell_y = (self.top_path.at(slot).* >> shift) & 7;
+
+            x_seq[@intCast(idx)] = @intCast(left_cell_x);
+            y_seq[@intCast(idx)] = @intCast(top_cell_y);
+
+            const cell_x = left_cell_x + (curr_q % 2);
+            const cell_y = top_cell_y + (curr_q / 2);
+            curr_q = @intCast((cell_x / 4) + (cell_y / 4) * 2);
+        }
+
+        // Hash forward along the single-track path (reducing Blake3 hashes by 75%)
+        var current_seed = memory.game.seed;
+        var step_depth: u64 = memory.HORIZON_DEPTH + 1;
+        while (step_depth <= depth) : (step_depth += 1) {
+            const idx = step_depth - memory.HORIZON_DEPTH - 1;
+            const q_id = q_seq[@intCast(idx)];
+            const left_cell_x = x_seq[@intCast(idx)];
+            const top_cell_y = y_seq[@intCast(idx)];
+
+            const cell_x = left_cell_x + (q_id % 2);
+            const cell_y = top_cell_y + (q_id / 2);
+            current_seed = seeding.mixCoordinateSeed(
+                current_seed,
+                cell_x % 4,
+                cell_y % 4,
+                step_depth,
+            );
+        }
+        return current_seed;
     }
 
-    /// Resolves the chunk seeds. If depth > 32, uses the quadrant seeds.
+    /// Resolves a chunk's 4 seeds. If depth > 32 (horizon), uses the quadrant seeds.
     /// Uses a 4-way set-associative cache to optimize fractal generation and boundary checks.
     pub inline fn getChunkSeeds(self: *@This(), key: DepthCoordinate) ChunkSeeds {
         const h = key.hash();
@@ -654,7 +708,7 @@ pub const QuadCache = struct {
 
         const seed = self.getQuadrantSeed(@intCast(key.quadrant), key.depth);
         const chunk_seeds = seeding.mixChunkSeeds(
-            &seed,
+            seed,
             key.suffix,
             key.depth,
         );
@@ -801,7 +855,7 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
     }
 
     const chunk_seeds = quad_cache.getChunkSeeds(key);
-    var rng4 = seeding.ChaCha12.init(chunk_seeds.value[3]);
+    var rng4 = seeding.ChaCha12.init(&chunk_seeds.value[3]);
 
     const parent_neighborhood = root.ancestor.getAncestorNeighborhood(key);
     for (0..CHUNK_SIZE) |block_y| {
@@ -840,16 +894,22 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
 }
 
 /// Gets an already loaded or cached chunk without triggering any generation.
-pub fn getCachedChunk(coord: Coordinate) ?*const Chunk {
-    if (SimBuffer.get(coord)) |cached_ptr| {
-        return cached_ptr;
+pub fn getCachedChunk(key: DepthCoordinate) ?*const Chunk {
+    if (key.depth == memory.game.depth) {
+        if (SimBuffer.get(key.asCoord())) |cached_ptr| {
+            return cached_ptr;
+        }
+        if (ChunkCache.findIndex(key.asCoord())) |i| {
+            return &ChunkCache.chunks[i];
+        }
     }
-    if (ChunkCache.findIndex(coord)) |i| {
-        return &ChunkCache.chunks[i];
-    }
-    const key = DepthCoordinate.from(coord);
     if (mod_store.get(key)) |modified_chunk| {
         return modified_chunk;
+    }
+    if (key.depth != memory.game.depth) {
+        if (root.ancestor.AncestorCache.get(key)) |cached| {
+            return cached;
+        }
     }
     return null;
 }
@@ -872,7 +932,7 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     const seed_vec6: memory.Vec2u = seeds[10..12].*;
     const seed_vec7: memory.Vec2u = seeds[12..14].*;
 
-    var rng4 = seeding.ChaCha12.init(chunk_seeds.value[3]); // Visual touches only.
+    var rng4 = seeding.ChaCha12.init(&chunk_seeds.value[3]); // Visual touches only.
 
     const suffix = coord.suffix;
     const cx = suffix[0];
@@ -930,7 +990,7 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
 
     addEdgeFlags(chunk, coord, depth);
     // Decorate the base chunk here so that child depths inherit the results
-    var rng_decor = seeding.ChaCha12.init(quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth)).value[0]);
+    var rng_decor = seeding.ChaCha12.init(&quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth)).value[0]);
     procedural.addDecorations(chunk, &rng_decor);
 
     // Reset edge flags to 0xFF for empty blocks after decorations are completed!
@@ -957,20 +1017,6 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
     const is_base = (depth == STARTING_ZOOM_TIMES);
     const seeds = memory.game.seed2;
 
-    // Resolve adjacent chunks from cache once for faster border generation!
-    var neighbor_chunks: [3][3]?*const Chunk = undefined;
-    inline for (.{ -1, 0, 1 }) |dy| {
-        inline for (.{ -1, 0, 1 }) |dx| {
-            if (dx == 0 and dy == 0) {
-                neighbor_chunks[dy + 1][dx + 1] = target_chunk;
-            } else if (coord.moveAtDepth(.{ dx, dy }, depth)) |nc| {
-                neighbor_chunks[dy + 1][dx + 1] = getCachedChunk(nc);
-            } else {
-                neighbor_chunks[dy + 1][dx + 1] = null;
-            }
-        }
-    }
-
     // Fill the 1-pixel border (72 pixels total)
     var hy: i32 = -1;
     while (hy <= CHUNK_SIZE) : (hy += 1) {
@@ -978,22 +1024,19 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
         while (hx <= CHUNK_SIZE) : (hx += 1) {
             if (hx >= 0 and hx < CHUNK_SIZE and hy >= 0 and hy < CHUNK_SIZE) continue;
 
-            const ndx = @divFloor(hx, CHUNK_SIZE);
-            const ndy = @divFloor(hy, CHUNK_SIZE);
-            const lx: u4 = @intCast(@mod(hx, CHUNK_SIZE));
-            const ly: u4 = @intCast(@mod(hy, CHUNK_SIZE));
+            const ndx = @divFloor(hx, @as(i32, CHUNK_SIZE));
+            const ndy = @divFloor(hy, @as(i32, CHUNK_SIZE));
+            const lx: u4 = @intCast(@mod(hx, @as(i32, CHUNK_SIZE)));
+            const ly: u4 = @intCast(@mod(hy, @as(i32, CHUNK_SIZE)));
 
-            if (neighbor_chunks[@intCast(ndy + 1)][@intCast(ndx + 1)]) |cached_chunk| {
-                halo[@intCast(hy + 1)][@intCast(hx + 1)] = cached_chunk.getBlock(lx, ly).id;
-                continue;
-            }
-
-            const target_nc = coord.moveAtDepth(.{ ndx, ndy }, depth) orelse {
-                halo[@intCast(hy + 1)][@intCast(hx + 1)] = .none;
-                continue;
-            };
-
-            halo[@intCast(hy + 1)][@intCast(hx + 1)] = if (is_base) blk: {
+            // If we are at the base depth, we MUST bypass cached neighbor chunks to ensure
+            // that calculated edge flags are independent of neighboring decoration states.
+            // This guarantees perfectly deterministic RNG consumption during addDecorations!
+            if (is_base) {
+                const target_nc = coord.moveAtDepth(.{ ndx, ndy }, depth) orelse {
+                    halo[@intCast(hy + 1)][@intCast(hx + 1)] = .none;
+                    continue;
+                };
                 const abs_nc = target_nc.suffix;
                 const base_data = procedural.getBaseSpriteType(
                     @intCast(abs_nc[0]),
@@ -1002,8 +1045,6 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                     ly,
                 );
                 var s = base_data.sprite;
-
-                // Critically, ores can be skipped because structure code is "blind" to which type of solid the block is.
                 s = procedural.addStructures(
                     s,
                     @as(u32, @intCast(abs_nc[0] * 16)) + lx,
@@ -1011,8 +1052,17 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                     seeds[12..14].*,
                     seeds[2..4].*,
                 );
-                break :blk s;
-            } else root.ancestor.getInheritedMaterial(
+                halo[@intCast(hy + 1)][@intCast(hx + 1)] = s;
+                continue;
+            }
+
+            // Fallback for non-base depths (fractal inheritance calculations)
+            const target_nc = coord.moveAtDepth(.{ ndx, ndy }, depth) orelse {
+                halo[@intCast(hy + 1)][@intCast(hx + 1)] = .none;
+                continue;
+            };
+
+            halo[@intCast(hy + 1)][@intCast(hx + 1)] = root.ancestor.getInheritedMaterial(
                 target_nc.asDepthCoordinate(depth),
                 lx,
                 ly,
@@ -1067,7 +1117,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
             const lx: u4 = @intCast(@mod(rx, CHUNK_SIZE));
             const ly: u4 = @intCast(@mod(ry, CHUNK_SIZE));
             const nc = k.asCoord().moveAtDepth(.{ ndx, ndy }, k.depth) orelse return .empty;
-            if (getCachedChunk(nc)) |cached_chunk| {
+            if (getCachedChunk(nc.asDepthCoordinate(k.depth))) |cached_chunk| {
                 return cached_chunk.getBlock(lx, ly);
             }
             return root.ancestor.getInheritedMaterial(nc.asDepthCoordinate(k.depth), lx, ly);
@@ -1381,10 +1431,10 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
     // Ensure entry exists in history
     const entry_id = mod_store.index.get(key) orelse blk: {
         const new_id = mod_store.history.len;
-        // Seed new modification with current generated state if it's the first edit
-        var base_chunk: Chunk = undefined;
-        writeChunkModless(&base_chunk, coord);
-        mod_store.history.append(alloc, base_chunk) catch memory.oom();
+        _ = mod_store.history.addOne(alloc) catch memory.oom();
+
+        // Write directly to the newly slot in-place
+        writeChunkModless(mod_store.history.at(new_id), coord);
         mod_store.index.put(key, new_id) catch memory.oom();
         break :blk new_id;
     };
@@ -1424,7 +1474,7 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
 
 /// Basic lookup to find a block's `Sprite` type for flag calculation.
 /// Checks caches, then modifications, then falls back to procedural logic.
-/// Ensures that we do not accidentally read SimBuffer data if checking an ancestor depth!
+/// Ensures that we do not accidentally read `SimBuffer` data if checking an ancestor depth!
 pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
     if (depth == memory.game.depth) { // easy!
         if (SimBuffer.get(coord)) |chunk| return chunk.blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
@@ -1502,6 +1552,7 @@ pub fn clearCaches(comptime clear_ancestors: bool) void {
     // TODO: we should probably switch to hashmaps and consolidate within ChunkCache for seed logic here
     quad_cache.seed_clock_bits = @splat(0);
     quad_cache.seed_hand = @splat(0);
+    quad_cache.seed_cache_keys = @splat(@splat(DepthCoordinate.invalid));
 
     if (clear_ancestors) root.ancestor.AncestorCache.clear();
 }
@@ -1584,7 +1635,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         const cell_y = top_cell_y + utils.intFromBool(u64, q_id >= 2);
         const old_q_id = utils.intFromBool(usize, cell_x >= ZOOM_FACTOR) + utils.intFromBool(usize, cell_y >= ZOOM_FACTOR) * 2;
         quad_cache.path_hashes.value[q_id] = seeding.mixCoordinateSeed(
-            &old_hashes.value[old_q_id],
+            old_hashes.value[old_q_id],
             @intCast(cell_x % ZOOM_FACTOR),
             @intCast(cell_y % ZOOM_FACTOR),
             depth,
@@ -1628,7 +1679,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         var next_materials: [4][4]Block = undefined;
 
         // Ancestor at H = D-32. Find the exact block we are located in to summarize the region correctly.
-        var trace_coord = memory.game.getPlayerCoord().asDepthCoordinate(depth);
+        var trace_coord = target_coord.asDepthCoordinate(depth);
         var t_bx: u4 = @intCast(@divTrunc(new_pos[0], memory.CHUNK_SIZE_SQ));
         var t_by: u4 = @intCast(@divTrunc(new_pos[1], memory.CHUNK_SIZE_SQ));
 

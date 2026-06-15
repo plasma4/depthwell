@@ -60,7 +60,7 @@ pub fn build(b: *std.Build) void {
         exe.lto = .none;
         exe.export_table = true;
 
-        // having these options enabled seems to freak the Zig compiler out a lot, so best to not use these for now
+        // having these lines uncommented seems to freak the Zig compiler out a lot, so best to not use these for now
         // exe.use_llvm = false;
         // exe.use_lld = false;
     } else if (optimize == .ReleaseFast) {
@@ -131,7 +131,6 @@ pub fn build(b: *std.Build) void {
 
     // validate!
     if (aseprite_path) |path| {
-        // Use "" for the layer name if you want the entire sprite (main.png)
         const export_main = addAsepriteStep(
             b,
             path,
@@ -143,7 +142,7 @@ pub fn build(b: *std.Build) void {
             b,
             path,
             "aseprite/main.aseprite",
-            "masks", // Ensure this matches the layer name exactly (or "Group/masks")
+            "masks",
             "mainMasked.png",
         );
 

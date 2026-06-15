@@ -87,8 +87,8 @@ pub const DropHandlers = struct {
         const chunk_seeds = root.world.quad_cache.getChunkSeeds(key);
 
         // Deterministic hash based on the absolute block coordinate in the world
-        const abs_x = coord.suffix[0] * 16 + bx;
-        const abs_y = coord.suffix[1] * 16 + by;
+        const abs_x = coord.suffix[0] *% 16 + bx; // (no +% needed)
+        const abs_y = coord.suffix[1] *% 16 + by;
         const seed_val = root.seeding.FastHash.hash2d(
             chunk_seeds.value[3].value[0..2].*,
             abs_x,
@@ -207,7 +207,7 @@ const rules = [_]SpriteRule{
     // Edge stone
     .{
         .{ .single = .edge_stone },
-        .{ .in_world = true },
+        .{ .in_world = true, .solid = true },
     },
     // Normal decor
     .{

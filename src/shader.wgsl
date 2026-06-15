@@ -1,32 +1,34 @@
 /*
- * Main shader for Depthwell. ADD ?raw FOR DEBUGGING SHADER TO THE END OF engineMaker.ts's `SHADER_SOURCE` VARIABLE TO NOT COMPRESS.
+ * Main shader for Depthwell.
+ * ADD ?raw FOR DEBUGGING THE SHADER TO THE END OF engineMaker.ts's `SHADER_SOURCE` VARIABLE.
+ * Remove ?raw in production.
  */
 
-// These are sprite sheet constants. Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
+// These are sprite sheet constants.
+// Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
 // See zig/state/world.zig's Sprite definitions for sprite type list.
-// These const values with /* VARIABLE_NAME */ are dynamically patched in from TypeScript, so do not set them here.
-const TILES_PER_ROW: f32 = /* TILES_PER_ROW */ 1 /* TILES_PER_ROW */;
-const TILES_PER_COLUMN: f32 = /* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */;
-const STONE_START: u32 = /* STONE_START */ 1 /* STONE_START */;
-const ORE_START: u32 = /* ORE_START */ 1 /* ORE_START */;
-const GEM_START: u32 = /* GEM_START */ 1 /* GEM_START */;
-const GEM_MASK_START: u32 = /* GEM_MASK_START */ 1 /* GEM_MASK_START */;
-const GEAR_ID: u32 = /* GEAR_ID */ 1 /* GEAR_ID */;
-const WATER_START: u32 = /* WATER_START */ 1 /* WATER_START */;
+override TILES_PER_ROW: f32 = 1.0;
+override TILES_PER_COLUMN: f32 = 1.0;
+override STONE_START: u32 = 1u;
+override ORE_START: u32 = 1u;
+override GEM_START: u32 = 1u;
+override GEM_MASK_START: u32 = 1u;
+override GEAR_ID: u32 = 1u;
+override WATER_START: u32 = 1u;
 
 const PI = radians(180.0);
 const TAU = radians(360.0);
 
-const TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
-const HP_SAMPLE_START = GEM_MASK_START + 8; // there are 8 gem masks and 16 HP masks
-const DECOR_START: u32 = HP_SAMPLE_START + 16;
+override TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
+override HP_SAMPLE_START: u32 = GEM_MASK_START + 8u; // there are 8 gem masks and 16 HP masks
+override DECOR_START: u32 = HP_SAMPLE_START + 16u;
 
 const TILE_SIZE: f32 = 16.0;
 const PIXEL_UV_SIZE: f32 = 1.0 / TILE_SIZE;
-const ATLAS_WIDTH: f32 = TILE_SIZE * TILES_PER_ROW;
-const ATLAS_HEIGHT: f32 = TILE_SIZE * TILES_PER_COLUMN;
-const SPRITE_W = TILE_SIZE / ATLAS_WIDTH;
-const SPRITE_H = TILE_SIZE / ATLAS_HEIGHT;
+override ATLAS_WIDTH: f32 = TILE_SIZE * TILES_PER_ROW;
+override ATLAS_HEIGHT: f32 = TILE_SIZE * TILES_PER_COLUMN;
+override SPRITE_W: f32 = TILE_SIZE / ATLAS_WIDTH;
+override SPRITE_H: f32 = TILE_SIZE / ATLAS_HEIGHT;
 const TEXTURE_BLEEDING_EPSILON = 0.5 / TILE_SIZE;
 
 // See EdgeFlags in zig/types/types.zig.
@@ -80,7 +82,10 @@ struct TileOutput {
     @location(4) @interpolate(flat) edge_flags: u32,
     @location(5) @interpolate(flat) light: f32,
     @location(6) @interpolate(flat) hp: u32,
-    @location(7) @interpolate(flat) seeds: vec3u, // seed1: these 20 bits are used as efficently as possible, seed2: murmurmix32'ed from seed, seed3: murmurmix32'ed from seed2
+    // seed1: murmurmix32'ed from raw seed data and HP mixed
+    // seed2: murmurmix32'ed from seed1
+    // seed3: murmurmix32'ed from seed2
+    @location(7) @interpolate(flat) seeds: vec3u,
     @location(8) @interpolate(flat) waterlogged: u32,
 };
 
@@ -252,6 +257,15 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
             }
         }
         return water_body(in);
+    }
+
+    if in.sprite_id >= 65000u && in.sprite_id <= 65256u {
+        // Heatmap logic!
+        let color = (f32(in.sprite_id - 65000u)) / 256.0;
+        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, and hue
+        let lab = oklch_to_oklab(lch);
+        let final_rgb = oklab_to_linear_srgb(lab);
+        return vec4f(final_rgb, 1.0);
     }
 
     // Determine waterlogged decoration state
@@ -749,7 +763,7 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     let warp_val = sin((coord.y * 2.0) / R * TAU + t * (20.0 * L_FREQ)) * 5.5 + cos((coord.x * 3.0) / R * TAU - t * (12.0 * L_FREQ)) * 4.0;
 
     let world = coord + vec2f(warp_val, -warp_val);
-    let world2 = coord + vec2f(warp_val, -warp_val) * vec2f(1.8, 2.3);
+    let world2 = coord - vec2f(warp_val, -warp_val);
 
     // First caustic layer
     // All layers are made to be periodic every 65536 pixels.
@@ -784,7 +798,7 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     return band_a + band_b + band_c * band_c * 0.2 + curvy_streak;
 }
 
-// Procedural effect for all but the top water sprite (returns linear sRGB)
+// Procedural effect for lighting (linear sRGB)
 fn water_body_linear(in: TileOutput) -> vec4f {
     let world = water_world(in);
     let t = scene.time;
@@ -796,7 +810,7 @@ fn water_body_linear(in: TileOutput) -> vec4f {
     lch.x = mix(0.52, 0.34, depth_t); // light surface
     lch.y = mix(0.10, 0.14, depth_t);// slightly more saturated deep
 
-    // Horizontal color band (Celeste's characteristic depth striping)
+    // Horizontal color band (depth striping)
     let band_t = sin(world.y / 24.0 + t * 0.4) * 0.5 + 0.5;
     lch.x += band_t * 0.04;
 

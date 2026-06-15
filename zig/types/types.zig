@@ -5,9 +5,10 @@ const root = @import("../root.zig");
 const GameState = @import("../memory.zig").GameState; // Direct relative import
 const GenerateOffsets = @import("../internal/offsets.zig").GenerateOffsets;
 
-/// Masked data representing keyboard key inputs in the game.
+// Note: generate_types.zig will skip all all functions in structs, including pub ones .
+
+/// Handles bitmasked data representing keyboard key inputs in the game.
 pub const KeyBits = struct {
-    // Note: generate_types.zig will skip all functions in structs, including pub ones (why would you have them here anyway??).
     /// Returns 2^index.
     inline fn mask(comptime index: u5) u32 {
         return @as(u32, 1) << index;

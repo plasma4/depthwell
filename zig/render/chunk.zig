@@ -179,7 +179,7 @@ inline fn updateRenderProperties(
 
     if (root.is_debug) {
         const qc = world.quad_cache;
-        const d: usize = @intCast(memory.game.depth);
+        const d: u64 = @intCast(memory.game.depth);
 
         const log_limit = @min(d, HORIZON_DEPTH);
         var suffix_array_x: [HORIZON_DEPTH]u64 = undefined;

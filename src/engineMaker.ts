@@ -4,15 +4,18 @@ import { MAX_DRAW_CALLS, GameEngine } from "./engine";
 
 /** The URL for the WebAssembly code (compiled from zig build). */
 import WASM_URL from "/public/main.wasm?url";
-/** The URL for the WebGPU shader code. ADD ?raw FOR DEBUGGING SHADER. */
-import SHADER_SOURCE from "./shader.wgsl?raw"; // sadly not possible to use .DEV env detection
+/**
+ * The URL for the WebGPU shader code.
+ * ADD ?raw FOR DEBUGGING THE SHADER; remove from the URL in production.
+ * */
+import SHADER_SOURCE from "./shader.wgsl"; // sadly not possible to use .DEV env detection
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_URL from "/assets/main.png?url";
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_MASK_URL from "/assets/mainMasked.png?url";
 import { CONFIG } from "./main";
 
-/** Creates a new GameEngine, sets up WebGPU shaders, and calls init() from Zig. */
+/** Creates a new GameEngine, sets up WebGPU shaders, and calls `init()` from Zig. */
 export async function create(
     canvas?: HTMLCanvasElement | string,
     options?: Zig.EngineOptions,
@@ -71,24 +74,39 @@ export async function create(
 
     // Firefox is silly and doesn't always support the rgba16float texture format for whatever reason
     // so we just fall back to "bgra8unorm"
-    const supportsP3 = window.matchMedia("(color-gamut: p3)").matches;
-    const format = device.features.has("canvas-rgba16float-support")
-        ? "rgba16float"
-        : "bgra8unorm";
+    var format: GPUTextureFormat = "rgba16float";
+    let supportsP3 = window.matchMedia("(color-gamut: p3)").matches;
+    let chosenColorSpace: PredefinedColorSpace = supportsP3
+        ? "display-p3"
+        : "srgb";
 
-    context.configure({
-        device,
-        format: format,
-        colorSpace:
-            supportsP3 && format === "rgba16float" ? "display-p3" : "srgb",
-        alphaMode: "opaque",
-    });
+    try {
+        context.configure({
+            device,
+            format: format,
+            colorSpace: chosenColorSpace,
+            alphaMode: "opaque",
+        });
+    } catch (e) {
+        format = "bgra8unorm";
+        chosenColorSpace = "srgb"; // Force sRGB for 8-bit fallback
+        context.configure({
+            device,
+            format: format,
+            colorSpace: chosenColorSpace,
+            alphaMode: "opaque",
+        });
+    }
 
     // Fetch WASM
+    const mem = new WebAssembly.Memory({
+        initial: 128,
+    }) as WebAssembly.Memory;
     const engineModule = await WebAssembly.instantiateStreaming(
         fetch(WASM_URL),
         {
             env: {
+                memory: mem,
                 // See how logging works in logger.zig. Logging is guaranteed to return valid arguments.
                 jsMessage: (
                     ptr: Zig.Pointer,
@@ -154,40 +172,19 @@ export async function create(
     }
     const shaderModule = device.createShaderModule({
         label: "Main shader",
-        // constant patching, basically override keyword in WGSL
-        code: SHADER_SOURCE.replace(
-            "/* TILES_PER_ROW */ 1 /* TILES_PER_ROW */",
-            "" + exports.getTilesPerRow(),
-        )
-            .replace(
-                "/* TILES_PER_COLUMN */ 1 /* TILES_PER_COLUMN */",
-                "" + exports.getTilesPerColumn(),
-            )
-            .replace(
-                "/* STONE_START */ 1 /* STONE_START */",
-                "" + exports.getStoneStart(),
-            )
-            .replace(
-                "/* ORE_START */ 1 /* ORE_START */",
-                "" + exports.getOreStart(),
-            )
-            .replace(
-                "/* GEM_START */ 1 /* GEM_START */",
-                "" + exports.getGemStart(),
-            )
-            .replace(
-                "/* GEM_MASK_START */ 1 /* GEM_MASK_START */",
-                "" + exports.getGemMaskStart(),
-            )
-            .replace(
-                "/* GEAR_ID */ 1 /* GEAR_ID */",
-                "" + exports.getGearStart(),
-            )
-            .replace(
-                "/* WATER_START */ 1 /* WATER_START */",
-                "" + exports.getWaterStart(),
-            ),
+        code: SHADER_SOURCE,
     });
+
+    const pipelineConstants = {
+        TILES_PER_ROW: exports.getTilesPerRow(),
+        TILES_PER_COLUMN: exports.getTilesPerColumn(),
+        STONE_START: exports.getStoneStart(),
+        ORE_START: exports.getOreStart(),
+        GEM_START: exports.getGemStart(),
+        GEM_MASK_START: exports.getGemMaskStart(),
+        GEAR_ID: exports.getGearStart(),
+        WATER_START: exports.getWaterStart(),
+    };
 
     const bindGroupLayout = device.createBindGroupLayout({
         label: "Main bind group layout",
@@ -227,10 +224,12 @@ export async function create(
         vertex: {
             module: shaderModule,
             entryPoint: "vs_tile",
+            constants: pipelineConstants,
         },
         fragment: {
             module: shaderModule,
             entryPoint: "fs_tile",
+            constants: pipelineConstants,
             targets: [
                 {
                     format: format,
@@ -264,10 +263,12 @@ export async function create(
         vertex: {
             module: shaderModule,
             entryPoint: "vs_background",
+            constants: pipelineConstants,
         },
         fragment: {
             module: shaderModule,
             entryPoint: "fs_background",
+            constants: pipelineConstants,
             targets: [{ format: format }],
         },
         primitive: {
@@ -286,10 +287,12 @@ export async function create(
         vertex: {
             module: shaderModule,
             entryPoint: "vs_entity",
+            constants: pipelineConstants,
         },
         fragment: {
             module: shaderModule,
             entryPoint: "fs_entity",
+            constants: pipelineConstants,
             targets: [
                 {
                     format: format,

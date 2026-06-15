@@ -59,10 +59,11 @@ Here are the basic terms (note that there are, for example, 16 possible subpixel
 - 1 Pixel = 16 Subpixels
 - 1 Block = 16 Pixels
 - 1 Chunk = 16 Blocks = 256 Pixels = 4,096 Subpixels
-- Depth = how "deep" the player is. Starts off at $2$, and we say the player is at depth $D$ at any given time. You can think of depth $D-1$ as having "16x16-chunk-level precision" while depth $D$ represents individual chunks. To the player, depth $D-1$ (where $D$ is the current depth) would be what the game was such as right _before_ entering a portal. (The portal would make everything look 4 times larger and increment $D$.)
-- $D$ is a shorthand for depth. $D-1$ means previous depth, $D-2$ is the depth before $D-1$.
-- The player starts off at `STARTING_ZOOM_TIMES`, which defaults to 2. So, $D$ starts off as 2 and $D-1$ doesn't exist until $D$ increases further.
-- $H$ represents $D-32$ (where $D$ is the current depth, which will change over time). When terms like $D-1$ or $H$ are referred to, assume that the current depth is high enough for that definition to be valid.
+- **Depth**: How "deep" the player is. Depth starts at $2$. Each time you enter a portal, the world zooms in by $4\text{x}$, making everything look 4 times larger, and the depth increases by 1.
+- **$D$**: Shorthand for the current depth. You can think of depth $D-1$ as the coordinate space you occupied right _before_ entering a portal.
+- **The Event Horizon ($H$)**: Shorthand for $D-32$. When you are deep in the fractal ($D \ge 34$), the game stops tracking individual blocks shallower than 32 levels above you, replacing them with a simplified 4x4 background grid.
+
+The player starts off at `STARTING_ZOOM_TIMES`, which defaults to 4. So, $D$ starts off as 4 and $D-1$ doesn't exist until $D$ increases further.
 
 The camera and the player work with (integeric) subpixels, while entities are considered in terms of (floating-point) pixels. Seeding of specific blocks in chunks and modifications concern themselves with blocks. Asking something "where" it is involves just chunks (see later).
 
@@ -81,69 +82,42 @@ pub const CHUNK_SIZE_SQ: comptime_int = CHUNK_SIZE * CHUNK_SIZE;
 pub const SUBPIXELS_IN_CHUNK: comptime_int = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 ```
 
-Now, we move on to locations (which also has some technical jargon, but I'll explain). Locations (named `Coordinate` internally) are addressed via a struct like this:
+Imagine the entire game world as a massive grid. Every time you zoom in, every single grid cell splits into a $2\text{x}2$ layout of $4$ smaller sub-cells.
 
-- There is a globally shared **prefix stack**, which is a memoized history of the path (not stored individually for each `Coordinate`, but inside the `QuadCache`).
-- Each coordinate has an **active suffix** (2 `u64` values, stored as a `@Vector`), representing a chunk's coordinate at the current depth. (`u64` means 64-bit unsigned integer, allowing $2^{64}$ possible values.) This is really `[32]u2` (32 numbers between 0-4) squashed together. This is **always relative to a quadrant**.
-- Finally, a **quadrant ID** is stored as a `u2` integer from 0-3. This identifies which of the 4 static $2^{64}$-wide quad-caches we are "using" for the prefix stack. Each Quad-Cache (QC) references a specific Prefix Stack.
+Your position in the world is essentially a string of directions: _"From the top level, go to cell 2, then go to sub-cell 3, then sub-cell 1..."_ Because every step is a choice between 0, 1, 2, or 3, each step can be represented as a tiny **2-bit number** (a `u2`).
+
+To represent where any chunk is, we use a struct called `Coordinate` composed of three parts:
+
+- The **active suffix (`Coordinate.suffix`)** is an array of two 64-bit unsigned integers (`u64` vectors) representing the X and Y paths of your zoom steps. Because each step is 2 bits, we can pack exactly 32 steps ($32 \times 2 = 64$ bits) into this single number. This is incredibly fast and memory-efficient!
+- The `QuadCache` or **prefix stack** is used because if you zoom deeper than 32 levels, we run out of bits in our 64-bit active suffix. The oldest steps at the top of the path "fall off" (overflow) and are pushed to a global prefix stack (`left_path` and `top_path`).
+- Finally, a **quadrant ID (`Coordinate.quadrant`)**: stores 2-bit number (0 to 3) identifying which of the 4 parent quadrants of the active zoom path the chunk belongs to.
 
 > [!NOTE]
-> Important detail! If the `depth` is at or below 32 (our "horizon limit"), the quadrant ID defaults to 0 and relies purely on the active suffix. Any processing of the active suffix will first determine the current depth and also "crop" the suffix.
+> Important detail! If your `depth` is at or below 32, the quadrant ID defaults to 0 and the game relies entirely on the 64-bit active suffix.
 
-The reason all this quadrant logic works is because of one essential fact: **_The `depth` can only INCREASE!_** The player can't zoom out, which is the main reason this quad-cache rebasing assumption is safe.
-
-You can imagine the actual location of something as a "smashed together version" of the specific QC's prefix stack. Consider an example where the maximum active suffix length is 4, and the zoom multiplier is 16 rather than 4 (so like `[4]u4` rather than `[32]u2`).
-
-To clarify, `[4]u4` isn't some weird Zig magic, it just represents an array (or collection) of 4 values, between 0-15. So, `[1, 2, 3, 4]` would be an example of the `[4]u4` type.
-
-(Technical note: in the actual game, this data would act like a `[32]u2`, but be stored as `u64`s, and the game would read the depth value to "truncate" the last `u64` appropriately.)
-
-Now, the "raw coordinate" of a player (or anything we want to represent, such as the chunk an NPC is in or what chunk has been modified) might be `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, plus an X/Y from 0-4096 representing where the player is in that chunk.
-
-This would actually internally look like this for the caches (the quad-cache is the same for all players/NPCs/enemies):
-
-- Cached X: `[9, 15]`, `[10, 0]` (9, 15 "carried" to 10, 0. Think of these like addition carries, but base 16; that's literally what they act like.)
-- Cached Y: `[2, 15]`, `[3, 0]` (Same carrying here, notice how the carrying is to the left because `[0, 0, 1, 1]` is "below average" while `[15, 15, 15, 15]` is "above average", basically a midpoint split/weight-adjusted quad-partitioning)
-- However, since there are 4 combinations of cached X and Y, there are 4 quad-caches (so combinations $X_1Y_1,X_2Y_1,X_1Y_2,X_2Y_2$ for example), with the seed cached for each combination. Each quad-cache "points" to a combination, so the possible X/Y values aren't stored twice.
-
-And here would be the `Coordinate` (again, assuming that the active suffix is only 4 `u4`s long, when it normally would be 16):
-
-- Coordinate X: `[9, 15, 15, 15]`
-- Coordinate Y: `[3, 0, 1, 1]`
-- Quadrant ID stuff:
-    - Coordinate X: false (boolean representing which cached value to use), for `[2, 5]`.
-    - Coordinate Y: true, for`[3, 0]`.
-    - What happens is you encode this into a value between 0-3 (hence the `u2`), so if we consider false = 0 and true = 1, then the result is $C_x+2\times C_y$ (where $C_x$ is coordinate X and $C_y$ is coordinate Y). Then you can "extract" the boolean out from this quadrant ID with bitwise logic, for example. (This is internally stored as a `u2`, with the coordinates as a `@Vector`.)
-
-(Note that "expanding" these cached values is invalid in practice. These are really just one larger number, but it helps to separate these out when explaining. Also, this glosses over some details when the prefix stack is empty because the active suffix can successfully represent all possible places the player is in.)
-
-When zooming in, a new value is pushed to either the cache (if `depth` is beyond the rebasing horizon limit) or it's just added to each of the quad-caches if not. You can find specific implementations of the quad-cache and depth rebasing logic in `zig/state/world.zig`.
-
-This explanation also highlights why we need 4 quad-caches: the player might be juuuust in between two possible prefix stacks for X, and two other possible ones for Y. Of course, the player doesn't have to worry about all this when enjoying the game. But sometimes it's nice to peek behind the curtain!
+The reason all this quadrant logic works is because of one essential fact: **_The `depth` can only INCREASE!_** The player can't zoom out **and modify blocks**, which is the main reason this quad-cache rebasing assumption is safe. If this were the case, it would introduce a host of complexities and "exploits" that easily allow block duping.
 
 #### Depths
 
-There's some details the previous explanation glossed over. You might have wondered how exactly that cached X and Y is stored, and it's internally stored as a `u64` with packed data representing bitwise chunk-origin offsets. And going back to this example: `([9, 15, 15, 15, 15, 15], [3, 0, 0, 0, 1, 1])`, the `depth` would equal 6.
+To make sure we can zoom 10,000 layers deep without significant lag or RAM issues, we pack the historical rebase steps very tightly using a custom bit-packing algorithm.
 
-If the active suffix was a `u16` instead of a `u64`, this would technically be stored as this:
+Suppose you are at $D=6$ (so your path has 6 steps), and your horizontal path is
+`[2, 3, 1, 0, 3, 2]`.
 
-**In the `QuadCache`:**
+Because the zoom factor is $4$, each step acts as a digit in a **base-4** number. Your absolute coordinate on this axis would be calculated as:
 
-- \[$9\times 16^1+15\times 16^0$, $10\times 16^1+0\times 16^0$] for the two cached X values.
-    - Implied length of $2$, as $6-4=2$. The active suffix can represent 4 `u4` values, so this is where the number comes from.
-- \[$2\times 16^1+15\times 16^0$, $3\times 16^1+0\times 16^0$] for cached Y, same implied length
-- Recall again these are stored as 4 combinations, each with their own 512-bit seed. However, the cache also stores the "type" of block it represents. So each of the 4 caches would store what block type $X_aY_b$ corresponded to (the block type is used for `ModificationStore`, keep reading for more details).
+$$X = 2 \times 4^5 + 3 \times 4^4 + 1 \times 4^3 + 0 \times 4^2 + 3 \times 4^1 + 2 \times 4^0 = 2958$$
 
-**In the specific example `Coordinate`:**
+In binary, this is represented as a sequence of 2-bit pairs: `10 11 01 00 11 10`. This fits perfectly inside the 64-bit active suffix!
 
-- Coordinate X: $9\times 16^3+15\times 16^2+15\times 16^1+15\times 16^0$.
-- Coordinate Y: $3\times 16^3+0\times 16^2+1\times 16^1+1\times 16^0$.
-- Quadrant ID:
-    - Coordinate X: `false` (boolean representing which cached value to use), representing the **first** QC.
-    - Coordinate Y: `true`, representing the **second** QC.
-    - What happens is you encode this into a value between 0-3 (hence the `u2`), so if we consider false = 0 and true = 1, then the result is $C_x+2\times C_y$ (where $C_x$ is coordinate X and $C_y$ is coordinate Y). Then you can "extract" the boolean out from this quadrant ID with bitwise logic, for example.
+#### What if $D>32$?
 
-Again, it's important to note that this is an example with the depth multiplier being 16 and not 4.
+When you zoom past 32 levels, the 64-bit suffix overflows. The oldest 2-bit steps fall off and are converted into 3-bit top-left origin offsets (`left_cell_x` and `top_cell_y`) ranging from `0` to `6`.
+
+To prevent massive RAM overhead, the global prefix stacks (`left_path` and `top_path`) pack these 3-bit steps into 64-bit slots:
+
+- Since $\lfloor 64 / 3 \rfloor = 21$, we pack exactly **21 historical steps** into a single `u64` integer.
+- The game uses dynamic division and modulo math (`idx / 21` and `(idx % 21) * 3`) to find and extract these values on the fly.
 
 #### Storing modifications
 
@@ -191,15 +165,7 @@ For each ancestor level, it traces upward and queries `ModificationStore` or eva
 
 You might be wondering how the engine handles a path 10,000 layers deep without lag, and the solution is to **relentlessly use the prefix stack and cache the seed**. In `zig/state/world.zig`, the big prefix path is stored using dynamic array allocations (`SegmentedList`).
 
-#### Why memoize and make the logic so complicated?
-
-By storing the resulting 512-bit `seed` at every level of the stack, the game no longer needs to spend resources reseeding a bunch for each chunk (while the math working out, as if every chunk was, resulting in high-quality seeding!). We never re-calculate the entire 10,000-level BLAKE3 chain; we only hash the _newest_ nibble added to the stack. This makes procedural chunk generation effectively amortized constant-time!
-
-#### Storing chunks with a simulation distance
-
-The "simulation distance" is 16-by-16 chunks, and is a dedicated buffer of 256 chunks that exists at all times (stored in the `SimBuffer`). This buffer basically follows the player around with an algorithm that maximizes the distance (the "above/below" average algorithm), and if something is in it such as an enemy then it is simulated.
-
-It's possible, however, that the camera might move super fast in a frame and temporarily cause renders outside the standard `SimBuffer` (which is around the player, and the only existing chunk buffer), so the game will first try to find if a chunk is in the array of simulation chunks, and if it isn't then it will dynamically generate it temporarily (which is still fairly fast, since we're using data-oriented design).
+Why memoize and make the logic so complicated? By storing the resulting 512-bit `seed` at every level of the stack, the game no longer needs to spend resources reseeding a bunch for each chunk (while the math working out, as if every chunk was, resulting in high-quality seeding!). We never re-calculate the entire 10,000-level BLAKE3 chain; we only hash the _newest_ nibble added to the stack. This makes procedural chunk generation on depth increase effectively constant-time!
 
 #### Procedural generation
 
@@ -472,23 +438,29 @@ Modifications of "higher" $D$-values are prioritized, and lower $D$-values are u
 - Increasing depth is, surprisingly, an O(1) operation due to a lack of modification culling (to allow for a "spectator view" on death), and storing where things are with a 256-bit `DepthCoordinate` and assuming that collisions are impossible.
 - Space complexity is O(n) based on the number of modified chunks. Even if all modifications are reversed, each modified chunk still takes up 2KiB in history. However, this is stored as a `SegmentedList` to prevent large unused gaps in WASM memory.
 
+#### Storing chunks with a simulation distance
+
+The "simulation distance" is 16-by-16 chunks, and is a dedicated buffer of 256 chunks that exists at all times (stored in the `SimBuffer`). This buffer basically follows the player around with an algorithm that maximizes the distance (the "above/below" average algorithm), and if something is in it such as an enemy then it is simulated.
+
+It's possible, however, that the camera might move super fast in a frame and temporarily cause renders outside the standard `SimBuffer` (which is around the player, and the only existing chunk buffer), so the game will first try to find if a chunk is in the array of simulation chunks, and if it isn't then it will dynamically generate it temporarily (which is still fairly fast, since we're using data-oriented design).
+
 #### Smart chunk loading
 
 Despite the fact that chunks are procedural and written in Zig (you'd think that means blazing fast), there's a lot of heavy computation internally due to needing to calculate several FBM+Worley passes, _per block_. This optimization improves performance by 8 times in practice.
 
 That's why the code tries as hard as possible to only generate two chunks per frame (except on startup or depth increase, as that will use different logic). By doing this, the code can easily extract these chunks from `ChunkCache` lazily when the player moves in a way that requires the `SimBuffer` to pull chunks near the edge.
 
-The algorithm does this each frame (with a budget of 2-4; budget increases if the player's velocity is high):
+The algorithm does this each frame (with a default budget of 2; budget increases to 4 if the player's velocity is high):
 
-1. The player's current velocity creates a "leading edge." Smart chunk loading here prioritizes generating chunks in the direction the player is currently heading. This is done by not considering diagonals, and only considering cardinal directions.
-2. Budget is spent on a 68-chunk ring outside the simulation window (based on the leading edge from the first part), using a persistent cursor.
-3. Finally, the `ChunkCache` provides a "second chance." This uses a 4-way set-associative cache (which is effectively $O(1)$ in more cases than a `HashMap`); implementation details can be seen in `zig/state/world.zig`.
+1. The player's current velocity creates a "leading edge." This algorithm tracks your player's current speed and direction. It prioritizes generating chunks immediately in front of you (your "leading edge") before looking at side or diagonal directions.
+2. The engine quietly spends its frame budget generating a 68-chunk "ring" just outside your visible screen. By the time you walk or fall into a new area, the chunks are already generated and waiting in memory.
+3. Finally, the `ChunkCache` provides a "second chance" that stores recently visited chunks. This uses a 4-way set-associative cache (which is effectively $O(1)$ in more cases than a `HashMap`); implementation details can be seen in `zig/state/world.zig`.
+    - Technical info: if a chunk has been accessed recently, its reference bit is kept.
+    - If the cache fills up, older chunks with cleared reference bits are evicted, eliminating memory allocation or garbage collection overhead.
 
 This system prevents frame spikes (as you may normally have to generate a whole 16 chunks/frame to keep `SimBuffer` happy)! Note that this logic doesn't at all change the _logic_: the player could still teleport trillions of chunks away in a frame: these would just get gradually neglected by the `ChunkCache` naturally.
 
-A little bit on the `ChunkCache`: it has 256 slots by default. When the cache is full and a new chunk needs to be stored, a "hand" sweeps through the slots. If a chunk's "reference bit" is 1 (meaning it was recently accessed), the bit is flipped to 0 and the hand moves on. If the bit is already 0, the chunk is evicted.
-
-Chunks that get accessed from the `SimBuffer` do not update the `ChunkCache`, although chunks generated for the purpose of being placed into `SimBuffer` _do_ get placed into the cache. This is basically least-recently-used logic without the overhead of tracking timestamps or ordering for every single block access (perfect here!). The performance also doesn't degrade as the `ChunkCache` gets larger.
+Chunks that get accessed from the `SimBuffer` do not update the `ChunkCache`, although chunks generated for the purpose of being placed into `SimBuffer` _do_ get placed into the cache.
 
 #### Memory transfer
 
@@ -513,16 +485,16 @@ While Zig handles the logic, the visual fidelity of Depthwell is achieved throug
 
 To minimize the data sent to the GPU, each tile is packed into two 32-bit unsigned integers (`word0` and `word1`). The shader uses `extractBits` to reconstruct the `UnpackedTile` struct on the fly:
 
-- `word0`: Contains the Sprite ID (16 bits), Edge Flags (8 bits), and Light (8 bits).
-- `word1`: Contains the HP/mined state (4 bits) and a 28-bit procedural seed.
+- `word0`: Contains the sprite ID/type (16 bits), edge flags (8 bits), and light value (8 bits).
+- `word1`: Contains the HP/mined state (4 bits) and a 20-bit procedural seed, as well as water data (8 bits).
 
-This 28-bit seed provides a lot of variation. It is passed through a `murmurmix32` function to generate `seed2` and `seed3`, providing three independent streams of entropy for every single block on screen (with the other two seeds being used in erosion and edge flags).
+This 20-bit seed provides a lot of variation. It is passed through a `murmurmix32` function initially (and mixed with `hp`), then two more times to generate `seed2` and `seed3`, providing three independent streams of entropy for every single block on screen (with the other two seeds being used in erosion and edge flags).
 
 #### OKLAB
 
-Traditional RGB lighting often looks "muddy" or "gray" when desaturated or darkened. Depthwell performs all color manipulations in the **OKLAB** and **OKLCH** color spaces.
+Traditional RGB lighting often looks "muddy" or "gray" when desaturated or darkened. Depthwell performs all color manipulations in the **OKLAB** and **OKLCH** color spaces, excluding the shader-based background effect.
 
-When a tile is sampled from the atlas, it is immediately converted from linear sRGB to OKLAB. Using the block's 28-bit seed, the shader applies subtle nudges to the **L**ightness, **C**hroma, and **H**ue. Blocks of the same type (e.g., stone) have slightly different color tints based on their position. OKLAB also ensures that darkening an emerald makes it look like a "dark green" rather than a "muddy gray."
+When a tile is sampled from the atlas, it is immediately converted from linear sRGB to OKLAB. Using the block's 28-bit seed, the shader applies subtle nudges to the **L**ightness, **C**hroma, and **H**ue. Blocks of the same type (e.g., stone) have slightly different color tints based on their position.
 
 (OKLAB is just awesome!)
 
@@ -532,18 +504,18 @@ Instead of using thousands of unique sprites for different wall shapes, Depthwel
 
 Using the `edge_flags` calculated in Zig, the fragment shader determines if a pixel is near an "air" neighbor. If it is, it uses `seed2` and `seed3` to:
 
-1.  Round the corners by calculating pixel-perfect arcs for outer and inner corners.
-2.  Notch straight edges through an algorithm to indent or protrude the edge by 1-2 pixels.
-3.  Darken the edges by applying a curvy shadow gradient to "foundation" blocks, giving the world depth without requiring hand-drawn lighting.
+1. Round the corners by calculating pixel-perfect arcs for outer and inner corners.
+2. Notch straight edges through an algorithm to indent or protrude the edge by 1-2 pixels.
+3. Darken the edges by applying a curvy shadow gradient to "foundation" blocks, giving the world depth without requiring hand-drawn lighting.
 
 #### Gems and ores
 
 Ores and gems are rendered using a multi-texture "masking" trick to save atlas space. For a gem block:
 
-1.  The shader samples the background stone based on the block's world coordinates (preserving the 2x2 tiling).
-2.  It calculates a shifted UV for the gem itself using 8 bits of the seed, allowing the gem to appear at any of 256 sub-pixel offsets within the block.
-3.  It samples a gem mask and mixes the stone and gem colors based on the mask's red channel.
-4.  Finally, it applies a random horizontal/vertical flip to the mask, ensuring that even gems with the same offset look distinct.
+1. The shader samples the background stone based on the block's world coordinates (preserving the 2x2 tiling).
+2. It calculates a shifted UV for the gem itself using 8 bits of the seed, allowing the gem to appear at any of 256 sub-pixel offsets within the block.
+3. It samples a gem mask and mixes the stone and gem colors based on the mask's red channel.
+4. Finally, it applies a random horizontal/vertical flip to the mask, ensuring that even gems with the same offset look distinct.
 
 #### Background and water
 

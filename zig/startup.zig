@@ -39,13 +39,13 @@ pub fn init() void {
         alreadyStarted = true;
         logger.log(@src(), "Hello from Zig!", .{});
     }
-    var temp_seed = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 1));
+    var temp_seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 1));
     inline for (&memory.game.seed2) |*s| {
         s.* = temp_seed.next();
     }
     // Start off by determining where the player starts off exactly with layer pushing
-    var rng = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 2));
-    root.sound.seed = seeding.ChaCha12.init(seeding.mixBaseSeed(&memory.game.seed, 3));
+    var rng = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 2));
+    root.sound.seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 3));
     for (0..STARTING_ZOOM_TIMES) |_| {
         // Set the player position to somewhere random in the current chunk
         if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.setPlayerPosDumb(.{
@@ -60,6 +60,8 @@ pub fn init() void {
             memory.game.getBlockYInChunk(),
         );
     }
+
+    world.quad_cache.path_hashes.value[0] = memory.game.seed;
 
     if (SET_PLAYER_SPAWN_RANDOMLY) {
         findSafeSpawn();

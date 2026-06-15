@@ -17,8 +17,8 @@ pub var IN_CREATIVE = false;
 /// Debug option, changing whether to show all inventory item slots and items or not.
 /// Use the `shouldShowAllItems()` function in order to check for this value correctly.
 pub const SHOW_ALL_INVENTORY_ITEMS = false;
-/// Determines how wide each row of the inventory is.
-const inventory_width = 10;
+/// Determines how wide each row of the inventory is (how many slots per row).
+pub const INVENTORY_WIDTH = 10;
 
 /// How many frames (logical) before an item enters the player's inventory.
 fn getMaxItemDropLifespan() u16 {
@@ -324,7 +324,7 @@ pub fn getSpritesInInventory(buffer: *SlotBuffer) []Sprite {
     var count: usize = 1;
     buffer[0] = .none; // slot 0 (pickaxe) must always exist
 
-    // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
+    // foundation_sprites is already sorted by enum ID because of how it's generated in types/sprite.zig
     inline for (sprite.possible_item_sprites) |s| {
         if (s.isEmpty()) continue;
         if ((shouldShowAllItems() and s.isInWorld()) or (!shouldShowAllItems() and inventory_counts[@intFromEnum(s)] > 0)) {
@@ -341,7 +341,6 @@ pub fn getSpritesInInventory(buffer: *SlotBuffer) []Sprite {
 pub fn getSelectedIndex() u16 {
     if (selected_sprite.isEmpty() or selected_sprite == .unselected) return 0;
     var count: usize = 1;
-    // foundation_sprites is already sorted by enum ID because of how it's generated in zig/types/sprite.zig
     inline for (sprite.possible_item_sprites) |s| {
         if (s.isEmpty()) continue;
         if ((shouldShowAllItems() and s.isInWorld()) or (!shouldShowAllItems() and inventory_counts[@intFromEnum(s)] > 0)) {
@@ -366,8 +365,8 @@ pub fn getHoveredInventorySprite() ?Sprite {
     const mouse_pos = mouse.uv_position * memory.Vec2f{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT };
 
     for (active_slots, 0..) |active_sprite, i| {
-        const col: f32 = @floatFromInt(i % inventory_width);
-        const row: f32 = @floatFromInt(i / inventory_width);
+        const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
+        const row: f32 = @floatFromInt(i / INVENTORY_WIDTH);
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
@@ -426,8 +425,8 @@ pub fn drawInventory(time_diff: f64) void {
         const size_selected: f32 = 12.0 / 16.0 * base_size;
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
 
-        const col: f32 = @floatFromInt(i % inventory_width);
-        const row: f32 = @floatFromInt(i / inventory_width);
+        const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
+        const row: f32 = @floatFromInt(i / INVENTORY_WIDTH);
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
@@ -514,8 +513,8 @@ pub fn drawInventory(time_diff: f64) void {
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
         const size_vec = Vec2f32{ current_size, current_size };
 
-        const col: f32 = @floatFromInt(i % inventory_width);
-        const row: f32 = @floatFromInt(i / inventory_width);
+        const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
+        const row: f32 = @floatFromInt(i / INVENTORY_WIDTH);
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
         const pos = inventory_pos - size_vec / Vec2f32{ base_size / 4.0, base_size / 4.0 } - Vec2f32{ base_size / 16.0, base_size / 16.0 };

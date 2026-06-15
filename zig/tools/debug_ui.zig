@@ -210,7 +210,7 @@ pub fn clickButton(id: u32) void {
     }
 }
 
-/// Build debug UI metadata by exporting a JSON string.
+/// Build debug UI metadata by exporting a JSON string to the scratch buffer.
 pub fn buildMetadata() void {
     var arena = memory.makeArena();
     defer arena.deinit();

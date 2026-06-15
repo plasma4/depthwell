@@ -198,9 +198,6 @@ pub const MAIN_ALIGN_BYTES: usize = 64;
 /// Type-safe alignment for use with `std.mem.Allocator` functions.
 /// Derived from `MAIN_ALIGN_BYTES`.
 pub const MAIN_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
-/// Type-safe alignment for use with `std.mem.Allocator` functions.
-/// Derived from `MAIN_ALIGN_BYTES`.
-pub const GPU_ALIGN = std.mem.Alignment.fromByteUnits(MAIN_ALIGN_BYTES);
 
 /// Struct for various memory sizes.
 pub const MemorySizes = struct {
@@ -222,6 +219,11 @@ pub const Block = packed struct(u64) {
     id: Sprite,
     /// Edge flags: which neighbors are air (for edge-darkening and culling).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
+    /// See types/types.zig for more details on correspondence.
+    ///
+    /// A 1 bit for a solid block ordinarily indicates an edge with an adjacent solid block.
+    /// A 1 bit for a liquid block means that there is either solid or liquid adjacent.
+    /// Edge flags are reset to 255 for decorations (non-blocks or liquids) after a decorations pass.
     edge_flags: u8,
     /// The brightness of the tile.
     light: u8,
@@ -319,11 +321,6 @@ pub const Block = packed struct(u64) {
     /// Precondition: the block's sprite type is valid.
     pub inline fn isDecor(self: @This()) bool {
         return self.id.isDecor();
-    }
-
-    /// Determines if there is a solid block adjacent based on edge flags.
-    pub inline fn isAdjacentBlockSolid(self: @This(), direction: comptime_int) bool {
-        return (self.edge_flags & direction) != 0;
     }
 };
 
