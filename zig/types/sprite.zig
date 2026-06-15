@@ -82,6 +82,7 @@ pub const DropConfig = struct {
 pub const DropHandlers = struct {
     /// Converts a bush drop to various fruits based on world coordinates and seeds.
     pub fn bushDrop(coord: memory.Coordinate, bx: u4, by: u4) []const Sprite {
+        const oddsNum = root.seeding.oddsNum;
         const depth = memory.game.depth;
         const key = coord.asDepthCoordinate(depth);
         const chunk_seeds = root.world.quad_cache.getChunkSeeds(key);
@@ -95,24 +96,24 @@ pub const DropHandlers = struct {
             abs_y,
         );
 
-        const roll = seed_val % 100;
-        if (roll < 5) {
+        const roll = seed_val;
+        if (roll < oddsNum(0.05)) {
             return &[_]Sprite{.fruit_ruby_candy};
-        } else if (roll < 15) {
+        } else if (roll < oddsNum(0.15)) {
             return &[_]Sprite{.fruit_splitty};
-        } else if (roll < 30) {
+        } else if (roll < oddsNum(0.30)) {
             return &[_]Sprite{.fruit_teal_lemon};
-        } else if (roll < 50) {
+        } else if (roll < oddsNum(0.45)) {
             return &[_]Sprite{.fruit_blue_lemon};
-        } else if (roll < 60) {
+        } else if (roll < oddsNum(0.60)) {
             return &[_]Sprite{.copperfruit};
-        } else if (roll < 70) {
+        } else if (roll < oddsNum(0.70)) {
             return &[_]Sprite{.ploopus1};
-        } else if (roll < 80) {
+        } else if (roll < oddsNum(0.80)) {
             return &[_]Sprite{.ploopus2};
-        } else if (roll < 88) {
+        } else if (roll < oddsNum(0.90)) {
             return &[_]Sprite{.divato};
-        } else if (roll < 96) {
+        } else if (roll < oddsNum(0.96)) {
             return &[_]Sprite{.circuspin};
         } else {
             return &[_]Sprite{.bacon};

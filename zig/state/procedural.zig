@@ -8,6 +8,8 @@ const seeding = root.seeding;
 const world = root.world;
 
 const POW_2_32 = seeding.POW_2_32;
+const INV_POW_2_32 = seeding.INV_POW_2_32;
+const POW_2_64 = seeding.POW_2_64;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 
 const Sprite = root.Sprite;
@@ -353,10 +355,10 @@ fn getBilinearValueNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32
     const h01 = FastHash.hash2d(seed_vector, ix0, iy0 +% 1);
     const h11 = FastHash.hash2d(seed_vector, ix0 +% 1, iy0 +% 1);
 
-    const v00 = @as(f32, @floatFromInt(h00 & 0xFFFFFFFF)) / POW_2_32;
-    const v10 = @as(f32, @floatFromInt(h10 & 0xFFFFFFFF)) / POW_2_32;
-    const v01 = @as(f32, @floatFromInt(h01 & 0xFFFFFFFF)) / POW_2_32;
-    const v11 = @as(f32, @floatFromInt(h11 & 0xFFFFFFFF)) / POW_2_32;
+    const v00 = @as(f32, @floatFromInt(h00)) / POW_2_64;
+    const v10 = @as(f32, @floatFromInt(h10)) / POW_2_64;
+    const v01 = @as(f32, @floatFromInt(h01)) / POW_2_64;
+    const v11 = @as(f32, @floatFromInt(h11)) / POW_2_64;
 
     const nx0 = v00 + u * (v10 - v00);
     const nx1 = v01 + u * (v11 - v01);
@@ -411,8 +413,6 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
 
     var d1_sq = std.math.inf(f32);
     var d2_sq = std.math.inf(f32);
-
-    const INV_POW_2_32 = 1.0 / 4294967296.0;
 
     // Worley search stuff! Uses a lot of optimization tricks.
     inline for (0..2) |ox| {
@@ -553,7 +553,6 @@ fn getDualValueNoise(seed: Vec2u, x: u64, y: u64, inv_scale: f32) memory.Vec2f32
     const h_vec = FastHash.hash2d_4x(seed, vx, vy);
 
     var res: memory.Vec2f32 = .{ 0, 0 };
-    const INV_POW_2_32 = 1.0 / @as(comptime_float, POW_2_32); // why not ig
 
     inline for (0..2) |i| {
         const shift: u6 = @intCast(i * 32);
