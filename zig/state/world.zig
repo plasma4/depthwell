@@ -52,6 +52,7 @@ pub const ModificationStore = struct {
     }
 
     /// Gets an existing modification for reading.
+    /// Returns null if there is no modification for that depth+location.
     pub fn get(self: *const @This(), key: DepthCoordinate) ?*const Chunk {
         const id = self.index.get(key) orelse return null;
         return self.history.at(id);
@@ -1183,7 +1184,7 @@ inline fn isBothLiquid(sprite_a: Sprite, sprite_b: Sprite) bool {
 }
 
 /// Applies a block modification, changing the `Sprite` type and resetting `hp`.
-/// Mutates `ModStore` and caches in-place.
+/// Mutates `ModificationStore` and caches in-place.
 /// Returns whether `update_local_edge_flags` instantly removed the current block due to being in an invalid position.
 pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bool {
     const key = DepthCoordinate.from(coord);

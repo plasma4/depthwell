@@ -103,6 +103,11 @@ fn drawChunkPreview() void {
     const preview_x_origin: f32 = 30.0;
     const preview_y_origin: f32 = 50.0;
     const background_margin: f32 = 1.0;
+
+    const player_coord = memory.game.getPlayerCoord();
+    const chunk = root.world.getChunk(player_coord);
+    const depth = memory.game.depth;
+
     var bg: Entity = .{
         .sprite = .particle,
         .position = .{
@@ -110,16 +115,20 @@ fn drawChunkPreview() void {
             preview_y_origin + tile_size * CHUNK_SIZE / 2 - tile_size / 2,
         },
         .size = tile_size * (background_margin + CHUNK_SIZE + 2.0),
-        .lcha = .{ 1.0, 0.5, 1.2, 0.6 }, // translucent orange!
+        .lcha = .{ 0.84, 0.35, 3.0, 0.6 }, // green!
     };
     addEntity(bg);
-    bg.size *= 1.01; // a tad larger!
-    bg.lcha = .{ 1.0, 0.5, 2.3, 0.6 }; // yellower
+
+    bg.size *= 1.01; // a tad larger! this second entity acts as the border visually
+    // dark green if not modified, dark blue if modified
+    bg.lcha = if (root.world.mod_store.get(player_coord.asDepthCoordinate(depth))) |_|
+        .{ 0.32, 0.35, 4.0, 0.4 }
+    else
+        .{ 0.32, 0.35, 3.0, 0.4 };
     addEntity(bg);
 
-    const player_coord = memory.game.getPlayerCoord();
-    const chunk = root.world.getChunk(player_coord);
-    const depth = memory.game.depth;
+    // for D-1/D-2 preview: reset to purple
+    bg.lcha = .{ 0.32, 0.35, 5.0, 0.7 };
 
     // Fetch neighbor chunks for border flag visualization
     const neighbors = blk: {
