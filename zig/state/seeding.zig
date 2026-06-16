@@ -20,6 +20,14 @@ const Vec2u = memory.Vec2u;
 /// A 512-bit seed state (useful for hashing and procedural generation).
 pub const Seed = extern struct { value: [8]u64 align(16) = @splat(0) };
 /// Contains 4 512-bit seed states, which are different for each chunk.
+///
+/// - `value[0]` is meant for any large-scale data.
+///   - Note that for base chunks, `hash2d()` from `seed2` is used instead.
+/// - `value[1]` is meant for ancestor logic.
+/// - `value[2]` is meant for base chunk decorations.
+/// - `value[3]` is meant for unimportant seeding data (such as entity effects or `seed` property of `Block`, which is only useful for WGSL).
+///
+/// By creating 4 separate `Seed` values, we ensure strong "security" and randomness of chunks and prevent correlation "attacks".
 pub const ChunkSeeds = extern struct { value: [4]Seed };
 
 test "basic usage example" {
@@ -93,7 +101,7 @@ pub fn mixChunkSeeds(quadrant_seed: Seed, coord_vector: Vec2u, depth: u64) Chunk
         depth: u64,
     };
 
-    const input = PackedInput{
+    const input: PackedInput = .{
         .seed = quadrant_seed.value,
         .c1 = coord_vector[0],
         .c2 = coord_vector[1],
@@ -284,7 +292,7 @@ pub const FastHash = struct {
 
     /// Returns a 64-bit hash value, assuming `seed_vector` is securely generated from BLAKE3 already.
     pub inline fn hash2d(seed_vector: Vec2u, x: u64, y: u64) u64 {
-        var v = Vec2u{ x, y } ^ seed_vector; // diffuse X and Y using vectors
+        var v: Vec2u = Vec2u{ x, y } ^ seed_vector; // diffuse X and Y using vectors
         v *%= Vec2u{ secret[0], secret[1] }; // wrapping multiply
 
         v ^= v >> @as(Vec2u, @splat(32)); // fold the vector for more variance
@@ -300,7 +308,7 @@ pub const FastHash = struct {
     }
 
     /// Vectorized 4-channel wyhash/wyrand stateless mixer.
-    /// Hashes 4 coordinates in parallel using SIMD, reducing latency to ~22 cycles.
+    /// Hashes 4 coordinates in parallel (using SIMD).
     pub inline fn hash2d_4x(seed_vector: Vec2u, vx: @Vector(4, u64), vy: @Vector(4, u64)) @Vector(4, u64) {
         const Vec4u = @Vector(4, u64);
 
@@ -460,7 +468,7 @@ pub const ChaCha12 = struct {
         var x1: v4u32 = @bitCast(s[4..8].*);
         var x2: v4u32 = @bitCast(s[8..12].*);
         // Inject coordinates directly into the final row
-        var x3 = v4u32{
+        var x3: v4u32 = .{
             @as(u32, @truncate(x)),
             @as(u32, @truncate(x >> 32)),
             @as(u32, @truncate(y)),
@@ -512,7 +520,7 @@ pub const ChaCha12 = struct {
         var x0 = @as(v4u32, @bitCast(s[0..4].*));
         var x1 = @as(v4u32, @bitCast(s[4..8].*));
         var x2 = @as(v4u32, @bitCast(s[8..12].*));
-        var x3 = v4u32{
+        var x3: v4u32 = .{
             @as(u32, @truncate(x)),
             @as(u32, @truncate(x >> 32)),
             @as(u32, @truncate(y)),
@@ -533,7 +541,7 @@ pub const ChaCha12 = struct {
             x3 = @shuffle(u32, x3, undefined, [4]i32{ 1, 2, 3, 0 });
         }
 
-        const array = Seed{
+        const array: Seed = .{
             packU64(x0 +% orig[0], 0, 1), packU64(x0 +% orig[0], 2, 3),
             packU64(x1 +% orig[1], 0, 1), packU64(x1 +% orig[1], 2, 3),
             packU64(x2 +% orig[2], 0, 1), packU64(x2 +% orig[2], 2, 3),
@@ -614,8 +622,8 @@ test "basic determinism" {
     var seed: Seed = .{};
     seed.value[0] = 42;
 
-    var rng1 = ChaCha12.init(seed);
-    var rng2 = ChaCha12.init(seed);
+    var rng1 = ChaCha12.init(&seed);
+    var rng2 = ChaCha12.init(&seed);
 
     for (0..100) |_| {
         try std.testing.expectEqual(rng1.next(), rng2.next());
@@ -627,7 +635,7 @@ test "skip produces same values" {
     seed.value[0] = 123;
     seed.value[5] = 77;
 
-    var rng_sequential = ChaCha12.init(seed);
+    var rng_sequential = ChaCha12.init(&seed);
 
     // Consume 50 values
     var values: [50]u64 = undefined;
@@ -636,7 +644,7 @@ test "skip produces same values" {
     }
 
     // Skip to position 25 and verify
-    var rng_skipped = ChaCha12.init(seed);
+    var rng_skipped = ChaCha12.init(&seed);
     rng_skipped.skip(25);
 
     for (25..50) |i| {
@@ -648,8 +656,8 @@ test "skip forward matches sequential" {
     var seed: Seed = .{};
     seed.value[3] = 0xAB;
 
-    var rng1 = ChaCha12.init(seed);
-    var rng2 = ChaCha12.init(seed);
+    var rng1 = ChaCha12.init(&seed);
+    var rng2 = ChaCha12.init(&seed);
 
     // Advance rng1 by 37 calls
     for (0..37) |_| {
@@ -669,10 +677,10 @@ test "cross-block boundary skip" {
     var seed: Seed = .{};
     seedFromBytes("my-game-seed", &seed);
 
-    var rng = ChaCha12.init(seed);
+    var rng = ChaCha12.init(&seed);
 
     // Get value at position 15 (spans two blocks since each block = 8 u64s)
-    var reference = ChaCha12.init(seed);
+    var reference = ChaCha12.init(&seed);
     for (0..15) |_| {
         _ = reference.next();
     }
@@ -686,7 +694,7 @@ test "float range" {
     var seed: Seed = .{};
     seedFromBytes("my-game-seed", &seed);
 
-    var rng = ChaCha12.init(seed);
+    var rng = ChaCha12.init(&seed);
 
     for (0..1000) |_| {
         const f64_val = rng.float(f64);

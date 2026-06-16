@@ -125,7 +125,7 @@ Of course, to have a fractal _mining_ game, you must store if the player has mod
 
 > Does this chunk have any blocks where the player replaced a block of type A with type B?
 
-(Air/empty space is itself a type of block.) If the answer is YES (even if it's just one block in a chunk with 256 blocks that's different), then a modification is recorded within the `ModificationStore` (with a `DepthCoordinate` referencing both location and height).
+(Air/empty space is itself a type of block.) If the answer is YES (even if it's just one block in a chunk with 256 blocks that's different), then a modified chunk is recorded within the `ModificationStore` (with a `DepthCoordinate` referencing both location and height).
 
 But wait, what is a block? Here is `zig/memory.zig`:
 
@@ -367,7 +367,7 @@ pub var mod_store: ModificationStore = undefined;
 pub const DepthCoordinate = struct {
     /// Represents an invalid `DepthCoordinate`, which has `depth` equal to 0.
     /// Semantically equivalent to null.
-    pub const invalid = DepthCoordinate{
+    pub const invalid: @This() = .{
         .depth = 0,
         .quadrant = undefined,
         .suffix = undefined,

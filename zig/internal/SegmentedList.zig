@@ -414,7 +414,7 @@ pub fn SegmentedList(comptime T: type, comptime prealloc_item_count: usize) type
         }
 
         pub fn iterator(self: *Self, start_index: usize) Iterator {
-            var it = Iterator{
+            var it: Iterator = .{
                 .list = self,
                 .index = undefined,
                 .shelf_index = undefined,
@@ -426,7 +426,7 @@ pub fn SegmentedList(comptime T: type, comptime prealloc_item_count: usize) type
         }
 
         pub fn constIterator(self: *const Self, start_index: usize) ConstIterator {
-            var it = ConstIterator{
+            var it: ConstIterator = .{
                 .list = self,
                 .index = undefined,
                 .shelf_index = undefined,

@@ -385,7 +385,7 @@ pub inline fn getSpriteProps(s: Sprite) SpriteProps {
 /// Evaluates compile-time rules to build properties for a specific `Sprite`.
 fn getPropsForSprite(comptime s: Sprite) SpriteProps {
     @setEvalBranchQuota(70000);
-    var p = SpriteProps{};
+    var p: SpriteProps = .{};
     for (rules) |rule| {
         if (matchesTarget(s, rule[0])) {
             mergeProps(&p, rule[1]);
@@ -434,7 +434,7 @@ const dense_props_table: [MAX_SPRITE_ID]SpriteProps = blk: {
         };
 
         if (!exists) {
-            table[i] = SpriteProps{};
+            table[i] = .{};
             continue;
         }
 
@@ -450,7 +450,7 @@ const dense_flags_table: [MAX_SPRITE_ID]SpriteFlags = blk: {
 
     for (0..MAX_SPRITE_ID) |i| {
         const p = dense_props_table[i];
-        table[i] = SpriteFlags{
+        table[i] = .{
             .in_world = p.in_world,
             .item = p.item,
             .solid = p.solid,
@@ -468,7 +468,7 @@ const dense_flags_table: [MAX_SPRITE_ID]SpriteFlags = blk: {
 
 /// Sparse fallback values for `.unselected` (65535)
 const unselected_props = getPropsForSprite(.unselected);
-const unselected_flags = SpriteFlags{
+const unselected_flags: SpriteFlags = .{
     .in_world = unselected_props.in_world,
     .item = unselected_props.item,
     .solid = unselected_props.solid,

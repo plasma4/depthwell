@@ -469,7 +469,7 @@ pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
 
     if (moisture >= 0.62 and density >= 0.83) return .seagreen_stone;
     if (moisture <= 0.55 and density >= 0.60 and density <= 0.72) return .blue_stone;
-    if (density >= 0.45 and density <= 0.50) return .water;
+    if (density >= 0.45 and density <= 0.50 and moisture < 0.30) return .water;
     if (density >= 0.40 and density <= 0.55) return .contrast_blue_stone;
 
     if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
@@ -488,7 +488,7 @@ pub inline fn getBaseSpriteType(
     block_y: u4,
 ) BaseTerrainData {
     const moisture = getFbmWorleyValue( // acts as a biome selector
-        memory.game.seed2[0..2].*, // code is INLINED, so this is okay presumably
+        memory.game.getHashSeed(.moisture), // code is INLINED, so this is okay presumably
         // .{ 0, 0 },
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
@@ -499,7 +499,7 @@ pub inline fn getBaseSpriteType(
         },
     );
     const density = getFbmWorleyValue( // more granular density
-        memory.game.seed2[2..4].*,
+        memory.game.getHashSeed(.density),
         // .{ 0, 0 },
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,
@@ -546,8 +546,8 @@ fn getDualValueNoise(seed: Vec2u, x: u64, y: u64, inv_scale: f32) memory.Vec2f32
 
     // Prepare 4 corners: (x0, y0), (x0+1, y0), (x0, y0+1), (x0+1, y0+1)
     const Vec4u = @Vector(4, u64);
-    const vx = Vec4u{ x0, x0 +% 1, x0, x0 +% 1 };
-    const vy = Vec4u{ y0, y0, y0 +% 1, y0 +% 1 };
+    const vx: Vec4u = .{ x0, x0 +% 1, x0, x0 +% 1 };
+    const vy: Vec4u = .{ y0, y0, y0 +% 1, y0 +% 1 };
 
     // Single SIMD pipeline execution
     const h_vec = FastHash.hash2d_4x(seed, vx, vy);

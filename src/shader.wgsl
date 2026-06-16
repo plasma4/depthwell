@@ -1027,22 +1027,6 @@ fn hash_2d(x: vec4u, y: vec4u) -> vec4f {
     return bitcast<vec4f>((result >> vec4u(9u)) | vec4u(0x3f800000u)) - 1.0;
 }
 
-// OKLAB stuff
-fn linear_srgb_to_oklab(c: vec3f) -> vec3f {
-    let m1 = mat3x3f( // convert to LMS
-        0.4122214708, 0.2119034982, 0.0883024619,
-        0.5363325363, 0.6806995451, 0.2817188376,
-        0.0514459929, 0.1073969566, 0.6299787005);
-    let lms = max(m1 * c, vec3f(0.0));
-    let lms_ = pow(lms, vec3f(1.0 / 3.0));
-
-    let m2 = mat3x3f( // convert to OKLAB
-        0.2104542553, 1.9779984951, 0.0259040371,
-        0.7936177850, -2.4285922050, 0.7827717662,
-        -0.0040720468, 0.4505937099, -0.8086758031);
-    return m2 * lms_;
-}
-
 /*
     ----
     ENTITIES
@@ -1154,6 +1138,21 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     (There are a lot of magic numbers here.)
     ----
 */
+fn linear_srgb_to_oklab(c: vec3f) -> vec3f {
+    let m1 = mat3x3f( // convert to LMS
+        0.4122214708, 0.2119034982, 0.0883024619,
+        0.5363325363, 0.6806995451, 0.2817188376,
+        0.0514459929, 0.1073969566, 0.6299787005);
+    let lms = max(m1 * c, vec3f(0.0));
+    let lms_ = pow(lms, vec3f(1.0 / 3.0));
+
+    let m2 = mat3x3f( // convert to OKLAB
+        0.2104542553, 1.9779984951, 0.0259040371,
+        0.7936177850, -2.4285922050, 0.7827717662,
+        -0.0040720468, 0.4505937099, -0.8086758031);
+    return m2 * lms_;
+}
+
 fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
     let m1 = mat3x3f( // LMS
         1.0, 1.0, 1.0,

@@ -1,4 +1,5 @@
 //! Handles debug options for sliders and buttons, and contains functions to pass these to JS.
+//! Only imported if `root.is_debug` is true.
 const std = @import("std");
 const root = @import("../root.zig");
 const main = root.startup;
@@ -158,19 +159,27 @@ fn teleportToEdge() void {
     main.findSafeSpawn();
 }
 
+/// Internal random number for teleport PRNG.
+var teleport_rand: u64 = std.math.maxInt(u64);
 /// Teleports to a random valid coordinate (chunk) within the same quadrant. Then, tries to find a valid spawn point.
+/// This is for debugging only and should NOT be used for gameplay.
 fn teleportRandomly() void {
     const game = &memory.game;
+
+    // select a random location X/Y through hashing
+    const s = seeding.mixBaseSeed(game.seed, teleport_rand);
     const h1 = seeding.FastHash.hash2d(
-        game.player_chunk & memory.Vec2u{ game.seed2[0], game.seed2[1] },
+        s.value[0..2].*, // peer type resolution helps out here
         @intCast(game.player_pos[0]),
         @intCast(game.player_pos[1]),
     );
     const h2 = seeding.FastHash.hash2d(
-        game.player_chunk & memory.Vec2u{ game.seed2[2], game.seed2[3] },
+        s.value[2..4].*,
         @intCast(game.player_pos[0]),
         @intCast(game.player_pos[1]),
     );
+    teleport_rand -%= 1;
+
     game.teleport(
         .{ .quadrant = 0, .suffix = .{
             h1 & world.max_possible_suffix,

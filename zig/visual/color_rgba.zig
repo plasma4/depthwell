@@ -25,7 +25,7 @@ pub const ColorRgba = extern union {
         a: u8 = 0,
     },
 
-    /// Creates a ColorRgba with the given r, g, b, and a values.
+    /// Creates a ColorRgba with the given Red, Green, Blue, and Alpha component values.
     pub inline fn init(r: u8, g: u8, b: u8, a: u8) ColorRgba {
         return .{ .channels = .{ .r = r, .g = g, .b = b, .a = a } };
     }
@@ -46,7 +46,7 @@ pub const ColorRgba = extern union {
     }
 
     /// Interpolates two colors linearly.
-    pub fn mix(self: @This(), other: ColorRgba, t: f32) ColorRgba {
+    pub fn mix(self: ColorRgba, other: ColorRgba, t: f32) ColorRgba {
         const amt: u16 = @round(t * 256.0);
         const rev: u16 = 256 - amt;
 
@@ -79,12 +79,12 @@ pub const ColorRgba = extern union {
     }
 
     /// Checks for equality between two `ColorRgba` values.
-    pub fn eql(self: @This(), other: ColorRgba) bool {
+    pub fn eql(self: ColorRgba, other: ColorRgba) bool {
         return self.word == other.word;
     }
 
     /// Hue in degrees [0, 360). Returns 0 for achromatic colors.
-    pub fn hue(self: @This()) u16 {
+    pub fn hue(self: ColorRgba) u16 {
         const r: i32 = self.channels.r;
         const g: i32 = self.channels.g;
         const b: i32 = self.channels.b;
@@ -106,7 +106,7 @@ pub const ColorRgba = extern union {
     }
 
     /// Saturation as 0-255 (HSV saturation scaled to byte range).
-    pub fn saturation(self: @This()) u8 {
+    pub fn saturation(self: ColorRgba) u8 {
         const min_c = @min(self.channels.r, self.channels.g, self.channels.b);
         const max_c = @max(self.channels.r, self.channels.g, self.channels.b);
         if (max_c == 0) return 0;
@@ -114,13 +114,13 @@ pub const ColorRgba = extern union {
     }
 
     /// Value (simply the maximum channel).
-    pub fn maxChannel(self: @This()) u8 {
+    pub fn maxChannel(self: ColorRgba) u8 {
         const rgb = @as(@Vector(4, u8), self.v) * @Vector(4, u8){ 1, 1, 1, 0 };
         return @reduce(.Max, rgb);
     }
 
     /// Lightness (average of min and max channels).
-    pub fn lightness(self: @This()) u8 {
+    pub fn lightness(self: ColorRgba) u8 {
         const min_c = @min(self.channels.r, self.channels.g, self.channels.b);
         const max_c = @max(self.channels.r, self.channels.g, self.channels.b);
         return @intCast((@as(u16, max_c) + min_c) / 2);
@@ -128,8 +128,8 @@ pub const ColorRgba = extern union {
 
     /// Perceived brightness using sRGB-approximate formula.
     /// Faster than luminance(), uses sqrt approximation.
-    pub fn brightness(self: @This()) u8 {
-        // sqrt(0.299*R² + 0.587*G² + 0.114*B²), integer approx
+    pub fn brightness(self: ColorRgba) u8 {
+        // sqrt(0.299*R*R + 0.587*G*G + 0.114*B*B), integer approx
         const v_wide: @Vector(4, u32) = self.v;
         const v_sq = v_wide * v_wide;
         // weights: 77/256 is about 0.299, 150/256 is about 0.587, 29/256 is about 0.114
@@ -139,30 +139,30 @@ pub const ColorRgba = extern union {
     }
 
     /// Is fully opaque?
-    pub fn isOpaque(self: @This()) bool {
+    pub fn isOpaque(self: ColorRgba) bool {
         return self.channels.a == 255;
     }
 
     /// Is fully transparent?
-    pub fn isTransparent(self: @This()) bool {
+    pub fn isTransparent(self: ColorRgba) bool {
         return self.channels.a == 0;
     }
 
     /// Inverts RGB while keeping alpha.
-    pub fn invert(self: @This()) ColorRgba {
-        var res = ColorRgba{ .v = @as(@Vector(4, u8), @splat(255)) - self.v };
+    pub fn invert(self: ColorRgba) ColorRgba {
+        var res: ColorRgba = .{ .v = @as(@Vector(4, u8), @splat(255)) - self.v };
         res.channels.a = self.channels.a;
         return res;
     }
 
     /// Convert to grayscale using luminance while keeping alpha.
-    pub fn toGrayscale(self: @This()) ColorRgba {
+    pub fn toGrayscale(self: ColorRgba) ColorRgba {
         const l = self.luminance();
         return ColorRgba.init(l, l, l, self.channels.a);
     }
 
     /// Alpha-composite src over self (Porter-Duff "over" operator).
-    pub fn compositeOver(self: @This(), src: ColorRgba) ColorRgba {
+    pub fn compositeOver(self: ColorRgba, src: ColorRgba) ColorRgba {
         const sa: u32 = src.channels.a;
         const da: u32 = self.channels.a;
         const inv_sa: u32 = 255 - sa;
@@ -179,14 +179,14 @@ pub const ColorRgba = extern union {
     }
 
     /// Return color with modified alpha.
-    pub fn withAlpha(self: @This(), a: u8) ColorRgba {
+    pub fn withAlpha(self: ColorRgba, a: u8) ColorRgba {
         var res = self;
         res.channels.a = a;
         return res;
     }
 
     /// Simple average of two colors (no alpha weighting).
-    pub fn average(self: @This(), other: ColorRgba) ColorRgba {
+    pub fn average(self: ColorRgba, other: ColorRgba) ColorRgba {
         const v1: @Vector(4, u16) = self.v;
         const v2: @Vector(4, u16) = other.v;
         const avg = (v1 + v2) >> @as(@Vector(4, u16), @splat(1));

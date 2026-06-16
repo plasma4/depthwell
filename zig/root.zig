@@ -51,7 +51,6 @@ pub const ancestor = @import("state/ancestor.zig");
 pub const water = @import("state/water.zig");
 
 pub const logger = @import("tools/logger.zig");
-pub const debug_ui = @import("tools/debug_ui.zig");
 
 pub const inventory = @import("input/inventory.zig");
 pub const mining = @import("input/mining.zig");
@@ -249,24 +248,25 @@ pub export fn wasmFree(ptr: u64, len: usize) void {
     memory.wasmFree(@ptrFromInt(@as(usize, @intCast(ptr))), len); // Memory64 hack
 }
 
-pub export fn debugBuildUiMetadata() void {
-    if (is_debug) debug_ui.buildMetadata();
-}
-pub export fn changeDebugUiSlider(id: u32, val: f32) void {
-    if (is_debug) debug_ui.changeSlider(id, val);
-}
-pub export fn clickDebugUiButton(id: u32) void {
-    if (is_debug) debug_ui.clickButton(id);
-}
-
 /// Returns if code is in debugging mode for JS to see.
 pub export fn isDebug() bool {
     return is_debug;
 }
 
-// Import debugging API if optimization level is Debug.
+// Import debugging API and functions if optimization level is Debug.
 comptime {
     _ = if (is_debug) struct {
+        pub const debug_ui = @import("tools/debug_ui.zig");
+        pub export fn debugBuildUiMetadata() void {
+            if (is_debug) debug_ui.buildMetadata();
+        }
+        pub export fn changeDebugUiSlider(id: u32, val: f32) void {
+            if (is_debug) debug_ui.changeSlider(id, val);
+        }
+        pub export fn clickDebugUiButton(id: u32) void {
+            if (is_debug) debug_ui.clickButton(id);
+        }
+
         pub export fn testLogs() void {
             logger.testLogs(true);
         }

@@ -30,7 +30,7 @@ pub inline fn getVolume(ptr: Block) u4 {
 
 /// Helper to set the volume (`hp`) of a block, modifying other properties as needed.
 pub inline fn setVolume(ptr: *Block, vol: u32) void {
-    const capped = @as(u4, @intCast(@min(vol, 15)));
+    const capped: u4 = @intCast(@min(vol, 15));
     if (vol == 0) {
         if (ptr.isDecor()) {
             ptr.hp = 0;
@@ -52,10 +52,10 @@ pub inline fn setVolume(ptr: *Block, vol: u32) void {
 
 /// Helper to set the volume (`hp`) of a block, modifying other properties as needed.
 inline fn setVolumeSticky(rx: i32, ry: i32, vol: u32) void {
-    const cx = @as(u4, @intCast(@divTrunc(rx, 16)));
-    const cy = @as(u4, @intCast(@divTrunc(ry, 16)));
-    const bx = @as(u4, @intCast(@mod(rx, 16)));
-    const by = @as(u4, @intCast(@mod(ry, 16)));
+    const cx: u4 = @intCast(@divTrunc(rx, 16));
+    const cy: u4 = @intCast(@divTrunc(ry, 16));
+    const bx: u4 = @intCast(@mod(rx, 16));
+    const by: u4 = @intCast(@mod(ry, 16));
     const sim_idx = SimBuffer.getIndex(cx, cy);
     const coord = SimBuffer.keys[sim_idx] orelse return;
 
@@ -73,7 +73,7 @@ inline fn setVolumeSticky(rx: i32, ry: i32, vol: u32) void {
     const mc = world.mod_store.history.at(entry_idx);
     const sim_chunk = &SimBuffer.sim_buffer_ptr[sim_idx];
 
-    const capped = @as(u4, @intCast(@min(vol, 15)));
+    const capped: u4 = @intCast(@min(vol, 15));
 
     // Dirty the modified chunk and its 4 orthogonal neighbors for flag updates
     const chunk_idx = (@as(usize, cy) << 4) | cx;
@@ -298,10 +298,10 @@ inline fn getLocalBlockPtr(
 /// Recalculates water edge flags and packages neighbor heights using the local cache.
 pub fn updateWaterEdgeFlags(x: i32, y: i32) void {
     if (x < 0 or x >= 256 or y < 0 or y >= 256) return;
-    const cx = @as(u4, @intCast(@divTrunc(x, 16)));
-    const cy = @as(u4, @intCast(@divTrunc(y, 16)));
-    const bx = @as(i32, @intCast(@mod(x, 16)));
-    const by = @as(i32, @intCast(@mod(y, 16)));
+    const cx: u4 = @intCast(@divTrunc(x, 16));
+    const cy: u4 = @intCast(@divTrunc(y, 16));
+    const bx: i32 = @intCast(@mod(x, 16));
+    const by: i32 = @intCast(@mod(y, 16));
 
     const curr = getChunkPtr(cx, cy) orelse return;
     const left = if (cx > 0) getChunkPtr(cx - 1, cy) else null;

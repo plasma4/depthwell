@@ -148,7 +148,7 @@ fn dropSingleItem(id: Sprite, chunk: memory.Coordinate, block_x: u4, block_y: u4
     const px = @as(i32, block_x) * 256 + 128;
     const py = @as(i32, block_y) * 256 + 256;
     const seed = root.seeding.FastHash.hash2d(
-        memory.game.seed2[14..16].*,
+        memory.game.getHashSeed(.visual),
         memory.game.frame,
         item_count,
     );
@@ -511,7 +511,7 @@ pub fn drawInventory(time_diff: f64) void {
         const size_normal: f32 = 10.0 / 16.0 * base_size;
         const size_selected: f32 = 12.0 / 16.0 * base_size;
         const current_size = size_normal + (size_selected - size_normal) * t_eased;
-        const size_vec = Vec2f32{ current_size, current_size };
+        const size_vec: Vec2f32 = .{ current_size, current_size };
 
         const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
         const row: f32 = @floatFromInt(i / INVENTORY_WIDTH);

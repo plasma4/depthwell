@@ -422,7 +422,7 @@ fn drawChunkPreview() void {
     const relative_pos = memory.game.player_pos - center_offset;
 
     const scale = tile_size / memory.CHUNK_SIZE_SQ;
-    const origin = Vec2f32{ preview_x_origin, preview_y_origin };
+    const origin: Vec2f32 = .{ preview_x_origin, preview_y_origin };
 
     const player_entity: Entity = .{
         .sprite = .player,
@@ -443,7 +443,7 @@ fn addEntityLine(entity: Entity, w: f32, h: f32) void {
     wgsl_entity.* = .{
         .lcha = entity.lcha,
         .position = entity.position / Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
-        .size = Vec2f32{ w / root.SCREEN_WIDTH, h / root.SCREEN_HEIGHT },
+        .size = .{ w / root.SCREEN_WIDTH, h / root.SCREEN_HEIGHT },
         .rotation = entity.rotation,
         .id = @intFromEnum(entity.sprite),
     };
@@ -561,7 +561,7 @@ pub fn drawNumber(
             rel_x += number_widths[@intCast(digit)] * font_size;
 
             // Rotate the relative offset vector (rel_x, 0)
-            const rotated_offset = Vec2f32{ rel_x * cos_r, rel_x * sin_r };
+            const rotated_offset: Vec2f32 = .{ rel_x * cos_r, rel_x * sin_r };
 
             addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
@@ -573,7 +573,7 @@ pub fn drawNumber(
         }
     } else {
         for (digits[0..count]) |digit| {
-            const rotated_offset = Vec2f32{ rel_x * cos_r, rel_x * sin_r };
+            const rotated_offset: Vec2f32 = .{ rel_x * cos_r, rel_x * sin_r };
 
             addEntity(.{
                 .sprite = @enumFromInt(sprite.NUMBER_START + digit),
@@ -670,7 +670,7 @@ pub inline fn addEntity(entity: Entity) void {
         .lcha = entity.lcha,
         .position = entity.position /
             Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
-        .size = Vec2f32{
+        .size = .{
             entity.size / root.SCREEN_WIDTH,
             entity.size / root.SCREEN_HEIGHT,
         },

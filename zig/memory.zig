@@ -47,6 +47,27 @@ pub const Vec2u = @Vector(2, u64);
 pub const Vec2f = @Vector(2, f64);
 pub const Vec2f32 = @Vector(2, f32);
 
+/// Represents a specific category a `[2]u64` slice of `memory.game.seed2` represents.
+/// Use `memory.game.getHashSeed()` to request said slice.
+pub const SeedType = enum {
+    /// Determines the moisture property at base depth for terrain.
+    moisture,
+    /// Determines the density property at base depth for terrain.
+    density,
+    /// Hash used for structure data at base depth for terrain.
+    structures,
+    /// Seed type that should EXCLUSIVELY be used for PRNG that does not affect gameplay/terrain generation.
+    visual,
+    /// Used for ore generation at base depth.
+    ores1,
+    /// Used for ore generation at base depth.
+    ores2,
+    /// Used for ore generation at base depth.
+    ores3,
+    /// Used for ore generation at base depth.
+    ores4,
+};
+
 /// Non-pointer data (short known length) representing part of the game state.
 /// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
 /// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the -Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
@@ -108,6 +129,13 @@ pub const GameState = extern struct {
 
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
     seed2: [16]u64 align(16) = @splat(0),
+
+    /// Returns a `hash2d()` seed for a specific category of procedural generation.
+    /// See `SeedType` definition for category meanings.
+    pub inline fn getHashSeed(self: *const @This(), comptime category: SeedType) @Vector(2, u64) {
+        const index_start: usize = @intFromEnum(category) * 2;
+        return self.seed2[index_start .. index_start + 2].*;
+    }
 
     /// Gets the player's current chunk location as a `Coordinate`.
     pub inline fn getPlayerCoord(self: *const @This()) Coordinate {
@@ -229,6 +257,7 @@ pub const Block = packed struct(u64) {
     light: u8,
 
     /// Per-block seed for procedural variation in the shader.
+    /// Any seed value here should be considered poor and insecure.
     seed: u20,
     /// Dual-purpose field depending on block type:
     /// - For solid blocks: how "mined" the block is (0 means unmined, 15 is most mined).

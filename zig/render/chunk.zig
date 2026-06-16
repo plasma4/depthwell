@@ -217,7 +217,7 @@ inline fn updateRenderProperties(
         } else {
             logger.writeOnce(0, .{
                 "{h}Chunk active suffix X/Y",
-                suffix_array_x[0..log_limit], // Use log_limit to avoid overflow if d > 32
+                suffix_array_x[0..log_limit], // Use log_limit to avoid overflow if D > 32
                 suffix_array_y[0..log_limit],
             });
         }

@@ -72,7 +72,7 @@ pub var mod_store: ModificationStore = undefined;
 pub const DepthCoordinate = struct {
     /// Represents an invalid `DepthCoordinate`, which has `depth` equal to 0.
     /// Semantically equivalent to null.
-    pub const invalid = DepthCoordinate{
+    pub const invalid: @This() = .{
         .depth = 0,
         .quadrant = 0,
         .suffix = .{ 0, 0 },
@@ -695,6 +695,8 @@ pub const QuadCache = struct {
 
     /// Resolves a chunk's 4 seeds. If depth > 32 (horizon), uses the quadrant seeds.
     /// Uses a 4-way set-associative cache to optimize fractal generation and boundary checks.
+    ///
+    /// See definition of `ChunkSeeds` for specific meanings.
     pub inline fn getChunkSeeds(self: *@This(), key: DepthCoordinate) ChunkSeeds {
         const h = key.hash();
         const set_idx: usize = @intCast(h % SEED_CACHE_SETS);
@@ -923,9 +925,6 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     const chunk_seeds = quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth));
 
     const seeds = memory.game.seed2;
-    // Zig actually implicitly casts here through peer-type resolution, somewhat impressively
-    // TODO: this is a mess of seeding with terrible readability, fix this!
-    // const seed_vec1: memory.Vec2u = seeds[0..2].*;
     const seed_vec2: memory.Vec2u = seeds[2..4].*;
     const seed_vec3: memory.Vec2u = seeds[4..6].*;
     const seed_vec4: memory.Vec2u = seeds[6..8].*;
@@ -933,7 +932,8 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     const seed_vec6: memory.Vec2u = seeds[10..12].*;
     const seed_vec7: memory.Vec2u = seeds[12..14].*;
 
-    var rng4 = seeding.ChaCha12.init(&chunk_seeds.value[3]); // Visual touches only.
+    var rng_decor = seeding.ChaCha12.init(&chunk_seeds.value[2]); // Decor data. See `ChunkSeeds` def for details.
+    var rng_seed = seeding.ChaCha12.init(&chunk_seeds.value[3]); // Seed data only.
 
     const suffix = coord.suffix;
     const cx = suffix[0];
@@ -950,7 +950,7 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
                 (cy == 0 and block_y < 2) or
                 (cy == max_suffix and block_y >= (CHUNK_SIZE - 2));
             if (is_absolute_edge_x or is_absolute_edge_y) {
-                chunk.blocks[idx] = Block.makeBasicBlock(.edge_stone, rng4.next());
+                chunk.blocks[idx] = Block.makeBasicBlock(.edge_stone, rng_seed.next());
                 continue;
             }
 
@@ -984,14 +984,13 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
 
             chunk.blocks[idx] = Block.makeBasicBlock(
                 sprite,
-                rng4.next(),
+                rng_seed.next(),
             );
         }
     }
 
     addEdgeFlags(chunk, coord, depth);
     // Decorate the base chunk here so that child depths inherit the results
-    var rng_decor = seeding.ChaCha12.init(&quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth)).value[0]);
     procedural.addDecorations(chunk, &rng_decor);
 
     // Reset edge flags to 0xFF for empty blocks after decorations are completed!
@@ -1228,6 +1227,7 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
     return updateLocalEdgeFlags(coord, bx, by);
 }
 
+/// Custom type for edge flag information that stores a `Coordinate` and block within the chunk.
 pub const UpdateItem = struct { coord: Coordinate, bx: u4, by: u4 };
 
 /// Max amount of edge flags to check before exiting. If 0, never exits.
@@ -1568,13 +1568,13 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     memory.game.depth += 1;
     const depth = memory.game.depth;
 
-    const scale_vec = Vec2i{ ZOOM_FACTOR, ZOOM_FACTOR };
+    const scale_vec: Vec2i = .{ ZOOM_FACTOR, ZOOM_FACTOR };
     // Magic vertical pivot compensation (384 for factor 4 and block size 256)
     const pivot_y: i64 = (ZOOM_FACTOR - 1) * memory.CHUNK_SIZE_SQ / 2;
 
     // Mask the last 12 bits (0-4095)
-    var new_pos: memory.Vec2i = @mod(memory.game.player_pos * scale_vec, @as(Vec2i, @splat(memory.SUBPIXELS_IN_CHUNK))) + Vec2i{ 0, pivot_y };
-    var chunk_offset = Vec2i{ 0, 0 };
+    var new_pos: Vec2i = @mod(memory.game.player_pos * scale_vec, @as(Vec2i, @splat(memory.SUBPIXELS_IN_CHUNK))) + Vec2i{ 0, pivot_y };
+    var chunk_offset: Vec2i = .{ 0, 0 };
 
     // Safely shift the chunk downwards if the vertical pivot overflowed the chunk bounds!
     if (new_pos[1] >= memory.SUBPIXELS_IN_CHUNK) {
@@ -1586,7 +1586,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     if (depth <= HORIZON_DEPTH) {
         // Zooming by 4x means the suffix shifts by 2 bits.
         // Pull the most significant bits from the block offset (bx, by) to fill the new suffix bits.
-        var target_coord = Coordinate{
+        var target_coord: Coordinate = .{
             .suffix = .{
                 (coord.suffix[0] *% ZOOM_FACTOR) | (bx >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2)),
                 (coord.suffix[1] *% ZOOM_FACTOR) | (by >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2)),
@@ -1660,7 +1660,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     // finalize player state
     const quadrant_x = naive_cell_x - left_cell_x;
     const quadrant_y = naive_cell_y - top_cell_y;
-    var target_coord = Coordinate{
+    var target_coord: Coordinate = .{
         .suffix = .{
             (coord.suffix[0] *% ZOOM_FACTOR) | (bx >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2)),
             (coord.suffix[1] *% ZOOM_FACTOR) | (by >> (CHUNK_SIZE_LOG2 - memory.ZOOM_LOG2)),
