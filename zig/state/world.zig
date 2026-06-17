@@ -505,7 +505,7 @@ const CHUNK_CACHE_SIZE: usize = blk: {
     const aligned_size = ((integer_cache_size + (CHUNK_CACHE_WAYS - 1)) / CHUNK_CACHE_WAYS) * CHUNK_CACHE_WAYS;
 
     // Maintain a pretty conservative minimum baseline size
-    break :blk @max(aligned_size * 4, 64);
+    break :blk @max(aligned_size, 64);
 };
 
 /// Ways that the cache is split (must be a power of two).
@@ -697,7 +697,7 @@ pub const QuadCache = struct {
     /// Uses a 4-way set-associative cache to optimize fractal generation and boundary checks.
     ///
     /// See definition of `ChunkSeeds` for specific meanings.
-    pub inline fn getChunkSeeds(self: *@This(), key: DepthCoordinate) ChunkSeeds {
+    pub fn getChunkSeeds(self: *@This(), key: DepthCoordinate) ChunkSeeds {
         const h = key.hash();
         const set_idx: usize = @intCast(h % SEED_CACHE_SETS);
 

@@ -100,7 +100,7 @@ export async function create(
 
     // Fetch WASM
     const mem = new WebAssembly.Memory({
-        initial: 128,
+        initial: 128, // start with 8 MiB in WASM memory
     }) as WebAssembly.Memory;
     const engineModule = await WebAssembly.instantiateStreaming(
         fetch(WASM_URL),
