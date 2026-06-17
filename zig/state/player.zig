@@ -1,17 +1,17 @@
 //! Handles the main player movement and camera logic.
 const std = @import("std");
-const r = @import("../root.zig");
-const memory = r.memory;
-const logger = r.logger;
-const KeyBits = r.KeyBits;
-const main = r.startup;
-const world = r.world;
-const CHUNK_SIZE = memory.CHUNK_SIZE;
-const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
-const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
+const dw = @import("../root.zig");
+const memory = dw.memory;
+const logger = dw.logger;
+const KeyBits = dw.KeyBits;
+const main = dw.startup;
+const world = dw.world;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
+const CHUNK_SIZE_SQ = dw.CHUNK_SIZE_SQ;
+const SUBPIXELS_IN_CHUNK = dw.SUBPIXELS_IN_CHUNK;
 
-const Vec2i = memory.Vec2i;
-const Vec2f = memory.Vec2f;
+const Vec2i = dw.utils.Vec2i;
+const Vec2f = dw.utils.Vec2f;
 
 /// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
 /// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
@@ -51,9 +51,9 @@ const CAMERA_CHANGE_SPEED = 1.02;
 const CAMERA_SMOOTHING = 0.25;
 
 /// How far the player has to move before actually panning the camera in sub-pixels (x-axis).
-const CAMERA_DEADZONE_X = 10 * memory.CHUNK_SIZE_SQ; // memory.CHUNK_SIZE_SQ means 1 block, basically
+const CAMERA_DEADZONE_X = 10 * dw.CHUNK_SIZE_SQ; // dw.CHUNK_SIZE_SQ means 1 block, basically
 /// How far the player has to move before actually panning the camera in sub-pixels (y-axis).
-const CAMERA_DEADZONE_Y = 3 * memory.CHUNK_SIZE_SQ;
+const CAMERA_DEADZONE_Y = 3 * dw.CHUNK_SIZE_SQ;
 
 const pixel_mult: Vec2f = @splat(@floatFromInt(CHUNK_SIZE));
 pub var subpixel_accum: Vec2f = .{ 0.0, 0.0 }; // note that vectors are smartly aligned already
@@ -110,7 +110,7 @@ pub fn move(logic_speed: f64) void {
     }
 
     // Physics displacement using average velocity!
-    const displacement = game.player_velocity * @as(Vec2f, @splat(dt * memory.CHUNK_SIZE_FLOAT));
+    const displacement = game.player_velocity * @as(Vec2f, @splat(dt * dw.CHUNK_SIZE_FLOAT));
     subpixel_accum += displacement;
 
     const total_move: Vec2i = @floor(subpixel_accum);
@@ -184,8 +184,8 @@ pub fn move(logic_speed: f64) void {
 fn handleLocalWrap(comptime axis: u1) i64 {
     const game = &memory.game;
     const val = game.player_pos[axis];
-    if (val < 0 or val >= memory.SUBPIXELS_IN_CHUNK) {
-        const carry = @divFloor(val, memory.SUBPIXELS_IN_CHUNK);
+    if (val < 0 or val >= dw.SUBPIXELS_IN_CHUNK) {
+        const carry = @divFloor(val, dw.SUBPIXELS_IN_CHUNK);
         const current_coord = game.getPlayerCoord();
 
         const new_coord = if (axis == 0)
@@ -196,16 +196,16 @@ fn handleLocalWrap(comptime axis: u1) i64 {
         if (new_coord) |c| {
             game.player_quadrant = c.quadrant;
             game.player_chunk = c.suffix;
-            game.player_pos[axis] = @mod(val, memory.SUBPIXELS_IN_CHUNK);
+            game.player_pos[axis] = @mod(val, dw.SUBPIXELS_IN_CHUNK);
 
             // Adjust last_player_pos and camera so interpolation doesn't snap
-            const subpixel_offset = carry * memory.SUBPIXELS_IN_CHUNK;
+            const subpixel_offset = carry * dw.SUBPIXELS_IN_CHUNK;
             game.last_player_pos[axis] -= subpixel_offset;
             game.camera_pos[axis] -= subpixel_offset;
             return carry;
         } else {
             // World edge hit: snap back
-            game.player_pos[axis] = if (val < 0) 0 else memory.SUBPIXELS_IN_CHUNK - 1;
+            game.player_pos[axis] = if (val < 0) 0 else dw.SUBPIXELS_IN_CHUNK - 1;
         }
     }
     return 0;
@@ -222,7 +222,7 @@ pub fn isColliding(px: i64, py: i64) bool {
     };
 
     const player_coord = game.getPlayerCoord();
-    var last_coord: ?memory.Coordinate = null;
+    var last_coord: ?world.Coordinate = null;
     var cached_chunk: memory.Chunk = undefined;
 
     for (corners) |c| {
@@ -235,8 +235,8 @@ pub fn isColliding(px: i64, py: i64) bool {
             last_coord = target_coord;
         }
 
-        const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[0], SUBPIXELS_IN_CHUNK), memory.CHUNK_SIZE_SQ))));
-        const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[1], SUBPIXELS_IN_CHUNK), memory.CHUNK_SIZE_SQ))));
+        const lx: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[0], SUBPIXELS_IN_CHUNK), dw.CHUNK_SIZE_SQ))));
+        const ly: u4 = @intCast(@as(u64, @bitCast(@divFloor(@mod(c[1], SUBPIXELS_IN_CHUNK), dw.CHUNK_SIZE_SQ))));
         if (cached_chunk.blocks[@as(usize, ly) * CHUNK_SIZE + @as(usize, lx)].isSolid()) return true;
     }
     return false;

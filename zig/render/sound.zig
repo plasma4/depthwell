@@ -1,9 +1,9 @@
 //! Contains sound effect logic and dispatches them to JavaScript.
 const std = @import("std");
-const r = @import("../root.zig");
+const dw = @import("../root.zig");
 
 /// Random seed used for sound effects. This seed in `startup.init()`.
-pub var seed: r.seeding.ChaCha12 = undefined; // interestingly, ChaCha12 silently continues on with undefined init
+pub var seed: dw.seeding.ChaCha12 = undefined; // interestingly, ChaCha12 silently continues on with undefined init
 
 /// External function that plays a sound (with pitch and volume variation factors).
 extern "env" fn jsPlaySound(soundId: u32, volume: f64, pitch: f64) void;
@@ -11,7 +11,7 @@ extern "env" fn jsPlaySound(soundId: u32, volume: f64, pitch: f64) void;
 /// Tells JavaScript to play a sound.
 /// Use volume and pitch arguments to control a random percentage-based variation.
 pub fn playSound(id: u32, base_volume: f64, volume_variation: f64, pitch_variation: f64) void {
-    if (r.is_wasm) {
+    if (dw.is_wasm) {
         jsPlaySound(
             id,
             @max(base_volume + generateVariation(volume_variation), 0.1),

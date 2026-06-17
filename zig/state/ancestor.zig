@@ -1,19 +1,19 @@
 //! Handles fractal ancestry and lookup logic.
 const std = @import("std");
-const r = @import("../root.zig");
-const memory = r.memory;
-const world = r.world;
-const procedural = r.procedural;
-const seeding = r.seeding;
+const dw = @import("../root.zig");
+const memory = dw.memory;
+const world = dw.world;
+const procedural = dw.procedural;
+const seeding = dw.seeding;
 
-const Sprite = r.Sprite;
+const Sprite = dw.Sprite;
 const Block = memory.Block;
-const Coordinate = memory.Coordinate;
+const Coordinate = world.Coordinate;
 const Chunk = memory.Chunk;
 const DepthCoordinate = world.DepthCoordinate;
 
-const HORIZON_DEPTH = memory.HORIZON_DEPTH;
-const STARTING_ZOOM_TIMES = r.startup.STARTING_ZOOM_TIMES;
+const HORIZON_DEPTH = dw.HORIZON_DEPTH;
+const STARTING_ZOOM_TIMES = dw.startup.STARTING_ZOOM_TIMES;
 
 /// Returns whether the specified depth is far enough from the current player depth that discrete coordinates are no longer tracked.
 /// At this boundary, chunk-level detail is replaced by the global `QuadCache` 4x4 background grid.
@@ -21,7 +21,7 @@ pub inline fn isHorizonDepth(depth: u64) bool {
     // The floor is NEVER a horizon depth.
     if (depth <= STARTING_ZOOM_TIMES) return false;
 
-    const horizon_limit = memory.HORIZON_DEPTH;
+    const horizon_limit = dw.HORIZON_DEPTH;
     // The horizon (H) kicks in once we are more than 32 + STARTING_ZOOM_TIMES layers deep.
     if (memory.game.depth < STARTING_ZOOM_TIMES + horizon_limit) return false;
 
@@ -122,12 +122,12 @@ pub const ParentInfo = struct {
 pub fn getParentInfo(key: DepthCoordinate, bx: u4, by: u4) ParentInfo {
     // getParent handles the 3-bit rebase origin reconstruction and quadrant shifts for D > 32.
     const parent = key.getParent();
-    const zoom_log2 = memory.ZOOM_LOG2;
-    const blocks_per_parent = memory.BLOCKS_PER_PARENT;
+    const zoom_log2 = dw.ZOOM_LOG2;
+    const blocks_per_parent = dw.BLOCKS_PER_PARENT;
 
     // The LSBs of the suffix determine which 4x4 quadrant of the parent chunk this child occupies.
-    const lx: u4 = @intCast(key.suffix[0] & (memory.ZOOM_FACTOR - 1));
-    const ly: u4 = @intCast(key.suffix[1] & (memory.ZOOM_FACTOR - 1));
+    const lx: u4 = @intCast(key.suffix[0] & (dw.ZOOM_FACTOR - 1));
+    const ly: u4 = @intCast(key.suffix[1] & (dw.ZOOM_FACTOR - 1));
 
     return .{
         .coord = parent.asCoord(),
@@ -191,8 +191,8 @@ pub inline fn get4x4List(comptime str: []const u8) []const u4 {
 pub inline fn getCornerId(id: u4) u2 {
     const id_row = id % 4;
     const id_col = id / 4;
-    return r.utils.intFromBool(u64, id_row >= 2) +
-        2 * r.utils.intFromBool(u64, id_col >= 2);
+    return dw.utils.intFromBool(u64, id_row >= 2) +
+        2 * dw.utils.intFromBool(u64, id_col >= 2);
 }
 
 /// Applies deterministic logic to a child `Block` based on its parent and 8 parent neighbors.
@@ -302,7 +302,7 @@ pub fn applyAncestorLogic(
 pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
     const target_depth = key.depth;
     if (target_depth == STARTING_ZOOM_TIMES) {
-        const block_idx = (@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx;
+        const block_idx = (@as(usize, by) << dw.CHUNK_SIZE_LOG2) | bx;
 
         if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx];
         if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx];
@@ -316,7 +316,7 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
         return world.getBlockAt(key.asCoord(), bx, by, target_depth);
     }
 
-    const block_idx = (@as(usize, by) << memory.CHUNK_SIZE_LOG2) | bx;
+    const block_idx = (@as(usize, by) << dw.CHUNK_SIZE_LOG2) | bx;
 
     if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx];
     if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx];
@@ -336,8 +336,8 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
 
             const lx = @as(i32, @intCast(p.bx)) + dx;
             const ly = @as(i32, @intCast(p.by)) + dy;
-            const chunk_off_x = @divFloor(lx, memory.CHUNK_SIZE);
-            const chunk_off_y = @divFloor(ly, memory.CHUNK_SIZE);
+            const chunk_off_x = @divFloor(lx, dw.CHUNK_SIZE);
+            const chunk_off_y = @divFloor(ly, dw.CHUNK_SIZE);
 
             const target_nc = p.coord.moveAtDepth(.{ chunk_off_x, chunk_off_y }, target_depth - 1) orelse {
                 // neighbors[n_idx] = if (target_depth - 1 == STARTING_ZOOM_TIMES) .edge_stone else .none;
@@ -349,8 +349,8 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
             // This uses AncestorCache!
             neighbors[n_idx] = getInheritedMaterial(
                 target_nc.asDepthCoordinate(target_depth - 1),
-                @intCast(@mod(lx, memory.CHUNK_SIZE)),
-                @intCast(@mod(ly, memory.CHUNK_SIZE)),
+                @intCast(@mod(lx, dw.CHUNK_SIZE)),
+                @intCast(@mod(ly, dw.CHUNK_SIZE)),
             );
             n_idx += 1;
         }

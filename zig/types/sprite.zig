@@ -1,9 +1,11 @@
 const std = @import("std");
-const r = @import("../root.zig");
+const dw = @import("../root.zig");
 
-const is_debug = r.is_debug;
-const memory = r.memory;
-const procedural = r.procedural;
+const is_debug = dw.is_debug;
+const memory = dw.memory;
+const procedural = dw.procedural;
+
+const Coordinate = dw.world.Coordinate;
 
 /// Index where stone-like sprites begin.
 const STONE_START = 4;
@@ -69,7 +71,7 @@ pub const DropStrategy = enum {
 };
 
 /// Type signature for deterministic coordinate-based drop calculations.
-pub const DropFn = *const fn (coord: memory.Coordinate, bx: u4, by: u4) []const Sprite;
+pub const DropFn = *const fn (coord: Coordinate, bx: u4, by: u4) []const Sprite;
 
 /// Configuration defining how a block drops items.
 pub const DropConfig = struct {
@@ -81,16 +83,16 @@ pub const DropConfig = struct {
 /// Contains custom functions for `dynamic_fn` in the `DropConfig`.
 pub const DropHandlers = struct {
     /// Converts a bush drop to various fruits based on world coordinates and seeds.
-    pub fn bushDrop(coord: memory.Coordinate, bx: u4, by: u4) []const Sprite {
-        const oddsNum = r.seeding.oddsNum;
+    pub fn bushDrop(coord: Coordinate, bx: u4, by: u4) []const Sprite {
+        const oddsNum = dw.seeding.oddsNum;
         const depth = memory.game.depth;
         const key = coord.asDepthCoordinate(depth);
-        const chunk_seeds = r.world.quad_cache.getChunkSeeds(key);
+        const chunk_seeds = dw.world.quad_cache.getChunkSeeds(key);
 
         // Deterministic hash based on the absolute block coordinate in the world
         const abs_x = coord.suffix[0] *% 16 + bx; // (no +% needed)
         const abs_y = coord.suffix[1] *% 16 + by;
-        const seed_val = r.seeding.FastHash.hash2d(
+        const seed_val = dw.seeding.FastHash.hash2d(
             chunk_seeds.value[3].value[0..2].*,
             abs_x,
             abs_y,
@@ -576,7 +578,7 @@ pub const Sprite = enum(u16) {
     /// Pickaxe icon.
     pickaxe,
     /// Generic water block (filled). Default internal water type.
-    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(r.mining.PickaxeType.gold))) + 1),
+    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
     /// The item version of water.
     water_wavy,
 

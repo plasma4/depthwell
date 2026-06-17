@@ -1,9 +1,9 @@
 //! Geometric primitives for hit-testing UI and world elements.
 const std = @import("std");
-const r = @import("../root.zig");
-const memory = r.memory;
+const dw = @import("../root.zig");
+const memory = dw.memory;
 
-const Vec2f = memory.Vec2f;
+const Vec2f = dw.utils.Vec2f;
 
 /// An axis-aligned shape; assumed to be in internal viewport coordinates, not UV.
 ///

@@ -1,51 +1,31 @@
 //! Contains important datatypes, some of which bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
 const std = @import("std");
 const builtin = @import("builtin");
-const r = @import("root.zig");
-const Sprite = r.Sprite;
-const types = r.types;
-const logger = r.logger;
-const player = r.player;
-const ColorRgba = r.ColorRgba;
-const seeding = r.seeding;
-const world = r.world;
+const dw = @import("root.zig");
 
-// Note: changing these constants below will probably have disasterous consequences.
-// A lot of logic is hard-coded, such as `[6][6]Sprite` use, and a lot of logic is bound to break if these constants are modified.
+const types = dw.types;
+const logger = dw.logger;
+const player = dw.player;
+const seeding = dw.seeding;
+const world = dw.world;
+
+const Sprite = dw.Sprite;
+const ColorRgba = dw.ColorRgba;
+const Coordinate = dw.world.Coordinate;
+
+const Vec2i = dw.utils.Vec2i;
+const Vec2u = dw.utils.Vec2u;
+const Vec2f = dw.utils.Vec2f;
+const Vec2f32 = dw.utils.Vec2f32;
 
 /// Represents log2(CHUNK_SIZE).
-pub const CHUNK_SIZE_LOG2: comptime_int = 4;
-/// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel. (Note that changing these values WILL break the code!)
-pub const CHUNK_SIZE: comptime_int = 16;
-/// The main number (as a float) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
-pub const CHUNK_SIZE_FLOAT: comptime_float = @floatFromInt(CHUNK_SIZE);
+const CHUNK_SIZE_LOG2 = dw.CHUNK_SIZE_LOG2;
+/// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
+const CHUNK_SIZE = dw.CHUNK_SIZE;
 /// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
-pub const CHUNK_SIZE_SQ: comptime_int = CHUNK_SIZE * CHUNK_SIZE;
-/// A float representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
-pub const CHUNK_SIZE_FLOAT_SQ: comptime_float = CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT;
-/// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
-pub const SUBPIXELS_IN_CHUNK: comptime_int = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+const CHUNK_SIZE_SQ = dw.CHUNK_SIZE_SQ;
 
-/// Represents log2(ZOOM_FACTOR).
-pub const ZOOM_LOG2: comptime_int = 2;
-/// The factor for zooming, increasing the depth by 1. (So, 4 times means that the world will get 4 times wider and taller when depth increases.)
-pub const ZOOM_FACTOR: comptime_int = 4;
-/// The highest possible depth value where all coordinates can be represented in 1 quadrant.
-/// Equivalent to the highest depth value where `ZOOM_LOG2 * HORIZON_DEPTH <= 64` is true.
-///
-/// This is an important value for ancestry and depth increase calculations.
-pub const HORIZON_DEPTH: comptime_int = 32;
-/// Represents how many blocks in a child chunk map to ONE parent block.
-/// A 4x4 area of child blocks is 1 parent block if `ZOOM_FACTOR` is 4.
-pub const BLOCKS_PER_PARENT: comptime_int = CHUNK_SIZE / ZOOM_FACTOR;
-
-// Scary constants end here; types and structs begin below!
-
-// vector types!
-pub const Vec2i = @Vector(2, i64);
-pub const Vec2u = @Vector(2, u64);
-pub const Vec2f = @Vector(2, f64);
-pub const Vec2f32 = @Vector(2, f32);
+const ZOOM_FACTOR = dw.ZOOM_FACTOR;
 
 /// Represents a specific category a `[2]u64` slice of `memory.game.seed2` represents.
 /// Use `memory.game.getHashSeed()` to request said slice.
@@ -325,7 +305,7 @@ pub const Block = packed struct(u64) {
     }
 
     /// Returns the cascade anchoring rules for this block.
-    pub inline fn anchor(self: @This()) r.block.AnchorKind {
+    pub inline fn anchor(self: @This()) dw.block.AnchorKind {
         return self.id.anchor();
     }
 
@@ -360,108 +340,6 @@ pub const Chunk = struct {
     /// Gets a specific block within the 16x16 chunk.
     pub inline fn getBlock(self: @This(), x: u4, y: u4) Block {
         return self.blocks[(@as(usize, y) << CHUNK_SIZE_LOG2) | @as(usize, x)];
-    }
-};
-
-/// Represents a "coordinate", relative to a quad-cache. Stores an "active suffix" as well as the quadrant this coordinate belongs to.
-pub const Coordinate = struct {
-    /// Active suffix (stored as a vector).
-    /// You can think of the active suffix like 32 u2s packed together for the X and Y coordinate.
-    /// This can be merged with a correct `QuadCache` quadrant to produce a "complete" path (see `README.md` for more details).
-    suffix: Vec2u,
-    /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
-    quadrant: u2,
-
-    /// Checks equality between two `Coordinate` values.
-    pub inline fn eql(a: @This(), b: @This()) bool {
-        return @reduce(.And, a.suffix == b.suffix) and
-            a.quadrant == b.quadrant;
-    }
-
-    /// Pure 64-bit stateless hash.
-    pub inline fn hash(self: @This()) u64 {
-        const secret_0 = 0xa0761d6478bd642f;
-        const secret_1 = 0xe7037ed1a0b428db;
-
-        // Diffuse suffix using vector multiplication and folding
-        var v = self.suffix;
-        v *%= Vec2u{ secret_0, secret_1 };
-        v ^= v >> @as(Vec2u, @splat(32));
-
-        // Combine vector lanes with the quadrant metadata
-        const combined = v[0] ^ v[1] ^ @as(u64, self.quadrant);
-
-        // MurmurHash3 final mix
-        var x = combined;
-        x ^= x >> 30;
-        x *%= 0xbf58476d1ce4e5b9;
-        x ^= x >> 27;
-        x *%= 0x94d049bb133111eb;
-        x ^= x >> 31;
-        return x;
-    }
-
-    /// Converts a `Coordinate` to a `DepthCoordinate`, provided that a depth is given.
-    pub inline fn asDepthCoordinate(self: @This(), depth: u64) world.DepthCoordinate {
-        return .{ .depth = depth, .quadrant = self.quadrant, .suffix = self.suffix };
-    }
-
-    /// Adds both an X and Y value, creating a new `Coordinate` and handling quadrants.
-    /// Returns null if this change would exceed a quadrant's boundaries at the game's current depth.
-    pub inline fn move(self: @This(), shift: Vec2i) ?Coordinate {
-        return self.moveAtDepth(shift, game.depth);
-    }
-
-    /// Adds both an X and Y value, creating a new `Coordinate` and handling quadrants for a specific depth.
-    /// Returns null if this change would exceed boundaries.
-    pub inline fn moveAtDepth(self: @This(), shift: Vec2i, depth: u64) ?Coordinate {
-        const dx = shift[0];
-        const dy = shift[1];
-        if (dx == 0 and dy == 0) return self;
-        var res = self;
-
-        // X Axis
-        if (dx != 0) {
-            const is_pos = dx > 0;
-            const delta: u64 = if (is_pos) @intCast(dx) else @intCast(-%dx);
-            const ov = if (is_pos) @addWithOverflow(res.suffix[0], delta) else @subWithOverflow(res.suffix[0], delta);
-            if (ov[1] != 0) {
-                if (depth < HORIZON_DEPTH) return null;
-                // if (is_pos == ((res.quadrant & 1) != 0)) return null;
-                res.quadrant ^= 1;
-            }
-
-            if (is_pos and depth < HORIZON_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
-            res.suffix[0] = ov[0];
-        }
-
-        // Y Axis
-        if (dy != 0) {
-            const is_pos = dy > 0;
-            const delta: u64 = if (is_pos) @intCast(dy) else @intCast(-%dy);
-            const ov = if (is_pos) @addWithOverflow(res.suffix[1], delta) else @subWithOverflow(res.suffix[1], delta);
-            if (ov[1] != 0) {
-                if (depth < HORIZON_DEPTH) return null;
-                // if (is_pos == ((res.quadrant & 2) != 0)) return null;
-                res.quadrant ^= 2;
-            }
-
-            if (is_pos and depth < HORIZON_DEPTH and ov[0] > world.getMaxSuffixAtDepth(depth)) return null;
-            res.suffix[1] = ov[0];
-        }
-        return res;
-    }
-
-    /// Adds a certain X value, creating a new Coordinate and handling quadrants.
-    /// Returns null if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub inline fn moveX(self: @This(), x: i64) ?Coordinate {
-        return self.move(.{ x, 0 });
-    }
-
-    /// Adds a certain Y value, creating a new Coordinate and handling quadrants.
-    /// Returns null if this change would exceed a quadrant's boundaries (or the game's when depth is <= 16).
-    pub inline fn moveY(self: @This(), y: i64) ?Coordinate {
-        return self.move(.{ 0, y });
     }
 };
 

@@ -1,17 +1,17 @@
 //! Updates public values describing the mouse's position for other parts of the game, such as mining.
 const std = @import("std");
-const r = @import("../root.zig");
-const memory = r.memory;
-const main = r.startup;
-const logger = r.logger;
-const sprite = r.sprite;
-const world = r.world;
-const inventory = r.inventory;
+const dw = @import("../root.zig");
+const memory = dw.memory;
+const main = dw.startup;
+const logger = dw.logger;
+const sprite = dw.sprite;
+const world = dw.world;
+const inventory = dw.inventory;
 
-const CHUNK_SIZE = memory.CHUNK_SIZE;
-const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
-const SCREEN_WIDTH = r.SCREEN_WIDTH;
-const SCREEN_HEIGHT = r.SCREEN_HEIGHT;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
+const CHUNK_SIZE_SQ = dw.CHUNK_SIZE_SQ;
+const SCREEN_WIDTH = dw.SCREEN_WIDTH;
+const SCREEN_HEIGHT = dw.SCREEN_HEIGHT;
 
 /// The possible things the mouse started selecting on mouse down.
 pub const MouseState = enum(u32) {
@@ -38,10 +38,10 @@ pub var mouse_type: MouseType = .initial;
 
 /// Chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
-pub var mouse_chunk_coord: ?memory.Coordinate = null;
+pub var mouse_chunk_coord: ?world.Coordinate = null;
 /// Subpixel of the chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
-pub var mouse_subpixel: ?memory.Vec2u = null;
+pub var mouse_subpixel: ?dw.utils.Vec2u = null;
 /// X block location the mouse is on (within the chunk).
 /// Assume to be invalid if `mouse_chunk` or `mouse_subpixel` are null.
 pub var mouse_block_x: u4 = 0;
@@ -54,7 +54,7 @@ pub var block_position_changed = true;
 
 /// Point coordinate of the mouse (based on the UV).
 /// Assume to be invalid if values are negative (both will be -1.0 if invalid).
-pub var uv_position: memory.Vec2f = .{ -1.0, -1.0 };
+pub var uv_position: dw.utils.Vec2f = .{ -1.0, -1.0 };
 
 /// Determines if the mouse was just set to be down; reset on pointerup.
 pub var just_mouse_down: bool = false;
@@ -96,15 +96,15 @@ pub fn updateMouseLocation() void {
     const target_sy = game.camera_pos[1] + @as(i64, @round(world_dy));
 
     const old_coord = mouse_chunk_coord;
-    const chunk_offset_x = @divFloor(target_sx, memory.SUBPIXELS_IN_CHUNK);
-    const chunk_offset_y = @divFloor(target_sy, memory.SUBPIXELS_IN_CHUNK);
+    const chunk_offset_x = @divFloor(target_sx, dw.SUBPIXELS_IN_CHUNK);
+    const chunk_offset_y = @divFloor(target_sy, dw.SUBPIXELS_IN_CHUNK);
 
     const player_coord = game.getPlayerCoord();
     if (player_coord.move(.{ chunk_offset_x, chunk_offset_y })) |coord| {
         mouse_chunk_coord = coord;
 
-        const lx = @mod(target_sx, memory.SUBPIXELS_IN_CHUNK); // no need to use % trick, @mod optimizes down to & instruction
-        const ly = @mod(target_sy, memory.SUBPIXELS_IN_CHUNK);
+        const lx = @mod(target_sx, dw.SUBPIXELS_IN_CHUNK); // no need to use % trick, @mod optimizes down to & instruction
+        const ly = @mod(target_sy, dw.SUBPIXELS_IN_CHUNK);
         mouse_subpixel = .{ @intCast(lx), @intCast(ly) };
 
         const old_x = mouse_block_x;
@@ -114,7 +114,7 @@ pub fn updateMouseLocation() void {
         block_position_changed =
             mouse_block_x != old_x or
             mouse_block_y != old_y or
-            !(old_coord != null and memory.Coordinate.eql(coord, old_coord.?));
+            !(old_coord != null and world.Coordinate.eql(coord, old_coord.?));
     } else {
         mouse_chunk_coord = null;
         mouse_subpixel = null;
@@ -131,8 +131,8 @@ pub fn getMouseBlock() ?memory.Block {
         const s = block.id;
 
         // get more intuitive pixel location of the mouse within a sprite, from 0-15
-        const loc = (mouse_subpixel.? / memory.Vec2u{ memory.CHUNK_SIZE, memory.CHUNK_SIZE }) %
-            memory.Vec2u{ memory.CHUNK_SIZE, memory.CHUNK_SIZE };
+        const loc = (mouse_subpixel.? / dw.utils.Vec2u{ dw.CHUNK_SIZE, dw.CHUNK_SIZE }) %
+            dw.utils.Vec2u{ dw.CHUNK_SIZE, dw.CHUNK_SIZE };
 
         const hitbox = s.props().hitbox;
         // create smaller hitboxes for some decor sprites (with a little bit of leniency involved still)

@@ -1,12 +1,12 @@
 const std = @import("std");
-const r = @import("../root.zig");
-const memory = r.memory;
-const logger = r.logger;
-const world = r.world;
+const dw = @import("../root.zig");
+const memory = dw.memory;
+const logger = dw.logger;
+const world = dw.world;
 
-const HORIZON_DEPTH = memory.HORIZON_DEPTH;
-const CHUNK_SIZE = memory.CHUNK_SIZE;
-const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
+const HORIZON_DEPTH = dw.HORIZON_DEPTH;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
+const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 
 pub var current_dt: f64 = 0.0;
 
@@ -17,16 +17,16 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
     const game = &memory.game;
     // calculate effective zoom
-    const resolution_scale = canvas_w / @as(f64, r.SCREEN_WIDTH);
+    const resolution_scale = canvas_w / @as(f64, dw.SCREEN_WIDTH);
     // since interpolated doesn't really influence logic, std.math.pow can be non-deterministic
     // dt allows for super smooth frame interpolation
     const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dt);
     const effective_zoom = interpolated_zoom * resolution_scale;
 
     // calculate the screen's half-extents in world sub-pixels (as floats to preserve zoom precision)
-    const subpixels_per_chunk: f64 = @floatFromInt(memory.SUBPIXELS_IN_CHUNK);
-    const half_w_sp = (@as(f64, r.SCREEN_WIDTH_HALF) / interpolated_zoom) * CHUNK_SIZE;
-    const half_h_sp = (@as(f64, r.SCREEN_HEIGHT_HALF) / interpolated_zoom) * CHUNK_SIZE;
+    const subpixels_per_chunk: f64 = @floatFromInt(dw.SUBPIXELS_IN_CHUNK);
+    const half_w_sp = (@as(f64, dw.SCREEN_WIDTH_HALF) / interpolated_zoom) * CHUNK_SIZE;
+    const half_h_sp = (@as(f64, dw.SCREEN_HEIGHT_HALF) / interpolated_zoom) * CHUNK_SIZE;
 
     // calculate the interpolated camera loc
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
@@ -67,11 +67,11 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
             const offset_x = @as(i64, @intCast(min_cx)) + @as(i64, @intCast(gx));
 
             if (player_coord.move(.{ offset_x, offset_y })) |target_coord| {
-                if (game.depth <= memory.HORIZON_DEPTH) {
+                if (game.depth <= dw.HORIZON_DEPTH) {
                     if (target_coord.suffix[0] > world.max_possible_suffix or target_coord.suffix[1] > world.max_possible_suffix) {
                         for (0..CHUNK_SIZE) |ly| {
                             const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
-                            @memset(out[row_start .. row_start + CHUNK_SIZE], r.sprite.AIR_BLOCK);
+                            @memset(out[row_start .. row_start + CHUNK_SIZE], dw.sprite.AIR_BLOCK);
                         }
                         continue;
                     }
@@ -88,7 +88,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
                         const was_liquid = block.isLiquid();
 
                         // Check if the block is liquid at the top, replace it with the top sprite instead if so (enum ID + 1)
-                        const block_above_flag = r.types.EdgeFlags.getFlagBit(0, -1);
+                        const block_above_flag = dw.types.EdgeFlags.getFlagBit(0, -1);
                         if (was_liquid and (block.edge_flags & block_above_flag == 0)) {
                             block.id = @enumFromInt(@intFromEnum(block.id) + 1);
                             // edge flags preserve
@@ -104,7 +104,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
             } else {
                 for (0..CHUNK_SIZE) |ly| {
                     const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
-                    @memset(out[row_start .. row_start + CHUNK_SIZE], r.sprite.AIR_BLOCK);
+                    @memset(out[row_start .. row_start + CHUNK_SIZE], dw.sprite.AIR_BLOCK);
                 }
             }
         }
@@ -126,8 +126,8 @@ inline fn updateRenderProperties(
     effective_zoom: f64,
 ) void {
     // Calculate the camera position relative to the tile grid origin
-    const grid_origin_sub_x = @as(f64, @floatFromInt(min_cx)) * @as(f64, @floatFromInt(memory.SUBPIXELS_IN_CHUNK));
-    const grid_origin_sub_y = @as(f64, @floatFromInt(min_cy)) * @as(f64, @floatFromInt(memory.SUBPIXELS_IN_CHUNK));
+    const grid_origin_sub_x = @as(f64, @floatFromInt(min_cx)) * @as(f64, @floatFromInt(dw.SUBPIXELS_IN_CHUNK));
+    const grid_origin_sub_y = @as(f64, @floatFromInt(min_cy)) * @as(f64, @floatFromInt(dw.SUBPIXELS_IN_CHUNK));
 
     // Final camera position (in pixels this time, relative to the grid)
     const cam_x_shader = (interp_cam_x - grid_origin_sub_x) / CHUNK_SIZE_FLOAT;
@@ -149,8 +149,8 @@ inline fn updateRenderProperties(
     const abs_grid_cx = @mod(player_cx_mod + min_cx, 256);
     const abs_grid_cy = @mod(player_cy_mod + min_cy, 256);
 
-    const abs_grid_x = @as(f64, @floatFromInt(abs_grid_cx * @as(i32, memory.CHUNK_SIZE)));
-    const abs_grid_y = @as(f64, @floatFromInt(abs_grid_cy * @as(i32, memory.CHUNK_SIZE)));
+    const abs_grid_x = @as(f64, @floatFromInt(abs_grid_cx * @as(i32, dw.CHUNK_SIZE)));
+    const abs_grid_y = @as(f64, @floatFromInt(abs_grid_cy * @as(i32, dw.CHUNK_SIZE)));
 
     // Modulo every 512 chunks to seamlessly loop background coordinates (farthest layer needs 512-chunk period)
     const player_cx_bg_mod = @as(i64, @intCast(game.player_chunk[0] % 512));
@@ -158,8 +158,8 @@ inline fn updateRenderProperties(
     const abs_grid_bg_cx = @mod(player_cx_bg_mod + min_cx, 512);
     const abs_grid_bg_cy = @mod(player_cy_bg_mod + min_cy, 512);
 
-    const abs_grid_bg_x = @as(f64, @floatFromInt(abs_grid_bg_cx * @as(i32, memory.CHUNK_SIZE)));
-    const abs_grid_bg_y = @as(f64, @floatFromInt(abs_grid_bg_cy * @as(i32, memory.CHUNK_SIZE)));
+    const abs_grid_bg_x = @as(f64, @floatFromInt(abs_grid_bg_cx * @as(i32, dw.CHUNK_SIZE)));
+    const abs_grid_bg_y = @as(f64, @floatFromInt(abs_grid_bg_cy * @as(i32, dw.CHUNK_SIZE)));
 
     const abs_cam_x = cam_x_shader + (abs_grid_bg_x * 16.0);
     const abs_cam_y = cam_y_shader + (abs_grid_bg_y * 16.0);
@@ -177,7 +177,7 @@ inline fn updateRenderProperties(
     memory.setScratchProp(9, abs_cam_x);
     memory.setScratchProp(10, abs_cam_y);
 
-    if (r.is_debug) {
+    if (dw.is_debug) {
         const qc = world.quad_cache;
         const d: u64 = @intCast(memory.game.depth);
 
@@ -186,8 +186,8 @@ inline fn updateRenderProperties(
         var suffix_array_y: [HORIZON_DEPTH]u64 = undefined;
 
         for (0..log_limit) |i| {
-            suffix_array_x[log_limit - 1 - i] = (game.player_chunk[0] >> @intCast(memory.ZOOM_LOG2 * i)) % memory.ZOOM_FACTOR;
-            suffix_array_y[log_limit - 1 - i] = (game.player_chunk[1] >> @intCast(memory.ZOOM_LOG2 * i)) % memory.ZOOM_FACTOR;
+            suffix_array_x[log_limit - 1 - i] = (game.player_chunk[0] >> @intCast(dw.ZOOM_LOG2 * i)) % dw.ZOOM_FACTOR;
+            suffix_array_y[log_limit - 1 - i] = (game.player_chunk[1] >> @intCast(dw.ZOOM_LOG2 * i)) % dw.ZOOM_FACTOR;
         }
 
         if (game.depth > HORIZON_DEPTH) {
@@ -231,7 +231,7 @@ inline fn updateRenderProperties(
             "{mh}Velocity",
             game.player_velocity,
             "{mh}Rendered entity count",
-            r.entity.entity_count,
+            dw.entity.entity_count,
         });
 
         // logger.clear(1);

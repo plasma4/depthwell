@@ -1,24 +1,24 @@
 const std = @import("std");
-const r = @import("../root.zig");
-const memory = r.memory;
-const world = r.world;
-const entity = r.entity;
-const chunks = r.chunks;
-const sprite = r.sprite;
-const logger = r.logger;
+const dw = @import("../root.zig");
+const memory = dw.memory;
+const world = dw.world;
+const entity = dw.entity;
+const chunks = dw.chunks;
+const sprite = dw.sprite;
+const logger = dw.logger;
 
 /// Opacity of chunk wireframes.
 pub var WIREFRAME_OPACITY: f64 = 0.0;
 
-const CHUNK_SIZE = memory.CHUNK_SIZE;
-const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
+const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
 extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframe_opacity: f64) void;
 
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
 pub inline fn handleVisibleChunks(opacity: f64, wireframeOpacity: f64) void {
-    if (r.is_wasm) {
+    if (dw.is_wasm) {
         return jsHandleVisibleChunks(opacity, wireframeOpacity);
     } else {
         return; // no native impl yet
@@ -30,7 +30,7 @@ extern "env" fn jsHandleVisibleEntities() void;
 
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
 pub inline fn handleVisibleEntities() void {
-    if (r.is_wasm) {
+    if (dw.is_wasm) {
         return jsHandleVisibleEntities();
     } else {
         return; // no native impl yet
@@ -38,12 +38,12 @@ pub inline fn handleVisibleEntities() void {
 }
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsSetMouseType(mouse_type: r.mouse.MouseType) void;
+extern "env" fn jsSetMouseType(mouse_type: dw.mouse.MouseType) void;
 
 /// Sets the mouse type of the canvas in JS.
 pub inline fn dispatchMouseType() void {
-    if (r.is_wasm) {
-        jsSetMouseType(r.mouse.mouse_type);
+    if (dw.is_wasm) {
+        jsSetMouseType(dw.mouse.mouse_type);
     } else {
         return;
     }
@@ -51,7 +51,7 @@ pub inline fn dispatchMouseType() void {
 
 /// Processes data for renderFrame() in TypeScript to upload to WebGPU.
 pub fn prepareVisibleData(dt: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
-    r.chunks.updateVisibleChunks(dt, canvas_w, canvas_h);
+    dw.chunks.updateVisibleChunks(dt, canvas_w, canvas_h);
     handleVisibleChunks(1.0, WIREFRAME_OPACITY);
 
     entity.updateEntities(time_diff);

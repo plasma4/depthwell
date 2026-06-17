@@ -4,3 +4,9 @@
 pub inline fn intFromBool(comptime T: type, condition: bool) T {
     return @as(T, @intCast(@intFromBool(condition)));
 }
+
+// vector types!
+pub const Vec2i = @Vector(2, i64);
+pub const Vec2u = @Vector(2, u64);
+pub const Vec2f = @Vector(2, f64);
+pub const Vec2f32 = @Vector(2, f32);

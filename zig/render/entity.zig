@@ -1,16 +1,16 @@
 //! Handles entities and stores functions relating on how to add them.
 const std = @import("std");
-const r = @import("../root.zig");
-const SegmentedList = r.SegmentedList;
-const memory = r.memory;
-const sprite = r.sprite;
-const ColorRgba = r.ColorRgba;
-const inventory = r.inventory;
+const dw = @import("../root.zig");
+const SegmentedList = dw.SegmentedList;
+const memory = dw.memory;
+const sprite = dw.sprite;
+const ColorRgba = dw.ColorRgba;
+const inventory = dw.inventory;
 
-const CHUNK_SIZE = memory.CHUNK_SIZE;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
 const Entity = memory.Entity;
 const WGSLEntity = memory.WGSLEntity;
-const Vec2f32 = memory.Vec2f32;
+const Vec2f32 = dw.utils.Vec2f32;
 
 /// Scale of tiles in the small chunk preview.
 pub var preview_tile_size: f64 = 0.0;
@@ -47,14 +47,14 @@ pub fn updateEntities(time_diff: f64) void {
 
     inventory.addDroppedItemsAsEntities(time_diff); // delta time in ms
 
-    if (r.is_debug and preview_tile_size > 0.0) {
-        r.chunk_preview.drawChunkPreview();
+    if (dw.is_debug and preview_tile_size > 0.0) {
+        dw.chunk_preview.drawChunkPreview();
     }
 
-    r.mouse.mouse_type = .initial;
+    dw.mouse.mouse_type = .initial;
     inventory.drawInventory(time_diff);
-    r.render.dispatchMouseType();
-    r.mouse.just_mouse_down = false;
+    dw.render.dispatchMouseType();
+    dw.mouse.just_mouse_down = false;
 
     memory.setScratchProp(0, entity_count);
     // entities are cleared in the render code afterward
@@ -228,7 +228,7 @@ pub inline fn addEntity(entity: Entity) void {
     const min_y = entity.position[1] - half_diagonal;
     const max_y = entity.position[1] + half_diagonal;
 
-    if (max_x < 0.0 or min_x > r.SCREEN_WIDTH or max_y < 0.0 or min_y > r.SCREEN_HEIGHT) {
+    if (max_x < 0.0 or min_x > dw.SCREEN_WIDTH or max_y < 0.0 or min_y > dw.SCREEN_HEIGHT) {
         return;
     }
 
@@ -237,13 +237,13 @@ pub inline fn addEntity(entity: Entity) void {
     wgsl_entity.* = .{
         .lcha = entity.lcha,
         .position = entity.position /
-            Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
+            Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
         .size = .{
-            entity.size / r.SCREEN_WIDTH,
-            entity.size / r.SCREEN_HEIGHT,
+            entity.size / dw.SCREEN_WIDTH,
+            entity.size / dw.SCREEN_HEIGHT,
         },
         .rotation = entity.rotation,
         .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else if (entity.sprite.isLiquid()) id + 1 else id,
     };
-    // r.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
+    // dw.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
 }

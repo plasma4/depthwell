@@ -1,22 +1,22 @@
 const std = @import("std");
-const r = @import("../root.zig");
-const memory = r.memory;
+const dw = @import("../root.zig");
+const memory = dw.memory;
 const Entity = memory.Entity;
 
-const CHUNK_SIZE = memory.CHUNK_SIZE;
-const Vec2f32 = memory.Vec2f32;
-const EdgeFlags = r.types.EdgeFlags;
-const addEntity = r.entity.addEntity;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
+const Vec2f32 = dw.utils.Vec2f32;
+const EdgeFlags = dw.types.EdgeFlags;
+const addEntity = dw.entity.addEntity;
 
 pub fn drawChunkPreview() void {
     // draw a rectangle background for preview, and then the chunk inside!
-    const tile_size: f32 = @floatCast(r.entity.preview_tile_size);
+    const tile_size: f32 = @floatCast(dw.entity.preview_tile_size);
     const preview_x_origin: f32 = 30.0;
     const preview_y_origin: f32 = 50.0;
     const background_margin: f32 = 1.0;
 
     const player_coord = memory.game.getPlayerCoord();
-    const chunk = r.world.getChunk(player_coord);
+    const chunk = dw.world.getChunk(player_coord);
     const depth = memory.game.depth;
 
     var bg: Entity = .{
@@ -32,7 +32,7 @@ pub fn drawChunkPreview() void {
 
     bg.size *= 1.01; // a tad larger! this second entity acts as the border visually
     // dark green if not modified, dark blue if modified
-    bg.lcha = if (r.world.mod_store.get(player_coord.asDepthCoordinate(depth))) |_|
+    bg.lcha = if (dw.world.mod_store.get(player_coord.asDepthCoordinate(depth))) |_|
         .{ 0.32, 0.35, 4.0, 0.4 }
     else
         .{ 0.32, 0.35, 3.0, 0.4 };
@@ -43,14 +43,14 @@ pub fn drawChunkPreview() void {
 
     // Fetch neighbor chunks for border flag visualization
     const neighbors = blk: {
-        var n: [8]?r.memory.Chunk = @splat(null);
-        const offsets = [8]r.memory.Vec2i{
+        var n: [8]?dw.memory.Chunk = @splat(null);
+        const offsets = [8]dw.utils.Vec2i{
             .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 }, // N, S, W, E
             .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 1, 1 }, // NW, NE, SW, SE
         };
         for (offsets, 0..) |off, i| {
             if (player_coord.moveAtDepth(off, depth)) |nc| {
-                n[i] = r.world.getChunk(nc);
+                n[i] = dw.world.getChunk(nc);
             }
         }
         break :blk n;
@@ -149,8 +149,8 @@ pub fn drawChunkPreview() void {
 
             // neighbor boundary flag injection (visualize flags pointing INTO the chunk)
             if (x == 0) if (neighbors[2]) |n| drawNeighborFlag(
-                &r.entity.entity_byte_count_before_end,
-                &r.entity.entity_count,
+                &dw.entity.entity_byte_count_before_end,
+                &dw.entity.entity_count,
                 n.getBlock(15, @intCast(y)),
                 block_pos,
                 .W,
@@ -158,8 +158,8 @@ pub fn drawChunkPreview() void {
                 thick,
             );
             if (x == 15) if (neighbors[3]) |n| drawNeighborFlag(
-                &r.entity.entity_byte_count_before_end,
-                &r.entity.entity_count,
+                &dw.entity.entity_byte_count_before_end,
+                &dw.entity.entity_count,
                 n.getBlock(0, @intCast(y)),
                 block_pos,
                 .E,
@@ -167,8 +167,8 @@ pub fn drawChunkPreview() void {
                 thick,
             );
             if (y == 0) if (neighbors[0]) |n| drawNeighborFlag(
-                &r.entity.entity_byte_count_before_end,
-                &r.entity.entity_count,
+                &dw.entity.entity_byte_count_before_end,
+                &dw.entity.entity_count,
                 n.getBlock(@intCast(x), 15),
                 block_pos,
                 .N,
@@ -176,8 +176,8 @@ pub fn drawChunkPreview() void {
                 thick,
             );
             if (y == 15) if (neighbors[1]) |n| drawNeighborFlag(
-                &r.entity.entity_byte_count_before_end,
-                &r.entity.entity_count,
+                &dw.entity.entity_byte_count_before_end,
+                &dw.entity.entity_count,
                 n.getBlock(@intCast(x), 0),
                 block_pos,
                 .S,
@@ -188,18 +188,18 @@ pub fn drawChunkPreview() void {
     }
 
     // Draw D-1 and D-2 previews to the right
-    const start_zoom = r.startup.STARTING_ZOOM_TIMES;
+    const start_zoom = dw.startup.STARTING_ZOOM_TIMES;
     const bx_idx = memory.game.getBlockXInChunk();
     const by_idx = memory.game.getBlockYInChunk();
     const deeper_preview_x = preview_x_origin + background_margin + 18.5 * tile_size;
-    if (r.isDebug() and !r.procedural.USE_BASE_HEATMAP and !r.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
+    if (dw.isDebug() and !dw.procedural.USE_BASE_HEATMAP and !dw.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
         bg.position[0] = deeper_preview_x + tile_size * 2.5;
         bg.position[1] = preview_y_origin + tile_size * 2.5;
         bg.size = tile_size * (6.0 + background_margin);
         bg.sprite = .rectangle;
         addEntity(bg); // box for D-1
 
-        const neighborhood_d1 = r.ancestor.getAncestorNeighborhood(player_coord.asDepthCoordinate(depth));
+        const neighborhood_d1 = dw.ancestor.getAncestorNeighborhood(player_coord.asDepthCoordinate(depth));
 
         for (0..6) |py| {
             for (0..6) |px| {
@@ -239,13 +239,13 @@ pub fn drawChunkPreview() void {
         addEntity(player_entity);
 
         if (depth > start_zoom + 1) {
-            const p_info = r.ancestor.getParentInfo(
+            const p_info = dw.ancestor.getParentInfo(
                 player_coord.asDepthCoordinate(depth),
                 bx_idx,
                 by_idx,
             );
             const preview_y_d2 = preview_y_origin + 7.5 * tile_size;
-            const gp_info = r.ancestor.getParentInfo(
+            const gp_info = dw.ancestor.getParentInfo(
                 p_info.coord.asDepthCoordinate(depth - 1),
                 p_info.bx,
                 p_info.by,
@@ -272,7 +272,7 @@ pub fn drawChunkPreview() void {
                     const ly: u4 = @truncate(@as(u32, @bitCast(target_by)));
 
                     addEntity(.{
-                        .sprite = r.world.getBlockAt(target_nc, lx, ly, depth - 2).id,
+                        .sprite = dw.world.getBlockAt(target_nc, lx, ly, depth - 2).id,
                         .position = .{
                             deeper_preview_x + @as(f32, @floatFromInt(gpx + 1)) * tile_size,
                             preview_y_d2 + @as(f32, @floatFromInt(gpy + 1)) * tile_size,
@@ -293,7 +293,7 @@ pub fn drawChunkPreview() void {
         }
     }
 
-    if (depth >= memory.HORIZON_DEPTH + start_zoom) {
+    if (depth >= dw.HORIZON_DEPTH + start_zoom) {
         const preview_y_ancestor = preview_y_origin + 12.0 * tile_size; // Put it below D-2
 
         bg.position = .{ deeper_preview_x + tile_size * 1.5, preview_y_ancestor + tile_size * 1.5 };
@@ -304,7 +304,7 @@ pub fn drawChunkPreview() void {
         for (0..4) |y| {
             for (0..4) |x| {
                 addEntity(.{
-                    .sprite = r.world.quad_cache.ancestor_materials[y][x].id,
+                    .sprite = dw.world.quad_cache.ancestor_materials[y][x].id,
                     .position = .{
                         deeper_preview_x + @as(f32, @floatFromInt(x)) * tile_size,
                         preview_y_ancestor + @as(f32, @floatFromInt(y)) * tile_size,
@@ -329,10 +329,10 @@ pub fn drawChunkPreview() void {
     }
 
     // render the player now!
-    const center_offset: memory.Vec2i = @splat(memory.CHUNK_SIZE_SQ / 2);
+    const center_offset: dw.utils.Vec2i = @splat(dw.CHUNK_SIZE_SQ / 2);
     const relative_pos = memory.game.player_pos - center_offset;
 
-    const scale = tile_size / memory.CHUNK_SIZE_SQ;
+    const scale = tile_size / dw.CHUNK_SIZE_SQ;
     const origin: Vec2f32 = .{ preview_x_origin, preview_y_origin };
 
     const player_entity: Entity = .{
@@ -349,18 +349,18 @@ pub fn drawChunkPreview() void {
 }
 
 fn addEntityLine(entity: Entity, w: f32, h: f32) void {
-    r.entity.entity_count += 1;
-    const wgsl_entity = memory.scratchAllocType(memory.WGSLEntity, &r.entity.entity_byte_count_before_end);
+    dw.entity.entity_count += 1;
+    const wgsl_entity = memory.scratchAllocType(memory.WGSLEntity, &dw.entity.entity_byte_count_before_end);
     wgsl_entity.* = .{
         .lcha = entity.lcha,
-        .position = entity.position / Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
-        .size = .{ w / r.SCREEN_WIDTH, h / r.SCREEN_HEIGHT },
+        .position = entity.position / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
+        .size = .{ w / dw.SCREEN_WIDTH, h / dw.SCREEN_HEIGHT },
         .rotation = entity.rotation,
         .id = @intFromEnum(entity.sprite),
     };
 }
 
-fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: r.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {
+fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: dw.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {
     if (!neighbor_block.isFoundation()) return;
     const half = pts * 0.5;
     // check the flag of the neighbor that points TOWARDS our chunk
@@ -395,10 +395,10 @@ fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: r.memory.Block, pos: 
         }
         wgsl.* = .{
             .lcha = .{ 1.0, 0.0, 0.0, 1.0 }, // Bright white/red for neighbor alerts
-            .position = f_pos / Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
-            .size = size / Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
+            .position = f_pos / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
+            .size = size / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
             .rotation = 0,
-            .id = @intFromEnum(r.Sprite.rectangle),
+            .id = @intFromEnum(dw.Sprite.rectangle),
         };
     }
 }

@@ -1,9 +1,9 @@
 //! Manages seeding calculations for the game.
 // seeding yippeeeeee
 const std = @import("std");
-const r = @import("../root.zig");
-const logger = r.logger;
-const memory = r.memory;
+const dw = @import("../root.zig");
+const logger = dw.logger;
+const memory = dw.memory;
 const testing = std.testing;
 
 /// Represents 2^32.
@@ -15,7 +15,7 @@ pub const POW_2_64 = 18446744073709551616;
 /// Represents 1/2^64.
 pub const INV_POW_2_64 = 1.0 / 18446744073709551616.0;
 
-const Vec2u = memory.Vec2u;
+const Vec2u = dw.utils.Vec2u;
 
 /// A 512-bit seed state (useful for hashing and procedural generation).
 pub const Seed = extern struct { value: [8]u64 align(16) = @splat(0) };
@@ -251,7 +251,7 @@ pub const HashState = struct {
             return @intCast((@as(u64, @intCast(v >> 32)) * limit_u64) >> 32);
         } else {
             // Only the .hi half of the 128-bit product is needed AND we're going for WASM.
-            return if (r.is_wasm) @intCast(mul64x64To128(v, limit_u64).hi) else @intCast((@as(u128, v) * limit) >> 64);
+            return if (dw.is_wasm) @intCast(mul64x64To128(v, limit_u64).hi) else @intCast((@as(u128, v) * limit) >> 64);
         }
     }
 

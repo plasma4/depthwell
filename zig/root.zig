@@ -13,6 +13,35 @@ pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arc
 /// Set to true if either test mode or `Debug` mode is used.
 pub const is_debug = FORCE_DEBUG or builtin.is_test or builtin.mode == .Debug;
 
+// Note: changing these constants below will probably have disasterous consequences.
+// A lot of logic is hard-coded, such as `[6][6]Sprite` use, and a lot of logic is bound to break if these constants are modified.
+
+/// Represents log2(CHUNK_SIZE).
+pub const CHUNK_SIZE_LOG2: comptime_int = 4;
+/// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
+pub const CHUNK_SIZE: comptime_int = 16;
+/// The main number (as a float) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
+pub const CHUNK_SIZE_FLOAT: comptime_float = @floatFromInt(CHUNK_SIZE);
+/// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
+pub const CHUNK_SIZE_SQ: comptime_int = CHUNK_SIZE * CHUNK_SIZE;
+/// A float representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
+pub const CHUNK_SIZE_FLOAT_SQ: comptime_float = CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT;
+/// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
+pub const SUBPIXELS_IN_CHUNK: comptime_int = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+
+/// Represents log2(ZOOM_FACTOR).
+pub const ZOOM_LOG2: comptime_int = 2;
+/// The factor for zooming, increasing the depth by 1. (So, 4 times means that the world will get 4 times wider and taller when depth increases.)
+pub const ZOOM_FACTOR: comptime_int = 4;
+/// The highest possible depth value where all coordinates can be represented in 1 quadrant.
+/// Equivalent to the highest depth value where `ZOOM_LOG2 * HORIZON_DEPTH <= 64` is true.
+///
+/// This is an important value for ancestry and depth increase calculations.
+pub const HORIZON_DEPTH: comptime_int = 32;
+/// Represents how many blocks in a child chunk map to ONE parent block.
+/// A 4x4 area of child blocks is 1 parent block if `ZOOM_FACTOR` is 4.
+pub const BLOCKS_PER_PARENT: comptime_int = CHUNK_SIZE / ZOOM_FACTOR;
+
 pub const memory = @import("memory.zig");
 pub const startup = @import("startup.zig");
 
@@ -49,6 +78,7 @@ pub const player = @import("state/player.zig");
 pub const world = @import("state/world.zig");
 pub const ancestor = @import("state/ancestor.zig");
 pub const water = @import("state/water.zig");
+pub const handleTick = @import("state/tick.zig").handleTick;
 
 pub const logger = @import("debug/logger.zig");
 pub const chunk_preview = @import("debug/chunk_preview.zig");
@@ -108,102 +138,8 @@ pub export fn handleMouse(mouse_x: f64, mouse_y: f64, action: u32) void {
     mouse.handleMouse(mouse_x, mouse_y, action);
 }
 
-/// Sets if the Z key should increase the depth recursively until D=32 is reached.
-var debug_recursively_increase_depth = false;
-
 pub export fn tick(logic_speed: f64, iterations: u32) void {
-    var buffer: inventory.SlotBuffer = undefined;
-    const active_slots = inventory.getSpritesInInventory(&buffer);
-
-    // handles M and 0 cases, see code in function for details
-    if (KeyBits.isSet(KeyBits.inventory_up, memory.game.keys_pressed_mask)) inventory.selected_row -|= 1;
-    if (KeyBits.isSet(KeyBits.inventory_down, memory.game.keys_pressed_mask)) inventory.selected_row += 1;
-    if (KeyBits.isSet(KeyBits.mine, memory.game.keys_pressed_mask)) {
-        inventory.selected_row = 0;
-        inventory.selected_sprite = .none;
-    } else {
-        const selected_column = KeyBits.getNumber(memory.game.keys_held_mask);
-        if (!(inventory.selected_sprite == .unselected and selected_column == 65535)) {
-            const INVENTORY_WIDTH = inventory.INVENTORY_WIDTH;
-            const slot_len = active_slots.len;
-            const current_column = inventory.getSelectedIndex() % INVENTORY_WIDTH;
-            inventory.selected_row = @min(
-                @as(u16, @intCast(slot_len / INVENTORY_WIDTH)), // zeroth row holds 10 slots, so this works out
-                inventory.selected_row,
-            );
-            // get index of selected sprite by checking already selected sprite type
-            var selected_id = inventory.selected_row * INVENTORY_WIDTH +
-                if (selected_column == 65535) current_column else selected_column;
-
-            // Only allow this selection if the slot actually exists
-            if (selected_id >= slot_len) {
-                if (selected_id >= INVENTORY_WIDTH) {
-                    selected_id -= INVENTORY_WIDTH;
-                    inventory.selected_row -= 1;
-                }
-            } else {
-                inventory.selected_sprite = active_slots[selected_id];
-            }
-        }
-    }
-
-    // in prod, add is_debug here!
-    if (debug_recursively_increase_depth and memory.game.depth < memory.HORIZON_DEPTH) {
-        world.pushLayer(
-            Sprite.none,
-            memory.game.getPlayerCoord(),
-            memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
-            memory.game.getBlockYInChunk(),
-        );
-        if (memory.game.depth == memory.HORIZON_DEPTH) {
-            logger.quick(.{ "{h}Position", memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth) });
-            debug_recursively_increase_depth = false;
-        }
-    }
-
-    // of course, we must TODO: also make this switch when we implement portal logic
-    const just_increased_depth = is_debug and KeyBits.isSet(KeyBits.zoom, memory.game.keys_pressed_mask);
-    // increase the depth (testing hotkey)
-    if (just_increased_depth) {
-        world.pushLayer(
-            Sprite.none,
-            memory.game.getPlayerCoord(),
-            memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
-            memory.game.getBlockYInChunk(),
-        );
-        // debug_recursively_increase_depth = true;
-        if (memory.game.depth > memory.HORIZON_DEPTH and
-            memory.game.depth < memory.HORIZON_DEPTH * 2 + startup.STARTING_ZOOM_TIMES)
-        {
-            var key = memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth);
-            const target_depth = memory.game.depth - memory.HORIZON_DEPTH;
-            while (key.depth > target_depth) {
-                key = key.getParent();
-            }
-            logger.quick(.{ "{h}Resulting key/current depth", memory.game.depth, key });
-        }
-
-        mining.selected_hp = 255;
-        mouse.mouse_chunk_coord = null;
-    }
-
-    for (0..iterations) |_| { // iterations is guaranteed to be positive
-        if (!just_increased_depth) mining.handleMiningAndPlacing(logic_speed); // mouse block and mining/placing logic all updated in this function
-        player.move(logic_speed); // logic that moves the player/camera based on keys
-        water.tickWater(); // fluid sim
-        memory.game.frame +%= 1;
-    }
-
-    // Process item animation ticks and inventory collection!
-    inventory.tickDroppedItems();
-
-    // Generate chunks around the SimBuffer in the background.
-    world.SimBuffer.precacheChunks(
-        memory.game.getPlayerCoord(),
-        memory.game.player_velocity,
-        2,
-        4,
-    );
+    handleTick(logic_speed, iterations);
 
     // give some helpful info!
     // this gets cleared every frame since writeOnce() is used

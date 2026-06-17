@@ -1,25 +1,25 @@
 //! Handles procedural generation logic for the game.
 const std = @import("std");
-const r = @import("../root.zig");
-const types = r.types;
-const logger = r.logger;
-const memory = r.memory;
-const seeding = r.seeding;
-const world = r.world;
+const dw = @import("../root.zig");
+const types = dw.types;
+const logger = dw.logger;
+const memory = dw.memory;
+const seeding = dw.seeding;
+const world = dw.world;
 
 const POW_2_32 = seeding.POW_2_32;
 const INV_POW_2_32 = seeding.INV_POW_2_32;
 const POW_2_64 = seeding.POW_2_64;
-const CHUNK_SIZE = memory.CHUNK_SIZE;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
 
-const Sprite = r.Sprite;
+const Sprite = dw.Sprite;
 const EdgeFlags = types.EdgeFlags;
 const oddsNum = seeding.oddsNum;
 const HashState = seeding.HashState;
 const FastHash = seeding.FastHash;
 const Seed = seeding.Seed;
-const Vec2f = memory.Vec2f;
-const Vec2u = memory.Vec2u;
+const Vec2f = dw.utils.Vec2f;
+const Vec2u = dw.utils.Vec2u;
 
 // Lots of values controllable by debug sliders here!
 pub const dual_value_scale = TuningFloat(16.0);
@@ -32,7 +32,7 @@ pub const density_max = TuningFloat(0.9);
 /// Returns a struct with an a `value: f64` and `getF32()`.
 /// Allows for numbers to act like variables in Debug mode and constant-fold in all Release modes.
 inline fn TuningFloat(comptime default_value: f64) type {
-    if (r.is_debug) {
+    if (dw.is_debug) {
         return struct {
             pub var value: f64 = default_value;
             pub inline fn getF32() f32 {
@@ -52,7 +52,7 @@ inline fn TuningFloat(comptime default_value: f64) type {
 /// Returns a struct with an a `value: bool`. (TODO: switch to using this instead of current heatmap logic)
 /// Allows for booleans to act like variables in Debug mode and dead code elimination in all Release modes.
 inline fn TuningBool(comptime default_value: bool) type {
-    if (r.is_debug) {
+    if (dw.is_debug) {
         return struct {
             pub var value: bool = default_value;
         };
@@ -63,9 +63,9 @@ inline fn TuningBool(comptime default_value: bool) type {
     }
 }
 
-/// Determines whether to use a heatmap or not for base terrain. Ignored if `r.is_debug` is false.
+/// Determines whether to use a heatmap or not for base terrain. Ignored if `dw.is_debug` is false.
 pub var USE_BASE_HEATMAP = false;
-/// Determines whether to use a heatmap or not for ore generation. Ignored if `r.is_debug` is false.
+/// Determines whether to use a heatmap or not for ore generation. Ignored if `dw.is_debug` is false.
 pub var USE_ORE_HEATMAP = false;
 
 /// Configuration options passed to the FBM (Fractal Brownian Motion) and Worley
@@ -449,9 +449,9 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
 pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
     // check is_debug because these will always be off in non-dev
     // sprite IDs in this range create a heatmap
-    if (r.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
+    if (dw.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
         return @enumFromInt(65000 + @as(u20, @intFromFloat(moisture * 256.0)));
-    if (r.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
+    if (dw.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
     if (density <= density_min.getF32() or density >= density_max.getF32()) {
         if (moisture >= 0.93 and moisture <= 0.94) return .purple_strange_stone;
@@ -528,7 +528,7 @@ pub inline fn getBaseSpriteType(
 }
 
 /// Returns two independent noise values (32-bit float) using vectorized 4-corner value noise.
-fn getDualValueNoise(seed: Vec2u, x: u64, y: u64, inv_scale: f32) memory.Vec2f32 {
+fn getDualValueNoise(seed: Vec2u, x: u64, y: u64, inv_scale: f32) dw.utils.Vec2f32 {
     const fx_raw = @as(f32, @floatFromInt(x)) * inv_scale;
     const fy_raw = @as(f32, @floatFromInt(y)) * inv_scale;
 
@@ -552,7 +552,7 @@ fn getDualValueNoise(seed: Vec2u, x: u64, y: u64, inv_scale: f32) memory.Vec2f32
     // Single SIMD pipeline execution
     const h_vec = FastHash.hash2d_4x(seed, vx, vy);
 
-    var res: memory.Vec2f32 = .{ 0, 0 };
+    var res: dw.utils.Vec2f32 = .{ 0, 0 };
 
     inline for (0..2) |i| {
         const shift: u6 = @intCast(i * 32);
@@ -613,7 +613,7 @@ pub fn addOres(
     );
 
     // sprite IDs in this range use a neat heatmap (using only the first variation value), overriding normal ore logic
-    if (r.is_debug and USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(v1 * 256.0)));
+    if (dw.is_debug and USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(v1 * 256.0)));
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
         // Generate various ore types
@@ -826,7 +826,7 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
 
     // final pass to reset edge flags for blocks that should NOT be eroded
     // update: now logic is in chunk.zig
-    // for (0..memory.CHUNK_SIZE_SQ) |id| {
+    // for (0..dw.CHUNK_SIZE_SQ) |id| {
     //     var block = &target_chunk.blocks[id];
     //     if (!block.isFoundation()) block.edge_flags = 0xFF;
     // }

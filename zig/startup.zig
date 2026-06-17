@@ -1,17 +1,17 @@
 //! Contains initialization and render update functions. See root.zig for exporting these functions (and others) to WASM.
 const std = @import("std");
-const r = @import("root.zig");
-const memory = r.memory;
-const sprite = r.sprite;
-const logger = r.logger;
-const seeding = r.seeding;
-const world = r.world;
-const player = r.player;
+const dw = @import("root.zig");
+const memory = dw.memory;
+const sprite = dw.sprite;
+const logger = dw.logger;
+const seeding = dw.seeding;
+const world = dw.world;
+const player = dw.player;
 
-const CHUNK_SIZE = memory.CHUNK_SIZE;
-const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
-const CHUNK_SIZE_FLOAT = memory.CHUNK_SIZE_FLOAT;
-const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
+const CHUNK_SIZE = dw.CHUNK_SIZE;
+const CHUNK_SIZE_SQ = dw.CHUNK_SIZE_SQ;
+const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
+const SUBPIXELS_IN_CHUNK = dw.SUBPIXELS_IN_CHUNK;
 
 /// Sets the number of times the `push_layer` function is called in `startup.init()`.
 /// If set to n, the game will start off by being n ^ ZOOM_FACTOR chunks in either dimension.
@@ -45,12 +45,12 @@ pub fn init() void {
     }
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 2));
-    r.sound.seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 3));
+    dw.sound.seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 3));
     for (0..STARTING_ZOOM_TIMES) |_| {
         // Set the player position to somewhere random in the current chunk
         if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.setPlayerPosDumb(.{
-            @intCast(rng.next() & (memory.SUBPIXELS_IN_CHUNK - 1)),
-            @intCast(rng.next() & (memory.SUBPIXELS_IN_CHUNK - 1)),
+            @intCast(rng.next() & (dw.SUBPIXELS_IN_CHUNK - 1)),
+            @intCast(rng.next() & (dw.SUBPIXELS_IN_CHUNK - 1)),
         });
 
         world.pushLayer(

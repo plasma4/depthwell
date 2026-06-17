@@ -1,14 +1,14 @@
 //! Handles debug options for sliders and buttons, and contains functions to pass these to JS.
-//! Only imported if `r.is_debug` is true.
+//! Only imported if `dw.is_debug` is true.
 const std = @import("std");
-const r = @import("../root.zig");
-const main = r.startup;
-const logger = r.logger;
-const memory = r.memory;
-const world = r.world;
-const player = r.player;
-const seeding = r.seeding;
-const procedural = r.procedural;
+const dw = @import("../root.zig");
+const main = dw.startup;
+const logger = dw.logger;
+const memory = dw.memory;
+const world = dw.world;
+const player = dw.player;
+const seeding = dw.seeding;
+const procedural = dw.procedural;
 
 pub const SliderDef = struct {
     /// Label identifying the slider.
@@ -114,13 +114,13 @@ pub const sliders = [_]SliderDef{
         .name = "Wireframe opacity",
         .min = 0.0,
         .max = 1.0,
-        .val = &r.render.WIREFRAME_OPACITY,
+        .val = &dw.render.WIREFRAME_OPACITY,
     },
     .{
         .name = "Preview tile size",
         .min = 0.0,
         .max = 16.0,
-        .val = &r.entity.preview_tile_size,
+        .val = &dw.entity.preview_tile_size,
     },
 };
 
@@ -146,7 +146,7 @@ pub const buttons = [_]ButtonDef{
     },
     .{
         .name = "Toggle creative",
-        .toggle = &r.inventory.IN_CREATIVE,
+        .toggle = &dw.inventory.IN_CREATIVE,
     },
 };
 
@@ -154,7 +154,7 @@ pub const buttons = [_]ButtonDef{
 fn teleportToEdge() void {
     memory.game.teleport(
         .{ .quadrant = 0, .suffix = .{ 0, 0 } },
-        .{ memory.CHUNK_SIZE_SQ * 5 / 2, memory.CHUNK_SIZE_SQ * 5 / 2 },
+        .{ dw.CHUNK_SIZE_SQ * 5 / 2, dw.CHUNK_SIZE_SQ * 5 / 2 },
     );
     main.findSafeSpawn();
 }
