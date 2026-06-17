@@ -1,13 +1,13 @@
 //! Handles water logic, updating the physics and edge flags as necessary.
 //! Water level goes from 0-15.
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
-const types = root.types;
-const world = root.world;
+const r = @import("../root.zig");
+const memory = r.memory;
+const types = r.types;
+const world = r.world;
 
 const SimBuffer = world.SimBuffer;
-const Sprite = root.Sprite;
+const Sprite = r.Sprite;
 const Block = memory.Block;
 const Chunk = memory.Chunk;
 
@@ -278,8 +278,8 @@ inline fn getLocalBlockPtr(
         }
     } else if (bx >= 16) {
         if (bx < 32 and by >= 0 and by < 16) {
-            const r = right orelse return null;
-            return &r.blocks[@as(usize, @intCast((by << 4) | (bx - 16)))];
+            const ri = right orelse return null;
+            return &ri.blocks[@as(usize, @intCast((by << 4) | (bx - 16)))];
         }
     } else if (by < 0) {
         if (by >= -16 and bx >= 0 and bx < 16) {
@@ -580,11 +580,11 @@ pub fn tickWater() void {
                 // col_x = 16 (right boundary column)
                 {
                     var above_count: u8 = 0;
-                    if (right) |r| {
+                    if (right) |ri| {
                         var col_y: usize = 0;
                         while (col_y < 16) : (col_y += 1) {
                             col_above_local[col_y][17] = above_count;
-                            const p = r.blocks[(col_y << 4) | 0];
+                            const p = ri.blocks[(col_y << 4) | 0];
                             if (getVolume(p) > 0) {
                                 above_count = @min(above_count + 1, 15);
                             } else {
@@ -659,8 +659,8 @@ pub fn tickWater() void {
 
                     const right_ptr = if (rbx < 15)
                         &curr.blocks[@as(usize, @intCast((by << 4) | (rbx + 1)))]
-                    else if (right) |r|
-                        &r.blocks[@as(usize, @intCast((by << 4) | 0))]
+                    else if (right) |ri|
+                        &ri.blocks[@as(usize, @intCast((by << 4) | 0))]
                     else
                         null;
 

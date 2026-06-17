@@ -1,14 +1,14 @@
 //! Handles debug options for sliders and buttons, and contains functions to pass these to JS.
 //! Only imported if `root.is_debug` is true.
 const std = @import("std");
-const root = @import("../root.zig");
-const main = root.startup;
-const logger = root.logger;
-const memory = root.memory;
-const world = root.world;
-const player = root.player;
-const seeding = root.seeding;
-const procedural = root.procedural;
+const r = @import("../root.zig");
+const main = r.startup;
+const logger = r.logger;
+const memory = r.memory;
+const world = r.world;
+const player = r.player;
+const seeding = r.seeding;
+const procedural = r.procedural;
 
 pub const SliderDef = struct {
     /// Label identifying the slider.
@@ -114,13 +114,13 @@ pub const sliders = [_]SliderDef{
         .name = "Wireframe opacity",
         .min = 0.0,
         .max = 1.0,
-        .val = &root.render.WIREFRAME_OPACITY,
+        .val = &r.render.WIREFRAME_OPACITY,
     },
     .{
         .name = "Preview tile size",
         .min = 0.0,
         .max = 16.0,
-        .val = &root.entity.preview_tile_size,
+        .val = &r.entity.preview_tile_size,
     },
 };
 
@@ -146,7 +146,7 @@ pub const buttons = [_]ButtonDef{
     },
     .{
         .name = "Toggle creative",
-        .toggle = &root.inventory.IN_CREATIVE,
+        .toggle = &r.inventory.IN_CREATIVE,
     },
 };
 

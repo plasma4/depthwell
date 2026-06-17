@@ -2,9 +2,9 @@
 const std = @import("std");
 
 /// Points to definitions from zig/root.zig.
-pub const root = @import("root.zig");
+pub const r = @import("root.zig");
 
-const types = root.types; // Get types through the game root
+const types = r.types; // Get types through the game root
 
 /// Maps primitive Zig types to TypeScript type names.
 fn zigTypeToTs(comptime T: type) []const u8 {
@@ -71,9 +71,9 @@ pub fn main(init: std.process.Init) !void {
         \\
     , .{});
 
-    const root_info = @typeInfo(root);
+    const root_info = @typeInfo(r);
     inline for (root_info.@"struct".decls) |struct_declaration| {
-        const T = @TypeOf(@field(root, struct_declaration.name));
+        const T = @TypeOf(@field(r, struct_declaration.name));
 
         // Extract all functions from root.zig. (ALL functions from root.zig should be marked as "pub".)
         if (@typeInfo(T) == .@"fn") {

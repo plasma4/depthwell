@@ -1,14 +1,14 @@
 //! Handles entities and stores functions relating on how to add them.
 const std = @import("std");
-const root = @import("../root.zig");
-const SegmentedList = root.SegmentedList;
-const memory = root.memory;
-const sprite = root.sprite;
-const ColorRgba = root.ColorRgba;
-const inventory = root.inventory;
+const r = @import("../root.zig");
+const SegmentedList = r.SegmentedList;
+const memory = r.memory;
+const sprite = r.sprite;
+const ColorRgba = r.ColorRgba;
+const inventory = r.inventory;
 
 const CHUNK_SIZE = memory.CHUNK_SIZE;
-const EdgeFlags = root.types.EdgeFlags;
+const EdgeFlags = r.types.EdgeFlags;
 const Entity = memory.Entity;
 const WGSLEntity = memory.WGSLEntity;
 const Vec2f32 = memory.Vec2f32;
@@ -52,17 +52,17 @@ pub fn updateEntities(time_diff: f64) void {
 
     inventory.addDroppedItemsAsEntities(time_diff); // delta time in ms
 
-    if (root.is_debug and preview_tile_size > 0.0) {
+    if (r.is_debug and preview_tile_size > 0.0) {
         drawChunkPreview();
     }
 
-    root.mouse.mouse_type = .initial;
+    r.mouse.mouse_type = .initial;
     inventory.drawInventory(time_diff);
-    root.render.dispatchMouseType();
-    root.mouse.just_mouse_down = false;
+    r.render.dispatchMouseType();
+    r.mouse.just_mouse_down = false;
 
     // draw selected HP (for testing)
-    const progress = root.mining.selected_hp;
+    const progress = r.mining.selected_hp;
     const pos: Vec2f32 = .{ 10, 28 };
     const font_size = 10.0;
 
@@ -105,7 +105,7 @@ fn drawChunkPreview() void {
     const background_margin: f32 = 1.0;
 
     const player_coord = memory.game.getPlayerCoord();
-    const chunk = root.world.getChunk(player_coord);
+    const chunk = r.world.getChunk(player_coord);
     const depth = memory.game.depth;
 
     var bg: Entity = .{
@@ -121,7 +121,7 @@ fn drawChunkPreview() void {
 
     bg.size *= 1.01; // a tad larger! this second entity acts as the border visually
     // dark green if not modified, dark blue if modified
-    bg.lcha = if (root.world.mod_store.get(player_coord.asDepthCoordinate(depth))) |_|
+    bg.lcha = if (r.world.mod_store.get(player_coord.asDepthCoordinate(depth))) |_|
         .{ 0.32, 0.35, 4.0, 0.4 }
     else
         .{ 0.32, 0.35, 3.0, 0.4 };
@@ -132,14 +132,14 @@ fn drawChunkPreview() void {
 
     // Fetch neighbor chunks for border flag visualization
     const neighbors = blk: {
-        var n: [8]?root.memory.Chunk = @splat(null);
-        const offsets = [8]root.memory.Vec2i{
+        var n: [8]?r.memory.Chunk = @splat(null);
+        const offsets = [8]r.memory.Vec2i{
             .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 }, // N, S, W, E
             .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 1, 1 }, // NW, NE, SW, SE
         };
         for (offsets, 0..) |off, i| {
             if (player_coord.moveAtDepth(off, depth)) |nc| {
-                n[i] = root.world.getChunk(nc);
+                n[i] = r.world.getChunk(nc);
             }
         }
         break :blk n;
@@ -277,18 +277,18 @@ fn drawChunkPreview() void {
     }
 
     // Draw D-1 and D-2 previews to the right
-    const start_zoom = root.startup.STARTING_ZOOM_TIMES;
+    const start_zoom = r.startup.STARTING_ZOOM_TIMES;
     const bx_idx = memory.game.getBlockXInChunk();
     const by_idx = memory.game.getBlockYInChunk();
     const deeper_preview_x = preview_x_origin + background_margin + 18.5 * tile_size;
-    if (root.isDebug() and !root.procedural.USE_BASE_HEATMAP and !root.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
+    if (r.isDebug() and !r.procedural.USE_BASE_HEATMAP and !r.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
         bg.position[0] = deeper_preview_x + tile_size * 2.5;
         bg.position[1] = preview_y_origin + tile_size * 2.5;
         bg.size = tile_size * (6.0 + background_margin);
         bg.sprite = .rectangle;
         addEntity(bg); // box for D-1
 
-        const neighborhood_d1 = root.ancestor.getAncestorNeighborhood(player_coord.asDepthCoordinate(depth));
+        const neighborhood_d1 = r.ancestor.getAncestorNeighborhood(player_coord.asDepthCoordinate(depth));
 
         for (0..6) |py| {
             for (0..6) |px| {
@@ -328,13 +328,13 @@ fn drawChunkPreview() void {
         addEntity(player_entity);
 
         if (depth > start_zoom + 1) {
-            const p_info = root.ancestor.getParentInfo(
+            const p_info = r.ancestor.getParentInfo(
                 player_coord.asDepthCoordinate(depth),
                 bx_idx,
                 by_idx,
             );
             const preview_y_d2 = preview_y_origin + 7.5 * tile_size;
-            const gp_info = root.ancestor.getParentInfo(
+            const gp_info = r.ancestor.getParentInfo(
                 p_info.coord.asDepthCoordinate(depth - 1),
                 p_info.bx,
                 p_info.by,
@@ -361,7 +361,7 @@ fn drawChunkPreview() void {
                     const ly: u4 = @truncate(@as(u32, @bitCast(target_by)));
 
                     addEntity(.{
-                        .sprite = root.world.getBlockAt(target_nc, lx, ly, depth - 2).id,
+                        .sprite = r.world.getBlockAt(target_nc, lx, ly, depth - 2).id,
                         .position = .{
                             deeper_preview_x + @as(f32, @floatFromInt(gpx + 1)) * tile_size,
                             preview_y_d2 + @as(f32, @floatFromInt(gpy + 1)) * tile_size,
@@ -393,7 +393,7 @@ fn drawChunkPreview() void {
         for (0..4) |y| {
             for (0..4) |x| {
                 addEntity(.{
-                    .sprite = root.world.quad_cache.ancestor_materials[y][x].id,
+                    .sprite = r.world.quad_cache.ancestor_materials[y][x].id,
                     .position = .{
                         deeper_preview_x + @as(f32, @floatFromInt(x)) * tile_size,
                         preview_y_ancestor + @as(f32, @floatFromInt(y)) * tile_size,
@@ -442,14 +442,14 @@ fn addEntityLine(entity: Entity, w: f32, h: f32) void {
     const wgsl_entity = memory.scratchAllocType(WGSLEntity, &entity_byte_count_before_end);
     wgsl_entity.* = .{
         .lcha = entity.lcha,
-        .position = entity.position / Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
-        .size = .{ w / root.SCREEN_WIDTH, h / root.SCREEN_HEIGHT },
+        .position = entity.position / Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
+        .size = .{ w / r.SCREEN_WIDTH, h / r.SCREEN_HEIGHT },
         .rotation = entity.rotation,
         .id = @intFromEnum(entity.sprite),
     };
 }
 
-fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: root.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {
+fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: r.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {
     if (!neighbor_block.isFoundation()) return;
     const half = pts * 0.5;
     // check the flag of the neighbor that points TOWARDS our chunk
@@ -484,10 +484,10 @@ fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: root.memory.Block, po
         }
         wgsl.* = .{
             .lcha = .{ 1.0, 0.0, 0.0, 1.0 }, // Bright white/red for neighbor alerts
-            .position = f_pos / Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
-            .size = size / Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
+            .position = f_pos / Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
+            .size = size / Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
             .rotation = 0,
-            .id = @intFromEnum(root.Sprite.rectangle),
+            .id = @intFromEnum(r.Sprite.rectangle),
         };
     }
 }
@@ -660,7 +660,7 @@ pub inline fn addEntity(entity: Entity) void {
     const min_y = entity.position[1] - half_diagonal;
     const max_y = entity.position[1] + half_diagonal;
 
-    if (max_x < 0.0 or min_x > root.SCREEN_WIDTH or max_y < 0.0 or min_y > root.SCREEN_HEIGHT) {
+    if (max_x < 0.0 or min_x > r.SCREEN_WIDTH or max_y < 0.0 or min_y > r.SCREEN_HEIGHT) {
         return;
     }
 
@@ -669,10 +669,10 @@ pub inline fn addEntity(entity: Entity) void {
     wgsl_entity.* = .{
         .lcha = entity.lcha,
         .position = entity.position /
-            Vec2f32{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT },
+            Vec2f32{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT },
         .size = .{
-            entity.size / root.SCREEN_WIDTH,
-            entity.size / root.SCREEN_HEIGHT,
+            entity.size / r.SCREEN_WIDTH,
+            entity.size / r.SCREEN_HEIGHT,
         },
         .rotation = entity.rotation,
         .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else if (entity.sprite.isLiquid()) id + 1 else id,

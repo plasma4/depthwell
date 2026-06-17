@@ -1,11 +1,11 @@
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
-const world = root.world;
-const entity = root.entity;
-const chunks = root.chunks;
-const sprite = root.sprite;
-const logger = root.logger;
+const r = @import("../root.zig");
+const memory = r.memory;
+const world = r.world;
+const entity = r.entity;
+const chunks = r.chunks;
+const sprite = r.sprite;
+const logger = r.logger;
 
 /// Opacity of chunk wireframes.
 pub var WIREFRAME_OPACITY: f64 = 0.0;
@@ -18,7 +18,7 @@ extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframe_opacity: f64) void
 
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
 pub inline fn handleVisibleChunks(opacity: f64, wireframeOpacity: f64) void {
-    if (root.is_wasm) {
+    if (r.is_wasm) {
         return jsHandleVisibleChunks(opacity, wireframeOpacity);
     } else {
         return; // no native impl yet
@@ -30,7 +30,7 @@ extern "env" fn jsHandleVisibleEntities() void;
 
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
 pub inline fn handleVisibleEntities() void {
-    if (root.is_wasm) {
+    if (r.is_wasm) {
         return jsHandleVisibleEntities();
     } else {
         return; // no native impl yet
@@ -38,12 +38,12 @@ pub inline fn handleVisibleEntities() void {
 }
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsSetMouseType(mouse_type: root.mouse.MouseType) void;
+extern "env" fn jsSetMouseType(mouse_type: r.mouse.MouseType) void;
 
 /// Sets the mouse type of the canvas in JS.
 pub inline fn dispatchMouseType() void {
-    if (root.is_wasm) {
-        jsSetMouseType(root.mouse.mouse_type);
+    if (r.is_wasm) {
+        jsSetMouseType(r.mouse.mouse_type);
     } else {
         return;
     }
@@ -51,7 +51,7 @@ pub inline fn dispatchMouseType() void {
 
 /// Processes data for renderFrame() in TypeScript to upload to WebGPU.
 pub fn prepareVisibleData(dt: f64, time_diff: f64, canvas_w: f64, canvas_h: f64) void {
-    root.chunks.updateVisibleChunks(dt, canvas_w, canvas_h);
+    r.chunks.updateVisibleChunks(dt, canvas_w, canvas_h);
     handleVisibleChunks(1.0, WIREFRAME_OPACITY);
 
     entity.updateEntities(time_diff);

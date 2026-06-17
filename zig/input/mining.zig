@@ -1,12 +1,12 @@
 //! Handles mining and placing blocks.
 const std = @import("std");
-const root = @import("../root.zig");
-const sprite = root.sprite;
+const r = @import("../root.zig");
+const sprite = r.sprite;
 const Sprite = sprite.Sprite;
-const memory = root.memory;
-const inventory = root.inventory;
-const world = root.world;
-const mouse = root.mouse;
+const memory = r.memory;
+const inventory = r.inventory;
+const world = r.world;
+const mouse = r.mouse;
 
 /// How far the player has progressed to increase `hp`.
 pub var mining_progress: u64 = 0;
@@ -107,7 +107,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                         not_mining_frame = 0;
                         // create a mining sound every so often!
                         if (mining_frame % FRAMES_PER_SOUND == 0)
-                            root.sound.playSound(
+                            r.sound.playSound(
                                 @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
                                 if (inventory.isInCreative()) 1 else (0.4 + 0.6 * @as(f32, @floatFromInt(mining_strength))),
                                 0.2,
@@ -117,7 +117,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     } else if (was_deleted and !block.isEmpty() and !block.isFoundation()) {
                         not_mining_frame = 0;
                         // play a grassy sound
-                        root.sound.playSound(
+                        r.sound.playSound(
                             4 + (memory.game.frame % 2),
                             0.3, // 30% volume
                             0.1,
@@ -176,7 +176,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     // (for example: placing your last ceiling flower in an invalid spot would deselect without this)
                     inventory.selected_sprite = sprite_type;
                 } else {
-                    root.sound.playSound(
+                    r.sound.playSound(
                         6,
                         if (sprite_type.isFoundation()) 0.75 else 0.2,
                         0.1,

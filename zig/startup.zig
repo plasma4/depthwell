@@ -1,12 +1,12 @@
 //! Contains initialization and render update functions. See root.zig for exporting these functions (and others) to WASM.
 const std = @import("std");
-const root = @import("root.zig");
-const memory = root.memory;
-const sprite = root.sprite;
-const logger = root.logger;
-const seeding = root.seeding;
-const world = root.world;
-const player = root.player;
+const r = @import("root.zig");
+const memory = r.memory;
+const sprite = r.sprite;
+const logger = r.logger;
+const seeding = r.seeding;
+const world = r.world;
+const player = r.player;
 
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
@@ -45,7 +45,7 @@ pub fn init() void {
     }
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 2));
-    root.sound.seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 3));
+    r.sound.seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 3));
     for (0..STARTING_ZOOM_TIMES) |_| {
         // Set the player position to somewhere random in the current chunk
         if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.setPlayerPosDumb(.{

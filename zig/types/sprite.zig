@@ -1,9 +1,9 @@
 const std = @import("std");
-const root = @import("../root.zig");
+const r = @import("../root.zig");
 
-const is_debug = root.is_debug;
-const memory = root.memory;
-const procedural = root.procedural;
+const is_debug = r.is_debug;
+const memory = r.memory;
+const procedural = r.procedural;
 
 /// Index where stone-like sprites begin.
 const STONE_START = 4;
@@ -82,15 +82,15 @@ pub const DropConfig = struct {
 pub const DropHandlers = struct {
     /// Converts a bush drop to various fruits based on world coordinates and seeds.
     pub fn bushDrop(coord: memory.Coordinate, bx: u4, by: u4) []const Sprite {
-        const oddsNum = root.seeding.oddsNum;
+        const oddsNum = r.seeding.oddsNum;
         const depth = memory.game.depth;
         const key = coord.asDepthCoordinate(depth);
-        const chunk_seeds = root.world.quad_cache.getChunkSeeds(key);
+        const chunk_seeds = r.world.quad_cache.getChunkSeeds(key);
 
         // Deterministic hash based on the absolute block coordinate in the world
         const abs_x = coord.suffix[0] *% 16 + bx; // (no +% needed)
         const abs_y = coord.suffix[1] *% 16 + by;
-        const seed_val = root.seeding.FastHash.hash2d(
+        const seed_val = r.seeding.FastHash.hash2d(
             chunk_seeds.value[3].value[0..2].*,
             abs_x,
             abs_y,
@@ -340,10 +340,10 @@ const rules = [_]SpriteRule{
 fn matchesTarget(s: Sprite, target: Target) bool {
     switch (target) {
         .single => |t| return s == t,
-        .range => |r| {
+        .range => |ra| {
             const val = @intFromEnum(s);
-            const min_val = @min(@intFromEnum(r[0]), @intFromEnum(r[1]));
-            const max_val = @max(@intFromEnum(r[0]), @intFromEnum(r[1]));
+            const min_val = @min(@intFromEnum(ra[0]), @intFromEnum(ra[1]));
+            const max_val = @max(@intFromEnum(ra[0]), @intFromEnum(ra[1]));
             return val >= min_val and val <= max_val;
         },
         .list => |list| {
@@ -576,7 +576,7 @@ pub const Sprite = enum(u16) {
     /// Pickaxe icon.
     pickaxe,
     /// Generic water block (filled). Default internal water type.
-    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(root.mining.PickaxeType.gold))) + 1),
+    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(r.mining.PickaxeType.gold))) + 1),
     /// The item version of water.
     water_wavy,
 

@@ -1,9 +1,9 @@
 //! Manages seeding calculations for the game.
 // seeding yippeeeeee
 const std = @import("std");
-const root = @import("../root.zig");
-const logger = root.logger;
-const memory = root.memory;
+const r = @import("../root.zig");
+const logger = r.logger;
+const memory = r.memory;
 const testing = std.testing;
 
 /// Represents 2^32.
@@ -251,7 +251,7 @@ pub const HashState = struct {
             return @intCast((@as(u64, @intCast(v >> 32)) * limit_u64) >> 32);
         } else {
             // Only the .hi half of the 128-bit product is needed AND we're going for WASM.
-            return if (root.is_wasm) @intCast(mul64x64To128(v, limit_u64).hi) else @intCast((@as(u128, v) * limit) >> 64);
+            return if (r.is_wasm) @intCast(mul64x64To128(v, limit_u64).hi) else @intCast((@as(u128, v) * limit) >> 64);
         }
     }
 

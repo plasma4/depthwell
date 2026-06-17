@@ -1,15 +1,15 @@
 //! Handles logic for inventory management and how it should be drawn.
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
-const logger = root.logger;
-const sprite = root.sprite;
+const r = @import("../root.zig");
+const memory = r.memory;
+const logger = r.logger;
+const sprite = r.sprite;
 const Sprite = sprite.Sprite;
-const mouse = root.mouse;
+const mouse = r.mouse;
 
 const Vec2f32 = memory.Vec2f32;
-const addEntity = root.entity.addEntity;
-const drawNumber = root.entity.drawNumber;
+const addEntity = r.entity.addEntity;
+const drawNumber = r.entity.drawNumber;
 
 /// Debug option, allowing for unlimited block placement.
 /// Use the `isInCreative()` function in order to check for creative mode.
@@ -48,13 +48,13 @@ const DroppedItem = struct {
     /// Direction of sprite rotation.
     is_clockwise: bool,
 };
-pub var dropped_items: root.Fifo(DroppedItem) = .{};
+pub var dropped_items: r.Fifo(DroppedItem) = .{};
 
 pub inline fn isInCreative() bool {
-    return root.is_debug and IN_CREATIVE;
+    return r.is_debug and IN_CREATIVE;
 }
 pub inline fn shouldShowAllItems() bool {
-    return root.is_debug and (IN_CREATIVE or SHOW_ALL_INVENTORY_ITEMS);
+    return r.is_debug and (IN_CREATIVE or SHOW_ALL_INVENTORY_ITEMS);
 }
 
 /// Which row the selected sprite is in.
@@ -147,7 +147,7 @@ fn dropSingleItem(id: Sprite, chunk: memory.Coordinate, block_x: u4, block_y: u4
     // Drop at the center of the block horizontally (+128), and the bottom vertically (+256)
     const px = @as(i32, block_x) * 256 + 128;
     const py = @as(i32, block_y) * 256 + 256;
-    const seed = root.seeding.FastHash.hash2d(
+    const seed = r.seeding.FastHash.hash2d(
         memory.game.getHashSeed(.visual),
         memory.game.frame,
         item_count,
@@ -167,7 +167,7 @@ fn dropSingleItem(id: Sprite, chunk: memory.Coordinate, block_x: u4, block_y: u4
             // monumentally silly code to get a block position to influence frames left
             // TODO: maybe this indicates we should really simplify things?
             @as(u16, @intCast((seed / (128 * 128 * 2)) % (getMaxItemDropLifespan() * 1 / 4))),
-    }, root.world.alloc) catch memory.oom();
+    }, r.world.alloc) catch memory.oom();
 }
 
 /// Calls `addEntity()` for each element in `dropped_items`, handling camera pan logic.
@@ -189,7 +189,7 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             const curr_item_sp_y = curr_offset[1] * 4096 + @as(i64, item.subpixel_y);
 
             // Interpolate using the global dt from chunk rendering
-            const dt = root.chunks.current_dt + 1.0;
+            const dt = r.chunks.current_dt + 1.0;
             const interp_item_sp_x = @as(f64, @floatFromInt(prev_item_sp_x)) +
                 @as(f64, @floatFromInt(curr_item_sp_x - prev_item_sp_x)) * dt;
             const interp_item_sp_y = @as(f64, @floatFromInt(prev_item_sp_y)) +
@@ -208,8 +208,8 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             const interpolated_zoom = memory.game.camera_scale * std.math.pow(f64, memory.game.camera_scale_change, dt);
 
             // Translate subpixels offset to screen space (1 pixel becomes 16 subpixels!)
-            const screen_x = @as(f32, @floatCast(@as(f64, root.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0)));
-            const screen_y = @as(f32, @floatCast(@as(f64, root.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0)));
+            const screen_x = @as(f32, @floatCast(@as(f64, r.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0)));
+            const screen_y = @as(f32, @floatCast(@as(f64, r.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0)));
 
             const half_lifespan = getMaxItemDropLifespan() / 2;
             const life_fraction = @min(@as(f32, @floatFromInt(item.frames_left)) / half_lifespan, 1.0);
@@ -362,7 +362,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
 
     const base_size = 16.0;
     const spacing = 1.25 * base_size;
-    const mouse_pos = mouse.uv_position * memory.Vec2f{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT };
+    const mouse_pos = mouse.uv_position * memory.Vec2f{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT };
 
     for (active_slots, 0..) |active_sprite, i| {
         const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
@@ -376,7 +376,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
         const bg_pos = inventory_pos - Vec2f32{ bg_size / 4.0, bg_size / 4.0 };
 
-        const hitbox: root.geometry.Shape = .roundSquare(
+        const hitbox: r.geometry.Shape = .roundSquare(
             bg_pos - Vec2f32{ bg_size / 2.0, bg_size / 2.0 },
             bg_size,
             0.2,
@@ -438,7 +438,7 @@ pub fn drawInventory(time_diff: f64) void {
 
         // replace with pickaxe for UI
         const rendered_sprite: Sprite = if (is_mine_type)
-            @enumFromInt(@intFromEnum(Sprite.pickaxe) + @intFromEnum(root.mining.pickaxe_type))
+            @enumFromInt(@intFromEnum(Sprite.pickaxe) + @intFromEnum(r.mining.pickaxe_type))
         else
             active_sprite;
         addEntity(.{
@@ -473,12 +473,12 @@ pub fn drawInventory(time_diff: f64) void {
             .size = current_size,
         });
 
-        const hitbox: root.geometry.Shape = .roundSquare(
+        const hitbox: r.geometry.Shape = .roundSquare(
             bg_pos - Vec2f32{ bg_size / 2.0, bg_size / 2.0 },
             bg_size,
             0.2,
         );
-        if (hitbox.contains(mouse.uv_position * memory.Vec2f{ root.SCREEN_WIDTH, root.SCREEN_HEIGHT })) {
+        if (hitbox.contains(mouse.uv_position * memory.Vec2f{ r.SCREEN_WIDTH, r.SCREEN_HEIGHT })) {
             hovered_inventory_sprite = active_sprite;
         }
     }
@@ -489,7 +489,7 @@ pub fn drawInventory(time_diff: f64) void {
             selected_row = getSelectedIndex() / 10; // this works I suppose
             mouse.mouse_state = .inventory;
         }
-        if (mouse.mouse_state == .none or mouse.mouse_state == .inventory) root.mouse.mouse_type = .pointer;
+        if (mouse.mouse_state == .none or mouse.mouse_state == .inventory) r.mouse.mouse_type = .pointer;
     }
 
     // Second pass for numbers to ensure they are at the top of inventory rendering

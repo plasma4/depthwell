@@ -1,8 +1,8 @@
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
-const logger = root.logger;
-const world = root.world;
+const r = @import("../root.zig");
+const memory = r.memory;
+const logger = r.logger;
+const world = r.world;
 
 const HORIZON_DEPTH = memory.HORIZON_DEPTH;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
@@ -17,7 +17,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     _ = canvas_h;
     const game = &memory.game;
     // calculate effective zoom
-    const resolution_scale = canvas_w / @as(f64, root.SCREEN_WIDTH);
+    const resolution_scale = canvas_w / @as(f64, r.SCREEN_WIDTH);
     // since interpolated doesn't really influence logic, std.math.pow can be non-deterministic
     // dt allows for super smooth frame interpolation
     const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dt);
@@ -25,8 +25,8 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
 
     // calculate the screen's half-extents in world sub-pixels (as floats to preserve zoom precision)
     const subpixels_per_chunk: f64 = @floatFromInt(memory.SUBPIXELS_IN_CHUNK);
-    const half_w_sp = (@as(f64, root.SCREEN_WIDTH_HALF) / interpolated_zoom) * CHUNK_SIZE;
-    const half_h_sp = (@as(f64, root.SCREEN_HEIGHT_HALF) / interpolated_zoom) * CHUNK_SIZE;
+    const half_w_sp = (@as(f64, r.SCREEN_WIDTH_HALF) / interpolated_zoom) * CHUNK_SIZE;
+    const half_h_sp = (@as(f64, r.SCREEN_HEIGHT_HALF) / interpolated_zoom) * CHUNK_SIZE;
 
     // calculate the interpolated camera loc
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
@@ -71,7 +71,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
                     if (target_coord.suffix[0] > world.max_possible_suffix or target_coord.suffix[1] > world.max_possible_suffix) {
                         for (0..CHUNK_SIZE) |ly| {
                             const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
-                            @memset(out[row_start .. row_start + CHUNK_SIZE], root.sprite.AIR_BLOCK);
+                            @memset(out[row_start .. row_start + CHUNK_SIZE], r.sprite.AIR_BLOCK);
                         }
                         continue;
                     }
@@ -88,7 +88,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
                         const was_liquid = block.isLiquid();
 
                         // Check if the block is liquid at the top, replace it with the top sprite instead if so (enum ID + 1)
-                        const block_above_flag = root.types.EdgeFlags.getFlagBit(0, -1);
+                        const block_above_flag = r.types.EdgeFlags.getFlagBit(0, -1);
                         if (was_liquid and (block.edge_flags & block_above_flag == 0)) {
                             block.id = @enumFromInt(@intFromEnum(block.id) + 1);
                             // edge flags preserve
@@ -104,7 +104,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
             } else {
                 for (0..CHUNK_SIZE) |ly| {
                     const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
-                    @memset(out[row_start .. row_start + CHUNK_SIZE], root.sprite.AIR_BLOCK);
+                    @memset(out[row_start .. row_start + CHUNK_SIZE], r.sprite.AIR_BLOCK);
                 }
             }
         }
@@ -177,7 +177,7 @@ inline fn updateRenderProperties(
     memory.setScratchProp(9, abs_cam_x);
     memory.setScratchProp(10, abs_cam_y);
 
-    if (root.is_debug) {
+    if (r.is_debug) {
         const qc = world.quad_cache;
         const d: u64 = @intCast(memory.game.depth);
 
@@ -231,7 +231,7 @@ inline fn updateRenderProperties(
             "{mh}Velocity",
             game.player_velocity,
             "{mh}Rendered entity count",
-            root.entity.entity_count,
+            r.entity.entity_count,
         });
 
         // logger.clear(1);

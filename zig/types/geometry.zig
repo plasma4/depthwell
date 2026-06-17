@@ -1,7 +1,7 @@
 //! Geometric primitives for hit-testing UI and world elements.
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
+const r = @import("../root.zig");
+const memory = r.memory;
 
 const Vec2f = memory.Vec2f;
 

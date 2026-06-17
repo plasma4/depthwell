@@ -1,19 +1,19 @@
 //! Handles fractal ancestry and lookup logic.
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
-const world = root.world;
-const procedural = root.procedural;
-const seeding = root.seeding;
+const r = @import("../root.zig");
+const memory = r.memory;
+const world = r.world;
+const procedural = r.procedural;
+const seeding = r.seeding;
 
-const Sprite = root.Sprite;
+const Sprite = r.Sprite;
 const Block = memory.Block;
 const Coordinate = memory.Coordinate;
 const Chunk = memory.Chunk;
 const DepthCoordinate = world.DepthCoordinate;
 
 const HORIZON_DEPTH = memory.HORIZON_DEPTH;
-const STARTING_ZOOM_TIMES = root.startup.STARTING_ZOOM_TIMES;
+const STARTING_ZOOM_TIMES = r.startup.STARTING_ZOOM_TIMES;
 
 /// Returns whether the specified depth is far enough from the current player depth that discrete coordinates are no longer tracked.
 /// At this boundary, chunk-level detail is replaced by the global `QuadCache` 4x4 background grid.
@@ -191,8 +191,8 @@ pub inline fn get4x4List(comptime str: []const u8) []const u4 {
 pub inline fn getCornerId(id: u4) u2 {
     const id_row = id % 4;
     const id_col = id / 4;
-    return root.utils.intFromBool(u64, id_row >= 2) +
-        2 * root.utils.intFromBool(u64, id_col >= 2);
+    return r.utils.intFromBool(u64, id_row >= 2) +
+        2 * r.utils.intFromBool(u64, id_col >= 2);
 }
 
 /// Applies deterministic logic to a child `Block` based on its parent and 8 parent neighbors.

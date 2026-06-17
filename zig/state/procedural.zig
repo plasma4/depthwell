@@ -1,18 +1,18 @@
 //! Handles procedural generation logic for the game.
 const std = @import("std");
-const root = @import("../root.zig");
-const types = root.types;
-const logger = root.logger;
-const memory = root.memory;
-const seeding = root.seeding;
-const world = root.world;
+const r = @import("../root.zig");
+const types = r.types;
+const logger = r.logger;
+const memory = r.memory;
+const seeding = r.seeding;
+const world = r.world;
 
 const POW_2_32 = seeding.POW_2_32;
 const INV_POW_2_32 = seeding.INV_POW_2_32;
 const POW_2_64 = seeding.POW_2_64;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 
-const Sprite = root.Sprite;
+const Sprite = r.Sprite;
 const EdgeFlags = types.EdgeFlags;
 const oddsNum = seeding.oddsNum;
 const HashState = seeding.HashState;
@@ -32,7 +32,7 @@ pub const density_max = TuningFloat(0.9);
 /// Returns a struct with an a `value: f64` and `getF32()`.
 /// Allows for numbers to act like variables in Debug mode and constant-fold in all Release modes.
 inline fn TuningFloat(comptime default_value: f64) type {
-    if (root.is_debug) {
+    if (r.is_debug) {
         return struct {
             pub var value: f64 = default_value;
             pub inline fn getF32() f32 {
@@ -52,7 +52,7 @@ inline fn TuningFloat(comptime default_value: f64) type {
 /// Returns a struct with an a `value: bool`. (TODO: switch to using this instead of current heatmap logic)
 /// Allows for booleans to act like variables in Debug mode and dead code elimination in all Release modes.
 inline fn TuningBool(comptime default_value: bool) type {
-    if (root.is_debug) {
+    if (r.is_debug) {
         return struct {
             pub var value: bool = default_value;
         };
@@ -449,9 +449,9 @@ fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: Terra
 pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
     // check is_debug because these will always be off in non-dev
     // sprite IDs in this range create a heatmap
-    if (root.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
+    if (r.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
         return @enumFromInt(65000 + @as(u20, @intFromFloat(moisture * 256.0)));
-    if (root.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
+    if (r.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
 
     if (density <= density_min.getF32() or density >= density_max.getF32()) {
         if (moisture >= 0.93 and moisture <= 0.94) return .purple_strange_stone;
@@ -613,7 +613,7 @@ pub fn addOres(
     );
 
     // sprite IDs in this range use a neat heatmap (using only the first variation value), overriding normal ore logic
-    if (root.is_debug and USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(v1 * 256.0)));
+    if (r.is_debug and USE_ORE_HEATMAP) return @enumFromInt(65000 + @as(u20, @intFromFloat(v1 * 256.0)));
 
     if (base_data.density >= 0.45 and base_data.density <= 0.65) {
         // Generate various ore types
@@ -721,10 +721,10 @@ const SpritePair = struct { Sprite, Sprite };
 pub inline fn selectSprite(sprites: SpritePair, condition: bool, range: ?ValueRange) Sprite {
     const old_sprite = sprites[0];
     const new_sprite = sprites[1];
-    if (range) |r| {
-        const v = r[0];
-        const min = r[1];
-        const max = r[2];
+    if (range) |val| {
+        const v = val[0];
+        const min = val[1];
+        const max = val[2];
         return if (condition and v >= min and v <= max) new_sprite else old_sprite;
     } else {
         return if (condition) new_sprite else old_sprite;

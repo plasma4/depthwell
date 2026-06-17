@@ -1,14 +1,14 @@
 //! Contains important datatypes, some of which bridge WASM and Zig, as well as scratch buffer logic. Also contains some structs and commonly used constants.
 const std = @import("std");
 const builtin = @import("builtin");
-const root = @import("root.zig");
-const Sprite = root.Sprite;
-const types = root.types;
-const logger = root.logger;
-const player = root.player;
-const ColorRgba = root.ColorRgba;
-const seeding = root.seeding;
-const world = root.world;
+const r = @import("root.zig");
+const Sprite = r.Sprite;
+const types = r.types;
+const logger = r.logger;
+const player = r.player;
+const ColorRgba = r.ColorRgba;
+const seeding = r.seeding;
+const world = r.world;
 
 // Note: changing these constants below will probably have disasterous consequences.
 // A lot of logic is hard-coded, such as `[6][6]Sprite` use, and a lot of logic is bound to break if these constants are modified.
@@ -325,7 +325,7 @@ pub const Block = packed struct(u64) {
     }
 
     /// Returns the cascade anchoring rules for this block.
-    pub inline fn anchor(self: @This()) root.block.AnchorKind {
+    pub inline fn anchor(self: @This()) r.block.AnchorKind {
         return self.id.anchor();
     }
 

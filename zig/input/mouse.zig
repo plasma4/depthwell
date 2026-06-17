@@ -1,17 +1,17 @@
 //! Updates public values describing the mouse's position for other parts of the game, such as mining.
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
-const main = root.startup;
-const logger = root.logger;
-const sprite = root.sprite;
-const world = root.world;
-const inventory = root.inventory;
+const r = @import("../root.zig");
+const memory = r.memory;
+const main = r.startup;
+const logger = r.logger;
+const sprite = r.sprite;
+const world = r.world;
+const inventory = r.inventory;
 
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
-const SCREEN_WIDTH = root.SCREEN_WIDTH;
-const SCREEN_HEIGHT = root.SCREEN_HEIGHT;
+const SCREEN_WIDTH = r.SCREEN_WIDTH;
+const SCREEN_HEIGHT = r.SCREEN_HEIGHT;
 
 /// The possible things the mouse started selecting on mouse down.
 pub const MouseState = enum(u32) {

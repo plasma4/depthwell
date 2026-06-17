@@ -1,16 +1,16 @@
 //! Defines the architecture of the fractal world, contains cache data, and some ore definitions.
 const std = @import("std");
-const root = @import("../root.zig");
-const SegmentedList = root.SegmentedList;
-const Sprite = root.Sprite;
-const utils = root.utils;
-const types = root.types;
-const memory = root.memory;
-const logger = root.logger;
-const seeding = root.seeding;
-const procedural = root.procedural;
-const player = root.player;
-const water = root.water;
+const r = @import("../root.zig");
+const SegmentedList = r.SegmentedList;
+const Sprite = r.Sprite;
+const utils = r.utils;
+const types = r.types;
+const memory = r.memory;
+const logger = r.logger;
+const seeding = r.seeding;
+const procedural = r.procedural;
+const player = r.player;
+const water = r.water;
 
 const Vec2i = memory.Vec2i;
 const Vec2u = memory.Vec2u;
@@ -20,7 +20,7 @@ const Block = memory.Block;
 const Coordinate = memory.Coordinate;
 const ChunkSeeds = seeding.ChunkSeeds;
 
-const STARTING_ZOOM_TIMES = root.startup.STARTING_ZOOM_TIMES;
+const STARTING_ZOOM_TIMES = r.startup.STARTING_ZOOM_TIMES;
 const HORIZON_DEPTH = memory.HORIZON_DEPTH;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
@@ -101,13 +101,13 @@ pub const DepthCoordinate = struct {
         const combined = x ^ y ^ @as(u64, self.quadrant);
 
         // MurmurHash3 final mix
-        var r = combined;
-        r ^= r >> 30;
-        r *%= 0xbf58476d1ce4e5b9;
-        r ^= r >> 27;
-        r *%= 0x94d049bb133111eb;
-        r ^= r >> 31;
-        return r;
+        var result = combined;
+        result ^= result >> 30;
+        result *%= 0xbf58476d1ce4e5b9;
+        result ^= result >> 27;
+        result *%= 0x94d049bb133111eb;
+        result ^= result >> 31;
+        return result;
     }
 
     /// Checks for equality between two `DepthCoordinate` values.
@@ -480,8 +480,8 @@ pub inline fn getSimBlockPtr(x: i32, y: i32) ?*Block {
 /// The safe cache size is dynamically calculated based on minimum zoom and screen resolution.
 /// Also handles chunks considered by `SimBuffer` already and adds some buffer room.
 const CHUNK_CACHE_SIZE: usize = blk: {
-    const W: f64 = @floatFromInt(root.SCREEN_WIDTH);
-    const H: f64 = @floatFromInt(root.SCREEN_HEIGHT);
+    const W: f64 = @floatFromInt(r.SCREEN_WIDTH);
+    const H: f64 = @floatFromInt(r.SCREEN_HEIGHT);
     const Z: f64 = player.CAMERA_MIN_ZOOM;
     const S_b: f64 = @floatFromInt(SIM_BUFFER_WIDTH);
 
@@ -860,7 +860,7 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
     const chunk_seeds = quad_cache.getChunkSeeds(key);
     var rng4 = seeding.ChaCha12.init(&chunk_seeds.value[3]);
 
-    const parent_neighborhood = root.ancestor.getAncestorNeighborhood(key);
+    const parent_neighborhood = r.ancestor.getAncestorNeighborhood(key);
     for (0..CHUNK_SIZE) |block_y| {
         for (0..CHUNK_SIZE) |block_x| {
             const idx = block_x + block_y * CHUNK_SIZE;
@@ -882,7 +882,7 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
                 parent_neighborhood[py + 1][px + 1],
             };
 
-            const final_sprite = root.ancestor.applyAncestorLogic(
+            const final_sprite = r.ancestor.applyAncestorLogic(
                 parent_sprite,
                 neighbors,
                 key,
@@ -910,7 +910,7 @@ pub fn getCachedChunk(key: DepthCoordinate) ?*const Chunk {
         return modified_chunk;
     }
     if (key.depth != memory.game.depth) {
-        if (root.ancestor.AncestorCache.get(key)) |cached| {
+        if (r.ancestor.AncestorCache.get(key)) |cached| {
             return cached;
         }
     }
@@ -1062,7 +1062,7 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                 continue;
             };
 
-            halo[@intCast(hy + 1)][@intCast(hx + 1)] = root.ancestor.getInheritedMaterial(
+            halo[@intCast(hy + 1)][@intCast(hx + 1)] = r.ancestor.getInheritedMaterial(
                 target_nc.asDepthCoordinate(depth),
                 lx,
                 ly,
@@ -1120,7 +1120,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
             if (getCachedChunk(nc.asDepthCoordinate(k.depth))) |cached_chunk| {
                 return cached_chunk.getBlock(lx, ly);
             }
-            return root.ancestor.getInheritedMaterial(nc.asDepthCoordinate(k.depth), lx, ly);
+            return r.ancestor.getInheritedMaterial(nc.asDepthCoordinate(k.depth), lx, ly);
         }
     }.func;
 
@@ -1290,7 +1290,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                         if (dcx < SIM_BUFFER_WIDTH and dcy < SIM_BUFFER_WIDTH) {
                             const abs_x = dcx * CHUNK_SIZE + lbx;
                             const abs_y = dcy * CHUNK_SIZE + lby;
-                            root.water.updateWaterEdgeFlags(@intCast(abs_x), @intCast(abs_y));
+                            r.water.updateWaterEdgeFlags(@intCast(abs_x), @intCast(abs_y));
                         }
                     }
                 }
@@ -1325,7 +1325,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
 
                 if (broken) {
                     if (item.bx == bx and item.by == by and item.coord.eql(coord)) original_block_broken = true;
-                    root.inventory.dropItem(current_sprite, target_coord, lbx, lby);
+                    r.inventory.dropItem(current_sprite, target_coord, lbx, lby);
 
                     // Internal block modification to avoid recursion
                     const key = DepthCoordinate.from(target_coord);
@@ -1503,7 +1503,7 @@ pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
             var t_bx = memory.game.getBlockXInChunk();
             var t_by = memory.game.getBlockYInChunk();
             while (center_coord.depth > horizon_depth) {
-                const p = root.ancestor.getParentInfo(center_coord, t_bx, t_by);
+                const p = r.ancestor.getParentInfo(center_coord, t_bx, t_by);
                 center_coord = p.coord.asDepthCoordinate(center_coord.depth - 1);
                 t_bx = p.bx;
                 t_by = p.by;
@@ -1539,7 +1539,7 @@ pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
 
     // not the current depth ):
     // use this function, which also checks AncestorCache
-    return root.ancestor.getInheritedMaterial(
+    return r.ancestor.getInheritedMaterial(
         coord.asDepthCoordinate(depth),
         lx,
         ly,
@@ -1555,7 +1555,7 @@ pub fn clearCaches(comptime clear_ancestors: bool) void {
     quad_cache.seed_hand = @splat(0);
     quad_cache.seed_cache_keys = @splat(@splat(DepthCoordinate.invalid));
 
-    if (clear_ancestors) root.ancestor.AncestorCache.clear();
+    if (clear_ancestors) r.ancestor.AncestorCache.clear();
 }
 
 /// Increases the game's depth by 1, invalidates caches, moves the player, and handles data modification.
@@ -1564,7 +1564,7 @@ pub fn clearCaches(comptime clear_ancestors: bool) void {
 pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     _ = parent_id;
     clearCaches(true);
-    root.inventory.dropped_items.clear(null);
+    r.inventory.dropped_items.clear(null);
     memory.game.depth += 1;
     const depth = memory.game.depth;
 
@@ -1686,7 +1686,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
 
         var i: u32 = 0;
         while (i < 32) : (i += 1) {
-            const p = root.ancestor.getParentInfo(trace_coord, t_bx, t_by);
+            const p = r.ancestor.getParentInfo(trace_coord, t_bx, t_by);
             trace_coord = p.coord.asDepthCoordinate(trace_coord.depth - 1);
             t_bx = p.bx;
             t_by = p.by;
@@ -1696,7 +1696,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         var old_t_bx = t_bx;
         var old_t_by = t_by;
         if (target_horizon_depth > STARTING_ZOOM_TIMES) {
-            const pp = root.ancestor.getParentInfo(trace_coord, t_bx, t_by);
+            const pp = r.ancestor.getParentInfo(trace_coord, t_bx, t_by);
             old_trace_coord = pp.coord.asDepthCoordinate(old_trace_coord.depth - 1);
             old_t_bx = pp.bx;
             old_t_by = pp.by;
@@ -1724,9 +1724,9 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                     if (mod_store.get(child_key)) |mod| {
                         next_materials[y_idx][x_idx] = mod.blocks[(@as(usize, local_by) << 4) | local_bx];
                     } else if (target_horizon_depth == STARTING_ZOOM_TIMES) {
-                        next_materials[y_idx][x_idx] = root.ancestor.getInheritedMaterial(child_key, local_bx, local_by);
+                        next_materials[y_idx][x_idx] = r.ancestor.getInheritedMaterial(child_key, local_bx, local_by);
                     } else {
-                        const p = root.ancestor.getParentInfo(child_key, local_bx, local_by);
+                        const p = r.ancestor.getParentInfo(child_key, local_bx, local_by);
                         const p_qx_128: i128 = p.coord.quadrant % 2; // TODO: u64-ify this instead
                         const p_qy_128: i128 = p.coord.quadrant / 2;
                         const diff_chunk_x: i64 = @intCast(((p_qx_128 << shift_amt) |
@@ -1766,7 +1766,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                         }
 
                         // keep tracing the materials back...
-                        next_materials[y_idx][x_idx] = root.ancestor.applyAncestorLogic(
+                        next_materials[y_idx][x_idx] = r.ancestor.applyAncestorLogic(
                             parent_block,
                             p_neighbors,
                             child_key,

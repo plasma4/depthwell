@@ -1,11 +1,11 @@
 //! Handles the main player movement and camera logic.
 const std = @import("std");
-const root = @import("../root.zig");
-const memory = root.memory;
-const logger = root.logger;
-const KeyBits = root.KeyBits;
-const main = root.startup;
-const world = root.world;
+const r = @import("../root.zig");
+const memory = r.memory;
+const logger = r.logger;
+const KeyBits = r.KeyBits;
+const main = r.startup;
+const world = r.world;
 const CHUNK_SIZE = memory.CHUNK_SIZE;
 const CHUNK_SIZE_SQ = memory.CHUNK_SIZE_SQ;
 const SUBPIXELS_IN_CHUNK = memory.SUBPIXELS_IN_CHUNK;
