@@ -1172,7 +1172,7 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
 /// - Have solid-like edge flag calculations applied to it (default).
 /// - As an adjacent block, become considered as a "solid" and changing edge flags of adjacent blocks.
 ///
-/// This may be modified for testing as necessary and is different from the final result in `root.chunks.updateVisibleChunks()`.
+/// This may be modified for testing as necessary and is different from the final result in `r.chunks.updateVisibleChunks()`.
 pub inline fn shouldHaveEdgeFlags(sprite: Sprite) bool {
     return sprite.isFoundation();
 }

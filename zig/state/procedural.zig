@@ -63,9 +63,9 @@ inline fn TuningBool(comptime default_value: bool) type {
     }
 }
 
-/// Determines whether to use a heatmap or not for base terrain. Ignored if `root.is_debug` is false.
+/// Determines whether to use a heatmap or not for base terrain. Ignored if `r.is_debug` is false.
 pub var USE_BASE_HEATMAP = false;
-/// Determines whether to use a heatmap or not for ore generation. Ignored if `root.is_debug` is false.
+/// Determines whether to use a heatmap or not for ore generation. Ignored if `r.is_debug` is false.
 pub var USE_ORE_HEATMAP = false;
 
 /// Configuration options passed to the FBM (Fractal Brownian Motion) and Worley

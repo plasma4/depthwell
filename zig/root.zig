@@ -27,7 +27,7 @@ pub const SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
 pub const utils = @import("internal/utils.zig");
 pub const GenerateOffsets = @import("internal/offsets.zig").GenerateOffsets;
-pub const SegmentedList = @import("internal/SegmentedList.zig").SegmentedList;
+pub const SegmentedList = @import("internal/segmented_list.zig").SegmentedList;
 pub const Fifo = @import("internal/fifo.zig").UnboundedFifo;
 pub const ColorRgba = @import("visual/color_rgba.zig").ColorRgba;
 
@@ -50,7 +50,8 @@ pub const world = @import("state/world.zig");
 pub const ancestor = @import("state/ancestor.zig");
 pub const water = @import("state/water.zig");
 
-pub const logger = @import("tools/logger.zig");
+pub const logger = @import("debug/logger.zig");
+pub const chunk_preview = @import("debug/chunk_preview.zig");
 
 pub const inventory = @import("input/inventory.zig");
 pub const mining = @import("input/mining.zig");
@@ -256,7 +257,7 @@ pub export fn isDebug() bool {
 // Import debugging API and functions if optimization level is Debug.
 comptime {
     _ = if (is_debug) struct {
-        pub const debug_ui = @import("tools/debug_ui.zig");
+        pub const debug_ui = @import("debug/debug_ui.zig");
         pub export fn debugBuildUiMetadata() void {
             if (is_debug) debug_ui.buildMetadata();
         }
@@ -334,7 +335,7 @@ test "main_tests" {
         @import("png/png_to_binary.zig"),
         @import("visual/color_rgba.zig"),
         @import("state/seeding.zig"),
-        @import("tools/logger.zig"),
+        @import("debug/logger.zig"),
     };
 
     inline for (modules) |mod| {

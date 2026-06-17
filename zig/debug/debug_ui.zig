@@ -1,5 +1,5 @@
 //! Handles debug options for sliders and buttons, and contains functions to pass these to JS.
-//! Only imported if `root.is_debug` is true.
+//! Only imported if `r.is_debug` is true.
 const std = @import("std");
 const r = @import("../root.zig");
 const main = r.startup;
