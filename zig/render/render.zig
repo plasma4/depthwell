@@ -38,12 +38,12 @@ pub inline fn handleVisibleEntities() void {
 }
 
 /// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsSetMouseType(mouse_type: dw.mouse.MouseType) void;
+extern "env" fn jsSetMouseType(mouse_type: dw.mouse.CursorType) void;
 
 /// Sets the mouse type of the canvas in JS.
 pub inline fn dispatchMouseType() void {
     if (dw.is_wasm) {
-        jsSetMouseType(dw.mouse.mouse_type);
+        jsSetMouseType(dw.mouse.cursor_type);
     } else {
         return;
     }

@@ -127,11 +127,11 @@ pub inline fn oddsNum(chance: comptime_float) u64 {
 
 /// Simple compile-time getter for hashing data, incrementing `y` over time.
 pub const HashState = struct {
-    value: u64,
+    value: u64 = 0,
     seed_vector: Vec2u,
     x: u64,
     y: u64,
-    bits_left: u8 = 64,
+    bits_left: u8 = 0,
 
     /// Gets a power of two and increments the hash state.
     pub inline fn get(self: *HashState, T: type, modulo: comptime_int) T {
@@ -271,12 +271,12 @@ pub const HashState = struct {
 pub const FastHash = struct {
     // Look inside
     // >It's not really secret.
-    const secret = [_]u64{
-        0xa0761d6478bd642f,
-        0xe7037ed1a0b428db,
-        0x8ebc6af09c88c6e3,
-        0x589965cc75374cc3,
-    };
+    // const secret = [_]u64{
+    //     0xa0761d6478bd642f,
+    //     0xe7037ed1a0b428db,
+    //     0x8ebc6af09c88c6e3,
+    //     0x589965cc75374cc3,
+    // };
 
     /// A pure 64-bit platform-independent mixer.
     /// Combines inputs additively to avoid a zero-sink.
@@ -292,11 +292,24 @@ pub const FastHash = struct {
 
     /// Returns a 64-bit hash value, assuming `seed_vector` is securely generated from BLAKE3 already.
     pub inline fn hash2d(seed_vector: Vec2u, x: u64, y: u64) u64 {
-        var v: Vec2u = Vec2u{ x, y } ^ seed_vector; // diffuse X and Y using vectors
-        v *%= Vec2u{ secret[0], secret[1] }; // wrapping multiply
+        var h1 = x ^ seed_vector[0];
+        var h2 = y ^ seed_vector[1];
 
-        v ^= v >> @as(Vec2u, @splat(32)); // fold the vector for more variance
-        return mix(v[0] ^ secret[2], v[1] ^ secret[3]); // combine lanes and mix
+        // Mix both lanes with prime constants
+        h1 = h1 *% 0xa0761d6478bd642f;
+        h2 = h2 *% 0xe7037ed1a0b428db;
+
+        // Cross-lane diffusion
+        var combined = (h1 ^ h2) +% (h1 >> 32) +% (h2 >> 32);
+
+        // SplitMix64 finalizer step
+        combined ^= combined >> 30;
+        combined *%= 0xbf58476d1ce4e5b9;
+        combined ^= combined >> 27;
+        combined *%= 0x94d049bb133111eb;
+        combined ^= combined >> 31;
+
+        return combined;
     }
 
     /// Returns a float value from [0, 1], assuming `seed_vector` is securely generated from BLAKE3 already.
@@ -307,30 +320,24 @@ pub const FastHash = struct {
         return @as(f64, @floatFromInt(h)) / POW_2_64;
     }
 
+    const Vec4u = @Vector(4, u64);
+
     /// Vectorized 4-channel wyhash/wyrand stateless mixer.
     /// Hashes 4 coordinates in parallel (using SIMD).
-    pub inline fn hash2d_4x(seed_vector: Vec2u, vx: @Vector(4, u64), vy: @Vector(4, u64)) @Vector(4, u64) {
-        const Vec4u = @Vector(4, u64);
+    pub inline fn hash2d_4x(seed_vector: Vec2u, vx: Vec4u, vy: Vec4u) Vec4u {
+        const seed = @as(u64, seed_vector[0]) | (@as(u64, seed_vector[1]) << 32);
 
-        var vx_diff = vx ^ @as(Vec4u, @splat(seed_vector[0]));
-        var vy_diff = vy ^ @as(Vec4u, @splat(seed_vector[1]));
+        const seed_vec: Vec4u = @splat(seed);
+        const mult1: Vec4u = @splat(0xa0761d6478bd642f);
+        const mult2: Vec4u = @splat(0xe7037ed1a0b428db);
 
-        vx_diff *%= @as(Vec4u, @splat(secret[0]));
-        vy_diff *%= @as(Vec4u, @splat(secret[1]));
+        var h = vx ^ vy ^ seed_vec;
+        h *%= mult1;
+        h ^= h >> @as(Vec4u, @splat(32));
+        h *%= mult2;
+        h ^= h >> @as(Vec4u, @splat(32));
 
-        vx_diff ^= vx_diff >> @as(Vec4u, @splat(32));
-        vy_diff ^= vy_diff >> @as(Vec4u, @splat(32));
-
-        const v0 = vx_diff ^ @as(Vec4u, @splat(secret[2]));
-        const v1 = vy_diff ^ @as(Vec4u, @splat(secret[3]));
-
-        var x = v0 +% v1;
-        x ^= x >> @as(Vec4u, @splat(30));
-        x *%= @as(Vec4u, @splat(0xbf58476d1ce4e5b9));
-        x ^= x >> @as(Vec4u, @splat(27));
-        x *%= @as(Vec4u, @splat(0x94d049bb133111eb));
-        x ^= x >> @as(Vec4u, @splat(31));
-        return x;
+        return h;
     }
 };
 

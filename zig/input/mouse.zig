@@ -13,28 +13,68 @@ const CHUNK_SIZE_SQ = dw.CHUNK_SIZE_SQ;
 const SCREEN_WIDTH = dw.SCREEN_WIDTH;
 const SCREEN_HEIGHT = dw.SCREEN_HEIGHT;
 
-/// The possible things the mouse started selecting on mouse down.
-pub const MouseState = enum(u32) {
-    /// Nothing (not even the canvas) was selected.
-    /// If the state is set to this, then `uv_position` should also have negative X and Y values.
+/// The system categories that can claim the mouse's click focus.
+/// These categories prevent cross-activation (such as pointerdown within the inventory and pointerup on an indicator).
+/// Lower values on the enum are prioritized (none > canvas > clickables like inventory slots).
+pub const ClickFocus = enum(u32) {
+    /// No click is active. The mouse is free to hover over elements.
     none = 0,
-    /// The canvas was selected on mouse down.
+    /// Click started on the world canvas (such as mining blocks).
+    /// This has precedence over all UI categories to prevent active dragging from interacting with menus.
     canvas = 1,
-    /// The inventory was selected on mouse down.
+    /// Click started specifically on an inventory slot.
     inventory = 2,
+    /// Click started specifically on an in-world indicator overlay like a furnace.
+    indicator = 3,
+    /// Click started specifically on a crafting menu panel.
+    crafting = 4,
+
+    /// Returns the numerical priority of the focus state, where lower is more prioritized.
+    pub fn priority(self: ClickFocus) u32 {
+        return @intFromEnum(self);
+    }
+
+    /// Returns true if this focus state has a higher priority than another.
+    pub fn takesPrecedenceOver(self: ClickFocus, other: ClickFocus) bool {
+        return self.priority() < other.priority();
+    }
+
+    /// Determines if a specific UI category is permitted to interact with the mouse.
+    /// Returns true if the mouse is idle (.none) or already focused on that exact category.
+    pub inline fn permits(self: ClickFocus, category: ClickFocus) bool {
+        return self == .none or self == category;
+    }
 };
 
-/// The possible mouse cursors to use.
-pub const MouseType = enum(u32) {
+/// The possible mouse cursor visual styles.
+pub const CursorType = enum(u8) {
+    /// Standard (default) arrow cursor.
     initial = 0,
+    /// Hand cursor with one pointing finger. Means something is clickable!
     pointer = 1,
+
+    /// Returns the numerical priority of the cursor style, where higher values override lower values.
+    pub fn priority(self: CursorType) u8 {
+        return @intFromEnum(self);
+    }
+
+    /// Returns true if this cursor has higher or equal priority than another.
+    pub fn takesPrecedenceOver(self: CursorType, other: CursorType) bool {
+        return self.priority() >= other.priority();
+    }
 };
 
-/// The state the mouse is in (based on what it selected on mouse down).
-pub var mouse_state: MouseState = .none;
-/// The type of mouse cursor to use.
-/// Reset at the start of every render tick and dispatched to JS at the end.
-pub var mouse_type: MouseType = .initial;
+/// The active category that currently owns the click action.
+pub var click_focus: ClickFocus = .none;
+/// The current visual style of the cursor. Reset to `.initial` each render frame.
+pub var cursor_type: CursorType = .initial;
+/// The focus state right before the mouse button was released. Remains valid for the duration of the frame.
+pub var released_focus: ClickFocus = .none;
+
+/// Determines if the mouse was just set to be down; reset via `clearFrameFlags()` at the end of the frame.
+pub var just_mouse_down: bool = false;
+/// Determines if the mouse was just released; reset via `clearFrameFlags()` at the end of the frame.
+pub var just_mouse_up: bool = false;
 
 /// Chunk the mouse is on; only updated when `updateMouseBlock()` is called.
 /// Assume to be invalid if null.
@@ -56,8 +96,33 @@ pub var block_position_changed = true;
 /// Assume to be invalid if values are negative (both will be -1.0 if invalid).
 pub var uv_position: dw.utils.Vec2f = .{ -1.0, -1.0 };
 
-/// Determines if the mouse was just set to be down; reset on pointerup.
-pub var just_mouse_down: bool = false;
+/// Requests a mouse cursor type in a way that avoids UI races or similar issues.
+/// The request is accepted only if the requested type has a higher or equal priority than the currently active cursor type.
+pub fn requestCursorType(new_type: CursorType) void {
+    if (new_type.takesPrecedenceOver(cursor_type)) {
+        cursor_type = new_type;
+    }
+}
+
+/// Helper to try capturing a down click for a specific UI category.
+/// Only sets `click_focus` if a pointerdown event was just fired and `is_hovered` is true.
+///
+/// Returns whether the "capture" was successful.
+pub inline fn tryCaptureDown(category: ClickFocus, is_hovered: bool) bool {
+    if (just_mouse_down and is_hovered) {
+        if (click_focus == .none or click_focus == .canvas or click_focus == category) {
+            click_focus = category;
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Helper to check if a valid, click-up sequence finished on a specific UI element.
+/// Verifies the click both started and ended on the specified category.
+pub inline fn isClicked(category: ClickFocus, is_hovered: bool) bool {
+    return just_mouse_up and released_focus == category and is_hovered;
+}
 
 /// Handles mouse logic, where `x` and `y` values are between 0-1, acting like a UV over the whole canvas from HTML.
 /// Action 0 (LEFT CLICK) : pointermove
@@ -65,16 +130,27 @@ pub var just_mouse_down: bool = false;
 /// Action 2 (LEFT CLICK) : pointerup
 /// Action 3 (RIGHT CLICK): pointerdown
 /// Action 4 (RIGHT CLICK): pointerup
-/// Action 5 (INVALIDATE) : N/A (blur/resize happened, `mouse_state` resets)
+/// Action 5 (INVALIDATE) : N/A (blur/resize happened)
 pub fn handleMouse(x: f64, y: f64, action: u32) void {
-    if (action == 1) {
-        just_mouse_down = true;
-        mouse_state = .canvas;
-    } else if (action == 2 or action == 5) {
-        just_mouse_down = false;
-        mouse_state = .none;
-    }
     uv_position = .{ x, y };
+
+    if (action == 1 or action == 3) {
+        just_mouse_down = true;
+        click_focus = .canvas;
+    } else if (action == 2 or action == 4 or action == 5) {
+        if (action == 2 or action == 4) {
+            just_mouse_up = true;
+            released_focus = click_focus;
+        }
+        click_focus = .none;
+    }
+}
+
+/// Resets transient frame transition flags. Called at the end of `updateEntities()`.
+pub fn clearFrameFlags() void {
+    just_mouse_down = false;
+    just_mouse_up = false;
+    released_focus = .none;
 }
 
 /// Updates the block/chunk the mouse is in for logic.

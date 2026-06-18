@@ -64,6 +64,7 @@ pub const render = @import("render/render.zig");
 pub const sound = @import("render/sound.zig");
 pub const chunks = @import("render/chunk.zig");
 pub const entity = @import("render/entity.zig");
+pub const indicators = @import("render/indicators.zig");
 
 pub const types = @import("types/types.zig");
 pub const KeyBits = types.KeyBits;
@@ -88,7 +89,6 @@ pub const mining = @import("input/mining.zig");
 pub const mouse = @import("input/mouse.zig");
 
 pub fn main() callconv(.c) void {
-    // TODO destroy World/GameState values as needed if !alreadyStarted
     world.flag_worklist = std.ArrayList(world.UpdateItem).initCapacity(world.alloc, 1024) catch unreachable;
     world.mod_store = .init(world.alloc);
 }
@@ -147,8 +147,10 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
     logger.writeOnce(3, .{
         "{mh}Selected sprite ID",
         inventory.selected_sprite,
-        "{mh}Hovered sprite details",
-        if (mouse.mouse_chunk_coord) |coord| world.getChunk(coord).getBlock(mouse.mouse_block_x, mouse.mouse_block_y) else null,
+        "{mh}Hovered sprite type",
+        if (mouse.mouse_chunk_coord) |coord| world.getChunk(coord).getBlock(mouse.mouse_block_x, mouse.mouse_block_y).id else null,
+        "{mh}Mouse status",
+        mouse.cursor_type,
     });
 }
 

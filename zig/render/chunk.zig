@@ -8,12 +8,13 @@ const HORIZON_DEPTH = dw.HORIZON_DEPTH;
 const CHUNK_SIZE = dw.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 
+/// Current interpolation fraction (updated within `updateVisibleChunks()` every render frame).
 pub var current_dt: f64 = 0.0;
 
 /// Adds visible chunk data to the scratch buffer, as well as properties.
 /// This is used in `render.prepareVisibleData()`.
 pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
-    current_dt = dt; // Store current interpolation fraction
+    current_dt = dt;
     _ = canvas_h;
     const game = &memory.game;
     // calculate effective zoom

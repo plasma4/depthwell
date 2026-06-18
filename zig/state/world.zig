@@ -710,7 +710,7 @@ pub const QuadCache = struct {
 
     /// 4-way set-associative cache keys.
     seed_cache_keys: [SEED_CACHE_SETS][SEED_CACHE_WAYS]DepthCoordinate = @splat(@splat(DepthCoordinate.invalid)),
-    /// Cached seed values corresponding to seed_cache_keys.
+    /// Cached seed values corresponding to `seed_cache_keys`.
     seed_cache_values: [SEED_CACHE_SIZE]seeding.ChunkSeeds = undefined,
     /// Data for clock per set.
     seed_clock_bits: [SEED_CACHE_SETS]u4 = @splat(0),
@@ -1651,7 +1651,6 @@ pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
 pub fn clearCaches(comptime clear_ancestors: bool) void {
     SimBuffer.clear();
     ChunkCache.clear();
-    // TODO: we should probably switch to hashmaps and consolidate within ChunkCache for seed logic here
     quad_cache.seed_clock_bits = @splat(0);
     quad_cache.seed_hand = @splat(0);
     quad_cache.seed_cache_keys = @splat(@splat(DepthCoordinate.invalid));
@@ -1828,7 +1827,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                         next_materials[y_idx][x_idx] = dw.ancestor.getInheritedMaterial(child_key, local_bx, local_by);
                     } else {
                         const p = dw.ancestor.getParentInfo(child_key, local_bx, local_by);
-                        const p_qx_128: i128 = p.coord.quadrant % 2; // TODO: u64-ify this instead
+                        const p_qx_128: i128 = p.coord.quadrant % 2;
                         const p_qy_128: i128 = p.coord.quadrant / 2;
                         const diff_chunk_x: i64 = @intCast(((p_qx_128 << shift_amt) |
                             @as(i128, p.coord.suffix[0])) - ((old_qx << shift_amt) |

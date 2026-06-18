@@ -42,22 +42,28 @@ pub var entity_count: u64 = 0;
 /// Some properties are optional with defaults (size, rotation, LCHA).
 pub fn updateEntities(time_diff: f64) void {
     memory.scratchReset();
+    // we're doing a new pass of drawing entities, clear anything before
     entity_count = 0;
     entity_byte_count_before_end = 0;
 
-    inventory.addDroppedItemsAsEntities(time_diff); // delta time in ms
+    inventory.addDroppedItemsAsEntities(time_diff); // pass in delta time in ms
 
+    // draw indicators (icons above certain sprites)
+    dw.indicators.drawFurnaceIndicators();
+
+    inventory.drawInventory(time_diff);
+
+    dw.render.dispatchMouseType();
+    dw.mouse.cursor_type = .initial;
+    dw.mouse.clearFrameFlags();
+
+    // draw chunk preview at the front
     if (dw.is_debug and preview_tile_size > 0.0) {
         dw.chunk_preview.drawChunkPreview();
     }
 
-    dw.mouse.mouse_type = .initial;
-    inventory.drawInventory(time_diff);
-    dw.render.dispatchMouseType();
-    dw.mouse.just_mouse_down = false;
-
     memory.setScratchProp(0, entity_count);
-    // entities are cleared in the render code afterward
+    // entity rendering is dispatched to JS right after this function completes
 }
 
 /// Configuration for drawing a number.

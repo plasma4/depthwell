@@ -21,6 +21,9 @@ pub const SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is (how many slots per row).
 pub const INVENTORY_WIDTH = 10;
 
+/// Tracks if the furnace menu overlay is active.
+pub var in_furnace = false;
+
 /// How many frames (logical) before an item enters the player's inventory.
 fn getMaxItemDropLifespan() u16 {
     return if (isInCreative()) 20 else 100;
@@ -126,7 +129,7 @@ pub fn dropItem(broken_sprite: Sprite, chunk: Coordinate, block_x: u4, block_y: 
 /// Computes the relative offset in chunks from `from` to `to`.
 /// Returns null if the coordinates are too far apart (over 4096 chunks) or cannot be resolved.
 /// Should be used for non-critical logic like dropped items that would be sensitive to teleports.
-fn getRelativeOffset(from: Coordinate, to: Coordinate) ?dw.utils.Vec2i {
+pub fn getRelativeOffset(from: Coordinate, to: Coordinate) ?dw.utils.Vec2i {
     // Estimate closest wrapped distance
     const dx = @as(i64, @bitCast(to.suffix[0] -% from.suffix[0]));
     const dy = @as(i64, @bitCast(to.suffix[1] -% from.suffix[1]));
@@ -485,12 +488,16 @@ pub fn drawInventory(time_diff: f64) void {
     }
 
     if (hovered_inventory_sprite) |s| {
-        if (mouse.just_mouse_down) {
+        // Capture click down specifically for the inventory system
+        if (mouse.tryCaptureDown(.inventory, true)) {
             selected_sprite = s;
-            selected_row = getSelectedIndex() / 10; // this works I suppose
-            mouse.mouse_state = .inventory;
+            selected_row = getSelectedIndex() / 10;
         }
-        if (mouse.mouse_state == .none or mouse.mouse_state == .inventory) dw.mouse.mouse_type = .pointer;
+
+        // Only show pointer hover indicators if we are permitted
+        if (mouse.click_focus.permits(.inventory)) {
+            mouse.requestCursorType(.pointer);
+        }
     }
 
     // Second pass for numbers to ensure they are at the top of inventory rendering

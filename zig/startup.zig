@@ -69,6 +69,8 @@ pub fn init() void {
     }
 }
 
+const SPAWN_CHECK_SIZE = 32;
+
 /// Searches for a safe grounded spawn point by spiraling through CHUNKS
 /// and scanning all blocks within those chunks.
 pub fn findSafeSpawn() void {
@@ -87,7 +89,7 @@ pub fn findSafeSpawn() void {
 
     // check a diamond area, in case there's some weird issues
     var i: u32 = 0;
-    while (@abs(cx) + @abs(cy) < 64) {
+    while (@abs(cx) + @abs(cy) < (SPAWN_CHECK_SIZE * 2)) {
         if (start_coord.move(.{ cx, cy })) |nc| {
             world.writeChunk(&chunk, nc);
 

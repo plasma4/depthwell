@@ -40,10 +40,8 @@ pub var pickaxe_type: PickaxeType = .stone;
 
 /// Updates mining and placing blocks. Should be called from `tick()` inside root.zig.
 pub fn handleMiningAndPlacing(logic_speed: f64) void {
-    if (mouse.just_mouse_down and inventory.getHoveredInventorySprite() != null) {
-        // use mouse states to prevent the player from placing blocks when actually selecting something from the inventory
-        mouse.mouse_state = .inventory;
-    }
+    _ = mouse.tryCaptureDown(.inventory, inventory.getHoveredInventorySprite() != null);
+    _ = mouse.tryCaptureDown(.indicator, dw.indicators.isHoveringFurnaceIndicator());
 
     mouse.updateMouseLocation(); // update to get correct mouse position data
 
@@ -51,11 +49,15 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
         mouse.block_position_changed = false;
         mining_progress = 0;
     }
-    if (mouse.mouse_state != .canvas) {
-        // mouse must be down for mining actions to occur
+
+    // Only allow mining if the click focus is currently dedicated to the world canvas.
+    // This prevents drag-clicks from bleeding into mining actions.
+    if (mouse.click_focus != .canvas) {
         selected_hp = 255;
         return;
     }
+
+    mouse.updateMouseLocation(); // update to get correct mouse position data
 
     const sprite_type = inventory.selected_sprite;
     if (sprite_type == .unselected) {

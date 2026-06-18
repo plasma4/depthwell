@@ -221,33 +221,63 @@ pub inline fn getWaterloggedStateSprites(
     return .{ .flags = flags, .volume = volume };
 }
 
-/// Computes volume + height of water column above (formally called hydrostatic pressure).
+/// Computes volume + height of water column above (formally called hydrostatic pressure) dynamically.
 /// Capped at 15 steps to guarantee O(1) worst-case performance.
-fn getPressureLocal(
-    curr: ?*Chunk,
+inline fn getPressureLocal(
+    curr: *Chunk,
     left: ?*Chunk,
     right: ?*Chunk,
     top: ?*Chunk,
-    bottom: ?*Chunk,
-    rbx: i32,
+    bx: i32,
     by: i32,
 ) u32 {
-    const ptr = getLocalBlockPtr(curr, left, right, top, bottom, rbx, by) orelse return 0;
-    const vol = getVolume(ptr);
-    if (vol == 0) return 0;
+    const block_vol = blk: {
+        if (bx >= 0 and bx < 16) {
+            break :blk getVolume(curr.blocks[@as(usize, @intCast((by << 4) | bx))]);
+        } else if (bx < 0) {
+            const l = left orelse return 0;
+            break :blk getVolume(l.blocks[@as(usize, @intCast((by << 4) | (bx + 16)))]);
+        } else {
+            const r = right orelse return 0;
+            break :blk getVolume(r.blocks[@as(usize, @intCast((by << 4) | (bx - 16)))]);
+        }
+    };
+    if (block_vol == 0) return 0;
 
     var col_above: u32 = 0;
     var cy = by - 1;
     while (col_above < 15) {
-        const p = getLocalBlockPtr(curr, left, right, top, bottom, rbx, cy) orelse break;
-        if (getVolume(p) > 0) {
+        const v = blk: {
+            if (cy >= 0) {
+                if (bx >= 0 and bx < 16) {
+                    break :blk getVolume(curr.blocks[@as(usize, @intCast((cy << 4) | bx))]);
+                } else if (bx < 0) {
+                    const l = left orelse break :blk 0;
+                    break :blk getVolume(l.blocks[@as(usize, @intCast((cy << 4) | (bx + 16)))]);
+                } else {
+                    const r = right orelse break :blk 0;
+                    break :blk getVolume(r.blocks[@as(usize, @intCast((cy << 4) | (bx - 16)))]);
+                }
+            } else {
+                const t = top orelse break :blk 0;
+                const target_cy = cy + 16;
+                if (bx >= 0 and bx < 16) {
+                    break :blk getVolume(t.blocks[@as(usize, @intCast((target_cy << 4) | bx))]);
+                } else if (bx < 0) {
+                    break :blk 0;
+                } else {
+                    break :blk 0;
+                }
+            }
+        };
+        if (v > 0) {
             col_above += 1;
             cy -= 1;
         } else {
             break;
         }
     }
-    return vol + col_above;
+    return block_vol + col_above;
 }
 
 /// Helper to quickly fetch a `Chunk` pointer from `SimBuffer` coordinates.
@@ -440,8 +470,8 @@ inline fn notifyNeighborEdgeFlags(rx: i32, ry: i32) void {
                         while (ndx <= 1) : (ndx += 1) {
                             if (ndx == 0 and ndy == 0) continue;
                             const n_nb = world.getSimBlockPtr(nx + ndx, ny + ndy);
-                            if (n_nb) |nnb| {
-                                if (nnb.isSolid() or nnb.isLiquid() or getVolume(nnb) > 0) {
+                            if (n_nb) |block| {
+                                if (block.isSolid() or block.isLiquid() or getVolume(block) > 0) {
                                     flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
                                 }
                             } else {
@@ -457,7 +487,7 @@ inline fn notifyNeighborEdgeFlags(rx: i32, ry: i32) void {
 }
 
 /// Runs a single frame of the water simulation for blocks within the `SimBuffer`.
-/// This simulation has been (somewhat) optimized and is also mass-conserving.
+/// This simulation has been (somewhat) optimized and is also fully mass-conserving.
 pub fn tickWater() void {
     const frame = memory.game.frame;
 
@@ -499,8 +529,11 @@ pub fn tickWater() void {
     }
 
     if (active_chunks.count() == 0) return;
-    water_updated = @TypeOf(water_updated).initEmpty();
-    chunks_to_update_flags = std.StaticBitSet(256).initEmpty();
+    water_updated = .initEmpty();
+    chunks_to_update_flags = .initEmpty();
+
+    // Tracks which chunks within the 16x16 grid received any volume modifications
+    var dirty_chunks = std.StaticBitSet(256).initEmpty();
 
     // Run water simulation ONLY on active chunks
     var chunk_y: i32 = 15;
@@ -519,86 +552,6 @@ pub fn tickWater() void {
             const right = if (rcx < 15) getChunkPtr(@intCast(rcx + 1), @intCast(chunk_y)) else null;
             const top = if (chunk_y > 0) getChunkPtr(@intCast(rcx), @intCast(chunk_y - 1)) else null;
             const bottom = if (chunk_y < 15) getChunkPtr(@intCast(rcx), @intCast(chunk_y + 1)) else null;
-
-            // Build high-performance local column-above cache for current chunk and horizontal borders
-            var col_above_local: [16][18]u8 = undefined;
-            {
-                // col_x = -1 (left boundary column)
-                {
-                    var above_count: u8 = 0;
-                    if (left) |l| {
-                        var col_y: usize = 0;
-                        while (col_y < 16) : (col_y += 1) {
-                            col_above_local[col_y][0] = above_count;
-                            const p = l.blocks[(col_y << 4) | 15];
-                            if (getVolume(p) > 0) {
-                                above_count = @min(above_count + 1, 15);
-                            } else {
-                                above_count = 0;
-                            }
-                        }
-                    } else {
-                        var col_y: usize = 0;
-                        while (col_y < 16) : (col_y += 1) {
-                            col_above_local[col_y][0] = 0;
-                        }
-                    }
-                }
-
-                // col_x from 0 to 15
-                var col_x: i32 = 0;
-                while (col_x < 16) : (col_x += 1) {
-                    const cache_idx: usize = @intCast(col_x + 1);
-                    var above_count: u8 = 0;
-                    if (top) |t| {
-                        var ty: usize = 15;
-                        while (above_count < 15) {
-                            const p = t.blocks[(ty << 4) | @as(usize, @intCast(col_x))];
-                            if (getVolume(p) > 0) {
-                                above_count += 1;
-                            } else {
-                                break;
-                            }
-                            if (ty == 0) break;
-                            ty -= 1;
-                        }
-                    }
-
-                    var col_y: usize = 0;
-                    const c = curr; // guaranteed non-null
-                    while (col_y < 16) : (col_y += 1) {
-                        col_above_local[col_y][cache_idx] = above_count;
-                        const p = c.blocks[(col_y << 4) | @as(usize, @intCast(col_x))];
-                        if (getVolume(p) > 0) {
-                            above_count = @min(above_count + 1, 15);
-                        } else {
-                            above_count = 0;
-                        }
-                    }
-                }
-
-                // col_x = 16 (right boundary column)
-                {
-                    var above_count: u8 = 0;
-                    if (right) |r| {
-                        var col_y: usize = 0;
-                        while (col_y < 16) : (col_y += 1) {
-                            col_above_local[col_y][17] = above_count;
-                            const p = r.blocks[(col_y << 4) | 0];
-                            if (getVolume(p) > 0) {
-                                above_count = @min(above_count + 1, 15);
-                            } else {
-                                above_count = 0;
-                            }
-                        }
-                    } else {
-                        var col_y: usize = 0;
-                        while (col_y < 16) : (col_y += 1) {
-                            col_above_local[col_y][17] = 0;
-                        }
-                    }
-                }
-            }
 
             var by: i32 = 15;
             while (by >= 0) : (by -= 1) {
@@ -635,13 +588,14 @@ pub fn tickWater() void {
                                 const cap: u32 = if (is_free_fall) 15 else 4;
                                 const amt = @min(@min(src_vol, available), cap);
 
-                                // Perform direct, solid transfer
-                                setVolumeSticky(rx, ry, src_vol - amt);
-                                setVolumeSticky(rx, ry + 1, dest_vol + amt);
+                                // Perform direct, solid transfer on SimBuffer pointers
+                                setVolume(block_ptr, src_vol - amt);
+                                setVolume(dp, dest_vol + amt);
 
-                                // Only mark horizontal flows as updated to prevent vertical shear
-                                // const down_idx = @as(usize, @intCast(ry + 1)) * 256 + @as(usize, @intCast(rx));
-                                // water_updated.set(down_idx);
+                                dirty_chunks.set(chunk_idx);
+                                if (by == 15 and bottom != null) {
+                                    dirty_chunks.set(chunk_idx + 16);
+                                }
 
                                 src_vol = getVolume(block_ptr.*);
                                 if (src_vol == 0) continue;
@@ -669,13 +623,13 @@ pub fn tickWater() void {
                     var left_vol: u32 = 0;
                     var right_vol: u32 = 0;
 
-                    const src_press = getPressureCached(&col_above_local, block_ptr.*, rbx, by);
+                    const src_press = getPressureLocal(curr, left, right, top, rbx, by);
                     var left_press: u32 = 0;
                     var right_press: u32 = 0;
 
                     if (left_ptr) |b| {
                         if (b.isFlowable()) {
-                            left_press = getPressureCached(&col_above_local, b.*, rbx - 1, by);
+                            left_press = getPressureLocal(curr, left, right, top, rbx - 1, by);
                             if (left_press < src_press) {
                                 left_ok = true;
                                 left_vol = getVolume(b.*);
@@ -684,7 +638,7 @@ pub fn tickWater() void {
                     }
                     if (right_ptr) |b| {
                         if (b.isFlowable()) {
-                            right_press = getPressureCached(&col_above_local, b.*, rbx + 1, by);
+                            right_press = getPressureLocal(curr, left, right, top, rbx + 1, by);
                             if (right_press < src_press) {
                                 right_ok = true;
                                 right_vol = getVolume(b.*);
@@ -716,16 +670,28 @@ pub fn tickWater() void {
                         }
 
                         if (flow_left > 0 or flow_right > 0) {
-                            setVolumeSticky(rx, ry, src_vol - (flow_left + flow_right));
+                            setVolume(block_ptr, src_vol - (flow_left + flow_right));
+                            dirty_chunks.set(chunk_idx);
+
                             if (flow_left > 0) {
-                                setVolumeSticky(rx - 1, ry, left_vol + flow_left);
+                                setVolume(left_ptr.?, left_vol + flow_left);
+                                if (rbx > 0) {
+                                    dirty_chunks.set(chunk_idx);
+                                } else if (left != null) {
+                                    dirty_chunks.set(chunk_idx - 1);
+                                }
                                 if (rx > 0) {
                                     const left_idx = @as(usize, @intCast(ry)) * 256 + @as(usize, @intCast(rx - 1));
                                     water_updated.set(left_idx);
                                 }
                             }
                             if (flow_right > 0) {
-                                setVolumeSticky(rx + 1, ry, right_vol + flow_right);
+                                setVolume(right_ptr.?, right_vol + flow_right);
+                                if (rbx < 15) {
+                                    dirty_chunks.set(chunk_idx);
+                                } else if (right != null) {
+                                    dirty_chunks.set(chunk_idx + 1);
+                                }
                                 if (rx < 255) {
                                     const right_idx = @as(usize, @intCast(ry)) * 256 + @as(usize, @intCast(rx + 1));
                                     water_updated.set(right_idx);
@@ -737,6 +703,40 @@ pub fn tickWater() void {
                 }
             }
         }
+    }
+
+    // Perform flag and packing updates selectively based on dirty chunk tracking
+    // Defer dirty chunk updates to history and ChunkCache to execute them in easy single-step block transfers!
+    var dirty_it = dirty_chunks.iterator(.{});
+    while (dirty_it.next()) |idx| {
+        const dy: u4 = @intCast(idx >> 4);
+        const dx: u4 = @intCast(idx & 15);
+        const sim_idx = SimBuffer.getIndex(dx, dy);
+        const coord = SimBuffer.keys[sim_idx] orelse continue;
+
+        const key = world.DepthCoordinate.from(coord);
+        const sim_chunk = &SimBuffer.sim_buffer_ptr[sim_idx];
+
+        const entry_idx = world.mod_store.index.get(key) orelse blk: {
+            const new_idx = world.mod_store.history.len;
+            _ = world.mod_store.history.addOne(world.alloc) catch memory.oom();
+            world.writeChunkModless(world.mod_store.history.at(new_idx), coord);
+            world.mod_store.index.put(key, new_idx) catch memory.oom();
+            break :blk new_idx;
+        };
+
+        const mc = world.mod_store.history.at(entry_idx);
+        mc.blocks = sim_chunk.blocks;
+
+        if (world.ChunkCache.findIndex(coord)) |cache_idx| {
+            world.ChunkCache.chunks[cache_idx].blocks = sim_chunk.blocks;
+        }
+
+        chunks_to_update_flags.set(idx);
+        if (dx > 0) chunks_to_update_flags.set(idx - 1);
+        if (dx < 15) chunks_to_update_flags.set(idx + 1);
+        if (dy > 0) chunks_to_update_flags.set(idx - 16);
+        if (dy < 15) chunks_to_update_flags.set(idx + 16);
     }
 
     // Perform flag and packing updates selectively based on dirty chunk tracking

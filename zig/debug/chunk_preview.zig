@@ -31,7 +31,7 @@ pub fn drawChunkPreview() void {
     addEntity(bg);
 
     bg.size *= 1.01; // a tad larger! this second entity acts as the border visually
-    // dark green if not modified, dark blue if modified
+    // dark green if this chunk was NOT modified, dark blue if WAS modified
     bg.lcha = if (dw.world.mod_store.get(player_coord.asDepthCoordinate(depth))) |_|
         .{ 0.32, 0.35, 4.0, 0.4 }
     else
@@ -187,17 +187,29 @@ pub fn drawChunkPreview() void {
         }
     }
 
-    // Draw D-1 and D-2 previews to the right
+    // Draw D-1 and D-2 previews to the right of the main chunk
     const start_zoom = dw.startup.STARTING_ZOOM_TIMES;
     const bx_idx = memory.game.getBlockXInChunk();
     const by_idx = memory.game.getBlockYInChunk();
     const deeper_preview_x = preview_x_origin + background_margin + 18.5 * tile_size;
     if (dw.isDebug() and !dw.procedural.USE_BASE_HEATMAP and !dw.procedural.USE_ORE_HEATMAP and depth > start_zoom) {
+        // Draw background for D-1 (teal background)
         bg.position[0] = deeper_preview_x + tile_size * 2.5;
         bg.position[1] = preview_y_origin + tile_size * 2.5;
         bg.size = tile_size * (6.0 + background_margin);
         bg.sprite = .rectangle;
-        addEntity(bg); // box for D-1
+        bg.lcha = .{ 0.84, 0.35, 3.5, 0.6 };
+        addEntity(bg);
+
+        // Draw border for D-1 (teal border; more blue if modified)
+        var border_bg = bg;
+        border_bg.size *= 1.02;
+        const key_d1 = player_coord.asDepthCoordinate(depth).getParent();
+        border_bg.lcha = if (dw.world.mod_store.get(key_d1) != null)
+            .{ 0.32, 0.35, 4.0, 0.4 } // dark blue if WAS modified
+        else
+            .{ 0.32, 0.35, 3.2, 0.4 }; // dark teal if NOT modified
+        addEntity(border_bg);
 
         const neighborhood_d1 = dw.ancestor.getAncestorNeighborhood(player_coord.asDepthCoordinate(depth));
 
@@ -251,9 +263,21 @@ pub fn drawChunkPreview() void {
                 p_info.by,
             );
 
+            // Draw background for D-2 (teal background)
             bg.position = .{ deeper_preview_x + tile_size * 1.0, preview_y_d2 + tile_size * 1.0 };
             bg.size = tile_size * (3.0 + background_margin);
+            bg.lcha = .{ 0.84, 0.35, 3.5, 0.6 };
             addEntity(bg);
+
+            // Draw border for D-2 (teal border; more blue if modified)
+            border_bg = bg;
+            border_bg.size *= 1.02;
+            const key_d2 = key_d1.getParent();
+            border_bg.lcha = if (dw.world.mod_store.get(key_d2) != null)
+                .{ 0.32, 0.35, 4.0, 0.4 } // dark blue if WAS modified
+            else
+                .{ 0.32, 0.35, 3.2, 0.4 }; // dark teal if NOT modified
+            addEntity(border_bg);
 
             var gpy: i32 = -1;
             while (gpy <= 1) : (gpy += 1) {

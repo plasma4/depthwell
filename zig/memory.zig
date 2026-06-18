@@ -110,8 +110,8 @@ pub const GameState = extern struct {
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
     seed2: [16]u64 align(16) = @splat(0),
 
-    /// Returns a `hash2d()` seed for a specific category of procedural generation.
-    /// See `SeedType` definition for category meanings.
+    /// Returns a `hash2d()` seed vector for procedural generation.
+    /// See `SeedType` definition for the possible categories and their purposes.
     pub inline fn getHashSeed(self: *const @This(), comptime category: SeedType) @Vector(2, u64) {
         const index_start: usize = @intFromEnum(category) * 2;
         return self.seed2[index_start .. index_start + 2].*;

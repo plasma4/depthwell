@@ -99,23 +99,23 @@ pub const DropHandlers = struct {
         );
 
         const roll = seed_val;
-        if (roll < oddsNum(0.05)) {
+        if (roll <= oddsNum(0.05)) {
             return &[_]Sprite{.fruit_ruby_candy};
-        } else if (roll < oddsNum(0.15)) {
+        } else if (roll <= oddsNum(0.15)) {
             return &[_]Sprite{.fruit_splitty};
-        } else if (roll < oddsNum(0.30)) {
+        } else if (roll <= oddsNum(0.30)) {
             return &[_]Sprite{.fruit_teal_lemon};
-        } else if (roll < oddsNum(0.45)) {
+        } else if (roll <= oddsNum(0.45)) {
             return &[_]Sprite{.fruit_blue_lemon};
-        } else if (roll < oddsNum(0.60)) {
+        } else if (roll <= oddsNum(0.60)) {
             return &[_]Sprite{.copperfruit};
-        } else if (roll < oddsNum(0.70)) {
+        } else if (roll <= oddsNum(0.70)) {
             return &[_]Sprite{.ploopus1};
-        } else if (roll < oddsNum(0.80)) {
+        } else if (roll <= oddsNum(0.80)) {
             return &[_]Sprite{.ploopus2};
-        } else if (roll < oddsNum(0.90)) {
+        } else if (roll <= oddsNum(0.90)) {
             return &[_]Sprite{.divato};
-        } else if (roll < oddsNum(0.96)) {
+        } else if (roll <= oddsNum(0.96)) {
             return &[_]Sprite{.circuspin};
         } else {
             return &[_]Sprite{.bacon};
