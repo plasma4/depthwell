@@ -113,7 +113,7 @@ pub fn move(logic_speed: f64) void {
     const displacement = game.player_velocity * @as(Vec2f, @splat(dt * dw.CHUNK_SIZE_FLOAT));
     subpixel_accum += displacement;
 
-    const total_move: Vec2i = @floor(subpixel_accum);
+    const total_move: Vec2i = @intFromFloat(@floor(subpixel_accum));
     subpixel_accum -= @as(Vec2f, @floatFromInt(total_move));
 
     game.last_player_pos = game.player_pos;

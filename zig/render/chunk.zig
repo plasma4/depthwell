@@ -43,10 +43,10 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const edge_bottom = interp_cam_y + half_h_sp;
 
     // find the chunk indices that end up covering the screen, with just enough buffer
-    const min_cx: i32 = @floor(edge_left / subpixels_per_chunk);
-    const min_cy: i32 = @floor(edge_top / subpixels_per_chunk);
-    const max_cx = @as(i32, @floor(edge_right / subpixels_per_chunk)) + 1;
-    const max_cy = @as(i32, @floor(edge_bottom / subpixels_per_chunk)) + 1;
+    const min_cx: i32 = @intFromFloat(@floor(edge_left / subpixels_per_chunk));
+    const min_cy: i32 = @intFromFloat(@floor(edge_top / subpixels_per_chunk));
+    const max_cx = @as(i32, @intFromFloat(@floor(edge_right / subpixels_per_chunk))) + 1;
+    const max_cy = @as(i32, @intFromFloat(@floor(edge_bottom / subpixels_per_chunk))) + 1;
 
     // determine the dimensions of the grid to render (cw/ch is how many chunks wide/high the current render-window is)
     const cw: u32 = @intCast(max_cx - min_cx + 1);

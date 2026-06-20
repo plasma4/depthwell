@@ -4,12 +4,12 @@
     .version = "0.1.0",
     .fingerprint = 0x1d5dd33c1ffd989d, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
+    .mach_zig_version = "2026.4.10-mach",
     .dependencies = .{
-        // No longer using Mach Engine.
-        // .mach = .{
-        //     .url = "https://pkg.machengine.org/mach/cfd9fc8ff0452f855bf5a8a7e53b611cae630254.tar.gz",
-        //     .hash = "mach-0.4.0-AAAAADqTMQDmlOBeVvOJVp57ba6Fy2vqb0Xq6g7m6wAL",
-        // },
+        .mach = .{
+            .url = "https://pkg.hexops.org/pkg/hexops/mach/576999fa80f2fd28e04d1539785d53d43df04603.tar.gz",
+            .hash = "mach-0.5.0-jXwHfXHeNAAOCG6nozNHXE5ZIQezxJOKUvJfB7CmekEU",
+        },
     },
     .paths = .{
         "build.zig",

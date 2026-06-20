@@ -5,3 +5,6 @@ compile_commands.json
 /node_modules
 /aseprite/*.aseprite
 !/aseprite/main.aseprite
+
+/zig-out
+/zig-pkg

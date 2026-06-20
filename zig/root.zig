@@ -88,6 +88,27 @@ pub const inventory = @import("input/inventory.zig");
 pub const mining = @import("input/mining.zig");
 pub const mouse = @import("input/mouse.zig");
 
+/// Logging bridge between JS and WASM.
+pub extern "env" fn jsMessage(ptr: [*]const u8, len: usize, message_type: logger.LogCategory) void;
+
+/// Logging bridge between JS and WASM for writing to specific text elements.
+pub extern "env" fn jsWriteText(id: u8, ptr: [*]const u8, len: usize) void;
+
+/// Returns the current time (calling `performance.now()` in JS)
+pub extern "env" fn jsGetTime() f64;
+
+/// External function that makes a call to `engine.handleVisibleChunks()`.
+pub extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframe_opacity: f64) void;
+
+/// External function that makes a call to `engine.handleVisibleChunks()`.
+pub extern "env" fn jsHandleVisibleEntities() void;
+
+/// External function that makes a call to `engine.handleVisibleChunks()`.
+pub extern "env" fn jsSetMouseType(mouse_type: mouse.CursorType) void;
+
+/// External function that plays a sound (with pitch and volume variation factors).
+pub extern "env" fn jsPlaySound(soundId: u32, volume: f64, pitch: f64) void;
+
 pub fn main() callconv(.c) void {
     world.flag_worklist = std.ArrayList(world.UpdateItem).initCapacity(world.alloc, 1024) catch unreachable;
     world.mod_store = .init(world.alloc);

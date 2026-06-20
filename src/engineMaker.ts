@@ -6,9 +6,8 @@ import { MAX_DRAW_CALLS, GameEngine } from "./engine";
 import WASM_URL from "/public/main.wasm?url";
 /**
  * The URL for the WebGPU shader code.
- * ADD ?raw FOR DEBUGGING THE SHADER; remove from the URL in production.
  * */
-import SHADER_SOURCE from "./shader.wgsl"; // sadly not possible to use .DEV env detection
+import SHADER_SOURCE from "./shader.wgsl";
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_URL from "/assets/main.png?url";
 /** The URL for the sprite sheet. */
@@ -172,7 +171,7 @@ export async function create(
     }
     const shaderModule = device.createShaderModule({
         label: "Main shader",
-        code: SHADER_SOURCE,
+        code: SHADER_SOURCE, // already pre-processed
     });
 
     const pipelineConstants = {

@@ -1,11 +1,4 @@
-// ------
-// Main shader for Depthwell. Currently does not support Mach Engine.
-// ------
-
-// These are sprite sheet constants.
-// Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
-// See zig/state/world.zig's Sprite definitions for sprite type list.
-override TILES_PER_ROW: f32 = 1.0;
+(function(){const e=document.createElement("link").relList;if(e&&e.supports&&e.supports("modulepreload"))return;for(const t of document.querySelectorAll('link[rel="modulepreload"]'))i(t);new MutationObserver(t=>{for(const s of t)if(s.type==="childList")for(const a of s.addedNodes)a.tagName==="LINK"&&a.rel==="modulepreload"&&i(a)}).observe(document,{childList:!0,subtree:!0});function n(t){const s={};return t.integrity&&(s.integrity=t.integrity),t.referrerPolicy&&(s.referrerPolicy=t.referrerPolicy),t.crossOrigin==="use-credentials"?s.credentials="include":t.crossOrigin==="anonymous"?s.credentials="omit":s.credentials="same-origin",s}function i(t){if(t.ep)return;t.ep=!0;const s=n(t);fetch(t.href,s)}})();const o={zoom:131072,mine:262144,inventory_up:524288,inventory_down:1048576,minus:32768,plus:65536,up:2048,left:4096,down:8192,right:16384,k0:1,k1:2,k2:4,k3:8,k4:16,k5:32,k6:64,k7:128,k8:256,k9:512},B={player_pos:0,last_player_pos:16,player_chunk:32,player_velocity:48,camera_pos:64,last_camera_pos:80,camera_scale:96,camera_scale_change:104,depth:112,player_quadrant:120,frame:124,items_mined:128,keys_pressed_mask:136,keys_held_mask:140,seed:144,seed2:208},$="abcdefghijklmnopqrstuvwxyz",T=26n;function Z(r=100){if(r<=0)return"";const e=new Uint8Array(72);crypto.getRandomValues(e);let n=0n;const i=new DataView(e.buffer);for(let a=0;a<e.length;a+=8)n=n<<64n|i.getBigUint64(a);let t="",s=n%T**BigInt(r);for(;s>=0n&&(t+=$[Number(s%T)],s=s/T-1n,!(s<0n)););return t}function K(r){let e=0n;for(let n=0;n<r.length;n++){const i=BigInt(r.charCodeAt(n)-97);e=e*T+(i+1n)}return e}async function X(r,e){const n=K(r),i=new DataView(new ArrayBuffer(64));for(let l=0;l<8;l++)i.setBigUint64(l*8,n>>BigInt((7-l)*64)&0xffffffffffffffffn);let t=new Uint8Array(i.buffer,0,32),s=new Uint8Array(i.buffer,32,32);const a=await Promise.all([0,1,2,3].map(l=>crypto.subtle.importKey("raw",new Uint8Array([l]),{name:"HMAC",hash:"SHA-256"},!1,["sign"])));for(const l of a){const h=new Uint8Array(await crypto.subtle.sign("HMAC",l,s)),f=new Uint8Array(32);for(let u=0;u<32;u++)f[u]=t[u]^h[u];t=s,s=f}const _=new Uint8Array(64);return _.set(t,0),_.set(s,32),e.set(new BigUint64Array(_.buffer)),e}const U={Minus:o.minus,Equal:o.plus,KeyZ:o.zoom,Backquote:o.mine,KeyQ:o.inventory_up,KeyE:o.inventory_down,Space:o.up,ArrowUp:o.up,KeyW:o.up,ArrowLeft:o.left,KeyA:o.left,ArrowDown:o.down,KeyS:o.down,ArrowRight:o.right,KeyD:o.right,Digit0:o.k0,Digit1:o.k1,Digit2:o.k2,Digit3:o.k3,Digit4:o.k4,Digit5:o.k5,Digit6:o.k6,Digit7:o.k7,Digit8:o.k8,Digit9:o.k9},L=o.up|o.down|o.left|o.right;function j(){let r={};const e={heldMask:0,keysHeld:0,keysPressed:0,currentlyHeld:0,horizontalPriority:0,verticalPriority:0,plusMinusPriority:0};function n(){r={},e.horizontalPriority=0,e.verticalPriority=0,e.plusMinusPriority=0,e.currentlyHeld=0,e.heldMask=0,e.keysPressed=0}return window.addEventListener("keydown",i=>{if(i.repeat)return;if(i.ctrlKey||i.metaKey){n();return}const t=U[i.code];t&&(t<=512&&(e.heldMask=e.heldMask&4294966272),e.heldMask|=t,t&L&&(r[t]=(r[t]||0)+1),t&(o.left|o.right)&&(e.horizontalPriority=t),t&(o.up|o.down)&&(e.verticalPriority=t),t&(o.plus|o.minus)&&(e.plusMinusPriority=t))}),window.addEventListener("keyup",i=>{const t=U[i.code];t&&(t&L?(r[t]=Math.max(0,(r[t]||0)-1),r[t]===0&&(e.heldMask&=~t)):e.heldMask&=~t,e.heldMask&t||(t===e.horizontalPriority&&(e.horizontalPriority=e.heldMask&o.left||e.heldMask&o.right||0),t===e.verticalPriority&&(e.verticalPriority=e.heldMask&o.up||e.heldMask&o.down||0),t===e.plusMinusPriority&&(e.plusMinusPriority=e.heldMask&o.plus||e.heldMask&o.minus||0)))}),window.addEventListener("blur",n),document.addEventListener("visibilitychange",n),window.addEventListener("contextmenu",n),e}function Y(r){const e=o.up|o.down|o.left|o.right;let n=r.heldMask&~e;n|=r.horizontalPriority,n|=r.verticalPriority,n|=r.plusMinusPriority,r.keysPressed=n&~r.keysHeld,r.currentlyHeld=n,r.keysHeld=n}const Q=""+new URL("main-C2Wevksz.wasm",import.meta.url).href;var J=`override TILES_PER_ROW: f32 = 1.0;
 override TILES_PER_COLUMN: f32 = 1.0;
 override STONE_START: u32 = 1u;
 override ORE_START: u32 = 1u;
@@ -18,7 +11,7 @@ const PI = radians(180.0);
 const TAU = radians(360.0);
 
 override TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
-override HP_SAMPLE_START: u32 = GEM_MASK_START + 8u; // there are 8 gem masks and 16 HP masks
+override HP_SAMPLE_START: u32 = GEM_MASK_START + 8u; 
 override DECOR_START: u32 = HP_SAMPLE_START + 16u;
 
 const TILE_SIZE: f32 = 16.0;
@@ -29,7 +22,6 @@ override SPRITE_W: f32 = TILE_SIZE / ATLAS_WIDTH;
 override SPRITE_H: f32 = TILE_SIZE / ATLAS_HEIGHT;
 const TEXTURE_BLEEDING_EPSILON = 0.5 / TILE_SIZE;
 
-// See EdgeFlags in zig/types/types.zig.
 const EDGE_TOP: u32 = 0x02u;
 const EDGE_BOTTOM: u32 = 0x40u;
 const EDGE_LEFT: u32 = 0x08u;
@@ -39,7 +31,6 @@ const EDGE_TOP_RIGHT: u32 = 0x04u;
 const EDGE_BOTTOM_LEFT: u32 = 0x20u;
 const EDGE_BOTTOM_RIGHT: u32 = 0x80u;
 
-// Uniforms are cached on the GPU. This is updated once per frame by Zig.
 struct SceneUniforms {
     camera: vec2f,
     viewport_size: vec2f,
@@ -49,9 +40,9 @@ struct SceneUniforms {
     chunk_opacity: f32,
     player_screen_pos: vec2f,
     map_size: vec2u,
-    flags: vec4u, // .a: is_p3; .b: is_8bit (.b is unused)
-    grid_origin: vec4f, // absolute position of min_cx/min_cy in tiles (.xy used)
-    _extra_padding: array<vec4u, 11>, // pad to 256 bytes for dynamic offsets
+    flags: vec4u, 
+    grid_origin: vec4f, 
+    _extra_padding: array<vec4u, 11>, 
 };
 
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
@@ -61,28 +52,21 @@ struct SceneUniforms {
 @group(0) @binding(4) var pixel_sampler: sampler;
 @group(0) @binding(5) var<storage, read> entities: array<WGSLEntity>;
 
-/*
-    ----
-    TILES
-    ----
-*/
-
-// Data passed from the Vertex step (per-corner) to the Fragment step (per-pixel)
 struct TileOutput {
     @builtin(position) position: vec4f,
-    // Local UV (0.0 to 1.0) across the surface of the specific tile.
+    
     @location(0) local_uv: vec2f,
-    // Where on the chunk a tile is
-    // @interpolate(flat) tells the GPU NOT to blend these values between the 4 corners of the quad.
-    @location(1) @interpolate(flat) tile_coords: vec2u, // X and Y of the tile
-    @location(2) @interpolate(flat) sprite_uv_origin: vec2f, // base UV of the sprite
-    @location(3) @interpolate(flat) sprite_id: u32, // do note that an extra u16 id is injected to the top half of bits with gems
+    
+    
+    @location(1) @interpolate(flat) tile_coords: vec2u, 
+    @location(2) @interpolate(flat) sprite_uv_origin: vec2f, 
+    @location(3) @interpolate(flat) sprite_id: u32, 
     @location(4) @interpolate(flat) edge_flags: u32,
     @location(5) @interpolate(flat) light: f32,
     @location(6) @interpolate(flat) hp: u32,
-    // seed1: murmurmix32'ed from raw seed data and HP mixed
-    // seed2: murmurmix32'ed from seed1
-    // seed3: murmurmix32'ed from seed2
+    
+    
+    
     @location(7) @interpolate(flat) seeds: vec3u,
     @location(8) @interpolate(flat) waterlogged: u32,
 };
@@ -92,7 +76,6 @@ struct TileData {
     word1: u32,
 };
 
-// Unpacked definition of tile (also see Block in zig/memory.zig)
 struct UnpackedTile {
     sprite_id: u32,
     light: f32,
@@ -107,42 +90,41 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
 
     out.sprite_id = extractBits(data.word0, 0u, 16u);
     out.edge_flags = extractBits(data.word0, 16u, 8u);
-    // out.edge_flags = 0u; // test
+    
 
-    // only apply to ores
-    // let light_u = extractBits(data.word0, 24u, 8u);
-    // out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
+    
+    
+    
 
     out.light = 1.0;
 
     out.hp = extractBits(data.word1, 20u, 4u);
-    // hp takes up the top 4 bits perfectly, 24-bit total
+    
     let s1 = murmurmix32(select(extractBits(data.word1, 0u, 24u), extractBits(data.word1, 0u, 20u), out.sprite_id >= DECOR_START));
     let s2 = murmurmix32(s1);
     let s3 = murmurmix32(s2);
     out.seeds = vec3u(s1, s2, s3);
-    out.waterlogged = extractBits(data.word1, 27u, 5u); // Also see meaning in zig/memory.zig.
+    out.waterlogged = extractBits(data.word1, 27u, 5u); 
     return out;
 }
 
-// Main vertex shader for tiles.
 @vertex
 fn vs_tile(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32
 ) -> TileOutput {
-    // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50) and bits 2, 3, and 5 are set (0b101100 = 44)
+    
     let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
 
     let total_tiles = scene.map_size.x * scene.map_size.y;
     var out: TileOutput;
 
     if instance_index == total_tiles {
-        // There's intentionally one more instance than the number of tiles to render the player!
+        
         let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
         let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
 
-        // normalized device coordinates
+        
         let ndc = (screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
 
         out.position = vec4f(ndc, 0.0, 1.0);
@@ -156,7 +138,7 @@ fn vs_tile(
 
     let tile = unpack_tile(tiles[instance_index]);
     if tile.sprite_id == 0u && scene.wireframe_opacity == 0.0 {
-        out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
+        out.position = vec4f(2.0, 2.0, 2.0, 1.0); 
         return out;
     }
 
@@ -166,56 +148,56 @@ fn vs_tile(
     let world_pixel_pos = (vec2f(tile_coords) + local_pos) * TILE_SIZE;
     let screen_pos = ((world_pixel_pos - scene.camera) * scene.zoom) + (scene.viewport_size * 0.5);
 
-    // normalize coordinates
-    // first, make sure spiral plant and ceiling flower move up (visually) by 2 pixels
-    // var vertical_offset = select(
-    //     0.0,
-    //     2.0 * scene.zoom,
-    //     // spiral plant, ceiling flower
-    //     id == GEAR_ID + 4u || id == GEAR_ID + 5u
-    // );
-    // update: this messes with water visually
+    
+    
+    
+    
+    
+    
+    
+    
+    
     const vertical_offset = 0;
 
-    // add to ID based on pre-determined shifts
+    
     if id == STONE_START {
-        // 2x2 grid stone pattern (like a 32x32 sprite)
+        
         let offset = ((tile_coords.y & 1u) << 1u) | (tile_coords.x & 1u);
         id += offset;
-    } else if id == 2 { // (IDs here hard-coded, like player)
-        // edge stone alternates in a checkerboard pattern
+    } else if id == 2 { 
+        
         let offset = (tile_coords.x & 1u) ^ (tile_coords.y & 1u);
         id += offset;
     } else if id == GEAR_ID + 2u || id == GEAR_ID + 5u {
-        // seed-based variation for bushes and ceiling flowers
-        id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); // 50% odds to select the variation
+        
+        id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); 
 
-        // for 25%:
-        // let random_mod = extractBits(tile.seeds[0], 16u, 2u);
-        // if random_mod == 0u {
-        //     id++;
-        // }
-    } else if id == GEAR_ID + 7u || id == GEAR_ID + 10u { // variation for mushrooms
+        
+        
+        
+        
+        
+    } else if id == GEAR_ID + 7u || id == GEAR_ID + 10u { 
         let bits = extractBits(tile.seeds[0], 16u, 2u);
-        id += select(bits, 0u, bits == 3u); // select variation (0, +1, or +2, 50% odds of 0)
+        id += select(bits, 0u, bits == 3u); 
     }
 
-    // apply to screen_pos.y before converting to normalized device coordinates
-    // subtract from Y because in screen space, lower values are "higher" up
+    
+    
     let adjusted_screen_pos = screen_pos - vec2f(0.0, vertical_offset);
     let ndc = (adjusted_screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
 
-    // Calculate which sprite in the atlas to sample
+    
     let origin = vec2f(f32(id % TILES_PER_ROW_U), f32(id / TILES_PER_ROW_U)) * vec2f(SPRITE_W, SPRITE_H);
 
     out.position = vec4f(ndc, 0.0, 1.0);
     out.sprite_uv_origin = origin;
     let is_gem = id >= GEM_START && id < GEM_MASK_START;
-    // if is_gem {
-    //     out.sprite_id = extractBits(tiles[instance_index].word0, 0u, 16u) | id;
-    // } else {
-    //     out.sprite_id = id;
-    // }
+    
+    
+    
+    
+    
     out.sprite_id = id;
     out.hp = tile.hp;
     out.seeds = tile.seeds;
@@ -239,17 +221,17 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         let has_top = has_liquid_above || (has_solid_above && (in.hp == 15u));
 
         if !has_top {
-            // This is the top surface of the water body!
+            
             let t = scene.time;
             let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
-            // Sine-wave ripple effect at the surface (frequency is periodic over 65536.0 pixels)
+            
             let base_height = f32(in.hp) * 0.06 + 0.10;
             let ripple_freq = 4172.0 * TAU / 65536.0;
             let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.05;
             var current_height = base_height + ripple;
 
-            // If the pixel is above the water surface, discard it
+            
             if in.local_uv.y < (1.0 - current_height) {
                 discard;
             }
@@ -258,15 +240,15 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     }
 
     if in.sprite_id >= 65000u && in.sprite_id <= 65256u {
-        // Heatmap logic!
+        
         let color = (f32(in.sprite_id - 65000u)) / 256.0;
-        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); // lightness, chroma, and hue
+        var lch = vec3f(0.2 + color * 0.8, 0.2, 1.0); 
         let lab = oklch_to_oklab(lch);
         let final_rgb = oklab_to_linear_srgb(lab);
         return vec4f(final_rgb, 1.0);
     }
 
-    // Determine waterlogged decoration state
+    
     let is_waterlogged_decor = is_decor && in.hp > 0u;
     var is_decor_pixel_underwater = false;
     if is_waterlogged_decor {
@@ -318,8 +300,8 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
                         let t = scene.time;
                         let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
-                        // Synchronized ripple effect utilizing the adjacent water's actual volume
-                        // TODO
+                        
+                        
                         let base_height = f32(15) * 0.06 + 0.10;
                         let ripple_freq = 4172.0 * TAU / 65536.0;
                         let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.05;
@@ -333,7 +315,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
 
                 if is_water_pixel { return water_body(in); }
             }
-            discard; // discard early
+            discard; 
         }
     }
 
@@ -343,7 +325,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
 
     var final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
 
-    // Apply 0-15 pixel shift for gems and ores using bits 16-23 of seed3
+    
     if is_gem || is_ore {
         let shift_bits = extractBits(in.seeds[2], 16u, 8u);
         let shift = vec2f(vec2u(shift_bits & 0xFu, shift_bits >> 4u)) / 16.0;
@@ -352,7 +334,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         final_uv = in.sprite_uv_origin + safe_wrapped * vec2f(SPRITE_W, SPRITE_H);
     }
 
-    // Avoid HP mask texture sample for undamaged tiles or decor sprites
+    
     var hp_darkness_mult = 1.0;
     if in.hp > 0u && !is_decor {
         let hp_id = HP_SAMPLE_START + in.hp;
@@ -364,22 +346,22 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
     tex_color = vec4f(srgb_to_linear(tex_color.rgb) * hp_darkness_mult, tex_color.a);
 
-    // ore sampling pixel logic
+    
     if is_gem || is_ore {
-        // 8 masks, first 4 for gems, second 4 for ore
+        
         let mask_variation = extractBits(seed, 15u, 2u) + select(4u, 0u, is_gem);
         let mask_id = GEM_MASK_START + mask_variation;
 
         let flip = vec2f(vec2u(extractBits(seed, 25u, 1u), extractBits(seed, 26u, 1u)));
         let flipped_uv = mix(in.local_uv, 1.0 - in.local_uv, flip);
-        // Use 2x2 grid logic for the background stone's ID
+        
         let bg_id = STONE_START + (((in.tile_coords.y & 1u) << 1u) | (in.tile_coords.x & 1u));
 
-        // Calculate UVs for the background stone
+        
         let bg_grid = vec2f(f32(bg_id % TILES_PER_ROW_U), f32(bg_id / TILES_PER_ROW_U));
         let stone_uv = (bg_grid + safe_local_uv) * vec2f(SPRITE_W, SPRITE_H);
 
-        // Calculate UVs for the mask (using the UNSHIFTED uv)
+        
         let safe_flipped_uv = clamp(flipped_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
         let mask_grid = vec2f(f32(mask_id % TILES_PER_ROW_U), f32(mask_id / TILES_PER_ROW_U));
         let mask_uv = (mask_grid + safe_flipped_uv) * vec2f(SPRITE_W, SPRITE_H);
@@ -387,10 +369,10 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         let tex_stone = textureSampleLevel(sprite_atlas, pixel_sampler, stone_uv, 0.0);
         let tex_mask = textureSampleLevel(sprite_atlas, pixel_sampler, mask_uv, 0.0);
 
-        let abs_dist = abs(in.local_uv - 0.5); // higher value means closer to EDGES
-        let u_dist = 0.5 - max(abs_dist.x, abs_dist.y); // higher value means closer to CENTER
+        let abs_dist = abs(in.local_uv - 0.5); 
+        let u_dist = 0.5 - max(abs_dist.x, abs_dist.y); 
 
-        // with linear RGB: r component of mask determines brightness, vary ore brightness, multiply stone brightness based on dist
+        
         let final_rgb_ore = mix(
             srgb_to_linear(tex_stone.rgb) * vec3f(1.2 - 1.2 * u_dist),
             tex_color.rgb * vec3f(tex_mask.r),
@@ -402,7 +384,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var wire_color = vec4f(0.0);
 
     if scene.wireframe_opacity != 0.0 {
-        // render wireframe due to being at the edge of a block?
+        
         let inv_tile_scale = 1.00001 / (TILE_SIZE * scene.zoom);
         let is_block_edge = any(in.local_uv < vec2f(inv_tile_scale)) || any(in.local_uv > vec2f(1.0 - inv_tile_scale));
 
@@ -412,14 +394,14 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
             if id == 1u {
                 wire_color = vec4f(1.0, 0.5, 0.0, 1.0);
             } else {
-                // Is this pixel on the edge of a CHUNK?
+                
                 let is_chunk_edge = any((mods == vec2u(0u)) & (in.local_uv < vec2f(inv_tile_scale))) ||
                                     any((mods == vec2u(15u)) & (in.local_uv > vec2f(1.0 - inv_tile_scale)));
 
                 if is_chunk_edge {
                     wire_color = vec4f(1.0, 1.0, 0.0, min(1.0, scene.wireframe_opacity * 2.5));
                 } else {
-                    // neat-lookin' fancy wireframe coloring
+                    
                     let rg = vec2f(mods) * 0.0625;
                     let b = 0.5 + f32(mods.x ^ mods.y) * 0.03125;
                     wire_color = vec4f(rg.x, rg.y, b, scene.wireframe_opacity);
@@ -430,25 +412,25 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
-    // convert to oklab and nudge values with seed
+    
     var lab = linear_srgb_to_oklab(tex_color.rgb);
     var lch = oklab_to_oklch(lab);
 
-    // we use 9 out of the 28 seed bits here
+    
     let lab_nudge_bits = vec3u(
-        extractBits(seed, 0u, 3u), // shift lightness (0-1)
-        extractBits(seed, 3u, 3u), // shift chroma, which acts similar to saturation (in practice, between 0-0.4)
-        extractBits(seed, 6u, 3u)// shift hue (in RADIANS, red isn't exactly 0)
+        extractBits(seed, 0u, 3u), 
+        extractBits(seed, 3u, 3u), 
+        extractBits(seed, 6u, 3u)
     );
     let nudges = vec3f(lab_nudge_bits) / 7.0;
 
-    // Apply light and nudges in a single MAD operation where possible
+    
     lch *= vec3f(in.light, 1.0 + nudges.y * 0.2, 1.0) +
         vec3f(nudges.x * 0.02, 0.0, nudges.z * 0.1);
 
     var final_rgb = vec3f(0.0);
     if in.edge_flags != 0xFFu {
-        // add the edge darkening and base light value, with the function using bits 10-16
+        
         let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, seed);
         lch.x *= (1.0 - darkening);
 
@@ -457,17 +439,17 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
-    // convert OKLCH result to OKLAB, then finally back to float-based RGB
+    
     lab = oklch_to_oklab(lch);
     final_rgb = oklab_to_linear_srgb(lab);
 
-    var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, id == 1u); // use chunk_opacity, unless this sprite is for the player
+    var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, id == 1u); 
 
-    // Overlay semi-transparent water body if this decoration pixel is underwater
+    
     if is_decor_pixel_underwater {
         let water_col = water_body_linear(in);
 
-        // Blending curve: maps original alpha to water weight
+        
         let weight = 1.0 - 0.5 * pow(tex_color.a, 7.0);
 
         final_rgb = oklab_water(final_rgb, water_col.rgb, weight);
@@ -475,7 +457,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     }
 
     if scene.wireframe_opacity != 0.0 {
-        // Correctly mix the wireframe dynamically depending on whether the block exists below it.
+        
         final_rgb = mix(final_rgb, wire_color.rgb, wire_color.a);
         final_a = max(final_a, wire_color.a);
     }
@@ -483,7 +465,6 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     return vec4f(apply_color_management(final_rgb), final_a);
 }
 
-// Bijective mixer for 32-bit integers
 fn murmurmix32(number: u32) -> u32 {
     var h = max(number, 1u);
     h ^= h >> 16;
@@ -494,8 +475,7 @@ fn murmurmix32(number: u32) -> u32 {
     return h;
 }
 
-// Complex logic that returns 0u if a pixel should be TRANSPARENT ("eroded"), 1u for NORMAL, or 2u for BORDER (darkened).
-fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { // uv of sprite, edge flags, and mixed seeds
+fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { 
     let px = u32(local_uv.x * TILE_SIZE);
     let py = u32(local_uv.y * TILE_SIZE);
 
@@ -508,15 +488,15 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     let has_bl = (edge_flags & EDGE_BOTTOM_LEFT) != 0u;
     let has_br = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
-    // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
+    
     let r_tl = 3u + extractBits(seed3, 0u, 2u);
     let r_tr = 3u + extractBits(seed3, 2u, 2u);
     let r_bl = 3u + extractBits(seed3, 4u, 2u);
     let r_br = 3u + extractBits(seed3, 6u, 2u);
 
-    // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
+    
 
-    // Top-left outer corner (top AND left both missing)
+    
     if !has_top && !has_left {
         let r_sq = r_tl * r_tl;
         let dx = r_tl - px;
@@ -524,14 +504,14 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         if px < r_tl && py < r_tl {
             let dist_sq = dx * dx + dy * dy;
             if dist_sq > r_sq { return 0u; }
-            if dist_sq > r_sq - r_tl { return 2u; } // darken ring of 1 pixel
+            if dist_sq > r_sq - r_tl { return 2u; } 
         }
     }
 
-    // Top-right outer corner
+    
     if !has_top && !has_right {
         let r_sq = r_tr * r_tr;
-        let fpx = 15u - px; // flip x
+        let fpx = 15u - px; 
         if fpx < r_tr && py < r_tr {
             let dx = r_tr - fpx;
             let dy = r_tr - py;
@@ -541,7 +521,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         }
     }
 
-    // Bottom-left outer corner
+    
     if !has_bottom && !has_left {
         let r_sq = r_bl * r_bl;
         let fpy = 15u - py;
@@ -554,7 +534,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         }
     }
 
-    // Bottom-right outer corner
+    
     if !has_bottom && !has_right {
         let r_sq = r_br * r_br;
         let fpx = 15u - px;
@@ -568,11 +548,11 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         }
     }
 
-    // Straight edges (8 bits each from se: bits 0-7 top, 8-15 bottom, 16-23 left, 24-31 right)
+    
 
-    // Top edge
+    
     if !has_top {
-        let base_depth = extractBits(seed2, 0u, 1u); // 0 or 1 pixels inward for each edge
+        let base_depth = extractBits(seed2, 0u, 1u); 
         let notch_pos = extractBits(seed2, 1u, 4u);
         let notch_dir = extractBits(seed2, 5u, 1u);
         let notch_width = 2u + extractBits(seed2, 6u, 2u);
@@ -582,7 +562,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
             if notch_dir == 0u { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
 
-        // Only apply straight edge outside the corner rounding zones
+        
         let left_safe = select(0u, r_tl, !has_left);
         let right_safe = select(16u, 16u - r_tr, !has_right);
 
@@ -592,7 +572,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         }
     }
 
-    // Bottom edge
+    
     if !has_bottom {
         let base_depth = extractBits(seed2, 8u, 1u);
         let notch_pos = extractBits(seed2, 9u, 4u);
@@ -613,7 +593,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         }
     }
 
-    // Left edge
+    
     if !has_left {
         let base_depth = extractBits(seed2, 16u, 1u);
         let notch_pos = extractBits(seed2, 17u, 4u);
@@ -634,7 +614,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         }
     }
 
-    // Right edge
+    
     if !has_right {
         let base_depth = extractBits(seed2, 24u, 1u);
         let notch_pos = extractBits(seed2, 25u, 4u);
@@ -655,12 +635,12 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         }
     }
 
-    // Inner corners (no diagonal neighbor)
+    
 
     if !has_tl && has_top && has_left {
-        let r = 1u + extractBits(seed3, 8u, 2u); // 1-4 pixel radius
+        let r = 1u + extractBits(seed3, 8u, 2u); 
         if px < r && py < r {
-            let dx = px + 1u; // +1, so the circle center is at (-0.5, -0.5) effectively
+            let dx = px + 1u; 
             let dy = py + 1u;
             let dist_sq = dx * dx + dy * dy;
             if dist_sq <= r * r { return 0u; }
@@ -708,7 +688,6 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     return 1u;
 }
 
-// Number of 1 bits in a u8 (possibly useful for edge flags, currently unused).
 fn popcount8(v: u32) -> u32 {
     var n = v;
     n = n - ((n >> 1u) & 0x55u);
@@ -716,7 +695,6 @@ fn popcount8(v: u32) -> u32 {
     return ((n + (n >> 4u)) & 0x0Fu);
 }
 
-// Calculates edge darkening procedurally based on flags calculated in Zig.
 fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
     let edge_width = 0.40 + f32(extractBits(seed, 9u, 3u)) / 32.0;
     let edge_strength = 0.4 + f32(extractBits(seed, 12u, 3u)) / 32.0;
@@ -744,33 +722,31 @@ fn wrap_water_coords(coords: vec2f) -> vec2f {
     return coords - floor(coords / 65536.0) * 65536.0;
 }
 
-// World-space pixel coordinate of this fragment (floating point, any value)
 fn water_world(in: TileOutput) -> vec2f {
     return (vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE;
 }
 
-// Shared base LCH that cycles hue between teal and blue.
 fn water_base_lch(t: f32) -> vec3f {
     let H = 3.8 + sin(t * (TAU / 3600.0)) * 0.34;
     return vec3f(0.42, 0.12, H);
 }
 fn water_effect(coord: vec2f, t: f32) -> f32 {
-    let R = 256.0; // grid repeat period
-    let L_FREQ = TAU / 3600.0; // base frequency per time loop
-    // Every multiplier below is now an exact integer multiplied by L_FREQ
+    let R = 256.0; 
+    let L_FREQ = TAU / 3600.0; 
+    
     let warp_val = sin((coord.y * 2.0) / R * TAU + t * (20.0 * L_FREQ)) * 5.5 + cos((coord.x * 3.0) / R * TAU - t * (12.0 * L_FREQ)) * 4.0;
 
     let world = coord + vec2f(warp_val, -warp_val);
     let world2 = coord - vec2f(warp_val, -warp_val);
 
-    // First caustic layer
-    // All layers are made to be periodic every 65536 pixels.
+    
+    
     let d_a = world.x * 0.906 - world.y * 0.423;
     let a1 = sin((d_a + t * 15.0) / (65536.0 / 1489.0) * TAU) * 0.5 + 0.5;
     let a2 = sin((d_a * 1.15 + t * 13.0) / (65536.0 / 1638.0) * TAU) * 0.5 + 0.5;
     let band_a = a1 * a2 * 0.24;
 
-    // Second layer (which crosses directions)
+    
     let d_b = world2.x * 0.643 - world.y * -0.766;
     let b1 = sin((d_b * 3.2 + t * 4.0) / 32.0 * TAU) * 0.5 + 0.5;
     let b2 = sin((d_b * 4.2 + t * 5.42) / (65536.0 / 2341.0) * TAU) * 0.5 + 0.5;
@@ -780,12 +756,12 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     let d_c = world.x * 0.906 + world2.y * 0.423;
     let band_c = max(0.0, sin((d_c + t * 15.0) / (65536.0 / 1489.0) * TAU));
 
-    // Warping distortion using periodic wavelengths
+    
     let warp_y_freq = 1043.0 * TAU / 65536.0;
     let warp_x_freq = 834.0 * TAU / 65536.0;
     let warp = sin(world.y * warp_y_freq + t * 0.3) * 4.0 + cos(world.x * warp_x_freq - t * 0.3) * 4.0;
 
-    // Apply warp to a new diagonal direction for the curvy streak
+    
     let d_curvy = (world.x + warp) * 0.5 + (world.y - warp) * 0.866;
     let c1 = sin((d_curvy + t * 1.2) / (65536.0 / 1311.0) * TAU) * 0.5 + 0.5;
     let c2 = cos((d_curvy - t * 0.35) / (65536.0 / 1872.0) * TAU) * 0.5 + 0.5;
@@ -796,19 +772,18 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
     return band_a + band_b + band_c * band_c * 0.2 + curvy_streak;
 }
 
-// Procedural effect for lighting (linear sRGB)
 fn water_body_linear(in: TileOutput) -> vec4f {
     let world = water_world(in);
     let t = scene.time;
 
     var lch = water_base_lch(t);
 
-    // Depth gradient: lighter near y=0 (surface), darker going down.
-    let depth_t = clamp(world.y / 192.0, 0.0, 1.0); // 192px
-    lch.x = mix(0.52, 0.34, depth_t); // light surface
-    lch.y = mix(0.10, 0.14, depth_t);// slightly more saturated deep
+    
+    let depth_t = clamp(world.y / 192.0, 0.0, 1.0); 
+    lch.x = mix(0.52, 0.34, depth_t); 
+    lch.y = mix(0.10, 0.14, depth_t);
 
-    // Horizontal color band (depth striping)
+    
     let band_t = sin(world.y / 24.0 + t * 0.4) * 0.5 + 0.5;
     lch.x += band_t * 0.04;
 
@@ -820,13 +795,11 @@ fn water_body_linear(in: TileOutput) -> vec4f {
     return vec4f(rgb, 0.5);
 }
 
-// Procedural effect for all but the top water sprite (backwards compatible, returns color-managed sRGB)
 fn water_body(in: TileOutput) -> vec4f {
     let water_col = water_body_linear(in);
     return vec4f(apply_color_management(water_col.rgb), water_col.a);
 }
 
-// Perceptually blends sprite color with water in OKLAB space.
 fn oklab_water(sprite_rgb: vec3f, water_rgb: vec3f, weight: f32) -> vec3f {
     let lab_sprite = linear_srgb_to_oklab(sprite_rgb);
     let lab_water = linear_srgb_to_oklab(water_rgb);
@@ -840,7 +813,6 @@ fn oklab_water(sprite_rgb: vec3f, water_rgb: vec3f, weight: f32) -> vec3f {
     ----
 */
 
-// FBM background logic
 struct BackgroundOutput {
     @builtin(position) position: vec4f,
     @location(0) screen_offset: vec2f,
@@ -848,10 +820,9 @@ struct BackgroundOutput {
     @location(2) time2: f32,
 };
 
-// Main vertex shader for rendering the fancy background.
 @vertex
 fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
-    // Full-screen triangle to draw: [(-1, -1), (3, -1), (-1, 3)]
+    
     let x = f32((i32(vertex_index & 1u) << 2u) - 1);
     let y = f32((i32(vertex_index & 2u) << 1u) - 1);
 
@@ -860,10 +831,10 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
 
     let screen_uv = vec2f(x, -y) * 0.5 + 0.5;
 
-    // Center the scale pivot to the screen center (camera and player viewport center)
+    
     out.screen_offset = ((screen_uv - 0.5) * scene.viewport_size) / scene.zoom;
 
-    // Zig-zag wrapping for colors
+    
     var t_wrap = (scene.time * 0.3) % 2.0;
     if t_wrap > 1.0 { t_wrap = 2.0 - t_wrap; }
 
@@ -878,13 +849,13 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
 
 @fragment
 fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
-    const base_scale = 0.015625; // Exactly 1.0 / 64.0 for seamless 256-chunk alignment
+    const base_scale = 0.015625; 
     let absolute_camera = scene.grid_origin.zw;
     let t = scene.time;
 
-    // The farthest background layer (64x "slower")
+    
     let st1 = (in.screen_offset + absolute_camera * 0.015625) * base_scale;
-    let angle1 = (t / 600.0) * TAU; // 10-minute cycle!
+    let angle1 = (t / 600.0) * TAU; 
     let drift1 = vec2f(cos(angle1), sin(angle1)) * 0.5;
 
     let q1 = noise(st1 * 0.45 + drift1);
@@ -899,9 +870,9 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let layer1_intensity = clamp(f1 * f1 * 0.4, 0.1, 1.0);
     let layer1_rgb = layer1_intensity * color1;
 
-    // Far background layer (32x "slower")
+    
     let st2 = (in.screen_offset + absolute_camera * 0.03125) * base_scale;
-    let angle2 = (t / 180.0) * TAU; // 3-minute cycle
+    let angle2 = (t / 180.0) * TAU; 
     let drift2_x = vec2f(cos(angle2), sin(angle2)) * 1.0;
     let drift2_y = vec2f(sin(angle2), -cos(angle2)) * 0.8;
 
@@ -920,9 +891,9 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let layer2_intensity = max(f2 * f2 * sqrt(f2) * 1.5 - 0.1, 0.0);
     let layer2_rgb = layer2_intensity * color2;
 
-    // Middle background layer (8x "slower")
+    
     let st3 = (in.screen_offset + absolute_camera * 0.125) * base_scale;
-    let angle3 = (t / 60.0) * TAU; // only 60s
+    let angle3 = (t / 60.0) * TAU; 
     let drift3_x = vec2f(cos(angle3), sin(angle3)) * 1.8;
     let drift3_y = vec2f(sin(angle3), -cos(angle3)) * 1.5;
 
@@ -946,7 +917,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let layer3_intensity = max(f3 * f3 * f3 * 2.5 - 0.2, 0.0);
     let layer3_rgb = layer3_intensity * color3;
 
-    // Additive screen blend of both seamless layers
+    
     let final_rgb = layer1_rgb + layer2_rgb + layer3_rgb;
 
     let opacity = scene.chunk_opacity;
@@ -957,23 +928,23 @@ fn noise(st: vec2f) -> f32 {
     let i = vec2u(vec2i(floor(st)));
     let f = fract(st);
 
-    // Make the grid noise perfectly periodic with a period of 32 units
+    
     let ix = (i.x + vec4u(0u, 1u, 0u, 1u)) % vec4u(32u);
     let iy = (i.y + vec4u(0u, 0u, 1u, 1u)) % vec4u(32u);
 
     let h = hash_2d(ix, iy);
 
-    // Quintic interpolation for smoother gradients
+    
     let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
     return mix(
-        mix(h.x, h.y, u.x), // Mix bottom
-        mix(h.z, h.w, u.x), // Mix top
+        mix(h.x, h.y, u.x), 
+        mix(h.z, h.w, u.x), 
         u.y
     );
 }
 
-fn fbm_2(p: vec2f) -> f32 { // simple fractal brownian motion algorithm
+fn fbm_2(p: vec2f) -> f32 { 
     var v = 0.0;
     var a = 0.5;
     var shift = vec2f(100.0);
@@ -986,7 +957,7 @@ fn fbm_2(p: vec2f) -> f32 { // simple fractal brownian motion algorithm
     return v;
 }
 
-fn fbm_3(p: vec2f) -> f32 { // same as above but 3 iters
+fn fbm_3(p: vec2f) -> f32 { 
     var v = 0.0;
     var a = 0.5;
     var shift = vec2f(100.0);
@@ -999,7 +970,7 @@ fn fbm_3(p: vec2f) -> f32 { // same as above but 3 iters
     return v;
 }
 
-fn fbm_4(p: vec2f) -> f32 { // same as above but 4 iters (wow, who could have guessed!)
+fn fbm_4(p: vec2f) -> f32 { 
     var v = 0.0;
     var a = 0.5;
     var shift = vec2f(100.0);
@@ -1015,13 +986,13 @@ fn fbm_4(p: vec2f) -> f32 { // same as above but 4 iters (wow, who could have gu
 fn hash_2d(x: vec4u, y: vec4u) -> vec4f {
     var state = (x * 1597334673u) ^ (y * 3812015487u);
 
-    // 32-bit permutation step, yippee!
+    
     state = state * 747796405u + 2891336453u;
     let shift = (state >> vec4u(28u)) + vec4u(4u);
     let word = ((state >> shift) ^ state) * 277803737u;
     let result = (word >> vec4u(22u)) ^ word;
 
-    // Direct bit-manipulation hack to convert to a float from [0, 1)
+    
     return bitcast<vec4f>((result >> vec4u(9u)) | vec4u(0x3f800000u)) - 1.0;
 }
 
@@ -1048,24 +1019,23 @@ struct EntityOutput {
     @location(3) @interpolate(flat) sprite_uv_origin: vec2f,
 };
 
-// Main vertex shader for generic entities (uses the mask).
 @vertex
 fn vs_entity(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32
 ) -> EntityOutput {
     let entity = entities[instance_index];
-    // presume ID 0 is unreasonable
-    // var out: EntityOutput;
-    // if entity.id == 0u {
-    //     out.position = vec4f(2.0, 2.0, 2.0, 1.0); // ideal outcode
-    // }
+    
+    
+    
+    
+    
 
-    // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50) and bits 2, 3, and 5 are set (0b101100 = 44)
+    
     let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
     let centered_pos = local_pos - 0.5f;
 
-    // Rotate sprite as needed (in radians)
+    
     let c = cos(entity.rotation);
     let s = sin(entity.rotation);
     let rotated_pos = vec2f(
@@ -1075,10 +1045,10 @@ fn vs_entity(
 
     let pixel_pos = entity.position + rotated_pos * entity.size;
 
-    // Convert to normalized device coords
+    
     let ndc = pixel_pos * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
 
-    // Calculate UV origin
+    
     var origin = vec2f(
         f32(entity.id % TILES_PER_ROW_U),
         f32(entity.id / TILES_PER_ROW_U)
@@ -1095,37 +1065,37 @@ fn vs_entity(
 
 @fragment
 fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
-    // Calculate UVs with bleeding protection
+    
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
     let final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
 
-    // Both the original sprite and the mask are sampled. The mask is pre-made: for many sprites it is white.
-    // For gems, there's a special gem mask, and ores have a rounded rectangular mask with darkening.
-    // This is multiplied with RGBA instead of OKLCH for simplicity.
+    
+    
+    
 
-    // in the future we can also make the sample of either change over time for some neat effects
+    
     let raw_tex = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
     let raw_mask = textureSampleLevel(sprite_atlas_mask, pixel_sampler, final_uv, 0.0);
 
-    // make raw mask stronger
+    
     let tex_rgb = srgb_to_linear(raw_tex.rgb * raw_mask.rgb);
     let tex_a = raw_tex.a * raw_mask.a;
-    // Early discard if the pixel is fully transparent (maybe)
-    // if tex_color.a <= 0.0 {
-    //     discard;
-    // }
+    
+    
+    
+    
     var lab = linear_srgb_to_oklab(tex_rgb);
     var lch = oklab_to_oklch(lab);
 
-    // Apply modifications from lcha (vec4f: L, C, H, A), see zig/render/entity.zig
-    lch.x *= in.lcha.x; // mult light
-    lch.y += in.lcha.y; // add chroma
-    lch.z += in.lcha.z; // add hue
+    
+    lch.x *= in.lcha.x; 
+    lch.y += in.lcha.y; 
+    lch.z += in.lcha.z; 
 
     lab = oklch_to_oklab(lch);
     let final_rgb = oklab_to_linear_srgb(lab);
 
-    // apply alpha after being back to RGB!
+    
     let final_a = tex_a * in.lcha.w;
     return vec4f(apply_color_management(final_rgb), final_a);
 }
@@ -1137,14 +1107,14 @@ fn fs_entity(in: EntityOutput) -> @location(0) vec4f {
     ----
 */
 fn linear_srgb_to_oklab(c: vec3f) -> vec3f {
-    let m1 = mat3x3f( // convert to LMS
+    let m1 = mat3x3f( 
         0.4122214708, 0.2119034982, 0.0883024619,
         0.5363325363, 0.6806995451, 0.2817188376,
         0.0514459929, 0.1073969566, 0.6299787005);
     let lms = max(m1 * c, vec3f(0.0));
     let lms_ = pow(lms, vec3f(1.0 / 3.0));
 
-    let m2 = mat3x3f( // convert to OKLAB
+    let m2 = mat3x3f( 
         0.2104542553, 1.9779984951, 0.0259040371,
         0.7936177850, -2.4285922050, 0.7827717662,
         -0.0040720468, 0.4505937099, -0.8086758031);
@@ -1152,25 +1122,25 @@ fn linear_srgb_to_oklab(c: vec3f) -> vec3f {
 }
 
 fn oklab_to_linear_srgb(c: vec3f) -> vec3f {
-    let m1 = mat3x3f( // LMS
+    let m1 = mat3x3f( 
         1.0, 1.0, 1.0,
         0.3963377774, -0.1055613458, -0.0894841775,
         0.2158037573, -0.0638541728, -1.2914855480);
     let lms_ = m1 * c;
     let lms = lms_ * lms_ * lms_;
 
-    let m2 = mat3x3f( // convert back to normal srgb
+    let m2 = mat3x3f( 
         4.0767416621, -1.2684380046, -0.0041960863,
         -3.3077115913, 2.6097574011, -0.7034186147,
         0.2309699292, -0.3413193965, 1.7076127010);
     let result = m2 * lms;
-    return max(result, vec3f(0.0)); // prevent out of range values
+    return max(result, vec3f(0.0)); 
 }
 
 fn oklab_to_oklch(lab: vec3f) -> vec3f {
     let chroma = length(lab.yz);
     var hue = 0.0;
-    // prevent invalid numbers with this check
+    
     if chroma > 0.0001 {
         hue = atan2(lab.z, lab.y);
     }
@@ -1207,12 +1177,29 @@ fn linear_srgb_to_display_p3(rgb: vec3f) -> vec3f {
     return max(m * rgb, vec3f(0.0));
 }
 
-// Change the final RGB value based on color space info.
 fn apply_color_management(linear_rgb: vec3f) -> vec3f {
     var out = linear_rgb;
-    // Convert color space while still linear
-    if scene.flags.x == 1u { // isP3
+    
+    if scene.flags.x == 1u { 
         out = linear_srgb_to_display_p3(out);
     }
-    return linear_to_srgb(out); // always apply transfer function
-}
+    return linear_to_srgb(out); 
+}`;const ee=""+new URL("main.png",import.meta.url).href,te=""+new URL("mainMasked.png",import.meta.url).href;async function ne(r,e){const n=await navigator.gpu.requestAdapter({powerPreference:e&&e.highPerformance?"high-performance":"low-power"});if(!n)throw new DOMException("Couldn't request WebGPU adapter.","NotSupportedError");const i=await n.requestDevice();let t=null;if(i.addEventListener("uncapturederror",d=>{const p=d.error;if(t===null)if(globalThis.reportError)reportError(p);else throw p;else if(!t.destroyed){t.destroy("fatal WebGPU error",p);return}}),i.lost.then(d=>console.error(`WebGPU Device lost: ${d.message}`)),r===void 0){if(r=document.getElementsByTagName("canvas")[0],r===void 0)throw Error("No canvas element or ID string provided, and no canvas was not found in the HTML.")}else if(typeof r=="string"){const d=document.getElementById(r);if(!(d instanceof HTMLCanvasElement))throw Error(`Element with ID "${r}" is not a canvas element.`);r=d}const s=r.getContext("webgpu");if(!s)throw Error("Could not get WebGPU context from canvas.");var a="rgba16float";let _=window.matchMedia("(color-gamut: p3)").matches,l=_?"display-p3":"srgb";try{s.configure({device:i,format:a,colorSpace:l,alphaMode:"opaque"})}catch{a="bgra8unorm",l="srgb",s.configure({device:i,format:a,colorSpace:l,alphaMode:"opaque"})}const h=new WebAssembly.Memory({initial:128}),f=await WebAssembly.instantiateStreaming(fetch(Q),{env:{memory:h,jsMessage:(d,p,y)=>{let g=new TextDecoder().decode(new Uint8Array(w.buffer,Number(d),Number(p)));g.charAt(0)!=="]"?g="["+(t.LOGGING_PREFIX||"")+g:g=g.slice(1),y===1?console.info("%c"+g,"font-weight: 600"):[console.log,console.info,console.warn,console.error][y](g)},jsWriteText:(d,p,y)=>{const g=new Uint8Array(w.buffer,Number(p),Number(y)),H=new TextDecoder().decode(g),W=document.getElementById(`text${d+1}`);W.textContent=H},jsGetTime:()=>performance.now(),jsHandleVisibleChunks:(d,p)=>t.handleVisibleChunks(d,p),jsHandleVisibleEntities:()=>t.handleVisibleEntities(),jsSetMouseType:d=>t.setMouseType(d),jsPlaySound:(d,p,y)=>t.playSound(d,p,y)}}),u=f.instance.exports,w=u.memory,m=i.createShaderModule({label:"Main shader",code:J}),v={TILES_PER_ROW:u.getTilesPerRow(),TILES_PER_COLUMN:u.getTilesPerColumn(),STONE_START:u.getStoneStart(),ORE_START:u.getOreStart(),GEM_START:u.getGemStart(),GEM_MASK_START:u.getGemMaskStart(),GEAR_ID:u.getGearStart(),WATER_START:u.getWaterStart()},D=i.createBindGroupLayout({label:"Main bind group layout",entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform",hasDynamicOffset:!0}},{binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}},{binding:2,visibility:GPUShaderStage.FRAGMENT,texture:{}},{binding:3,visibility:GPUShaderStage.FRAGMENT,texture:{}},{binding:4,visibility:GPUShaderStage.FRAGMENT,sampler:{}},{binding:5,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}}]}),R=i.createPipelineLayout({label:"Shared Pipeline Layout",bindGroupLayouts:[D]}),O=i.createRenderPipeline({label:"Tilemap pipeline",layout:R,vertex:{module:m,entryPoint:"vs_tile",constants:v},fragment:{module:m,entryPoint:"fs_tile",constants:v,targets:[{format:a,blend:{color:{srcFactor:"src-alpha",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},primitive:{topology:"triangle-list",cullMode:"none"}}),F=i.createRenderPipeline({label:"Background pipeline",layout:R,vertex:{module:m,entryPoint:"vs_background",constants:v},fragment:{module:m,entryPoint:"fs_background",constants:v,targets:[{format:a}]},primitive:{topology:"triangle-list"}}),q=i.createRenderPipeline({label:"Entity pipeline",layout:R,vertex:{module:m,entryPoint:"vs_entity",constants:v},fragment:{module:m,entryPoint:"fs_entity",constants:v,targets:[{format:a,blend:{color:{srcFactor:"src-alpha",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},primitive:{topology:"triangle-list"}});t=new S(r,n,i,s,f,O,F,q),t.exports.main(),await t.setSeed(Z(100)),t.startDelta=Number(u.mixSeed(60n)%120000n),t.exports.init();const C=new ResizeObserver(t.onResize);t.resizeObserver=C,t.updateCanvasStyle();try{t.resizeObserver.observe(r,{box:"device-pixel-content-box"})}catch{console.log("ResizeObserver property device-pixel-content-box not supported, falling back to content-box."),t.resizeObserver.observe(r,{box:"content-box"})}t.onResize([{contentRect:{width:r.clientWidth,height:r.clientHeight}}]);const z=await S.loadTexture(i,ee),N=await S.loadTexture(i,te,"rgba8unorm"),V=i.createSampler({magFilter:"nearest",minFilter:"nearest",addressModeU:"clamp-to-edge",addressModeV:"clamp-to-edge"});return t.atlasTextureView=z.createView(),t.atlasTextureMaskView=N.createView(),t.pixelSampler=V,t.uniformBuffer=i.createBuffer({label:"SceneUniforms",size:256*b,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),t.entityBuffer=t.device.createBuffer({label:"Entities",size:2400,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),t.isP3=_&&a==="rgba16float",t.is8Bit=a==="bgra8unorm",t.gamutMediaQuery=window.matchMedia("(color-gamut: p3)"),t.gamutMediaQuery.addEventListener("change",d=>{const p=d.matches&&a==="rgba16float";p!==t.isP3&&(t.isP3=p,s.configure({device:i,format:a,colorSpace:p?"display-p3":"srgb",alphaMode:"opaque"}))}),t}var M=(r=>(r[r.Uint8=8]="Uint8",r[r.Uint16=16]="Uint16",r[r.Uint32=32]="Uint32",r[r.Uint64=64]="Uint64",r[r.Int8=-8]="Int8",r[r.Int16=-16]="Int16",r[r.Int32=-32]="Int32",r[r.Int64=-64]="Int64",r[r.Uint8Clamped=1]="Uint8Clamped",r[r.Float32=2]="Float32",r[r.Float64=4]="Float64",r))(M||{});globalThis.WasmTypeCode=M;const G={8:Uint8Array,16:Uint16Array,32:Uint32Array,64:BigUint64Array,[-8]:Int8Array,[-16]:Int16Array,[-32]:Int32Array,[-64]:BigInt64Array,1:Uint8ClampedArray,2:Float32Array,4:Float64Array},b=4;class S{engineModule;exports;memory;LAYOUT_PTR;GAME_STATE_PTR;mouseType;canvas;adapter;device;context;bindGroups=Array(b);uniformBuffer;tileBuffers=Array(b);entityBuffer;tileBufferDirty=!1;atlasTextureView;atlasTextureMaskView;pixelSampler;tilePipeline;bgPipeline;entityPipeline;renderPass=null;currentEncoder=null;currentTextureView=null;renderCallId=0;sceneDataBuffer=new ArrayBuffer(256);sceneDataF32=new Float32Array(this.sceneDataBuffer);sceneDataU32=new Uint32Array(this.sceneDataBuffer);inputState;resizeObserver;forceAspectRatio=!0;previousForceAspectRatio=null;tileMapWidth;tileMapHeight;last_upload_visible_chunks_time=0;prepare_visible_data_time=0;isVisibleDataNew=!0;wireframeOpacity=0;startTime=performance.now();startDelta;seed="";destroyed=!1;destroyedError=null;encoder=new TextEncoder;decoder=new TextDecoder;isP3=!1;is8Bit=!1;gamutMediaQuery=null;LOGGING_PREFIX="";audioCtx=null;audioBuffers=new Map;audioLoading=new Map;constructor(e,n,i,t,s,a,_,l){this.canvas=e,this.adapter=n,this.device=i,this.context=t,this.engineModule=s,this.tilePipeline=a,this.bgPipeline=_,this.entityPipeline=l,this.exports=s.instance.exports,this.memory=s.instance.exports.memory,this.LAYOUT_PTR=Number(this.exports.getMemoryLayoutPtr()),this.GAME_STATE_PTR=Number(this.getScratchView()[3]),this.inputState=j()}static async create(e,n){return await ne(e,n)}destroy(e="unknown reason",n=null){this.resizeObserver.disconnect(),this.destroyed=e,this.destroyedError=n}static async loadTexture(e,n,i){const s=await(await fetch(n)).blob(),a=await createImageBitmap(s),_=i||(e.features.has("canvas-rgba16float-support")?"rgba16float":"bgra8unorm"),l=e.createTexture({label:`Texture from ${n}`,size:[a.width,a.height],format:_,usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});return e.queue.copyExternalImageToTexture({source:a},{texture:l},[a.width,a.height]),l}uploadVisibleChunks(e=1){const n=performance.now();this.exports.prepareVisibleData(e,n-this.last_upload_visible_chunks_time,this.canvas.width,this.canvas.height),this.last_upload_visible_chunks_time=n,this.prepare_visible_data_time=performance.now()-n}handleVisibleChunks(e,n){if(this.wireframeOpacity=n,!this.currentEncoder||!this.currentTextureView||!this.renderPass)return;const i=this.getScratchPtr();if(this.getScratchLen()===0)return;const s=Number(this.getScratchProperty(0)),a=Number(this.getScratchProperty(1)),_=s*a*2;this.tileMapWidth=s,this.tileMapHeight=a;const l=new Uint32Array(this.memory.buffer,i,_);this.recreateBufferAndBindGroup(_*4),this.renderPass.setPipeline(this.tilePipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId*256]),this.renderPass.setViewport(0,0,this.canvas.width,this.canvas.height,0,1),this.setSceneData(e,s,a),this.device.queue.writeBuffer(this.tileBuffers[this.renderCallId],0,l);const h=s*a+1;this.renderPass.draw(6,h),this.renderCallId++}handleVisibleEntities(){this.renderCallId=0;const e=this.getScratchPtr(),n=this.getScratchProperty(0)*48;if(n===0||!this.renderPass)return;this.entityBuffer.size<n&&(this.entityBuffer=this.device.createBuffer({label:"Entities",size:n,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),this.recreateBufferAndBindGroup(0));const i=new Uint8Array(this.memory.buffer,e,n);this.device.queue.writeBuffer(this.entityBuffer,0,i),this.renderPass.setPipeline(this.entityPipeline),this.renderPass.setBindGroup(0,this.bindGroups[0],[0]),this.renderPass.draw(8,n/48)}setMouseType(e){e==0?this.mouseType!=0&&(this.canvas.style.cursor=null):e==1&&this.mouseType!=0&&(this.canvas.style.cursor="pointer"),this.mouseType=e}setSceneData(e,n,i){const t=this.getScratchProperty(2,4),s=this.getScratchProperty(3,4),a=this.getScratchProperty(4,4),_=this.getScratchProperty(5,4),l=this.getScratchProperty(6,4),h=this.getScratchProperty(7,4),f=this.getScratchProperty(8,4),u=this.getScratchProperty(9,4),w=this.getScratchProperty(10,4);this.sceneDataF32[0]=t,this.sceneDataF32[1]=s,this.sceneDataF32[2]=this.canvas.width,this.sceneDataF32[3]=this.canvas.height,this.sceneDataF32[4]=(performance.now()-this.startTime+this.startDelta)%(3600*1e3)/1e3,this.sceneDataF32[5]=a,this.sceneDataF32[6]=a<.25?0:this.wireframeOpacity,this.sceneDataF32[7]=e,this.sceneDataF32[8]=_,this.sceneDataF32[9]=l,this.sceneDataU32[10]=n,this.sceneDataU32[11]=i,this.sceneDataU32[12]=this.isP3?1:0,this.sceneDataU32[13]=this.is8Bit?1:0,this.sceneDataF32[16]=h,this.sceneDataF32[17]=f,this.sceneDataF32[18]=u,this.sceneDataF32[19]=w,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32)}recreateBufferAndBindGroup(e){const n=this.renderCallId;(e===0||!this.tileBuffers[n]||this.tileBuffers[n].size<e)&&(this.tileBuffers[n]=this.device.createBuffer({label:`Tile grid slot ${n}`,size:Math.max(e,256*b),usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),this.bindGroups[n]=this.device.createBindGroup({label:`Bind group slot ${n}`,layout:this.tilePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniformBuffer,offset:0,size:256}},{binding:1,resource:{buffer:this.tileBuffers[n]}},{binding:2,resource:this.atlasTextureView},{binding:3,resource:this.atlasTextureMaskView},{binding:4,resource:this.pixelSampler},{binding:5,resource:{buffer:this.entityBuffer}}]}))}async getAudioBuffer(e){if(this.audioLoading.has(e))return this.audioLoading.get(e);this.audioCtx||(this.audioCtx=new(window.AudioContext||window.webkitAudioContext));const n=this.audioCtx,i=(async()=>{try{const t=await fetch(["","assets/mining1.mp3","assets/mining2.mp3","assets/mining3.mp3","assets/grass1.mp3","assets/grass2.mp3","assets/place.mp3"][e]);if(!t.ok)throw new Error(`HTTP error! status: ${t.status}`);const s=await t.arrayBuffer(),a=await n.decodeAudioData(s);return this.audioBuffers.set(e,a),a}catch(t){throw this.audioLoading.delete(e),t}finally{this.audioLoading.delete(e)}})();return this.audioLoading.set(e,i),i}playAudioBuffer(e,n,i){const t=this.audioCtx,s=t.createBufferSource();s.buffer=e;const a=t.createGain();a.gain.setValueAtTime(n,t.currentTime),s.playbackRate.setValueAtTime(i,t.currentTime),s.connect(a),a.connect(t.destination),s.start(0)}playSound(e,n,i){this.audioCtx&&this.audioCtx.state==="suspended"&&this.audioCtx.resume();const t=this.audioBuffers.get(e);if(t){this.playAudioBuffer(t,n,i);return}this.getAudioBuffer(e).then(s=>{this.playAudioBuffer(s,n,i)}).catch(s=>{console.warn(`Could not play sound ${e}:`,s)})}getWASMMemoryMB(){return this.memory.buffer.byteLength/1024/1024}getGameView(e,n=0,i){return new G[e](this.memory.buffer,this.GAME_STATE_PTR+n,i)}getRawView(e,n,i){return new G[e](this.memory.buffer,n,i)}_tempScratchViewU64=null;_tempScratchViewF64=null;getScratchView(){return(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24)),this._tempScratchViewU64}getScratchPtr(){return Number(this.getScratchView()[0])}getScratchLen(){return Number(this.getScratchView()[1])}setScratchLen(e){this.getScratchView()[1]=BigInt(e)}getScratchCapacity(){return Number(this.getScratchView()[2])}getScratchProperty(e,n=64){(this._tempScratchViewU64===null||this._tempScratchViewU64.buffer!==this.memory.buffer)&&(this._tempScratchViewU64=new BigUint64Array(this.memory.buffer,this.LAYOUT_PTR,24));let i=this._tempScratchViewU64;return n==4&&((this._tempScratchViewF64===null||this._tempScratchViewF64.buffer!==this.memory.buffer)&&(this._tempScratchViewF64=new Float64Array(i.buffer,i.byteOffset,i.length)),i=this._tempScratchViewF64),Number(i[e+4])}readStr(e=this.getScratchPtr(),n=this.getScratchLen()){const i=new Uint8Array(this.memory.buffer,e,n);return this.decoder.decode(i)}writeStr(e,n=!0){const i=e.length;if(i===0)return null;n&&this.setScratchLen(0);const t=this.exports.scratchAlloc(i);if(t===0n)return null;const s=new Uint8Array(this.memory.buffer,Number(t),i);if(this.encoder.encodeInto(e,s).read<i)throw new RangeError("String truncated with non-ASCII characters detected.");return Number(t)}async setSeed(e){this.seed=e,await X(e,this.getGameView(64,B.seed,8))}updateCanvasStyle(){this.forceAspectRatio!==this.previousForceAspectRatio&&(this.previousForceAspectRatio=this.forceAspectRatio,this.forceAspectRatio?(this.canvas.style.maxWidth=`calc(100vh*${16/9})`,this.canvas.style.maxHeight=`calc(100vw*${9/16})`):(this.canvas.style.maxWidth="none",this.canvas.style.maxHeight="none"))}onResize=e=>{const n=e[0];let i,t;if(n.devicePixelContentBoxSize)i=n.devicePixelContentBoxSize[0].inlineSize,t=n.devicePixelContentBoxSize[0].blockSize;else if(n.contentBoxSize){const s=n.contentBoxSize[0].inlineSize,a=n.contentBoxSize[0].blockSize;i=Math.round(s*devicePixelRatio),t=Math.round(a*devicePixelRatio)}else{const s=n.contentRect.width,a=n.contentRect.height;i=Math.round(s*devicePixelRatio),t=Math.round(a*devicePixelRatio)}(this.canvas.width!==i||this.canvas.height!==t)&&(this.canvas.width=i,this.canvas.height=t)};renderFrame(e,n){if(this.renderCallId=0,this.destroyed!==!1)return;this.updateCanvasStyle(),this.currentEncoder=this.device.createCommandEncoder(),this.currentTextureView=this.context.getCurrentTexture().createView();const i=this.currentEncoder.beginRenderPass({colorAttachments:[{view:this.currentTextureView,loadOp:"clear",clearValue:{r:0,g:0,b:0,a:1},storeOp:"store"}]});this.renderPass=i,this.recreateBufferAndBindGroup(256*b),this.sceneDataF32[7]=1,this.sceneDataU32[12]=this.isP3?1:0,this.sceneDataU32[13]=this.is8Bit?1:0,this.device.queue.writeBuffer(this.uniformBuffer,this.renderCallId*256,this.sceneDataF32),this.renderPass.setPipeline(this.bgPipeline),this.renderPass.setBindGroup(0,this.bindGroups[this.renderCallId],[this.renderCallId++*256]),this.renderPass.draw(3),this.uploadVisibleChunks(e),this.renderPass.end(),this.device.queue.submit([this.currentEncoder.finish()]),this.currentEncoder=null,this.currentTextureView=null}tick(e,n){const i=this.getGameView(32,B.keys_pressed_mask,2);Y(this.inputState),i[0]=this.inputState.keysPressed,i[1]=this.inputState.keysHeld,this.exports.tick(e,n)}}location.protocol==="file:"&&alert("This game cannot run from a local file:// context; use an online version or test from localhost instead.");isSecureContext||alert("This game cannot run in a non-secure context.");navigator.gpu||alert("WebGPU is not supported by your browser; try playing this on an alternate or more modern browser.");const ie=await navigator.gpu.requestAdapter();ie||alert("WebGPU is supported by the browser, but no compatible GPU was found. Your GPU may be too old to play this game.");globalThis.Zig={KeyBits:o,game_state_offsets:B};console.log("Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs."),document.body.innerHTML+=`<div id="textContainer">
+        <div id="text1"></div>
+        <div id="text2"></div>
+        <div id="text3"></div>
+        <div id="text4"></div>
+    </div>
+    <div id="logicText"></div>
+    <div id="renderText"></div>
+    <div id="debugContainer"></div>`;{const r=(e,n,i,t)=>{const s=e||{};let _=`An error occurred: ${s.message||String(e||"Unknown error")}`;const l=i||s.line,h=t||s.column;if(n||l||h){const u=n?n.split("/").pop()||n:"unknown";_+=`
+Source: ${u}:${l||"?"}:${h||"?"}`}let f=globalThis.engine?.destroyedError;if(globalThis.engine?.destroyedError&&(_+=`
+Details: ${f.message||f}`),s.stack)_+=`
+
+Stack trace:
+${s.stack}`;else if(typeof e=="object"&&e!==null)try{const u=JSON.stringify(e);u!=="{}"&&(_+=`
+Object state: ${u}`)}catch{_+=`
+(Object state hidden: circular reference)`}alert(_)};window.onerror=(e,n,i,t,s)=>{r(s||e,n,i,t)},window.onunhandledrejection=e=>{r(e.reason)},console.error=(...e)=>{const n=e.find(i=>i instanceof Error)||e[0];r(n)}}document.addEventListener("wheel",function(r){r.ctrlKey},{passive:!1});let c=await S.create();c.getTimeoutLength=function(){return++re%3==2?16:17};c.getFrameRate=function(){return 60};c.baseSpeed=1;let x=performance.now(),E=0,re=0;globalThis.engine=c;const A=Array(60).fill(0),k=Array(60).fill(0),I=Array(60).fill(0);c.isDebug=!!c.exports.isDebug();c.renderLoop=function(r){let e=performance.now(),n=x===1/0?0:e-x;x=e;const i=1e3/c.getFrameRate(),t=n/i,s=Math.min(E+t,5);let a=Math.floor(s);a>0?(c.logicLoop(a),E=s-a):E=s;{k.shift(),k.push(n),I.shift(),I.push(c.prepare_visible_data_time);const l=Math.max.apply(null,k),h=Math.max.apply(null,I);let f="#cccccc";l>55?f="#e83769":l>30?f="#f39c19":l>20&&(f="#f7ce1a");const u=document.getElementById("renderText");u.textContent=`Time since last render/prepare_visible_data time: ${n.toFixed(1)}ms, ${c.prepare_visible_data_time.toFixed(1)}ms
+Worst (past 60 frames): ${l.toFixed(1)}ms, ${h.toFixed(1)}ms`,u.style.fontWeight=l>40?l>55?700:600:500,u.style.color=f}let _=Math.min(E-1,0);c.renderFrame(_,x),requestAnimationFrame(c.renderLoop)};c.logicLoop=function(r){const e=performance.now(),n=60/c.getFrameRate()*c.baseSpeed;c.tick(n,r);let i=performance.now()-e;{A.shift(),A.push(i);const t=Math.max.apply(null,A);let s="#cccccc";t>30?s="#e83769":t>15?s="#f39c19":t>10&&(s="#f7ce1a");const a=document.getElementById("logicText");a.textContent=`Logic diff: ${i.toFixed(1)}ms for ${r} tick${r==1?"":"s"}
+Worst (past 60 frames): ${t.toFixed(1)}ms
+`,a.style.fontWeight=t>20?t>40?700:600:500,a.style.color=s}};const P=(r,e)=>{const n=c.canvas.getBoundingClientRect();if(r==null){c.exports.handleMouse(-1,-1,5);return}const i=(r.clientX-n.left)/n.width,t=(r.clientY-n.top)/n.height;i>=0&&i<=1&&t>=0&&t<=1?c.exports.handleMouse(i,t,e):c.exports.handleMouse(-1,-1,e)};window.addEventListener("blur",()=>{x=1/0,P(null,0)});document.addEventListener("pointermove",r=>{P(r,0)});document.addEventListener("pointerdown",r=>{const e=r.target;if(!e||document.getElementById("debugContainer").contains(e))return;const n=r.button===2?3:1;P(r,n)});document.addEventListener("pointerup",r=>{const e=r.button===2?4:2;P(r,e)});c.canvas.style.touchAction="none";document.addEventListener("contextmenu",r=>r.preventDefault());if(c.isDebug){c.exports.debugBuildUiMetadata();const r=c.readStr(),e=JSON.parse(r),n=document.getElementById("debugContainer");n.style.display="none",document.addEventListener("keydown",function(i){i.code==="KeyM"&&(n.style.display==="none"?n.removeAttribute("style"):n.style.display="none")}),e.buttons.forEach(i=>{const t=document.createElement("button");t.textContent=i.name,t.onclick=()=>c.exports.clickDebugUiButton(i.id),n.appendChild(t)}),e.sliders.forEach(i=>{const t=document.createElement("div");t.style.display="flex",t.style.flexDirection="column";const s=document.createElement("label");s.textContent=`${i.name}: ${i.val.toFixed(2)}`,s.style.fontSize="12px";const a=document.createElement("input");a.type="range",a.min=i.min,a.max=i.max,a.step=((i.max-i.min)/1e3).toString(),a.value=i.val,a.oninput=_=>{const l=parseFloat(_.target.value);s.textContent=`${i.name}: ${l.toFixed(2)}`,c.exports.changeDebugUiSlider(i.id,l)},t.appendChild(s),t.appendChild(a),n.appendChild(t)}),document.body.appendChild(n)}setTimeout(function(){c.renderLoop(0)},17);

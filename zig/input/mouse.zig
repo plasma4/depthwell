@@ -168,8 +168,8 @@ pub fn updateMouseLocation() void {
     const world_dx = screen_dx / game.camera_scale * CHUNK_SIZE; // 1 pixel = 16 subpixels
     const world_dy = screen_dy / game.camera_scale * CHUNK_SIZE;
 
-    const target_sx = game.camera_pos[0] + @as(i64, @round(world_dx));
-    const target_sy = game.camera_pos[1] + @as(i64, @round(world_dy));
+    const target_sx = game.camera_pos[0] + @as(i64, @intFromFloat(@round(world_dx)));
+    const target_sy = game.camera_pos[1] + @as(i64, @intFromFloat(@round(world_dy)));
 
     const old_coord = mouse_chunk_coord;
     const chunk_offset_x = @divFloor(target_sx, dw.SUBPIXELS_IN_CHUNK);

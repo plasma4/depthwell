@@ -5,7 +5,8 @@ const memory = dw.memory;
 const is_wasm = dw.is_wasm;
 const is_debug = dw.is_debug;
 
-const LogCategory = enum(i32) {
+/// Describes the category/severity of the message being sent.
+pub const LogCategory = enum(i32) {
     log = 0,
     info = 1,
     warn = 2,
@@ -28,19 +29,10 @@ const text_4 = text_buffer[3072..4096];
 /// Represents the lengths of the current strings in each text buffer (rendered to HTML elements).
 var text_lengths: [4]usize = .{ 0, 0, 0, 0 };
 
-/// Logging bridge between JS and WASM.
-extern "env" fn jsMessage(ptr: [*]const u8, len: usize, message_type: LogCategory) void;
-
-/// Logging bridge between JS and WASM for writing to specific text elements.
-extern "env" fn jsWriteText(id: u8, ptr: [*]const u8, len: usize) void;
-
-/// Returns the current time (calling `performance.now()` in JS)
-extern "env" fn jsGetTime() f64;
-
 /// Gets a time in milliseconds. Time is not guaranteed to start from 0 or standard UNIX timestamp when program execution begins.
 pub inline fn getTime() f64 {
     if (dw.is_wasm) {
-        return jsGetTime();
+        return dw.jsGetTime();
     } else {
         const ns = std.time.nanoTimestamp();
         return @as(f64, @floatFromInt(ns)) / 1_000_000.0; // wow, fancy _ symbol!
@@ -50,7 +42,7 @@ pub inline fn getTime() f64 {
 // Sends a message (with pointer and length, as well as a message type) to either std.log with the appropriate category or JS.
 inline fn message(ptr: [*]const u8, len: usize, message_type: LogCategory) void {
     if (dw.is_wasm) {
-        jsMessage(ptr, len, message_type);
+        dw.jsMessage(ptr, len, message_type);
     } else {
         const msg_slice = ptr[0..len];
         switch (message_type) {
@@ -375,7 +367,7 @@ pub inline fn write(buffer_id: u2, args: anytype) void {
     }
 
     if (dw.is_wasm) {
-        jsWriteText(@intCast(buffer_id), buf.ptr, text_lengths[buffer_id]);
+        dw.jsWriteText(@intCast(buffer_id), buf.ptr, text_lengths[buffer_id]);
     }
 }
 
@@ -404,7 +396,7 @@ pub inline fn clear(id: u2) void {
     text_lengths[id] = 0;
     if (dw.is_wasm) {
         const targets = [4][]u8{ text_1, text_2, text_3, text_4 };
-        jsWriteText(@intCast(id), targets[id].ptr, 0);
+        dw.jsWriteText(@intCast(id), targets[id].ptr, 0);
     }
 }
 

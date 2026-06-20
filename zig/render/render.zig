@@ -13,37 +13,28 @@ pub var WIREFRAME_OPACITY: f64 = 0.0;
 const CHUNK_SIZE = dw.CHUNK_SIZE;
 const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 
-/// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframe_opacity: f64) void;
-
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
 pub inline fn handleVisibleChunks(opacity: f64, wireframeOpacity: f64) void {
     if (dw.is_wasm) {
-        return jsHandleVisibleChunks(opacity, wireframeOpacity);
+        return dw.jsHandleVisibleChunks(opacity, wireframeOpacity);
     } else {
         return; // no native impl yet
     }
 }
-
-/// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsHandleVisibleEntities() void;
 
 /// Makes a call to `engine.handleVisibleChunks()` in JS.
 pub inline fn handleVisibleEntities() void {
     if (dw.is_wasm) {
-        return jsHandleVisibleEntities();
+        return dw.jsHandleVisibleEntities();
     } else {
         return; // no native impl yet
     }
 }
 
-/// External function that makes a call to `engine.handleVisibleChunks()`.
-extern "env" fn jsSetMouseType(mouse_type: dw.mouse.CursorType) void;
-
 /// Sets the mouse type of the canvas in JS.
 pub inline fn dispatchMouseType() void {
     if (dw.is_wasm) {
-        jsSetMouseType(dw.mouse.cursor_type);
+        dw.jsSetMouseType(dw.mouse.cursor_type);
     } else {
         return;
     }

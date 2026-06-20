@@ -6,14 +6,15 @@ const std = @import("std");
 // (Add --memory64 for 64-bit builds.)
 
 pub fn build(b: *std.Build) void {
-    // TODO add in wasm-opt for ReleaseFast builds for even more optimization!
     b.install_path = ".";
     const aseprite_path = b.option([]const u8, "aseprite", "Path to the Aseprite executable (default: aseprite in PATH)") orelse
         b.findProgram(&.{"aseprite"}, &.{}) catch null;
     const gen_enums = b.option(bool, "gen-enums", "Regenerate TypeScript enum definitions (default: no)") orelse false; // -Dgen-enums
     const wasm_opt = b.option(bool, "wasm-opt", "Add a very aggressive pass of optimizations provided by wasm-opt from Binaryen, forcing optimization level to ReleaseFast") orelse false; // -Dgen-enums
     const memory64 = b.option(bool, "memory64", "Utilize Memory64 (and enable relaxed SIMD)") orelse false; // -Dmemory64
-    const target = b.standardTargetOptions(.{
+    const build_native = b.option(bool, "native", "Build the native desktop application using Mach Engine (default: false)") orelse false;
+
+    const target = b.standardTargetOptions(if (build_native) .{} else .{
         .default_target = .{
             .cpu_arch = if (memory64) .wasm64 else .wasm32, // WASM 32-bit. Works with 64-bit too (if Memory64 is needed in the future).
             .os_tag = .freestanding,
@@ -46,115 +47,176 @@ pub fn build(b: *std.Build) void {
 
     const optimize: std.builtin.OptimizeMode = if (wasm_opt) .ReleaseFast else b.standardOptimizeOption(.{});
 
-    const module = b.createModule(.{
-        .root_source_file = b.path("zig/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // Main WASM game build
-    const exe = b.addExecutable(.{ .name = "engine", .root_module = module });
-
-    if (optimize == .Debug) {
-        exe.root_module.strip = false; // try to reduce any WASM optimization
-        exe.lto = .none;
-        exe.export_table = true;
-
-        // having these lines uncommented seems to freak the Zig compiler out a lot, so best to not use these for now
-        // exe.use_llvm = false;
-        // exe.use_lld = false;
-    } else if (optimize == .ReleaseFast) {
-        exe.root_module.single_threaded = true;
-        exe.root_module.stack_check = false;
-        exe.lto = .full;
-    }
-    exe.rdynamic = true; // export functions with "export" keyword
-    exe.stack_size = 8 * 65536; // 512KiB, can increase as necessary
-
-    // removed since Zig manages pointers automatically
-    // exe.global_base = 8;
-
-    const install_wasm = b.addInstallFileWithDir(
-        exe.getEmittedBin(),
-        .{ .custom = "public/" },
-        "main.wasm",
-    );
-    b.getInstallStep().dependOn(&install_wasm.step); // install
-
-    if (wasm_opt) {
-        const optimize_wasm = b.addSystemCommand(&.{ "wasm-opt", "public/main.wasm", "-o", "public/main.wasm", "-O4" });
-
-        // Add all those specific flags for more optimization!
-        optimize_wasm.addArgs(&.{
-            "--strip-debug",
-            "--strip-dwarf",
-            "--strip-producers",
-            "--optimize-instructions",
-            "--flatten",
-            "--rereloop",
-            "--enable-simd",
-            "--enable-sign-ext",
-            "--enable-tail-call",
-            "--enable-bulk-memory",
-            "--enable-multivalue",
-            "--enable-reference-types",
-            "--converge",
-            "--gufa-optimizing",
-            "--traps-never-happen",
-            "--ignore-implicit-traps",
-            "--limit-segments",
-            "--closed-world",
-            "--inline-functions-with-loops",
-            "--inline-max-combined-binary-size=100000",
-            "--directize",
-            "--memory-packing",
-            "--optimize-added-constants-propagate",
-            "--flexible-inline-max-function-size=100",
-            "--one-caller-inline-max-function-size=1",
-            "--roundtrip",
-            "--low-memory-unused",
+    if (build_native) {
+        const app_mod = b.createModule(.{
+            .root_source_file = b.path("zig/native_app.zig"),
+            .optimize = optimize,
+            .target = target,
         });
 
-        if (memory64) {
-            optimize_wasm.addArg("--enable-memory64");
-            optimize_wasm.addArg("--enable-relaxed-simd");
+        const mach_dep = b.dependency("mach", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        app_mod.addImport("mach", mach_dep.module("mach"));
+
+        // Read the shader code at build time
+        const shader_content: [:0]u8 = b.build_root.handle.readFileAllocOptions(
+            b.graph.io,
+            "src/shader.wgsl",
+            b.allocator,
+            .unlimited,
+            .@"1", // default alignment
+            0, // null-terminator sentinel!
+        ) catch @panic("Failed to read shader.wgsl.");
+
+        const native_options = b.addOptions();
+        native_options.addOption([]const u8, "shader_source", shader_content);
+
+        app_mod.addImport("build_options", native_options.createModule());
+
+        const exe = @import("mach").addExecutable(mach_dep.builder, .{
+            .name = "depthwell",
+            .app = app_mod,
+            .target = target,
+            .optimize = optimize,
+        });
+        b.installArtifact(exe);
+
+        // Package macOS builds as a standalone .app bundle
+        if (target.result.os.tag == .macos) {
+            const app_dir = "Depthwell.app/Contents";
+
+            // 1. Move binary into Depthwell.app/Contents/MacOS/
+            const install_bin = b.addInstallFileWithDir(
+                exe.getEmittedBin(),
+                .{ .custom = b.pathJoin(&.{ app_dir, "MacOS" }) },
+                "depthwell",
+            );
+            b.getInstallStep().dependOn(&install_bin.step);
+
+            // 2. Write dynamic Info.plist
+            const plist_content =
+                \\<?xml version="1.0" encoding="UTF-8"?>
+                \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                \\<plist version="1.0">
+                \\<dict>
+                \\    <key>CFBundleExecutable</key>
+                \\    <string>depthwell</string>
+                \\    <key>CFBundleIdentifier</key>
+                \\    <string>com.user.depthwell</string>
+                \\    <key>CFBundleName</key>
+                \\    <string>Depthwell</string>
+                \\    <key>CFBundlePackageType</key>
+                \\    <string>APPL</string>
+                \\    <key>LSMinimumSystemVersion</key>
+                \\    <string>10.13</string>
+                \\</dict>
+                \\</plist>
+            ;
+            const plist_file = b.addWriteFile("Info.plist", plist_content);
+            const install_plist = b.addInstallFileWithDir(
+                plist_file.getDirectory().path(b, "Info.plist"),
+                .{ .custom = app_dir },
+                "Info.plist",
+            );
+            install_plist.step.dependOn(&plist_file.step);
+            b.getInstallStep().dependOn(&install_plist.step);
         }
 
-        // This ensures wasm-opt runs AFTER the file is installed to public/main.wasm
-        optimize_wasm.step.dependOn(&install_wasm.step);
-        b.getInstallStep().dependOn(&optimize_wasm.step);
-    }
-
-    if (gen_enums) {
-        generateEnums(b, &[_][]const u8{ "zig/root.zig", "zig/types/types.zig", "zig/memory.zig" });
-    }
-
-    // validate!
-    if (aseprite_path) |path| {
-        const export_main = addAsepriteStep(
-            b,
-            path,
-            "aseprite/main.aseprite",
-            "main",
-            "main.png",
-        );
-        const export_masked = addAsepriteStep(
-            b,
-            path,
-            "aseprite/main.aseprite",
-            "masks",
-            "mainMasked.png",
-        );
-
-        // Install the generated files from the cache into your src directory
-        const install_main = b.addInstallFile(export_main, "public/assets/main.png");
-        const install_masked = b.addInstallFile(export_masked, "public/assets/mainMasked.png");
-
-        // Make the WASM build depend on the installation of assets
-        exe.step.dependOn(&install_main.step);
-        exe.step.dependOn(&install_masked.step);
+        const run_cmd = b.addRunArtifact(exe);
+        run_cmd.step.dependOn(b.getInstallStep());
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+        const run_step = b.step("run", "Run the native app");
+        run_step.dependOn(&run_cmd.step);
     } else {
-        std.debug.print("Aseprite executable not found; skipping step. Either add to your system PATH or use -Daseprite.", .{});
+        // Standard WASM build pipeline!
+        const module = b.createModule(.{
+            .root_source_file = b.path("zig/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        // Main WASM game build
+        const exe = b.addExecutable(.{ .name = "engine", .root_module = module });
+
+        if (optimize == .Debug) {
+            exe.root_module.strip = false;
+            exe.lto = .none;
+            exe.export_table = true;
+        } else if (optimize == .ReleaseFast) {
+            exe.root_module.single_threaded = true;
+            exe.root_module.stack_check = false;
+            exe.lto = .full;
+        }
+        exe.rdynamic = true;
+        exe.stack_size = 8 * 65536;
+
+        const install_wasm = b.addInstallFileWithDir(
+            exe.getEmittedBin(),
+            .{ .custom = "public/" },
+            "main.wasm",
+        );
+        b.getInstallStep().dependOn(&install_wasm.step);
+
+        if (wasm_opt) {
+            // ... original wasm_opt configuration ...
+            const optimize_wasm = b.addSystemCommand(&.{ "wasm-opt", "public/main.wasm", "-o", "public/main.wasm", "-O4" });
+            optimize_wasm.addArgs(&.{
+                "--strip-debug",
+                "--strip-dwarf",
+                "--strip-producers",
+                "--optimize-instructions",
+                "--flatten",
+                "--rereloop",
+                "--enable-simd",
+                "--enable-sign-ext",
+                "--enable-tail-call",
+                "--enable-bulk-memory",
+                "--enable-multivalue",
+                "--enable-reference-types",
+                "--converge",
+                "--gufa-optimizing",
+                "--traps-never-happen",
+                "--ignore-implicit-traps",
+                "--limit-segments",
+                "--closed-world",
+                "--inline-functions-with-loops",
+                "--inline-max-combined-binary-size=100000",
+                "--directize",
+                "--memory-packing",
+                "--optimize-added-constants-propagate",
+                "--flexible-inline-max-function-size=100",
+                "--one-caller-inline-max-function-size=1",
+                "--roundtrip",
+                "--low-memory-unused",
+            });
+
+            if (memory64) {
+                optimize_wasm.addArg("--enable-memory64");
+                optimize_wasm.addArg("--enable-relaxed-simd");
+            }
+
+            optimize_wasm.step.dependOn(&install_wasm.step);
+            b.getInstallStep().dependOn(&optimize_wasm.step);
+        }
+
+        if (gen_enums) {
+            generateEnums(b, &[_][]const u8{ "zig/root.zig", "zig/types/types.zig", "zig/memory.zig" });
+        }
+
+        if (aseprite_path) |path| {
+            const export_main = addAsepriteStep(b, path, "aseprite/main.aseprite", "main", "main.png");
+            const export_masked = addAsepriteStep(b, path, "aseprite/main.aseprite", "masks", "mainMasked.png");
+            const install_main = b.addInstallFile(export_main, "public/assets/main.png");
+            const install_masked = b.addInstallFile(export_masked, "public/assets/mainMasked.png");
+            exe.step.dependOn(&install_main.step);
+            exe.step.dependOn(&install_masked.step);
+        } else {
+            std.debug.print("Aseprite executable not found; skipping step. Either add to your system PATH or use -Daseprite.", .{});
+        }
     }
 }
 
@@ -218,7 +280,7 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
         b.graph.io,
         cache_path,
         b.allocator,
-        .limited(128), // extra buffer
+        .limited(256), // extra buffer to be safe
     ) catch |err| blk: {
         if (err != error.FileNotFound) {
             std.debug.panic("Warning: Could not read cache: {any}\n", .{err});
