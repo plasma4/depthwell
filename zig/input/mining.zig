@@ -195,7 +195,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
         selected_hp = 255;
     }
 
-    // pickaxe upgrade testing
+    // pickaxe upgrade testing (auto-upgrades)
     if (memory.game.items_mined >= 15) {
         pickaxe_type = .gold;
         mining_speed = 20;

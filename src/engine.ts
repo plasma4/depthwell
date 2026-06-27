@@ -147,7 +147,7 @@ export class GameEngine {
 
     /**
      * Specifies if the `GameEngine` instance has been destroyed (providing a reason string for the error).
-     * Is `false` if not destroyed. Destroyed engines are unusable.
+     * Is false if not destroyed. Destroyed engines are unusable.
      */
     public destroyed: string | false = false;
     /** Provides an error object if one was passed to destroy(). */

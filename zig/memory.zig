@@ -385,6 +385,7 @@ pub const Entity = struct {
     position: Vec2f32,
 
     /// The size of the entity (based on internal viewport).
+    /// Square.
     size: f32 = 16.0,
 
     /// The rotation of the entity (radians).
@@ -392,6 +393,41 @@ pub const Entity = struct {
 
     /// The sprite type of the entity to use.
     sprite: Sprite = .none,
+};
+
+/// Describes two properties:
+/// - Whether the `position` property in a `SizedEntity`.
+/// - Whether `position` and `size` are scaled based on the UV or internal viewport coordinates.
+const PositionType = enum {
+    top_left_uv,
+    center_uv,
+    top_left_viewport,
+    center_viewport,
+};
+
+/// Alternative representation of entity data (before being sent to WGSL).
+/// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
+pub const SizedEntity = struct {
+    /// The light, chroma, hue, and opacity components (HSL + alpha).
+    /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
+    /// H (hue, in radians) and C (chroma) are shifted additively.
+    lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
+
+    /// Current center position of the sprite.
+    position: Vec2f32,
+
+    /// The size of the entity.
+    /// Unlike `Entity`, allows for both X and Y scaling.
+    size: Vec2f32,
+
+    /// The rotation of the entity (radians).
+    rotation: f32 = 0.0,
+
+    /// The sprite type of the entity to use.
+    sprite: Sprite = .none,
+
+    /// Type of coordinates to use. Defaults to `position` representing top left and with UV-based coordinates.
+    system: PositionType = .top_left_uv,
 };
 
 /// Tightly packed data for a entity to be sent directly to WGSL (using UV coordinates).

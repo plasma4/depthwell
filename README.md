@@ -3,7 +3,7 @@
 Depthwell is a procedural fractal mining incremental. How deep can you explore? Minimal demo potentially releasing August 1st; may be delayed further.
 
 > [!WARNING]
-> The current `README` is **incomplete**, as this game is still in the pre-demo stage; more details will be added in the future and details might currently be out of date. Read the code for specific implementation details.
+> The current `README` is **incomplete**, as this game is still in the pre-demo stage; more details will be added in the future and details might currently be out of date. Read the code to see specific implementations and TODOs.
 
 ### Images
 
@@ -179,11 +179,17 @@ By using `Vec2f` vectors and bit-folding, `FastHash.hash_2d` provides enough var
 
 #### Terrain and biomes
 
-The first pass determines the "flavor" of the chunk. We calculate two main values: **moisture** and **density**.
+TODO: complete this with more details and new noise algorithms
 
-Instead of standard Perlin noise, we use FBM-warped Worley noise. Worley noise (or cellular noise) creates those crisp, cavernous structures that look like organic cells. To create a smoky-like texture the code uses fractal brownian motion (FBM) to warp the input coordinates.
+The first pass of the terrain logic determines the "flavor" of the chunk. We calculate two main values: **moisture** and **density**.
 
-Large cells (scale of 400.0) determine moisture. Smaller cells (scale of 80.0) determine density. These are mostly arbitrary properties; density determines the cave shape while moisture determines some extra "flavor" details like blue/purple `strange_stone` or different stone block variations.
+Instead of standard Perlin noise, there's multiple algorithms being used simultaneously:
+
+- Basic value noise is used for large terrain details.
+- Worley noise (or cellular/Voronoi noise) that creates sharp, jagged ("crisp") noise. Specifically, F2-F1 Worley noise is being used.
+- To create a more varied texture, the code uses fractal brownian motion (FBM) to warp the input coordinates.
+
+Large cells (scale/cell size of 425.0) determine moisture. Smaller cells (scale of 80.0) determine density. These are mostly arbitrary properties; density determines the cave shape while moisture determines some extra "flavor" details like blue/purple `strange_stone` or different stone block variations.
 
 Based on the moisture and density values, a specific block type is chosen such as normal, blue, or lava stone.
 
@@ -275,7 +281,7 @@ for (0..10) |i| {
 
 // number-drawing example:
 // draw selected HP (for testing)
-const progress = root.mining.selected_hp;
+const progress = dw.mining.selected_hp;
 const pos: Vec2f = .{ 10, 28 };
 const font_size = 10.0;
 

@@ -17,17 +17,17 @@ const SCREEN_HEIGHT = dw.SCREEN_HEIGHT;
 /// These categories prevent cross-activation (such as pointerdown within the inventory and pointerup on an indicator).
 /// Lower values on the enum are prioritized (none > canvas > clickables like inventory slots).
 pub const ClickFocus = enum(u32) {
-    /// No click is active. The mouse is free to hover over elements.
-    none = 0,
-    /// Click started on the world canvas (such as mining blocks).
+    /// No click is active. The cursor is free to hover over elements and change type.
+    none,
+    /// Click started on the world canvas (such as by mining a block).
     /// This has precedence over all UI categories to prevent active dragging from interacting with menus.
-    canvas = 1,
-    /// Click started specifically on an inventory slot.
-    inventory = 2,
+    canvas,
     /// Click started specifically on an in-world indicator overlay like a furnace.
-    indicator = 3,
+    indicator,
+    /// Click started specifically on an inventory slot.
+    inventory,
     /// Click started specifically on a crafting menu panel.
-    crafting = 4,
+    crafting,
 
     /// Returns the numerical priority of the focus state, where lower is more prioritized.
     pub fn priority(self: ClickFocus) u32 {

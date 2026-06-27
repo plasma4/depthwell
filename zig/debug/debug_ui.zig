@@ -124,7 +124,7 @@ pub const sliders = [_]SliderDef{
     },
 };
 
-/// List of buttons that point to actions.
+/// List of debug buttons that either execute functions or toggle booleans.
 pub const buttons = [_]ButtonDef{
     .{
         .name = "Teleport to edge",
@@ -160,6 +160,7 @@ fn teleportToEdge() void {
 }
 
 /// Internal random number for teleport PRNG.
+/// This is for debugging only and should NOT be used for gameplay.
 var teleport_rand: u64 = std.math.maxInt(u64);
 /// Teleports to a random valid coordinate (chunk) within the same quadrant. Then, tries to find a valid spawn point.
 /// This is for debugging only and should NOT be used for gameplay.

@@ -6,7 +6,7 @@ import { MAX_DRAW_CALLS, GameEngine } from "./engine";
 import WASM_URL from "/public/main.wasm?url";
 /**
  * The URL for the WebGPU shader code.
- * */
+ */
 import SHADER_SOURCE from "./shader.wgsl";
 /** The URL for the sprite sheet. */
 import SPRITE_SHEET_URL from "/assets/main.png?url";
@@ -14,7 +14,7 @@ import SPRITE_SHEET_URL from "/assets/main.png?url";
 import SPRITE_SHEET_MASK_URL from "/assets/mainMasked.png?url";
 import { CONFIG } from "./main";
 
-/** Creates a new GameEngine, sets up WebGPU shaders, and calls `init()` from Zig. */
+/** Creates a new `GameEngine`, sets up WebGPU shaders, and calls `init()` from Zig. */
 export async function create(
     canvas?: HTMLCanvasElement | string,
     options?: Zig.EngineOptions,

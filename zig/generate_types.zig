@@ -59,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
         \\export type ErrorSet = number;
         \\
         \\/**
-        \\ * Configuration options for the GameEngine.
+        \\ * Configuration options for the `GameEngine`.
         \\ */
         \\export interface EngineOptions {{
         \\    highPerformance?: boolean;

@@ -103,9 +103,9 @@ pub const EdgeFlags = struct {
     pub const TOP = 0x02;
     /// Neighboring block is to the top-right (Northeast)
     pub const TOP_RIGHT = 0x04;
-    /// Neighboring block is to the immediate left (West)
+    /// Neighboring block is to the left (West)
     pub const LEFT = 0x08;
-    /// Neighboring block is to the immediate right (East)
+    /// Neighboring block is to the right (East)
     pub const RIGHT = 0x10;
     /// Neighboring block is to the bottom-left (Southwest)
     pub const BOTTOM_LEFT = 0x20;

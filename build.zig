@@ -48,89 +48,90 @@ pub fn build(b: *std.Build) void {
     const optimize: std.builtin.OptimizeMode = if (wasm_opt) .ReleaseFast else b.standardOptimizeOption(.{});
 
     if (build_native) {
-        const app_mod = b.createModule(.{
-            .root_source_file = b.path("zig/native_app.zig"),
-            .optimize = optimize,
-            .target = target,
-        });
+        // TODO: when SPIR-V is supported by Mach Engine update this logic to work.
+        // const app_mod = b.createModule(.{
+        //     .root_source_file = b.path("zig/native_app.zig"),
+        //     .optimize = optimize,
+        //     .target = target,
+        // });
 
-        const mach_dep = b.dependency("mach", .{
-            .target = target,
-            .optimize = optimize,
-        });
-        app_mod.addImport("mach", mach_dep.module("mach"));
+        // const mach_dep = b.dependency("mach", .{
+        //     .target = target,
+        //     .optimize = optimize,
+        // });
+        // app_mod.addImport("mach", mach_dep.module("mach"));
 
-        // Read the shader code at build time
-        const shader_content: [:0]u8 = b.build_root.handle.readFileAllocOptions(
-            b.graph.io,
-            "src/shader.wgsl",
-            b.allocator,
-            .unlimited,
-            .@"1", // default alignment
-            0, // null-terminator sentinel!
-        ) catch @panic("Failed to read shader.wgsl.");
+        // // Read the shader code at build time
+        // const shader_content: [:0]u8 = b.build_root.handle.readFileAllocOptions(
+        //     b.graph.io,
+        //     "src/shader.wgsl",
+        //     b.allocator,
+        //     .unlimited,
+        //     .@"1", // default alignment
+        //     0, // null-terminator sentinel!
+        // ) catch @panic("Failed to read shader.wgsl.");
 
-        const native_options = b.addOptions();
-        native_options.addOption([]const u8, "shader_source", shader_content);
+        // const native_options = b.addOptions();
+        // native_options.addOption([]const u8, "shader_source", shader_content);
 
-        app_mod.addImport("build_options", native_options.createModule());
+        // app_mod.addImport("build_options", native_options.createModule());
 
-        const exe = @import("mach").addExecutable(mach_dep.builder, .{
-            .name = "depthwell",
-            .app = app_mod,
-            .target = target,
-            .optimize = optimize,
-        });
-        b.installArtifact(exe);
+        // const exe = @import("mach").addExecutable(mach_dep.builder, .{
+        //     .name = "depthwell",
+        //     .app = app_mod,
+        //     .target = target,
+        //     .optimize = optimize,
+        // });
+        // b.installArtifact(exe);
 
-        // Package macOS builds as a standalone .app bundle
-        if (target.result.os.tag == .macos) {
-            const app_dir = "Depthwell.app/Contents";
+        // // Package macOS builds as a standalone .app bundle
+        // if (target.result.os.tag == .macos) {
+        //     const app_dir = "Depthwell.app/Contents";
 
-            // 1. Move binary into Depthwell.app/Contents/MacOS/
-            const install_bin = b.addInstallFileWithDir(
-                exe.getEmittedBin(),
-                .{ .custom = b.pathJoin(&.{ app_dir, "MacOS" }) },
-                "depthwell",
-            );
-            b.getInstallStep().dependOn(&install_bin.step);
+        //     // Move binary into Depthwell.app/Contents/MacOS/
+        //     const install_bin = b.addInstallFileWithDir(
+        //         exe.getEmittedBin(),
+        //         .{ .custom = b.pathJoin(&.{ app_dir, "MacOS" }) },
+        //         "depthwell",
+        //     );
+        //     b.getInstallStep().dependOn(&install_bin.step);
 
-            // 2. Write dynamic Info.plist
-            const plist_content =
-                \\<?xml version="1.0" encoding="UTF-8"?>
-                \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-                \\<plist version="1.0">
-                \\<dict>
-                \\    <key>CFBundleExecutable</key>
-                \\    <string>depthwell</string>
-                \\    <key>CFBundleIdentifier</key>
-                \\    <string>com.user.depthwell</string>
-                \\    <key>CFBundleName</key>
-                \\    <string>Depthwell</string>
-                \\    <key>CFBundlePackageType</key>
-                \\    <string>APPL</string>
-                \\    <key>LSMinimumSystemVersion</key>
-                \\    <string>10.13</string>
-                \\</dict>
-                \\</plist>
-            ;
-            const plist_file = b.addWriteFile("Info.plist", plist_content);
-            const install_plist = b.addInstallFileWithDir(
-                plist_file.getDirectory().path(b, "Info.plist"),
-                .{ .custom = app_dir },
-                "Info.plist",
-            );
-            install_plist.step.dependOn(&plist_file.step);
-            b.getInstallStep().dependOn(&install_plist.step);
-        }
+        //     // Write dynamic Info.plist
+        //     const plist_content =
+        //         \\<?xml version="1.0" encoding="UTF-8"?>
+        //         \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        //         \\<plist version="1.0">
+        //         \\<dict>
+        //         \\    <key>CFBundleExecutable</key>
+        //         \\    <string>depthwell</string>
+        //         \\    <key>CFBundleIdentifier</key>
+        //         \\    <string>com.user.depthwell</string>
+        //         \\    <key>CFBundleName</key>
+        //         \\    <string>Depthwell</string>
+        //         \\    <key>CFBundlePackageType</key>
+        //         \\    <string>APPL</string>
+        //         \\    <key>LSMinimumSystemVersion</key>
+        //         \\    <string>10.13</string>
+        //         \\</dict>
+        //         \\</plist>
+        //     ;
+        //     const plist_file = b.addWriteFile("Info.plist", plist_content);
+        //     const install_plist = b.addInstallFileWithDir(
+        //         plist_file.getDirectory().path(b, "Info.plist"),
+        //         .{ .custom = app_dir },
+        //         "Info.plist",
+        //     );
+        //     install_plist.step.dependOn(&plist_file.step);
+        //     b.getInstallStep().dependOn(&install_plist.step);
+        // }
 
-        const run_cmd = b.addRunArtifact(exe);
-        run_cmd.step.dependOn(b.getInstallStep());
-        if (b.args) |args| {
-            run_cmd.addArgs(args);
-        }
-        const run_step = b.step("run", "Run the native app");
-        run_step.dependOn(&run_cmd.step);
+        // const run_cmd = b.addRunArtifact(exe);
+        // run_cmd.step.dependOn(b.getInstallStep());
+        // if (b.args) |args| {
+        //     run_cmd.addArgs(args);
+        // }
+        // const run_step = b.step("run", "Run the native app");
+        // run_step.dependOn(&run_cmd.step);
     } else {
         // Standard WASM build pipeline!
         const module = b.createModule(.{

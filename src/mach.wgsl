@@ -420,8 +420,8 @@ fn fs_tile(
 
         // with linear RGB: r component of mask determines brightness, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
-            srgb_to_linear(tex_stone.rgb) * vec3<f32>(1.2 - 1.2 * u_dist),
-            tex_color.rgb * vec3<f32>(tex_mask.r),
+            srgb_to_linear(tex_stone.rgb) * vec3<f32>(1.2 - 1.6 * u_dist), // stone pixels near center become darker
+            tex_color.rgb * vec3<f32>(tex_mask.r + 0.3 * u_dist), // gem pixels near center become brighter
             tex_mask.a + u_dist
         );
         tex_color = vec4<f32>(final_rgb_ore, tex_color.a);
@@ -845,7 +845,7 @@ fn water_body_linear(tile_coords: vec2<u32>, local_uv: vec2<f32>) -> vec4<f32> {
 
     var lch = water_base_lch(t);
 
-    // Depth gradient: lighter near y=0 (surface), darker going down.
+    // Depth gradient that's lighter near y=0 (surface), darker going down.
     let depth_t = clamp(world.y / 192.0, 0.0, 1.0); // 192px
     lch.x = mix(0.52, 0.34, depth_t); // light surface
     lch.y = mix(0.10, 0.14, depth_t);// slightly more saturated deep

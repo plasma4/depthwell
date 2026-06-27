@@ -49,10 +49,14 @@ pub fn updateEntities(time_diff: f64) void {
     inventory.addDroppedItemsAsEntities(time_diff); // pass in delta time in ms
 
     // draw indicators (icons above certain sprites)
-    dw.indicators.drawFurnaceIndicators();
+    dw.indicators.drawIndicators();
+    // if (dw.indicators.menus.furnace) @import("furnace_menu.zig").draw();
+    @import("furnace_menu.zig").draw();
 
+    // draw the inventory items/all items if in creative
     inventory.drawInventory(time_diff);
 
+    // update mouse type logic and reset for next render frame
     dw.render.dispatchMouseType();
     dw.mouse.cursor_type = .initial;
     dw.mouse.clearFrameFlags();
@@ -218,21 +222,17 @@ fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
 }
 
 /// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
-/// No-op if the sprite type is `none`.
-/// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
-/// No-op if the sprite type is `none`.
-pub inline fn addEntity(entity: Entity) void {
-    const id = @intFromEnum(entity.sprite);
-    if (entity.sprite.isEmpty()) return;
-    if (entity.size <= 0.0) return;
+pub fn addRawEntity(entity: WGSLEntity) void {
+    @setFloatMode(.optimized);
+    if (entity.size[0] == 0.0 or entity.size[1] == 0.0) return;
     if (entity.lcha[3] <= 0.0) return;
 
     // Viewport-based culling (accounting for rotation)
-    const half_diagonal = if (entity.rotation == 0.0) entity.size * 0.5 else entity.size * (1.0 / std.math.sqrt(2.0));
-    const min_x = entity.position[0] - half_diagonal;
-    const max_x = entity.position[0] + half_diagonal;
-    const min_y = entity.position[1] - half_diagonal;
-    const max_y = entity.position[1] + half_diagonal;
+    const half_diag = entity.size * @as(Vec2f32, @splat(if (entity.rotation == 0.0) 0.5 else 1.0 / std.math.sqrt(2.0)));
+    const min_x = entity.position[0] - half_diag[0];
+    const max_x = entity.position[0] + half_diag[0];
+    const min_y = entity.position[1] - half_diag[1];
+    const max_y = entity.position[1] + half_diag[1];
 
     if (max_x < 0.0 or min_x > dw.SCREEN_WIDTH or max_y < 0.0 or min_y > dw.SCREEN_HEIGHT) {
         return;
@@ -240,7 +240,17 @@ pub inline fn addEntity(entity: Entity) void {
 
     entity_count += 1;
     const wgsl_entity = memory.scratchAllocType(WGSLEntity, &entity_byte_count_before_end);
-    wgsl_entity.* = .{
+    wgsl_entity.* = entity;
+    // dw.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
+}
+
+/// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
+/// No-op if the sprite type is `none`.
+pub inline fn addEntity(entity: Entity) void {
+    @setFloatMode(.optimized);
+    if (entity.sprite.isEmpty()) return;
+    const id = @intFromEnum(entity.sprite);
+    @call(.always_inline, addRawEntity, .{WGSLEntity{
         .lcha = entity.lcha,
         .position = entity.position /
             Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
@@ -250,6 +260,47 @@ pub inline fn addEntity(entity: Entity) void {
         },
         .rotation = entity.rotation,
         .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else if (entity.sprite.isLiquid()) id + 1 else id,
-    };
-    // dw.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
+    }});
+}
+
+/// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
+/// No-op if the sprite type is `none`.
+pub inline fn addEntitySized(entity: memory.SizedEntity) void {
+    @setFloatMode(.optimized);
+    if (entity.sprite.isEmpty()) return;
+    const id = @intFromEnum(entity.sprite);
+    @call(.always_inline, addRawEntity, .{WGSLEntity{
+        .lcha = entity.lcha,
+        // See PositionType def for an explanation of this "magic formula"
+        .position = .{
+            entity.position + entity.size / Vec2f32{ 2.0, 2.0 },
+            entity.position /
+                Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT } + entity.size / Vec2f32{ 2.0, 2.0 },
+            entity.position,
+            entity.position /
+                Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
+        }[@intFromEnum(entity.system)],
+        .size = if (entity.system == .top_left_viewport or entity.system == .center_viewport)
+            entity.size /
+                Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT }
+        else
+            entity.size,
+        .rotation = entity.rotation,
+        .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else if (entity.sprite.isLiquid()) id + 1 else id,
+    }});
+}
+
+/// Converts a horizontal width of a sprite to a square within UV coordinates.
+pub inline fn toSizeUv(horizontal_width: f32) Vec2f32 {
+    return @as(Vec2f32, @splat(horizontal_width)) * Vec2f32{ 1, @as(comptime_float, dw.SCREEN_WIDTH) / @as(comptime_float, dw.SCREEN_HEIGHT) };
+}
+
+/// Converts viewport coordinates to UV ones.
+pub inline fn toViewport(uv: Vec2f32) Vec2f32 {
+    return uv / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+}
+
+/// Converts UV coordinates to viewport ones.
+pub inline fn toUv(viewport: Vec2f32) Vec2f32 {
+    return viewport * Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
 }

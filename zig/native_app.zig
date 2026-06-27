@@ -179,7 +179,7 @@ pub fn appTick(core: *mach.Core) void {
         }
     }
 
-    // Run underlying logic loop natively
+    // TODO: frame drop logic
     dw.tick(1.0, 1);
 }
 

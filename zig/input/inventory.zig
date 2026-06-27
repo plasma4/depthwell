@@ -21,9 +21,6 @@ pub const SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is (how many slots per row).
 pub const INVENTORY_WIDTH = 10;
 
-/// Tracks if the furnace menu overlay is active.
-pub var in_furnace = false;
-
 /// How many frames (logical) before an item enters the player's inventory.
 fn getMaxItemDropLifespan() u16 {
     return if (isInCreative()) 20 else 100;
@@ -151,6 +148,7 @@ fn dropSingleItem(id: Sprite, chunk: Coordinate, block_x: u4, block_y: u4) void 
     // Drop at the center of the block horizontally (+128), and the bottom vertically (+256)
     const px = @as(i32, block_x) * 256 + 128;
     const py = @as(i32, block_y) * 256 + 256;
+    // use the visual seed: not secure, tied to specific block coordinate
     const seed = dw.seeding.FastHash.hash2d(
         memory.game.getHashSeed(.visual),
         memory.game.frame,
@@ -167,9 +165,8 @@ fn dropSingleItem(id: Sprite, chunk: Coordinate, block_x: u4, block_y: u4) void 
         .last_subpixel_x = px,
         .last_subpixel_y = py,
         .is_clockwise = (seed / (128 * 128) % 2 == 1),
+        // monumentally silly code that determines how many frames a block should last
         .frames_left = getMaxItemDropLifespan() * 3 / 4 +
-            // monumentally silly code to get a block position to influence frames left
-            // TODO: maybe this indicates we should really simplify things?
             @as(u16, @intCast((seed / (128 * 128 * 2)) % (getMaxItemDropLifespan() * 1 / 4))),
     }, dw.world.alloc) catch memory.oom();
 }
@@ -212,8 +209,8 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             const interpolated_zoom = memory.game.camera_scale * std.math.pow(f64, memory.game.camera_scale_change, dt);
 
             // Translate subpixels offset to screen space (1 pixel becomes 16 subpixels!)
-            const screen_x = @as(f32, @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0)));
-            const screen_y = @as(f32, @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0)));
+            const screen_x: f32 = @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0));
+            const screen_y: f32 = @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0));
 
             const half_lifespan = getMaxItemDropLifespan() / 2;
             const life_fraction = @min(@as(f32, @floatFromInt(item.frames_left)) / half_lifespan, 1.0);
@@ -374,7 +371,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
-        // Match the background sizing logic from the drawInventory() function
+        // Same background sizing logic as drawInventory()
         const is_mine_type = active_sprite.isEmpty();
         const is_selected = active_sprite == selected_sprite;
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
@@ -399,7 +396,7 @@ pub fn drawInventory(time_diff: f64) void {
     @setFloatMode(.optimized); // safe here, tis all rendering/mouse logic
     var buffer: SlotBuffer = undefined;
     const active_slots = getSpritesInInventory(&buffer);
-    // logger.quick(.{ root.mining.selected_hp, inventory_counts });
+    // logger.quick(.{ dw.mining.selected_hp, inventory_counts });
 
     const wobble_decay_speed: f32 = 2.0; // controls wobble decay speed
     const wobble_speed: f32 = 10.0; // multiplier of sine of wobble for for values from -1 to 1

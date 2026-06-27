@@ -10,7 +10,7 @@ const Coordinate = dw.world.Coordinate;
 /// Index where stone-like sprites begin.
 const STONE_START = 4;
 /// Index where stone-like sprites end.
-const STONE_END = STONE_START + 11;
+const STONE_END = STONE_START + 13;
 
 /// Index where ore sprites begin.
 const ORE_START = STONE_END + 4;
@@ -34,7 +34,7 @@ const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 /// Index where inventory slot sprites start.
 pub const INVENTORY_START = GEAR_ID + 18;
 /// Index where numbers (0-9) start.
-pub const NUMBER_START = INVENTORY_START + 3;
+pub const NUMBER_START = INVENTORY_START + 4;
 
 /// Hitbox geometry variants for various block shapes.
 pub const HitboxKind = enum(u3) {
@@ -60,7 +60,7 @@ pub const AnchorKind = enum(u2) {
 
 /// Strategy to resolve block drop items upon destruction.
 pub const DropStrategy = enum {
-    /// Drops itself if `.isItem()` returns `true`.
+    /// Drops itself if `.isItem()` returns true.
     self,
     /// Guaranteed to drop nothing.
     none,
@@ -316,6 +316,7 @@ const rules = [_]SpriteRule{
             .mushroom,
             .big_mushroom,
             .chest,
+            .small_tree,
             .big_tree1_left,
             .big_tree1_right,
             .big_tree2_left,
@@ -504,8 +505,10 @@ pub const Sprite = enum(u16) {
     // stone types!
     blue_strange_stone = STONE_START,
     purple_strange_stone,
+    wood,
     blue_stone,
-    contrast_blue_stone,
+    alt_blue_stone,
+    pink_stone,
     red_stone,
     seagreen_stone,
     green_stone,
@@ -520,7 +523,8 @@ pub const Sprite = enum(u16) {
     copper = ORE_START,
     iron,
     silver,
-    gold = GEM_START - 1, // no gap between ores and gems
+    // no gap between ores and gems: use the = GEM_START part to check we didn't skip ID indices
+    gold = GEM_START - 1,
 
     // gems!
     amethyst = GEM_START,
@@ -565,7 +569,9 @@ pub const Sprite = enum(u16) {
     inventory = INVENTORY_START,
     /// Selected (currently used) inventory sprite.
     inventory_selected,
-    inventory_selected_invalid, // unused
+    inventory_selected_invalid, // TODO: use with mining radius
+    /// Wooden-textured rounded rectangle.
+    wood_icon,
 
     text_0 = NUMBER_START, // sprite with text 0
 
@@ -579,12 +585,11 @@ pub const Sprite = enum(u16) {
     pickaxe,
     /// Generic water block (filled). Default internal water type.
     water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
-    /// The item version of water.
-    water_wavy,
+    water_icon,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
     unselected = 65535,
-    _, // non-exhaustive for heatmaps
+    _, // non-exhaustive for debugging heatmaps
 
     /// Retrieves the fully compile-time property data for this sprite.
     pub inline fn props(self: @This()) SpriteFlags {

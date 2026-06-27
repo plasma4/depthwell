@@ -33,6 +33,14 @@ export interface EngineExports extends WebAssembly.Exports {
 
     readonly SegmentedList: (arg0: unknown, arg1: number) => unknown;
     readonly Fifo: (arg0: unknown) => unknown;
+    readonly handleTick: (arg0: number, arg1: number) => void;
+    readonly jsMessage: (arg0: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */, arg1: number, arg2: number) => void;
+    readonly jsWriteText: (arg0: number, arg1: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */, arg2: number) => void;
+    readonly jsGetTime: () => number;
+    readonly jsHandleVisibleChunks: (arg0: number, arg1: number) => void;
+    readonly jsHandleVisibleEntities: () => void;
+    readonly jsSetMouseType: (arg0: number) => void;
+    readonly jsPlaySound: (arg0: number, arg1: number, arg2: number) => void;
     readonly main: () => void;
     readonly init: () => void;
     readonly prepareVisibleData: (arg0: number, arg1: number, arg2: number, arg3: number) => void;
@@ -53,9 +61,6 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly scratchAlloc: (arg0: number) => bigint;
     readonly wasmAlloc: (arg0: number) => bigint;
     readonly wasmFree: (arg0: bigint, arg1: number) => void;
-    readonly debugBuildUiMetadata: () => void;
-    readonly changeDebugUiSlider: (arg0: number, arg1: number) => void;
-    readonly clickDebugUiButton: (arg0: number) => void;
     readonly isDebug: () => boolean;
 }
 

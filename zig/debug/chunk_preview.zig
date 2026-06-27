@@ -8,6 +8,8 @@ const Vec2f32 = dw.utils.Vec2f32;
 const EdgeFlags = dw.types.EdgeFlags;
 const addEntity = dw.entity.addEntity;
 
+/// Draws previews for the chunk based on the `entity.preview_tile_size` variable.
+/// Only called if `dw.is_debug` is true.
 pub fn drawChunkPreview() void {
     // draw a rectangle background for preview, and then the chunk inside!
     const tile_size: f32 = @floatCast(dw.entity.preview_tile_size);
@@ -102,22 +104,22 @@ pub fn drawChunkPreview() void {
                                 ent.position[1] -= half - thick * 0.5;
                                 ent.size = line_len;
                                 ent.lcha = .{ 0.8, 0.35, 0.4, 1.0 };
-                                addEntityLine(ent, line_len, thick);
+                                addLine(ent, line_len, thick);
                             },
                             6 => { // S
                                 ent.position[1] += half - thick * 0.5;
                                 ent.lcha = .{ 0.8, 0.35, 4.2, 1.0 };
-                                addEntityLine(ent, line_len, thick);
+                                addLine(ent, line_len, thick);
                             },
                             3 => { // W
                                 ent.position[0] -= half - thick * 0.5;
                                 ent.lcha = .{ 0.8, 0.35, 0.4, 1.0 };
-                                addEntityLine(ent, thick, line_len);
+                                addLine(ent, thick, line_len);
                             },
                             4 => { // E
                                 ent.position[0] += half - thick * 0.5;
                                 ent.lcha = .{ 0.8, 0.35, 4.2, 1.0 };
-                                addEntityLine(ent, thick, line_len);
+                                addLine(ent, thick, line_len);
                             },
                             else => unreachable,
                         }
@@ -372,16 +374,15 @@ pub fn drawChunkPreview() void {
     addEntity(player_entity);
 }
 
-fn addEntityLine(entity: Entity, w: f32, h: f32) void {
-    dw.entity.entity_count += 1;
-    const wgsl_entity = memory.scratchAllocType(memory.WGSLEntity, &dw.entity.entity_byte_count_before_end);
-    wgsl_entity.* = .{
+/// Draws a line.
+fn addLine(entity: Entity, w: f32, h: f32) void {
+    dw.entity.addRawEntity(.{
         .lcha = entity.lcha,
         .position = entity.position / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
         .size = .{ w / dw.SCREEN_WIDTH, h / dw.SCREEN_HEIGHT },
         .rotation = entity.rotation,
         .id = @intFromEnum(entity.sprite),
-    };
+    });
 }
 
 fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: dw.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {

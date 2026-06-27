@@ -1,4 +1,5 @@
 //! Handles procedural generation logic for the game.
+//! TODO: also implement advanced ridged noise that uses absolute values (still performant and provides better terrain)
 const std = @import("std");
 const dw = @import("../root.zig");
 const types = dw.types;
@@ -49,7 +50,7 @@ inline fn TuningFloat(comptime default_value: f64) type {
     }
 }
 
-/// Returns a struct with an a `value: bool`. (TODO: switch to using this instead of current heatmap logic)
+/// Returns a struct with an a `value: bool`. (TODO: switch to using this instead of current USE_...heatmap logic.)
 /// Allows for booleans to act like variables in Debug mode and dead code elimination in all Release modes.
 inline fn TuningBool(comptime default_value: bool) type {
     if (dw.is_debug) {
@@ -85,8 +86,8 @@ const TerrainOptions = struct {
 
     /// Determines whether the algorithm computes true Worley cellular noise metrics (F2 - F1 distance).
     ///
-    /// - If `true`, performs an optimized 4-tap cellular distance check (essential for jagged cave walls or sharp ore veins).
-    /// - If `false`, bypasses cellular logic entirely and falls back to a much faster, basic bilinear value noise interpolation.
+    /// - If true, performs an optimized 4-tap cellular distance check (essential for jagged cave walls or sharp ore veins).
+    /// - If false, bypasses cellular logic entirely and falls back to a much faster, basic bilinear value noise interpolation.
     use_f2_f1: bool = true,
 };
 
@@ -415,8 +416,8 @@ fn addGeodeStructure(
         // Determine the shell's block type
         const shell_rand = state.getLimit(u32, 5);
         const shell: Sprite = switch (shell_rand) {
-            0, 1 => .blue_stone,
-            2, 3 => .contrast_blue_stone,
+            0, 1 => .pink_stone,
+            2, 3 => .alt_blue_stone,
             4 => .ancient_stone,
             else => unreachable,
         };
@@ -426,8 +427,7 @@ fn addGeodeStructure(
             const dist_sq = (dx * dx) + (dy * dy);
 
             if (dist_sq <= core_radius * core_radius) {
-                // We are in the core! Determine whether to use stone or a gem.
-
+                // We are in the core (center area)! Determine whether to use stone or a gem.
                 var block_state = makeBlockHash(struct_seed, wx, wy, 3);
                 const core_rand = block_state.getLimit(u32, 50);
                 const which_stone = state.getLimit(u32, 3);
@@ -436,8 +436,11 @@ fn addGeodeStructure(
                     5, 6, 7, 8 => .sapphire,
                     9, 10 => .emerald,
                     11 => .ruby,
-                    else => if (dist_sq >= (core_radius - 1) * (core_radius - 1))
-                        ([_]Sprite{ .stone, .green_stone, .seagreen_stone })[which_stone]
+
+                    else =>
+                    // Gems weren't selected: determine a default stone type that's consistent across all blocks in the core
+                    if (dist_sq >= (core_radius - 1) * (core_radius - 1))
+                        if (shell == .pink_stone) .stone else ([_]Sprite{ .stone, .green_stone, .seagreen_stone })[which_stone]
                     else
                         .stone,
                 };
@@ -589,7 +592,7 @@ pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
 
     if (moisture >= 0.62 and density >= 0.83) return .seagreen_stone;
     if (moisture <= 0.55 and density >= 0.60 and density <= 0.72) return .blue_stone;
-    if (density >= 0.40 and density <= 0.55) return .contrast_blue_stone;
+    if (density >= 0.40 and density <= 0.55) return .alt_blue_stone;
 
     if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
     return .stone;
@@ -631,14 +634,6 @@ pub inline fn getBaseSpriteType(
 
     const sprite = generateBaseProceduralSprite(moisture, density);
 
-    // drawing sprite change in WebGPU now after tile unpacking, quite silly to be here
-    // if (sprite == .stone) {
-    //     if (block_y % 2 == 0) {
-    //         sprite = if (block_x == 0) .stone else ._stone;
-    //     } else {
-    //         sprite = if (block_x == 0) .__stone else .___stone;
-    //     }
-    // }
     return .{
         .sprite = sprite,
         .moisture = moisture,
