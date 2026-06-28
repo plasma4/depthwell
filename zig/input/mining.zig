@@ -130,7 +130,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 
                 if (was_deleted) {
                     if (!block.isEmpty()) {
-                        memory.game.items_mined +%= 1;
+                        if (block.isFoundation()) memory.game.blocks_mined +%= 1;
                         inventory.dropItem(
                             block.id,
                             mouse.mouse_chunk_coord.?,
@@ -196,18 +196,18 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
     }
 
     // pickaxe upgrade testing (auto-upgrades)
-    if (memory.game.items_mined >= 15) {
+    if (memory.game.blocks_mined >= 40) {
         pickaxe_type = .gold;
         mining_speed = 20;
         mining_strength = 2;
-    } else if (memory.game.items_mined >= 10) {
+    } else if (memory.game.blocks_mined >= 20) {
         pickaxe_type = .silver;
         mining_speed = 12;
         mining_strength = 2;
-    } else if (memory.game.items_mined >= 5) {
+    } else if (memory.game.blocks_mined >= 8) {
         pickaxe_type = .iron;
         mining_speed = 15;
-    } else if (memory.game.items_mined >= 2) {
+    } else if (memory.game.blocks_mined >= 4) {
         pickaxe_type = .bronze;
         mining_speed = 11;
     }

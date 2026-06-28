@@ -359,9 +359,17 @@ export class GameEngine {
             if (this.mouseType != 0) {
                 (this.canvas.style.cursor as any) = null;
             }
-        } else if (type == 1) {
-            if (this.mouseType != 0) {
+        } else if (type == 1 && this.mouseType != 1) {
+            if (this.mouseType != 1) {
                 this.canvas.style.cursor = "pointer";
+            }
+        } else if (type == 2) {
+            if (this.mouseType != 2) {
+                this.canvas.style.cursor = "grab";
+            }
+        } else if (type == 3) {
+            if (this.mouseType != 3) {
+                this.canvas.style.cursor = "grabbing";
             }
         }
         this.mouseType = type;

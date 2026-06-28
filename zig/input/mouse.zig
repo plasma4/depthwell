@@ -49,9 +49,13 @@ pub const ClickFocus = enum(u32) {
 /// The possible mouse cursor visual styles.
 pub const CursorType = enum(u8) {
     /// Standard (default) arrow cursor.
-    initial = 0,
+    initial,
     /// Hand cursor with one pointing finger. Means something is clickable!
-    pointer = 1,
+    pointer,
+    /// Cursor that shows a drag is possible.
+    grab,
+    /// Cursor for active dragging.
+    grabbing,
 
     /// Returns the numerical priority of the cursor style, where higher values override lower values.
     pub fn priority(self: CursorType) u8 {

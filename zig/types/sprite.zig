@@ -394,7 +394,7 @@ fn getPropsForSprite(comptime s: Sprite) SpriteProps {
             mergeProps(&p, rule[1]);
         }
     }
-    if (is_debug and s == .inventory_selected_invalid) {
+    if (is_debug and s == .inventory_selected_red) {
         p.in_world = true;
         p.item = true;
     }
@@ -569,7 +569,7 @@ pub const Sprite = enum(u16) {
     inventory = INVENTORY_START,
     /// Selected (currently used) inventory sprite.
     inventory_selected,
-    inventory_selected_invalid, // TODO: use with mining radius
+    inventory_selected_red,
     /// Wooden-textured rounded rectangle.
     wood_icon,
 
@@ -579,12 +579,20 @@ pub const Sprite = enum(u16) {
     particle = NUMBER_START + 10,
     /// Full rectangle sprite; no corner pixels cut off.
     rectangle,
-    /// Simple up arrow icon.
+    /// Simple up-arrow icon.
     arrow,
+
+    /// Leftmost part of the progress bar.
+    progress_left = NUMBER_START + 13,
+    /// Center part of the progress bar.
+    progress_center = NUMBER_START + 18,
+    /// Right part of the progress bar.
+    progress_right = NUMBER_START + 23,
+
     /// Pickaxe icon.
-    pickaxe,
-    /// Generic water block (filled). Default internal water type.
-    water = NUMBER_START + 13 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
+    pickaxe = NUMBER_START + 28,
+    /// Generic water block (filled). Default internal water type; after all pickaxes.
+    water = NUMBER_START + 28 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
     water_icon,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.

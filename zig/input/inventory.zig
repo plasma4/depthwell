@@ -372,9 +372,9 @@ pub fn getHoveredInventorySprite() ?Sprite {
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
         // Same background sizing logic as drawInventory()
-        const is_mine_type = active_sprite.isEmpty();
+        const is_empty = active_sprite.isEmpty();
         const is_selected = active_sprite == selected_sprite;
-        const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
+        const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_empty) base_size * 0.9 else base_size;
         const bg_pos = inventory_pos - Vec2f32{ bg_size / 4.0, bg_size / 4.0 };
 
         const hitbox: dw.geometry.Shape = .roundSquare(
@@ -394,6 +394,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
 /// Draws the inventory slots, wrapping into new rows every 10 items.
 pub fn drawInventory(time_diff: f64) void {
     @setFloatMode(.optimized); // safe here, tis all rendering/mouse logic
+    const menus = &dw.indicators.menus;
     var buffer: SlotBuffer = undefined;
     const active_slots = getSpritesInInventory(&buffer);
     // logger.quick(.{ dw.mining.selected_hp, inventory_counts });
@@ -409,6 +410,7 @@ pub fn drawInventory(time_diff: f64) void {
     var hovered_inventory_sprite: ?Sprite = null;
     for (active_slots, 0..) |active_sprite, i| {
         // For each slot, find the sprite ID, handle animations, and draw sprite and its shadow
+        const is_empty = active_sprite.isEmpty();
         const id = @intFromEnum(active_sprite);
         const is_selected = active_sprite == selected_sprite;
 
@@ -431,19 +433,20 @@ pub fn drawInventory(time_diff: f64) void {
 
         const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
 
-        const is_mine_type = active_sprite.isEmpty();
-
         // Background sizing (using is_selected directly for instant feedback on bg)
-        const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_mine_type) base_size * 0.9 else base_size;
+        const bg_size: f32 = if (is_selected) base_size * 1.125 else if (is_empty) base_size * 0.9 else base_size;
         const bg_pos = inventory_pos - Vec2f32{ bg_size / 4.0, bg_size / 4.0 };
 
         // replace with pickaxe for UI
-        const rendered_sprite: Sprite = if (is_mine_type)
+        const rendered_sprite: Sprite = if (is_empty)
             @enumFromInt(@intFromEnum(Sprite.pickaxe) + @intFromEnum(dw.mining.pickaxe_type))
         else
             active_sprite;
+
         addEntity(.{
-            .sprite = if (is_selected) .inventory_selected else .inventory,
+            .sprite = if (menus.furnace and active_sprite.isOre())
+                .inventory_selected_red
+            else if (is_selected) .inventory_selected else .inventory,
             .position = bg_pos,
             .size = bg_size,
         });
@@ -484,6 +487,9 @@ pub fn drawInventory(time_diff: f64) void {
         }
     }
 
+    if (mouse.click_focus == .inventory and menus.isAnyEnabled()) {
+        mouse.requestCursorType(.grabbing);
+    }
     if (hovered_inventory_sprite) |s| {
         // Capture click down specifically for the inventory system
         if (mouse.tryCaptureDown(.inventory, true)) {
@@ -493,7 +499,7 @@ pub fn drawInventory(time_diff: f64) void {
 
         // Only show pointer hover indicators if we are permitted
         if (mouse.click_focus.permits(.inventory)) {
-            mouse.requestCursorType(.pointer);
+            mouse.requestCursorType(if (menus.isAnyEnabled()) .grab else .pointer);
         }
     }
 

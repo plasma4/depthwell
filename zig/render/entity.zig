@@ -50,8 +50,8 @@ pub fn updateEntities(time_diff: f64) void {
 
     // draw indicators (icons above certain sprites)
     dw.indicators.drawIndicators();
-    // if (dw.indicators.menus.furnace) @import("furnace_menu.zig").draw();
-    @import("furnace_menu.zig").draw();
+    // if (dw.indicators.menus.furnace) @import("../menus/furnace.zig").draw();
+    @import("../menus/furnace.zig").draw();
 
     // draw the inventory items/all items if in creative
     inventory.drawInventory(time_diff);
@@ -66,6 +66,16 @@ pub fn updateEntities(time_diff: f64) void {
         dw.chunk_preview.drawChunkPreview();
     }
 
+    // draw progress bar of mined block count
+    dw.progress.drawBar(
+        40,
+        @min(memory.game.blocks_mined, 40),
+        .{ 0.04, 0.01 },
+        0.4,
+        .top_left_uv,
+        .{ 1.0, 0.2, -1.3, 1.0 },
+    );
+
     memory.setScratchProp(0, entity_count);
     // entity rendering is dispatched to JS right after this function completes
 }
@@ -75,7 +85,7 @@ pub const TextConfig = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue, in radians) and C (chroma) are shifted additively.
-    lcha: @Vector(4, f32) = memory.DEFAULT_ENTITY_LCHA,
+    lcha: dw.utils.Vec4f32 = memory.DEFAULT_ENTITY_LCHA,
     /// The font size of the text.
     font_size: f32 = 16.0,
     /// The rotation of the text.
@@ -246,7 +256,7 @@ pub fn addRawEntity(entity: WGSLEntity) void {
 
 /// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
 /// No-op if the sprite type is `none`.
-pub inline fn addEntity(entity: Entity) void {
+pub fn addEntity(entity: Entity) void {
     @setFloatMode(.optimized);
     if (entity.sprite.isEmpty()) return;
     const id = @intFromEnum(entity.sprite);
@@ -265,21 +275,22 @@ pub inline fn addEntity(entity: Entity) void {
 
 /// Adds a single entity to the `entities` array by adding a UV-based `WGSLEntity` to the scratch buffer.
 /// No-op if the sprite type is `none`.
-pub inline fn addEntitySized(entity: memory.SizedEntity) void {
+pub fn addEntitySized(entity: memory.SizedEntity) void {
     @setFloatMode(.optimized);
     if (entity.sprite.isEmpty()) return;
     const id = @intFromEnum(entity.sprite);
+
+    // See PositionType def for an explanation of these "magic formulas"
+    const possible_positions: [4]Vec2f32 = .{
+        entity.position + entity.size / Vec2f32{ 2.0, 2.0 },
+        entity.position,
+        (entity.position + entity.size / Vec2f32{ 2.0, 2.0 }) / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
+        entity.position / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
+    };
+
     @call(.always_inline, addRawEntity, .{WGSLEntity{
         .lcha = entity.lcha,
-        // See PositionType def for an explanation of this "magic formula"
-        .position = .{
-            entity.position + entity.size / Vec2f32{ 2.0, 2.0 },
-            entity.position /
-                Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT } + entity.size / Vec2f32{ 2.0, 2.0 },
-            entity.position,
-            entity.position /
-                Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
-        }[@intFromEnum(entity.system)],
+        .position = possible_positions[@intFromEnum(entity.system)],
         .size = if (entity.system == .top_left_viewport or entity.system == .center_viewport)
             entity.size /
                 Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT }

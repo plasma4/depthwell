@@ -5,7 +5,6 @@ const dw = @import("../root.zig");
 /// Random seed used for sound effects. This seed in `startup.init()`.
 pub var seed: dw.seeding.ChaCha12 = undefined; // interestingly, ChaCha12 silently continues on with undefined init
 
-/// Tells JavaScript to play a sound.
 /// Use volume and pitch arguments to control a random percentage-based variation.
 pub fn playSound(id: u32, base_volume: f64, volume_variation: f64, pitch_variation: f64) void {
     if (dw.is_wasm) {

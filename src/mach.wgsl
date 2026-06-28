@@ -420,8 +420,10 @@ fn fs_tile(
 
         // with linear RGB: r component of mask determines brightness, vary ore brightness, multiply stone brightness based on dist
         let final_rgb_ore = mix(
-            srgb_to_linear(tex_stone.rgb) * vec3<f32>(1.2 - 1.6 * u_dist), // stone pixels near center become darker
-            tex_color.rgb * vec3<f32>(tex_mask.r + 0.3 * u_dist), // gem pixels near center become brighter
+             // stone pixels near center become darker based on HP
+            srgb_to_linear(tex_stone.rgb) * vec3<f32>(1.2 - 0.22 * f32(hp) * u_dist), 
+            // gem pixels near center become brighter
+            tex_color.rgb * vec3<f32>(tex_mask.r + 0.3 * u_dist),
             tex_mask.a + u_dist
         );
         tex_color = vec4<f32>(final_rgb_ore, tex_color.a);

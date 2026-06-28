@@ -1,5 +1,5 @@
 //! Root file. Imports startup.zig and handles exporting functions to WASM.
-//! All functions here (excluding internal ones like panic) should be `pub` to expose functions to `generate_types.zig`,
+//! All functions here (excluding internal ones like panic) should be `pub` to expose functions to `internal/generate_types.zig`,
 //! and `extern` for WASM (with no other exported functions within other Zig files).
 const std = @import("std");
 const builtin = @import("builtin");
@@ -64,6 +64,7 @@ pub const render = @import("render/render.zig");
 pub const sound = @import("render/sound.zig");
 pub const chunks = @import("render/chunk.zig");
 pub const entity = @import("render/entity.zig");
+pub const progress = @import("render/progress.zig");
 pub const indicators = @import("render/indicators.zig");
 
 pub const types = @import("types/types.zig");
@@ -100,13 +101,14 @@ pub extern "env" fn jsGetTime() f64;
 /// External function that makes a call to `engine.handleVisibleChunks()`.
 pub extern "env" fn jsHandleVisibleChunks(opacity: f64, wireframe_opacity: f64) void;
 
-/// External function that makes a call to `engine.handleVisibleChunks()`.
+/// External function that makes a call to `engine.handleVisibleEntities()`.
 pub extern "env" fn jsHandleVisibleEntities() void;
 
-/// External function that makes a call to `engine.handleVisibleChunks()`.
+/// External function that makes a call to `engine.setMouseType()`.
 pub extern "env" fn jsSetMouseType(mouse_type: mouse.CursorType) void;
 
 /// External function that plays a sound (with pitch and volume variation factors).
+/// Plays the chosen sound through `AudioContext`.
 pub extern "env" fn jsPlaySound(soundId: u32, volume: f64, pitch: f64) void;
 
 pub fn main() callconv(.c) void {

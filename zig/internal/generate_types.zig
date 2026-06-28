@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Write static TypeScript headers and configurations
     try writer.print(
-        \\// This is a dynamically generated file from generate_types.zig for use in engine.ts and should not be manually modified. See types.zig for where type definitions come from.
+        \\// This is a dynamically generated file from internal/generate_types.zig for use in engine.ts and should not be manually modified. See types.zig for where type definitions come from.
         \\
         // getting rid of these because of Memory64 hacks: an error SHOULD be expected if these are referenced
         \\/**

@@ -17,6 +17,7 @@ const Vec2i = dw.utils.Vec2i;
 const Vec2u = dw.utils.Vec2u;
 const Vec2f = dw.utils.Vec2f;
 const Vec2f32 = dw.utils.Vec2f32;
+const Vec4f32 = dw.utils.Vec4f32;
 
 /// Represents log2(CHUNK_SIZE).
 const CHUNK_SIZE_LOG2 = dw.CHUNK_SIZE_LOG2;
@@ -79,8 +80,8 @@ pub const GameState = extern struct {
     /// Current frame ID. 32-bit; expect wrap-arounds and access with powers-of-2 checks.
     frame: u32 align(4) = 0,
 
-    /// The amount of items the player has mined.
-    items_mined: u64 = 0,
+    /// The amount of blocks the player has mined.
+    blocks_mined: u64 = 0,
 
     // /// Represents if the grid needs to be recalculated/passed to WGSL.
     // grid_dirty: bool = true,
@@ -371,7 +372,7 @@ pub const Particle = struct {
 };
 
 /// Default LCHA configuration to result in the same colors as the original sprite after mask.
-pub const DEFAULT_ENTITY_LCHA: @Vector(4, f32) = .{ 1.0, 0.0, 0.0, 1.0 };
+pub const DEFAULT_ENTITY_LCHA: Vec4f32 = .{ 1.0, 0.0, 0.0, 1.0 };
 
 /// Entity data (before being sent to WGSL, using internal viewport).
 /// Allows for size, rotation, and OKLCH + alpha (opacity) changes to any chosen sprite.
@@ -379,7 +380,7 @@ pub const Entity = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue, in radians) and C (chroma) are shifted additively.
-    lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
+    lcha: Vec4f32 = DEFAULT_ENTITY_LCHA,
 
     /// Current center position of the sprite (based on internal viewport).
     position: Vec2f32,
@@ -396,9 +397,9 @@ pub const Entity = struct {
 };
 
 /// Describes two properties:
-/// - Whether the `position` property in a `SizedEntity`.
+/// - Whether the `position` property in a `SizedEntity` references the top left or center of an entity.
 /// - Whether `position` and `size` are scaled based on the UV or internal viewport coordinates.
-const PositionType = enum {
+pub const PositionType = enum {
     top_left_uv,
     center_uv,
     top_left_viewport,
@@ -411,7 +412,7 @@ pub const SizedEntity = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue, in radians) and C (chroma) are shifted additively.
-    lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
+    lcha: Vec4f32 = DEFAULT_ENTITY_LCHA,
 
     /// Current center position of the sprite.
     position: Vec2f32,
@@ -420,14 +421,14 @@ pub const SizedEntity = struct {
     /// Unlike `Entity`, allows for both X and Y scaling.
     size: Vec2f32,
 
+    /// Type of coordinates to use. Defaults to `position` representing top left and with UV-based coordinates.
+    system: PositionType = .top_left_uv,
+
     /// The rotation of the entity (radians).
     rotation: f32 = 0.0,
 
     /// The sprite type of the entity to use.
     sprite: Sprite = .none,
-
-    /// Type of coordinates to use. Defaults to `position` representing top left and with UV-based coordinates.
-    system: PositionType = .top_left_uv,
 };
 
 /// Tightly packed data for a entity to be sent directly to WGSL (using UV coordinates).
@@ -436,7 +437,7 @@ pub const WGSLEntity = extern struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue) and C (chroma) are shifted additively in radians.
-    lcha: @Vector(4, f32) align(16),
+    lcha: Vec4f32 align(16),
 
     /// Current center position of the sprite (based on UV, not the internal viewport).
     position: Vec2f32,

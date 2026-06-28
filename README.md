@@ -223,7 +223,7 @@ pub const Entity = struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue, in radians) and C (chroma) are shifted additively.
-    lcha: @Vector(4, f32) = DEFAULT_ENTITY_LCHA,
+    lcha: Vec4f32 = DEFAULT_ENTITY_LCHA,
 
     /// Current center position of the sprite (based on internal viewport).
     position: Vec2f32,
@@ -244,7 +244,7 @@ pub const WGSLEntity = extern struct {
     /// The light, chroma, hue, and opacity components (HSL + alpha).
     /// L (lightness) and alpha components are multiplied by the sprite's color in WebGPU.
     /// H (hue) and C (chroma) are shifted additively in radians.
-    lcha: @Vector(4, f32) align(16),
+    lcha: Vec4f32 align(16),
 
     /// Current center position of the sprite (based on UV, not the internal viewport).
     position: Vec2f32,

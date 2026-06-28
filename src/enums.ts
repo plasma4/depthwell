@@ -1,4 +1,4 @@
-// This is a dynamically generated file from generate_types.zig for use in engine.ts and should not be manually modified. See types.zig for where type definitions come from.
+// This is a dynamically generated file from internal/generate_types.zig for use in engine.ts and should not be manually modified. See types.zig for where type definitions come from.
 
 /**
  * A pointer in the WASM memory. Equals 0/0n to represent a null value.
@@ -21,7 +21,7 @@ export type PointerLike = number;
 export type ErrorSet = number;
 
 /**
- * Configuration options for the GameEngine.
+ * Configuration options for the `GameEngine`.
  */
 export interface EngineOptions {
     highPerformance?: boolean;
@@ -34,8 +34,16 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly SegmentedList: (arg0: unknown, arg1: number) => unknown;
     readonly Fifo: (arg0: unknown) => unknown;
     readonly handleTick: (arg0: number, arg1: number) => void;
-    readonly jsMessage: (arg0: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */, arg1: number, arg2: number) => void;
-    readonly jsWriteText: (arg0: number, arg1: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */, arg2: number) => void;
+    readonly jsMessage: (
+        arg0: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */,
+        arg1: number,
+        arg2: number,
+    ) => void;
+    readonly jsWriteText: (
+        arg0: number,
+        arg1: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */,
+        arg2: number,
+    ) => void;
     readonly jsGetTime: () => number;
     readonly jsHandleVisibleChunks: (arg0: number, arg1: number) => void;
     readonly jsHandleVisibleEntities: () => void;
@@ -43,7 +51,12 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly jsPlaySound: (arg0: number, arg1: number, arg2: number) => void;
     readonly main: () => void;
     readonly init: () => void;
-    readonly prepareVisibleData: (arg0: number, arg1: number, arg2: number, arg3: number) => void;
+    readonly prepareVisibleData: (
+        arg0: number,
+        arg1: number,
+        arg2: number,
+        arg3: number,
+    ) => void;
     readonly getTilesPerRow: () => number;
     readonly getTilesPerColumn: () => number;
     readonly getStoneStart: () => number;
@@ -111,7 +124,7 @@ export const game_state_offsets = {
     depth: 112,
     player_quadrant: 120,
     frame: 124,
-    items_mined: 128,
+    blocks_mined: 128,
     keys_pressed_mask: 136,
     keys_held_mask: 140,
     seed: 144,

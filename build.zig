@@ -281,7 +281,7 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
         b.graph.io,
         cache_path,
         b.allocator,
-        .limited(256), // extra buffer to be safe
+        .limited(1024), // extra buffer to be safe; exactly the right amount of bytes doesn't always work
     ) catch |err| blk: {
         if (err != error.FileNotFound) {
             std.debug.panic("Warning: Could not read cache: {any}\n", .{err});
@@ -292,16 +292,16 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
     // @import("zig/logger.zig").quickWarn(.{ current_hash_hex, old_hash_hex, std.mem.eql(u8, current_hash_hex, old_hash_hex) });
     defer if (old_hash_hex.len > 0) b.allocator.free(old_hash_hex);
 
-    // compare array to slice and update content hash if necessary in generate_types.zig
+    // compare array to slice and update content hash if necessary within internal/generate_types.zig
     if (std.mem.eql(u8, current_hash_hex, old_hash_hex)) {
         return;
     }
 
-    // now actually update the types if necessary
+    // now actually update the types, since involved files were modified
     const gen_tool = b.addExecutable(.{
         .name = "generate_types",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig/generate_types.zig"),
+            .root_source_file = b.path("zig/internal/generate_types.zig"),
             .target = b.graph.host,
             .optimize = .Debug,
         }),
