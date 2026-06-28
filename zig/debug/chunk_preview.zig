@@ -151,7 +151,6 @@ pub fn drawChunkPreview() void {
 
             // neighbor boundary flag injection (visualize flags pointing INTO the chunk)
             if (x == 0) if (neighbors[2]) |n| drawNeighborFlag(
-                &dw.entity.entity_byte_count_before_end,
                 &dw.entity.entity_count,
                 n.getBlock(15, @intCast(y)),
                 block_pos,
@@ -160,7 +159,6 @@ pub fn drawChunkPreview() void {
                 thick,
             );
             if (x == 15) if (neighbors[3]) |n| drawNeighborFlag(
-                &dw.entity.entity_byte_count_before_end,
                 &dw.entity.entity_count,
                 n.getBlock(0, @intCast(y)),
                 block_pos,
@@ -169,7 +167,6 @@ pub fn drawChunkPreview() void {
                 thick,
             );
             if (y == 0) if (neighbors[0]) |n| drawNeighborFlag(
-                &dw.entity.entity_byte_count_before_end,
                 &dw.entity.entity_count,
                 n.getBlock(@intCast(x), 15),
                 block_pos,
@@ -178,7 +175,6 @@ pub fn drawChunkPreview() void {
                 thick,
             );
             if (y == 15) if (neighbors[1]) |n| drawNeighborFlag(
-                &dw.entity.entity_byte_count_before_end,
                 &dw.entity.entity_count,
                 n.getBlock(@intCast(x), 0),
                 block_pos,
@@ -385,7 +381,7 @@ fn addLine(entity: Entity, w: f32, h: f32) void {
     });
 }
 
-fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: dw.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {
+fn drawNeighborFlag(ec: *u64, neighbor_block: dw.memory.Block, pos: Vec2f32, side: enum { N, S, E, W }, pts: f32, thick: f32) void {
     if (!neighbor_block.isFoundation()) return;
     const half = pts * 0.5;
     // check the flag of the neighbor that points TOWARDS our chunk
@@ -397,7 +393,7 @@ fn drawNeighborFlag(ebc: *usize, ec: *u64, neighbor_block: dw.memory.Block, pos:
     };
     if ((neighbor_block.edge_flags & target_bit) == 0) {
         ec.* += 1;
-        const wgsl = memory.scratchAllocType(memory.WGSLEntity, ebc);
+        const wgsl = memory.scratchPushEntity();
         var f_pos = pos;
         var size: Vec2f32 = undefined;
         switch (side) {

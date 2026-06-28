@@ -1,7 +1,7 @@
-// ------
+// -------
 // Main shader for Depthwell. Meant to work for both Mach Engine and web.
 // Does not work. Mach Engine work has been paused until Zig SPIR-V support completes.
-// ------
+// -------
 
 // Flags usage:
 // #ifdef WEB_TARGET
@@ -72,9 +72,9 @@ struct SceneUniforms {
 @group(0) @binding(4) var pixel_sampler: sampler;
 @group(0) @binding(5) var<storage, read> entities: array<WGSLEntity>;
 
-// ------
+// -------
 // TILE SECTION
-// ------
+// -------
 
 // Data passed from the Vertex step (per-corner) to the Fragment step (per-pixel)
 struct TileOutput {
@@ -478,9 +478,8 @@ fn fs_tile(
     );
     let nudges = vec3<f32>(lab_nudge_bits) / 7.0;
 
-    // Apply light and nudges in a single MAD operation where possible
-    lch *= vec3<f32>(light, 1.0 + nudges.y * 0.2, 1.0) +
-        vec3<f32>(nudges.x * 0.02, 0.0, nudges.z * 0.1);
+    // Apply light and nudges in a vectorized way
+    lch *= vec3<f32>(light, 0.9, 1.0) + vec3<f32>(nudges.x * 0.02, nudges.y * 0.3, nudges.z * 0.1);
 
     var final_rgb = vec3<f32>(0.0);
     if edge_flags != 0xFFu {
@@ -779,9 +778,9 @@ fn calculate_edge_darkening(local_uv: vec2<f32>, edge_flags: u32, seed: u32) -> 
     return max(max(edge_darkenings.x, edge_darkenings.y), max(edge_darkenings.z, edge_darkenings.w));
 }
 
-// ------
+// -------
 // WATER
-// ------
+// -------
 
 fn wrap_water_coords(coords: vec2<f32>) -> vec2<f32> {
     return coords - floor(coords / 65536.0) * 65536.0;
@@ -878,9 +877,9 @@ fn oklab_water(sprite_rgb: vec3<f32>, water_rgb: vec3<f32>, weight: f32) -> vec3
     return oklab_to_linear_srgb(lab_mixed);
 }
 
-// ------
+// -------
 // BACKGROUND SECTION
-// ------
+// -------
 
 // FBM background logic
 struct BackgroundOutput {
@@ -1097,9 +1096,9 @@ fn hash_1d(x: u32, y: u32) -> f32 {
 }
 // #endif
 
-// ------
+// -------
 // ENTITY SECTION
-// ------
+// -------
 
 struct WGSLEntity {
     lcha: vec4<f32>,
@@ -1203,10 +1202,10 @@ fn fs_entity(input: EntityOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(apply_color_management(final_rgb), final_a);
 }
 
-// ------
+// -------
 // OKLAB AND COLOR SPACE
 // (There are a lot of magic numbers here.)
-// ------
+// -------
 
 fn linear_srgb_to_oklab(c: vec3<f32>) -> vec3<f32> {
     let m1 = mat3x3<f32>( // convert to LMS

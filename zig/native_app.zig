@@ -38,9 +38,10 @@ entity_pipeline: ?*gpu.RenderPipeline = null,
 app_thread: mach.Thread,
 window: mach.ObjectID,
 
-// ==========================================================
-// IO and Clock State Management
-// ==========================================================
+// ------
+// IO and Clock State
+// ------
+
 pub var io: std.Io = undefined;
 pub var start_timestamp: std.Io.Timestamp = undefined;
 var threaded_io = std.Io.Threaded.init_single_threaded;
@@ -226,11 +227,8 @@ pub fn deinit(app: *App) void {
     if (app.entity_pipeline) |p| p.release();
 }
 
-// ==========================================================
-// Consolidated Linker resolution callbacks for game core (dw)
-// ==========================================================
-
-pub export fn jsMessage(ptr: [*]const u8, len: usize, message_type: dw.logger.LogCategory) void {
+// Linker section!
+pub export fn jsMessage(ptr: u64, len: usize, message_type: dw.logger.LogCategory) void {
     const msg = ptr[0..len];
     const prefix = switch (message_type) {
         .info => "[INFO] ",
@@ -241,7 +239,7 @@ pub export fn jsMessage(ptr: [*]const u8, len: usize, message_type: dw.logger.Lo
     std.debug.print("{s}{s}\n", .{ prefix, msg });
 }
 
-pub export fn jsWriteText(id: u8, ptr: [*]const u8, len: usize) void {
+pub export fn jsWriteText(id: u8, ptr: u64, len: usize) void {
     const text = ptr[0..len];
     std.debug.print("[UI Span {d}] {s}\n", .{ id, text });
 }

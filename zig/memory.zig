@@ -220,6 +220,7 @@ pub const MemorySizes = struct {
     pub const wasm_page = 64 * 1024;
 };
 
+/// Contains a `Sprite` id and various packed properties; ready to be sent to the GPU or stored in caches.
 pub const Block = packed struct(u64) {
     /// A block with an `id` of `none`.
     pub const empty: Block = .makeBasicBlock(.none, 0);
@@ -486,7 +487,7 @@ pub var mem: MemoryLayout align(MAIN_ALIGN_BYTES) = .{
 
 /// Returns the pointer to the memory layout for TypeScript to consume.
 pub fn getMemoryLayoutPtr() *align(MAIN_ALIGN_BYTES) const MemoryLayout {
-    mem.scratch_ptr = @intFromPtr(&scratch_buffer);
+    mem.scratch_ptr = @intFromPtr(scratch_buffer.ptr);
     mem.game_ptr = @intFromPtr(&game);
     return &mem;
 }
@@ -557,33 +558,21 @@ fn growScratchBuffer(len: usize, new_scratch_len: usize) [*]u8 {
     return @ptrFromInt(updated_aligned);
 }
 
-/// Allocates one instance of a type in a scratch buffer.
-/// This is the ideal fast way to write generic data (like entities) if the total amount is unknown.
+/// Pushes one tightly-packed `WGSLEntity` (48-byte stride) into the scratch buffer and returns a pointer to it.
 ///
-/// The `byte_count_before_end` property, if null, makes the data aligned to `MAIN_ALIGN_BYTES`.
-/// If unaligned, it is required to start the data at an aligned location (such as right after `scratch_reset` or `mem.scratch_len` set).
-pub inline fn scratchAllocType(comptime T: type, byte_count_before_end: ?*usize) *T {
-    const type_size: usize = @sizeOf(T);
-    const mod = type_size % MAIN_ALIGN_BYTES;
-    if (byte_count_before_end == null or mod == 0) {
-        const ptr = scratchAlloc(type_size);
-        return @as(*T, @ptrCast(@alignCast(ptr)));
-    }
-
-    // ask for more and find the right position!
-    const before_end = byte_count_before_end.?.*;
-    var diff = type_size -| before_end;
-    const old_len = mem.scratch_len; // can't trust scratch_alloc lengths
-
-    if (diff == 0) diff = type_size;
-    const ptr: [*]u8 = @ptrFromInt(
-        @as(usize, @intCast(mem.scratch_ptr + mem.scratch_len)),
-    );
-    if (type_size < MAIN_ALIGN_BYTES and diff > 0) _ = scratchAlloc(diff);
-    mem.scratch_len = old_len + type_size;
-
-    byte_count_before_end.?.* = (before_end + MAIN_ALIGN_BYTES - type_size) % MAIN_ALIGN_BYTES;
-    return @as(*T, @ptrCast(@alignCast(ptr)));
+/// Entities are written back-to-back with no padding so that JS can read them as a flat `entity_count * 48` block.
+/// The scratch base is 64-aligned and 48 is a multiple of 16, so every entity stays 16-byte aligned (matching `WGSLEntity`'s alignment)
+/// without any per-call alignment bookkeeping.
+///
+/// Must be called from an aligned start (e.g. right after `scratchReset()`), as the tight packing relies on the
+/// running `scratch_len` being a multiple of `@sizeOf(WGSLEntity)`.
+pub inline fn scratchPushEntity() *WGSLEntity {
+    const off: usize = @intCast(mem.scratch_len);
+    // Ensures capacity (and grows/relocates the buffer if needed); its aligned bump is overwritten below.
+    _ = scratchAlloc(@sizeOf(WGSLEntity));
+    mem.scratch_len = off + @sizeOf(WGSLEntity);
+    // Derive the pointer from `scratch_buffer.ptr` AFTER the potential grow so it can never be stale.
+    return @ptrCast(@alignCast(scratch_buffer.ptr + off));
 }
 
 /// Allocates a typed slice in the scratch buffer (aligned).

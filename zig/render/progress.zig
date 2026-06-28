@@ -76,7 +76,7 @@ pub fn drawBar(
         .lcha = base_lcha + Vec4f32{
             0.0,
             0.0,
-            HUE_AMOUNT * @as(f32, @floatFromInt(progress -| 1)),
+            HUE_AMOUNT * @as(f32, @floatFromInt(@min(4 * i, progress -| 1))),
             0.0,
         },
         .system = system,

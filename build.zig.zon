@@ -4,7 +4,7 @@
     .version = "0.1.0",
     .fingerprint = 0x1d5dd33c1ffd989d, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
-    .mach_zig_version = "2026.4.10-mach",
+    .mach_zig_version = "2026.6.18-mach",
     // .dependencies = .{
     //     .mach = .{
     //         .url = "https://pkg.hexops.org/pkg/hexops/mach/576999fa80f2fd28e04d1539785d53d43df04603.tar.gz",

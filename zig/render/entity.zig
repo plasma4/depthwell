@@ -31,9 +31,6 @@ const number_widths: [10]f32 = .{
     0.5625 + spacing,
 };
 
-/// Special variable so that `scratch_alloc_type` adds entities compactly.
-pub var entity_byte_count_before_end: usize = 0;
-
 /// Current number of entities (reset every frame).
 pub var entity_count: u64 = 0;
 
@@ -44,13 +41,11 @@ pub fn updateEntities(time_diff: f64) void {
     memory.scratchReset();
     // we're doing a new pass of drawing entities, clear anything before
     entity_count = 0;
-    entity_byte_count_before_end = 0;
 
     inventory.addDroppedItemsAsEntities(time_diff); // pass in delta time in ms
 
     // draw indicators (icons above certain sprites)
     dw.indicators.drawIndicators();
-    // if (dw.indicators.menus.furnace) @import("../menus/furnace.zig").draw();
     @import("../menus/furnace.zig").draw();
 
     // draw the inventory items/all items if in creative
@@ -249,7 +244,7 @@ pub fn addRawEntity(entity: WGSLEntity) void {
     }
 
     entity_count += 1;
-    const wgsl_entity = memory.scratchAllocType(WGSLEntity, &entity_byte_count_before_end);
+    const wgsl_entity = memory.scratchPushEntity();
     wgsl_entity.* = entity;
     // dw.logger.quick(.{ "{h}Entity ID", (@intFromPtr(wgsl_entity) - memory.mem.scratch_ptr) / @sizeOf(WGSLEntity) });
 }
@@ -259,7 +254,6 @@ pub fn addRawEntity(entity: WGSLEntity) void {
 pub fn addEntity(entity: Entity) void {
     @setFloatMode(.optimized);
     if (entity.sprite.isEmpty()) return;
-    const id = @intFromEnum(entity.sprite);
     @call(.always_inline, addRawEntity, .{WGSLEntity{
         .lcha = entity.lcha,
         .position = entity.position /
@@ -269,7 +263,7 @@ pub fn addEntity(entity: Entity) void {
             entity.size / dw.SCREEN_HEIGHT,
         },
         .rotation = entity.rotation,
-        .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else if (entity.sprite.isLiquid()) id + 1 else id,
+        .id = sprite.Sprite.asEntity(entity.sprite),
     }});
 }
 
@@ -278,7 +272,6 @@ pub fn addEntity(entity: Entity) void {
 pub fn addEntitySized(entity: memory.SizedEntity) void {
     @setFloatMode(.optimized);
     if (entity.sprite.isEmpty()) return;
-    const id = @intFromEnum(entity.sprite);
 
     // See PositionType def for an explanation of these "magic formulas"
     const possible_positions: [4]Vec2f32 = .{
@@ -297,7 +290,7 @@ pub fn addEntitySized(entity: memory.SizedEntity) void {
         else
             entity.size,
         .rotation = entity.rotation,
-        .id = if (id >= sprite.GEM_START and id < sprite.GEM_START + sprite.GEM_COUNT) id + sprite.GEM_COUNT else if (entity.sprite.isLiquid()) id + 1 else id,
+        .id = sprite.Sprite.asEntity(entity.sprite),
     }});
 }
 
@@ -306,12 +299,12 @@ pub inline fn toSizeUv(horizontal_width: f32) Vec2f32 {
     return @as(Vec2f32, @splat(horizontal_width)) * Vec2f32{ 1, @as(comptime_float, dw.SCREEN_WIDTH) / @as(comptime_float, dw.SCREEN_HEIGHT) };
 }
 
-/// Converts viewport coordinates to UV ones.
-pub inline fn toViewport(uv: Vec2f32) Vec2f32 {
-    return uv / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+/// Converts viewport (logical pixel, 480x270) coordinates to UV (0-1) ones.
+pub inline fn viewportToUv(viewport: Vec2f32) Vec2f32 {
+    return viewport / Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
 }
 
-/// Converts UV coordinates to viewport ones.
-pub inline fn toUv(viewport: Vec2f32) Vec2f32 {
-    return viewport * Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+/// Converts UV (0-1) coordinates to viewport (logical pixel, 480x270) ones.
+pub inline fn uvToViewport(uv: Vec2f32) Vec2f32 {
+    return uv * Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
 }

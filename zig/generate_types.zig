@@ -13,9 +13,9 @@ fn zigTypeToTs(comptime T: type) []const u8 {
         .void => return "void",
         .bool => return "boolean",
         .int, .float, .comptime_int, .comptime_float => return "number",
-        .pointer => return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */",
+        .pointer => return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return/request a u64 instead. */",
         .optional => |opt| {
-            if (@typeInfo(opt.child) == .pointer) return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return a u64 instead. */";
+            if (@typeInfo(opt.child) == .pointer) return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return/request a u64 instead. */";
             return zigTypeToTs(opt.child); // Simplified for this example
         },
 
@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Write static TypeScript headers and configurations
     try writer.print(
-        \\// This is a dynamically generated file from internal/generate_types.zig for use in engine.ts and should not be manually modified. See types.zig for where type definitions come from.
+        \\// This is a dynamically generated file from generate_types.zig for use in engine.ts and should not be manually modified. See types.zig for where type definitions come from.
         \\
         // getting rid of these because of Memory64 hacks: an error SHOULD be expected if these are referenced
         \\/**

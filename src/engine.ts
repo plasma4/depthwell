@@ -215,9 +215,9 @@ export class GameEngine {
     }
 
     /*
-        -----
+        ------
         GPU Textures/Tilemaps
-        -----
+        ------
     */
 
     /** Loads the image URL to the WGSL device as a texture. */
@@ -493,9 +493,9 @@ export class GameEngine {
     }
 
     /*
-        -----
+        ------
         SFX
-        -----
+        ------
     */
 
     /**
@@ -525,6 +525,7 @@ export class GameEngine {
                         `assets/grass1.mp3`,
                         `assets/grass2.mp3`,
                         `assets/place.mp3`,
+                        `assets/furnace.mp3`,
                     ][id],
                 );
 
@@ -594,9 +595,9 @@ export class GameEngine {
     }
 
     /*
-        -----
+        ------
         Memory Management
-        -----
+        ------
     */
 
     /** Returns the number of MB (fractional) that the memory's buffer is for WASM. */
@@ -778,9 +779,9 @@ export class GameEngine {
     }
 
     /*
-        -----
+        ------
         Resizing/Rendering
-        -----
+        ------
     */
 
     /** Updates the canvas CSS style. */

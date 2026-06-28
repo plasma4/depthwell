@@ -11,13 +11,16 @@ const MenusList = struct {
 
     /// Returns true if any menu is enabled and false otherwise.
     pub fn isAnyEnabled(self: @This()) bool {
-        // For every field declaration, check if it is true. TODO: fix
-        // inline for (@typeInfo(MenusList).@"struct".decls) |struct_declaration| {
-        //     const field = @field(self, struct_declaration.name);
-        //     if (@TypeOf(field) == bool and field == true) return true;
-        // }
-        // return false;
-        return self.furnace;
+        // inline for loops are unrolled at compile time
+        inline for (@typeInfo(@This()).@"struct".fields) |field_info| {
+            // Ensure we are only checking boolean fields
+            if (field_info.type == bool) {
+                if (@field(self, field_info.name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 };
 
@@ -37,12 +40,14 @@ pub fn drawIndicators() void {
     // Compute interpolated camera positions
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
-    const interp_cam_x = @as(f64, @floatFromInt(game.camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
-    const interp_cam_y = @as(f64, @floatFromInt(game.camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
+
+    // Interpolate FROM last_camera_pos TO camera_pos (dt is in 0..1).
+    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
+    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
 
     const mouse_pixel_pos = mouse.uv_position * dw.utils.Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
-    var closest_dist = std.math.inf(f64);
 
+    var closest_dist = std.math.inf(f64);
     const player_bx = game.getBlockXInChunk();
     const player_by = game.getBlockYInChunk();
 
@@ -129,10 +134,11 @@ pub fn drawIndicators() void {
                         .sprite = .wood_icon,
                         .position = .{ screen_x, screen_y },
                         .size = slot_size,
+                        // undo camera scale mult here
                         .lcha = if (menus.furnace)
-                            .{ 1.0, slot_size * 0.004, 0.0, opacity }
+                            .{ 1.0, slot_size / @as(f32, @floatCast(memory.game.camera_scale)) * 0.004, 0.0, opacity }
                         else
-                            .{ 0.8, -0.15 + slot_size * 0.003, 0.0, opacity },
+                            .{ 0.8, -0.1 + slot_size / @as(f32, @floatCast(memory.game.camera_scale)) * 0.005, 0.0, opacity },
                     });
 
                     // Mini furnace preview centered inside the container slot
@@ -166,8 +172,10 @@ pub fn isHoveringFurnaceIndicator() bool {
     // Compute interpolated camera positions
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
-    const interp_cam_x = @as(f64, @floatFromInt(game.camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
-    const interp_cam_y = @as(f64, @floatFromInt(game.camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
+
+    // See drawIndicators(): interpolate from last_camera_pos so the hitbox matches the rendered indicator position exactly.
+    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
+    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
 
     const mouse_pixel_pos = mouse.uv_position * dw.utils.Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
 

@@ -130,6 +130,7 @@ Of course, to have a fractal _mining_ game, you must store if the player has mod
 But wait, what is a block? Here is `zig/memory.zig`:
 
 ```zig
+/// Contains a `Sprite` id and various packed properties; ready to be sent to the GPU or stored in caches.
 pub const Block = packed struct(u64) {
     /// A block with an `id` of `none`.
     pub const empty: Block = .makeBasicBlock(.none, 0);
@@ -138,19 +139,36 @@ pub const Block = packed struct(u64) {
     id: Sprite,
     /// Edge flags: which neighbors are air (for edge-darkening and culling).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
+    /// See types/types.zig for more details on correspondence.
+    ///
+    /// A 1 bit for a solid block ordinarily indicates an edge with an adjacent solid block.
+    /// A 1 bit for a liquid block means that there is either solid or liquid adjacent.
+    /// Edge flags are reset to 255 for decorations (non-blocks or liquids) after a decorations pass.
     edge_flags: u8,
     /// The brightness of the tile.
     light: u8,
 
     /// Per-block seed for procedural variation in the shader.
+    /// Any seed value here should be considered poor and insecure.
     seed: u20,
-    /// How "mined" the block is. 0 means unmined, 15 is most mined.
+    /// Dual-purpose field depending on block type:
+    /// - For solid blocks: how "mined" the block is (0 means unmined, 15 is most mined).
+    /// - For liquid (water) and decoration blocks: the water volume level from 0 to 15.
     hp: u4,
+
     /// Padding to align fields.
-    padding: u4 = 0,
-    /// Directional waterlogging: bits represent cardinal directions (e.g. bit 0: top, bit 1: bottom, bit 2: left, bit 3: right).
-    waterlogged: u4 = 0,
-};
+    padding: u3 = 0,
+    /// Dual-purpose directional waterlogging field:
+    /// - For liquid blocks: represents adjacent water heights/volumes.
+    /// - For non-liquid blocks: bits represent surrounding waterlogged cardinal directions.
+    ///   - bit 0: top (liquid block directly above)
+    ///   - bit 1: bottom (full liquid block directly below at HP=15)
+    ///   - bit 2: whether ripple occurs from the top (top ripple cutoff)
+    ///   - bit 3: left (liquid block directly to the left)
+    ///   - bit 4: right (liquid block directly to the right)
+    waterlogged: u5 = 0,
+    ...
+}
 ```
 
 Well, now you know what a block contains.
@@ -414,7 +432,7 @@ pub const QuadCache = struct {
     most_bottom: bool = true,
     most_left: bool = true,
     most_right: bool = true,
-...
+    ...
 ```
 
 #### Zoom logic

@@ -11,37 +11,34 @@ pub fn build(b: *std.Build) void {
         b.findProgram(&.{"aseprite"}, &.{}) catch null;
     const gen_enums = b.option(bool, "gen-enums", "Regenerate TypeScript enum definitions (default: no)") orelse false; // -Dgen-enums
     const wasm_opt = b.option(bool, "wasm-opt", "Add a very aggressive pass of optimizations provided by wasm-opt from Binaryen, forcing optimization level to ReleaseFast") orelse false; // -Dgen-enums
-    const memory64 = b.option(bool, "memory64", "Utilize Memory64 (and enable relaxed SIMD)") orelse false; // -Dmemory64
+    const memory64 = b.option(bool, "memory64", "Utilize Memory64") orelse false; // -Dmemory64
+    // Relaxed SIMD is decoupled from Memory64 so the two can be isolated when debugging.
+    // It defaults to off; previously it was bundled with -Dmemory64.
+    const relaxed_simd = b.option(bool, "relaxed-simd", "Enable relaxed SIMD when building for WASM (DANGEROUS: reorders instructions in concerning ways)") orelse false; // -Drelaxed-simd
     const build_native = b.option(bool, "native", "Build the native desktop application using Mach Engine (default: false)") orelse false;
+
+    // Feature list: anything almost certainly supported by a browser that already supports WebGPU.
+    const wasm_features = [_]std.Target.wasm.Feature{
+        .simd128,
+        .tail_call,
+        .bulk_memory,
+        .mutable_globals,
+        .sign_ext,
+        .nontrapping_fptoint,
+        .reference_types,
+        .multivalue,
+        .exception_handling,
+        .extended_const,
+    };
 
     const target = b.standardTargetOptions(if (build_native) .{} else .{
         .default_target = .{
             .cpu_arch = if (memory64) .wasm64 else .wasm32, // WASM 32-bit. Works with 64-bit too (if Memory64 is needed in the future).
             .os_tag = .freestanding,
-            .cpu_features_add = std.Target.wasm.featureSet(if (memory64) &.{ // We add features that are almost certainly supported by a browser that already supports WebGPU.
-                .simd128,
-                .tail_call,
-                .bulk_memory,
-                .mutable_globals,
-                .sign_ext,
-                .nontrapping_fptoint,
-                .reference_types,
-                .multivalue,
-                .exception_handling,
-                .extended_const,
-                .relaxed_simd,
-            } else &.{ // We add features that are almost certainly supported by a browser that already supports WebGPU.
-                .simd128,
-                .tail_call,
-                .bulk_memory,
-                .mutable_globals,
-                .sign_ext,
-                .nontrapping_fptoint,
-                .reference_types,
-                .multivalue,
-                .exception_handling,
-                .extended_const,
-            }),
+            .cpu_features_add = std.Target.wasm.featureSet(if (relaxed_simd)
+                &(wasm_features ++ [_]std.Target.wasm.Feature{.relaxed_simd})
+            else
+                &wasm_features),
         },
     });
 
@@ -197,6 +194,8 @@ pub fn build(b: *std.Build) void {
 
             if (memory64) {
                 optimize_wasm.addArg("--enable-memory64");
+            }
+            if (relaxed_simd) {
                 optimize_wasm.addArg("--enable-relaxed-simd");
             }
 
@@ -292,7 +291,7 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
     // @import("zig/logger.zig").quickWarn(.{ current_hash_hex, old_hash_hex, std.mem.eql(u8, current_hash_hex, old_hash_hex) });
     defer if (old_hash_hex.len > 0) b.allocator.free(old_hash_hex);
 
-    // compare array to slice and update content hash if necessary within internal/generate_types.zig
+    // compare array to slice and update content hash if necessary within generate_types.zig
     if (std.mem.eql(u8, current_hash_hex, old_hash_hex)) {
         return;
     }
@@ -301,7 +300,7 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
     const gen_tool = b.addExecutable(.{
         .name = "generate_types",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig/internal/generate_types.zig"),
+            .root_source_file = b.path("zig/generate_types.zig"),
             .target = b.graph.host,
             .optimize = .Debug,
         }),

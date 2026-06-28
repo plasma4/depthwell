@@ -12,8 +12,11 @@ const STONE_START = 4;
 /// Index where stone-like sprites end.
 const STONE_END = STONE_START + 13;
 
+/// Index where smelted bar sprites begin.
+const BAR_START = STONE_END + 4;
+
 /// Index where ore sprites begin.
-const ORE_START = STONE_END + 4;
+const ORE_START = BAR_START + 4;
 
 /// Index where gem sprites begin.
 pub const GEM_START = ORE_START + 4;
@@ -32,140 +35,228 @@ const FRUIT_COUNT = 10;
 const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = GEAR_ID + 18;
+pub const INVENTORY_START = GEAR_ID + 19;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 4;
 
-/// Hitbox geometry variants for various block shapes.
-pub const HitboxKind = enum(u3) {
-    full,
-    small_bottom_decor,
-    large_bottom_decor,
-    ceiling_decor,
-    thin_strip,
-};
-
-/// Strategy to resolve whether a block was placed in a valid position.
-/// Works for all (valid) sprite types.
-pub const AnchorKind = enum(u2) {
-    /// No requirements: this sprite type can be placed anywhere.
+/// Sprite IDs with numbers based on their location in the sprite sheet.
+pub const Sprite = enum(u16) {
+    /// Empty (air) sprite.
     none = 0,
-    /// The sprite type must be directly above a solid block.
-    floor = 1,
-    /// The sprite type must be directly below a solid block.
-    ceiling = 2,
-    /// This sprite type must be directly below a solid block or itself.
-    suspended = 3,
-};
+    /// Sprite of the player.
+    player = 1,
 
-/// Strategy to resolve block drop items upon destruction.
-pub const DropStrategy = enum {
-    /// Drops itself if `.isItem()` returns true.
-    self,
-    /// Guaranteed to drop nothing.
-    none,
-    /// Drops a predetermined list of static items.
-    static,
-    /// Runs a custom function to determine drops.
-    dynamic,
-};
+    /// Edge stone (2 variations).
+    edge_stone = 2,
 
-/// Type signature for deterministic coordinate-based drop calculations.
-pub const DropFn = *const fn (coord: Coordinate, bx: u4, by: u4) []const Sprite;
+    // stone types!
+    blue_strange_stone = STONE_START,
+    purple_strange_stone,
+    wood,
+    blue_stone,
+    alt_blue_stone,
+    pink_stone,
+    red_stone,
+    seagreen_stone,
+    green_stone,
+    lava_stone,
+    redder_stone,
+    mossy_stone,
+    ancient_stone,
+    /// "Plain" stone type, with 2x2 variations to prevent an overly tiling look.
+    stone = STONE_END,
 
-/// Configuration defining how a block drops items.
-pub const DropConfig = struct {
-    strategy: DropStrategy = .self,
-    static_items: []const Sprite = &.{},
-    dynamic_fn: ?DropFn = null,
-};
+    // smelted bars! (item-only product of smelting ore; parallel to the ore range below)
+    copper_bar = BAR_START,
+    iron_bar,
+    silver_bar,
+    gold_bar,
 
-/// Contains custom functions for `dynamic_fn` in the `DropConfig`.
-pub const DropHandlers = struct {
-    /// Converts a bush drop to various fruits based on world coordinates and seeds.
-    pub fn bushDrop(coord: Coordinate, bx: u4, by: u4) []const Sprite {
-        const oddsNum = dw.seeding.oddsNum;
-        const depth = memory.game.depth;
-        const key = coord.asDepthCoordinate(depth);
-        const chunk_seeds = dw.world.quad_cache.getChunkSeeds(key);
+    // ores!
+    copper = ORE_START,
+    iron,
+    silver,
+    // no gap between ores and gems: use the = GEM_START part to check we didn't skip ID indices
+    gold = GEM_START - 1,
 
-        // Deterministic hash based on the absolute block coordinate in the world
-        const abs_x = coord.suffix[0] *% 16 + bx; // (no +% needed)
-        const abs_y = coord.suffix[1] *% 16 + by;
-        const seed_val = dw.seeding.FastHash.hash2d(
-            chunk_seeds.value[3].value[0..2].*,
-            abs_x,
-            abs_y,
-        );
+    // gems!
+    amethyst = GEM_START,
+    sapphire,
+    emerald,
+    ruby,
 
-        const roll = seed_val;
-        if (roll <= oddsNum(0.05)) {
-            return &[_]Sprite{.fruit_ruby_candy};
-        } else if (roll <= oddsNum(0.15)) {
-            return &[_]Sprite{.fruit_splitty};
-        } else if (roll <= oddsNum(0.30)) {
-            return &[_]Sprite{.fruit_teal_lemon};
-        } else if (roll <= oddsNum(0.45)) {
-            return &[_]Sprite{.fruit_blue_lemon};
-        } else if (roll <= oddsNum(0.60)) {
-            return &[_]Sprite{.copperfruit};
-        } else if (roll <= oddsNum(0.70)) {
-            return &[_]Sprite{.ploopus1};
-        } else if (roll <= oddsNum(0.80)) {
-            return &[_]Sprite{.ploopus2};
-        } else if (roll <= oddsNum(0.90)) {
-            return &[_]Sprite{.divato};
-        } else if (roll <= oddsNum(0.96)) {
-            return &[_]Sprite{.circuspin};
-        } else {
-            return &[_]Sprite{.bacon};
-        }
+    // Internal assets (not valid for placement/foundation)
+    gem_mask = MASK_START, // 8 masks
+    hp_mask = MASK_START + 8, // 16 masks
+
+    // Decor (THIS IS COUPLED TO WGSL CODE)
+    small_tree = DECOR_START,
+    big_tree1_left,
+    big_tree1_right,
+    big_tree2_left,
+    big_tree2_right,
+    fruit_blue_lemon = GEAR_ID - FRUIT_COUNT,
+    fruit_teal_lemon,
+    fruit_splitty,
+    fruit_ruby_candy,
+    copperfruit,
+    ploopus1,
+    ploopus2,
+    divato,
+    circuspin,
+    bacon,
+    gear = GEAR_ID,
+    rock,
+    bush, // 2 variations
+    spiral_plant = GEAR_ID + 4,
+    ceiling_flower = GEAR_ID + 5, // 2 variations
+    mushroom = GEAR_ID + 7, // 3 variations
+    big_mushroom = GEAR_ID + 10, // 3 variations
+    forest_furnace = GEAR_ID + 13,
+    lava_furnace,
+    torch,
+    chest,
+    portal,
+    fire = INVENTORY_START - 1,
+
+    /// Unselected inventory sprite.
+    inventory = INVENTORY_START,
+    /// Selected (currently used) inventory sprite.
+    inventory_selected,
+    inventory_selected_red,
+    /// Wooden-textured rounded rectangle.
+    wood_icon,
+
+    text_0 = NUMBER_START, // sprite with text 0
+
+    /// Sprite for a particle; a full white rectangle but with corner pixels cut off.
+    particle = NUMBER_START + 10,
+    /// Full rectangle sprite; no corner pixels cut off.
+    rectangle,
+    /// Simple up-arrow icon.
+    arrow,
+
+    /// Leftmost part of the progress bar.
+    progress_left = NUMBER_START + 13,
+    /// Center part of the progress bar.
+    progress_center = NUMBER_START + 18,
+    /// Right part of the progress bar.
+    progress_right = NUMBER_START + 23,
+
+    /// Pickaxe icon.
+    pickaxe = NUMBER_START + 28,
+    /// Generic water block (filled). Default internal water type; after all pickaxes.
+    water = NUMBER_START + 28 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
+    water_icon,
+
+    /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
+    unselected = 65535,
+    _, // non-exhaustive for debugging heatmaps
+
+    /// Retrieves the fully compile-time property data for this sprite.
+    pub inline fn props(self: @This()) SpriteFlags {
+        return getSpriteFlags(self);
     }
-};
 
-/// Consolidated properties of each sprite.
-pub const SpriteProps = struct {
-    in_world: bool = false,
-    item: bool = false,
-    solid: bool = false,
-    liquid: bool = false,
-    foundation: bool = false,
-    stone: bool = false,
-    ore: bool = false,
-    gem: bool = false,
-    strength: u64 = 0,
-    hitbox: HitboxKind = .full,
-    anchor: AnchorKind = .none,
-    drops: DropConfig = .{ .strategy = .self },
-    evolves_to: ?Sprite = null,
-};
+    /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
+    /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
+    pub inline fn isFoundation(self: @This()) bool {
+        return self.props().foundation;
+    }
 
-/// Tightly packed 16-bit struct for high-performance, cache-friendly lookups.
-pub const SpriteFlags = packed struct(u16) {
-    in_world: bool = false,
-    item: bool = false,
-    solid: bool = false,
-    liquid: bool = false,
-    foundation: bool = false,
-    stone: bool = false,
-    ore: bool = false,
-    gem: bool = false,
-    hitbox: HitboxKind = .full, // 3 bits
-    anchor: AnchorKind = .none, // 2 bits
-    padding: u3 = 0,
-};
+    /// Determines if the sprite's type is a valid block that could exist in any chunk.
+    /// Separate from `isItem()`.
+    /// Includes the empty block, and excludes entities.
+    ///
+    /// If this code is wrong, invalid (or unnamed) enums may appear and wreak havoc.
+    pub inline fn isInWorld(self: @This()) bool {
+        return self.props().in_world;
+    }
 
-/// Targeting selector for assigning properties at compile-time.
-const Target = union(enum) {
-    single: Sprite,
-    range: [2]Sprite,
-    list: []const Sprite,
-};
+    /// Determines if the sprite's type is something that could be in the player's inventory.
+    pub inline fn isItem(self: @This()) bool {
+        return self.props().item;
+    }
 
-/// Contains targets describing what to select and what SpriteProps to apply to them.
-const SpriteRule = struct {
-    Target, // unnamed tuples are cool
-    SpriteProps,
+    /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
+    /// This returns true for edge stone, unlike `is_solid`.
+    pub inline fn isSolid(self: @This()) bool {
+        return self.props().solid;
+    }
+
+    /// Determines if the sprite's type is a liquid (such as water).
+    pub inline fn isLiquid(self: @This()) bool {
+        return self.props().liquid;
+    }
+
+    /// Determines if the sprite's type is `none` (air/void).
+    pub inline fn isEmpty(self: @This()) bool {
+        return self == .none;
+    }
+
+    /// Determines if the sprite is stone (or a variation). Excludes edge stone.
+    pub inline fn isStone(self: @This()) bool {
+        return self.props().stone;
+    }
+
+    /// Determines if the sprite is an ore.
+    pub inline fn isOre(self: @This()) bool {
+        return self.props().ore;
+    }
+
+    /// Maps an ore sprite to its smelted bar form.
+    /// The bar range is parallel to and sits directly before the ore range,
+    /// so the mapping is a constant offset. Precondition: `self.isOre()`.
+    pub inline fn oreToBar(self: @This()) Sprite {
+        return @enumFromInt(@intFromEnum(self) - (ORE_START - BAR_START));
+    }
+
+    /// Determines if the sprite is a gem.
+    pub inline fn isGem(self: @This()) bool {
+        return self.props().gem;
+    }
+
+    /// Returns the cascade anchoring rules for this sprite.
+    pub inline fn anchor(self: @This()) AnchorKind {
+        return self.props().anchor;
+    }
+
+    /// Determines if the sprite is a heatmap (between types 65000-65256).
+    pub inline fn isHeatmap(self: @This()) bool {
+        const id = @intFromEnum(self);
+        return is_debug and id >= 65000 and id <= 65256;
+    }
+
+    /// Extracts the evolved form of this sprite at compile time.
+    /// If it doesn't evolve, returns itself!
+    pub inline fn evolvesTo(self: @This()) Sprite {
+        const val = @intFromEnum(self);
+        if (val < MAX_SPRITE_ID) {
+            if (dense_props_table[val].evolves_to) |evolution| {
+                return evolution;
+            }
+        }
+        return self;
+    }
+
+    /// Returns whether a block is empty (air), a liquid, or a waterloggable decoration.
+    /// Precondition: the sprite is valid.
+    pub inline fn isFlowable(self: @This()) bool {
+        return self.isEmpty() or self.isLiquid() or self.isDecor();
+    }
+
+    /// Returns whether a sprite is a decoration block.
+    /// Precondition: the sprite is valid.
+    pub inline fn isDecor(self: @This()) bool {
+        const val = @intFromEnum(self);
+        return val >= DECOR_START and !self.isSolid() and self != .water;
+    }
+
+    /// Converts a sprite into an entity ID, handling atlas ID remaps.
+    pub inline fn asEntity(self: @This()) u32 {
+        const id = @intFromEnum(self);
+        return if (id >= GEM_START and id < GEM_START + GEM_COUNT) id + GEM_COUNT else if (self.isLiquid()) id + 1 else id;
+    }
 };
 
 /// Centralized database describing all sprite properties.
@@ -182,6 +273,11 @@ const rules = [_]SpriteRule{
             .stone = true,
             .strength = 15,
         },
+    },
+    // Smelted bars (inventory items only; not placeable in the world)
+    .{
+        .{ .range = .{ .copper_bar, .gold_bar } },
+        .{ .item = true },
     },
     // Ores
     .{
@@ -339,6 +435,139 @@ const rules = [_]SpriteRule{
     },
 };
 
+/// Hitbox geometry variants for various block shapes.
+pub const HitboxKind = enum(u3) {
+    full,
+    small_bottom_decor,
+    large_bottom_decor,
+    ceiling_decor,
+    thin_strip,
+};
+
+/// Strategy to resolve whether a block was placed in a valid position.
+/// Works for all (valid) sprite types.
+pub const AnchorKind = enum(u2) {
+    /// No requirements: this sprite type can be placed anywhere.
+    none = 0,
+    /// The sprite type must be directly above a solid block.
+    floor = 1,
+    /// The sprite type must be directly below a solid block.
+    ceiling = 2,
+    /// This sprite type must be directly below a solid block or itself.
+    suspended = 3,
+};
+
+/// Strategy to resolve block drop items upon destruction.
+pub const DropStrategy = enum {
+    /// Drops itself if `.isItem()` returns true.
+    self,
+    /// Guaranteed to drop nothing.
+    none,
+    /// Drops a predetermined list of static items.
+    static,
+    /// Runs a custom function to determine drops.
+    dynamic,
+};
+
+/// Type signature for deterministic coordinate-based drop calculations.
+pub const DropFn = *const fn (coord: Coordinate, bx: u4, by: u4) []const Sprite;
+
+/// Configuration defining how a block drops items.
+pub const DropConfig = struct {
+    strategy: DropStrategy = .self,
+    static_items: []const Sprite = &.{},
+    dynamic_fn: ?DropFn = null,
+};
+
+/// Contains custom functions for `dynamic_fn` in the `DropConfig`.
+pub const DropHandlers = struct {
+    /// Converts a bush drop to various fruits based on world coordinates and seeds.
+    pub fn bushDrop(coord: Coordinate, bx: u4, by: u4) []const Sprite {
+        const oddsNum = dw.seeding.oddsNum;
+        const depth = memory.game.depth;
+        const key = coord.asDepthCoordinate(depth);
+        const chunk_seeds = dw.world.quad_cache.getChunkSeeds(key);
+
+        // Deterministic hash based on the absolute block coordinate in the world
+        const abs_x = coord.suffix[0] *% 16 + bx; // (no +% needed)
+        const abs_y = coord.suffix[1] *% 16 + by;
+        const seed_val = dw.seeding.FastHash.hash2d(
+            chunk_seeds.value[3].value[0..2].*,
+            abs_x,
+            abs_y,
+        );
+
+        const roll = seed_val;
+        if (roll <= oddsNum(0.05)) {
+            return &[_]Sprite{.fruit_ruby_candy};
+        } else if (roll <= oddsNum(0.15)) {
+            return &[_]Sprite{.fruit_splitty};
+        } else if (roll <= oddsNum(0.30)) {
+            return &[_]Sprite{.fruit_teal_lemon};
+        } else if (roll <= oddsNum(0.45)) {
+            return &[_]Sprite{.fruit_blue_lemon};
+        } else if (roll <= oddsNum(0.60)) {
+            return &[_]Sprite{.copperfruit};
+        } else if (roll <= oddsNum(0.70)) {
+            return &[_]Sprite{.ploopus1};
+        } else if (roll <= oddsNum(0.80)) {
+            return &[_]Sprite{.ploopus2};
+        } else if (roll <= oddsNum(0.90)) {
+            return &[_]Sprite{.divato};
+        } else if (roll <= oddsNum(0.96)) {
+            return &[_]Sprite{.circuspin};
+        } else {
+            return &[_]Sprite{.bacon};
+        }
+    }
+};
+
+/// Consolidated properties of each sprite.
+/// TODO: add a category field so there's no more range arithmetic.
+pub const SpriteProps = struct {
+    in_world: bool = false,
+    item: bool = false,
+    solid: bool = false,
+    liquid: bool = false,
+    foundation: bool = false,
+    stone: bool = false,
+    ore: bool = false,
+    gem: bool = false,
+    strength: u64 = 0,
+    hitbox: HitboxKind = .full,
+    anchor: AnchorKind = .none,
+    drops: DropConfig = .{ .strategy = .self },
+    evolves_to: ?Sprite = null,
+};
+
+/// Tightly packed 16-bit struct for high-performance, cache-friendly lookups.
+pub const SpriteFlags = packed struct(u16) {
+    in_world: bool = false,
+    item: bool = false,
+    solid: bool = false,
+    liquid: bool = false,
+    foundation: bool = false,
+    stone: bool = false,
+    ore: bool = false,
+    gem: bool = false,
+    hitbox: HitboxKind = .full, // 3 bits
+    anchor: AnchorKind = .none, // 2 bits
+    padding: u3 = 0,
+};
+
+/// Targeting selector for assigning properties at compile-time.
+const Target = union(enum) {
+    single: Sprite,
+    range: [2]Sprite,
+    list: []const Sprite,
+};
+
+/// Contains targets describing what to select and what SpriteProps to apply to them.
+const SpriteRule = struct {
+    Target, // unnamed tuples are cool
+    SpriteProps,
+};
+
 /// Helper function to match target variants at compile time.
 fn matchesTarget(s: Sprite, target: Target) bool {
     switch (target) {
@@ -492,206 +721,6 @@ pub inline fn getSpriteFlags(s: Sprite) SpriteFlags {
     return SpriteFlags{};
 }
 
-/// Sprite IDs with numbers based on their location in the sprite sheet.
-pub const Sprite = enum(u16) {
-    /// Empty (air) sprite.
-    none = 0,
-    /// Sprite of the player.
-    player = 1,
-
-    /// Edge stone (2 variations).
-    edge_stone = 2,
-
-    // stone types!
-    blue_strange_stone = STONE_START,
-    purple_strange_stone,
-    wood,
-    blue_stone,
-    alt_blue_stone,
-    pink_stone,
-    red_stone,
-    seagreen_stone,
-    green_stone,
-    lava_stone,
-    redder_stone,
-    mossy_stone,
-    ancient_stone,
-    /// "Plain" stone type, with 2x2 variations to prevent an overly tiling look.
-    stone = STONE_END,
-
-    // ores!
-    copper = ORE_START,
-    iron,
-    silver,
-    // no gap between ores and gems: use the = GEM_START part to check we didn't skip ID indices
-    gold = GEM_START - 1,
-
-    // gems!
-    amethyst = GEM_START,
-    sapphire,
-    emerald,
-    ruby,
-
-    // Internal assets (not valid for placement/foundation)
-    gem_mask = MASK_START, // 8 masks
-    hp_mask = MASK_START + 8, // 16 masks
-
-    // Decor (THIS IS COUPLED TO WGSL CODE)
-    small_tree = DECOR_START,
-    big_tree1_left,
-    big_tree1_right,
-    big_tree2_left,
-    big_tree2_right,
-    fruit_blue_lemon = GEAR_ID - FRUIT_COUNT,
-    fruit_teal_lemon,
-    fruit_splitty,
-    fruit_ruby_candy,
-    copperfruit,
-    ploopus1,
-    ploopus2,
-    divato,
-    circuspin,
-    bacon,
-    gear = GEAR_ID,
-    rock,
-    bush, // 2 variations
-    spiral_plant = GEAR_ID + 4,
-    ceiling_flower = GEAR_ID + 5, // 2 variations
-    mushroom = GEAR_ID + 7, // 3 variations
-    big_mushroom = GEAR_ID + 10, // 3 variations
-    forest_furnace = GEAR_ID + 13,
-    lava_furnace,
-    torch,
-    chest,
-    portal = INVENTORY_START - 1,
-
-    /// Unselected inventory sprite.
-    inventory = INVENTORY_START,
-    /// Selected (currently used) inventory sprite.
-    inventory_selected,
-    inventory_selected_red,
-    /// Wooden-textured rounded rectangle.
-    wood_icon,
-
-    text_0 = NUMBER_START, // sprite with text 0
-
-    /// Sprite for a particle; a full white rectangle but with corner pixels cut off.
-    particle = NUMBER_START + 10,
-    /// Full rectangle sprite; no corner pixels cut off.
-    rectangle,
-    /// Simple up-arrow icon.
-    arrow,
-
-    /// Leftmost part of the progress bar.
-    progress_left = NUMBER_START + 13,
-    /// Center part of the progress bar.
-    progress_center = NUMBER_START + 18,
-    /// Right part of the progress bar.
-    progress_right = NUMBER_START + 23,
-
-    /// Pickaxe icon.
-    pickaxe = NUMBER_START + 28,
-    /// Generic water block (filled). Default internal water type; after all pickaxes.
-    water = NUMBER_START + 28 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
-    water_icon,
-
-    /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
-    unselected = 65535,
-    _, // non-exhaustive for debugging heatmaps
-
-    /// Retrieves the fully compile-time property data for this sprite.
-    pub inline fn props(self: @This()) SpriteFlags {
-        return getSpriteFlags(self);
-    }
-
-    /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
-    /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
-    pub inline fn isFoundation(self: @This()) bool {
-        return self.props().foundation;
-    }
-
-    /// Determines if the sprite's type is a valid block that could exist in any chunk.
-    /// Separate from `isItem()`.
-    /// Includes the empty block, and excludes entities.
-    ///
-    /// If this code is wrong, invalid (or unnamed) enums may appear and wreak havoc.
-    pub inline fn isInWorld(self: @This()) bool {
-        return self.props().in_world;
-    }
-
-    /// Determines if the sprite's type is something that could be in the player's inventory.
-    pub inline fn isItem(self: @This()) bool {
-        return self.props().item;
-    }
-
-    /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
-    /// This returns true for edge stone, unlike `is_solid`.
-    pub inline fn isSolid(self: @This()) bool {
-        return self.props().solid;
-    }
-
-    /// Determines if the sprite's type is a liquid (such as water).
-    pub inline fn isLiquid(self: @This()) bool {
-        return self.props().liquid;
-    }
-
-    /// Determines if the sprite's type is `none` (air/void).
-    pub inline fn isEmpty(self: @This()) bool {
-        return self == .none;
-    }
-
-    /// Determines if the sprite is stone (or a variation). Excludes edge stone.
-    pub inline fn isStone(self: @This()) bool {
-        return self.props().stone;
-    }
-
-    /// Determines if the sprite is an ore.
-    pub inline fn isOre(self: @This()) bool {
-        return self.props().ore;
-    }
-
-    /// Determines if the sprite is a gem.
-    pub inline fn isGem(self: @This()) bool {
-        return self.props().gem;
-    }
-
-    /// Returns the cascade anchoring rules for this sprite.
-    pub inline fn anchor(self: @This()) AnchorKind {
-        return self.props().anchor;
-    }
-
-    /// Determines if the sprite is a heatmap (between types 65000-65256).
-    pub inline fn isHeatmap(self: @This()) bool {
-        const id = @intFromEnum(self);
-        return is_debug and id >= 65000 and id <= 65256;
-    }
-
-    /// Extracts the evolved form of this sprite at compile time.
-    /// If it doesn't evolve, returns itself!
-    pub inline fn evolvesTo(self: @This()) Sprite {
-        const val = @intFromEnum(self);
-        if (val < MAX_SPRITE_ID) {
-            if (dense_props_table[val].evolves_to) |evolution| {
-                return evolution;
-            }
-        }
-        return self;
-    }
-
-    /// Returns whether a block is empty (air), a liquid, or a waterloggable decoration.
-    /// Precondition: the sprite is valid.
-    pub inline fn isFlowable(self: @This()) bool {
-        return self.isEmpty() or self.isLiquid() or self.isDecor();
-    }
-
-    /// Returns whether a sprite is a decoration block.
-    /// Precondition: the sprite is valid.
-    pub inline fn isDecor(self: @This()) bool {
-        const val = @intFromEnum(self);
-        return val >= DECOR_START and !self.isSolid() and self != .water;
-    }
-};
-
 /// The total number of valid sprites that are considered valid items.
 pub const item_sprite_count: usize = blk: {
     @setEvalBranchQuota(1e6);
@@ -734,6 +763,12 @@ comptime {
     @setEvalBranchQuota(1e6);
     if ((@as(Sprite, @enumFromInt(65535))).isInWorld())
         @compileError("isInWorld() returned true for the unselected type! Ranges are wrong.");
+
+    // `oreToBar()` relies on the bar range sitting directly before the ore range with the same
+    // length, so the mapping is a single constant offset. Enforce that here.
+    if (@intFromEnum(Sprite.copper) - @intFromEnum(Sprite.copper_bar) !=
+        @intFromEnum(Sprite.gold) - @intFromEnum(Sprite.gold_bar))
+        @compileError("Bar range is not parallel to the ore range; oreToBar() would be wrong.");
 
     var i: u16 = 0;
     var wentToHeatmap = false;

@@ -1,5 +1,5 @@
 //! Root file. Imports startup.zig and handles exporting functions to WASM.
-//! All functions here (excluding internal ones like panic) should be `pub` to expose functions to `internal/generate_types.zig`,
+//! All functions here (excluding internal ones like panic) should be `pub` to expose functions to `generate_types.zig`,
 //! and `extern` for WASM (with no other exported functions within other Zig files).
 const std = @import("std");
 const builtin = @import("builtin");
@@ -132,6 +132,7 @@ pub export fn prepareVisibleData(time_interpolated: f64, time_diff: f64, canvas_
     render.prepareVisibleData(time_interpolated, time_diff, canvas_w, canvas_h);
 }
 
+// TODO: route these through sprite.zig fn accessors instead
 pub export fn getTilesPerRow() u32 {
     return 8; // Sprites are saved as a .png in a sprite sheet 128 pixels wide, and each individual sprite is 16x16.
 }

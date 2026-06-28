@@ -199,8 +199,10 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             // Camera interpolated position
             const cam_vel_x = memory.game.camera_pos[0] - memory.game.last_camera_pos[0];
             const cam_vel_y = memory.game.camera_pos[1] - memory.game.last_camera_pos[1];
-            const interp_cam_x = @as(f64, @floatFromInt(memory.game.camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
-            const interp_cam_y = @as(f64, @floatFromInt(memory.game.camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
+
+            // Base the camera on last_camera_pos so items track the world (item position above also interpolates prev->curr).
+            const interp_cam_x = @as(f64, @floatFromInt(memory.game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
+            const interp_cam_y = @as(f64, @floatFromInt(memory.game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
 
             const delta_x_sp = interp_item_sp_x - interp_cam_x;
             const delta_y_sp = interp_item_sp_y - interp_cam_y;

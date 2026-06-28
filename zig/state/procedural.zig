@@ -1,4 +1,5 @@
-//! Handles procedural generation logic for the game.
+//! Handles lower-level procedural logic by handling debug constants (such as gem odds and FBM size) as well as noise-based functions.
+//! Higher-level logic exists within `world.generateBaseChunk()`.
 //! TODO: also implement advanced ridged noise that uses absolute values (still performant and provides better terrain)
 const std = @import("std");
 const dw = @import("../root.zig");

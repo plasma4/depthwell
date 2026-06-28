@@ -1,6 +1,6 @@
-// ------
+// -------
 // Main shader for Depthwell. Currently does not support Mach Engine.
-// ------
+// -------
 
 // These are sprite sheet constants.
 // Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
@@ -444,9 +444,8 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     );
     let nudges = vec3f(lab_nudge_bits) / 7.0;
 
-    // Apply light and nudges in a single MAD operation where possible
-    lch *= vec3f(in.light, 1.0 + nudges.y * 0.2, 1.0) +
-        vec3f(nudges.x * 0.02, 0.0, nudges.z * 0.1);
+    // Apply light and nudges in a vectorized way
+    lch *= vec3f(in.light, 0.9, 1.0) + vec3f(nudges.x * 0.02, nudges.y * 0.3, nudges.z * 0.1);
 
     var final_rgb = vec3f(0.0);
     if in.edge_flags != 0xFFu {

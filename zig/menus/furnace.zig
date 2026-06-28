@@ -1,56 +1,236 @@
-//! Draws the furnace smelting menu.
+//! Draws the furnace smelting menu and handles its drag-and-drop smelting logic.
+//!
+//! Smelting state is GLOBAL (shared by all furnaces);
+//! the in-world furnace indicators only toggle `dw.indicators.menus.furnace` (whether this menu is open).
+//!
+//! Because ore forms of metals are useless, the interaction is can be extremely simple: dragging an ore from the
+//! inventory onto the input slot loads ALL of that ore at once, and bars collect fairly rapidly.
+const std = @import("std");
 const dw = @import("../root.zig");
 
+const Sprite = dw.sprite.Sprite;
+const Vec2f = dw.utils.Vec2f;
 const Vec2f32 = dw.utils.Vec2f32;
+const addEntity = dw.entity.addEntity;
 const addEntitySized = dw.entity.addEntitySized;
+const drawNumber = dw.entity.drawNumber;
 const toSize = dw.entity.toSizeUv;
+const mouse = dw.mouse;
+const inventory = dw.inventory;
 
-const SMELTING_STEPS = 12;
-const FRAMES_PER_STEP = 3;
+/// Number of bars in the progress bar (must be a multiple of 4 and at least 8).
+const SMELTING_STEPS = 8;
+/// Logic ticks spent on each progress unit.
+const FRAMES_PER_STEP = 1;
+/// Total ticks to smelt one loaded batch.
+const TOTAL_PROGRESS = SMELTING_STEPS * FRAMES_PER_STEP;
+
+/// Ore currently loaded in the input slot (`.none` if empty).
+var loaded_ore: Sprite = .none;
+/// How many ore units are loaded.
+var loaded_count: u32 = 0;
+/// Bar type sitting in the output slot (`.none` if empty).
+var output_bar: Sprite = .none;
+/// How many bars are in the output slot.
+var output_count: u32 = 0;
+/// Smelting progress for the current batch, from 0 to `TOTAL_PROGRESS`.
 var smelting_progress: u16 = 0;
+
+/// Resets the state of the furnace menu.
+/// TODO: use this on re-init
+pub fn reset() void {
+    loaded_ore = .none;
+    loaded_count = 0;
+    output_bar = .none;
+    output_count = 0;
+    smelting_progress = 0;
+}
+
+/// Advances smelting. Only called while the menu is open (see `state/tick.zig`),
+/// so closing the menu pauses smelting. Holds at 0 whenever nothing is loaded.
+pub fn updateSmelting() void {
+    if (loaded_ore == .none or loaded_count == 0) {
+        smelting_progress = 0;
+        return;
+    }
+
+    // There's at least 1 bar being smelted.
+    smelting_progress += 1;
+    if (smelting_progress >= TOTAL_PROGRESS) {
+        // Smelt one bar!
+        const bar = loaded_ore.oreToBar();
+        // If the output already holds a different bar type, flush it to the inventory first.
+        if (output_bar != .none and output_bar != bar) {
+            inventory.addToInventory(output_bar, output_count);
+            output_count = 0;
+        }
+
+        output_bar = bar;
+        output_count += 1;
+        loaded_count -= 1;
+        if (loaded_count == 0) loaded_ore = .none;
+        smelting_progress = 0;
+
+        // play the furnace smelting sound
+        dw.sound.playSound(
+            7,
+            1.0,
+            0.2,
+            0.4,
+        );
+    }
+}
+
+/// Removes every unit of `ore` from the inventory and returns how many there were.
+/// In creative mode the supply is infinite, so a fixed batch is returned without decrementing.
+fn takeAllFromInventory(ore: Sprite) u32 {
+    if (inventory.isInCreative()) return 100;
+    const idx = @intFromEnum(ore);
+    const n = inventory.inventory_counts[idx];
+    inventory.inventory_counts[idx] = 0;
+    if (inventory.selected_sprite == ore) inventory.selected_sprite = .none;
+    return @intCast(n);
+}
+
+/// Loads all of `ore` from the inventory into the input slot, resetting progress instantly.
+/// Any previously-loaded ore of a different type is returned to the inventory first.
+fn loadOre(ore: Sprite) void {
+    if (loaded_ore != .none and loaded_ore != ore) {
+        inventory.addToInventory(loaded_ore, loaded_count);
+        loaded_count = 0;
+    }
+    const got = takeAllFromInventory(ore);
+    if (got == 0) return;
+    loaded_ore = ore;
+    loaded_count += got;
+    smelting_progress = 0; // adding to the input resets the bar
+}
+
+/// Returns any loaded ore back to the inventory and resets progress instantly.
+fn returnLoadedOre() void {
+    if (loaded_ore == .none) return;
+    inventory.addToInventory(loaded_ore, loaded_count);
+    loaded_ore = .none;
+    loaded_count = 0;
+    smelting_progress = 0; // removing from the input resets the bar
+}
+
+/// Collects the finished bars from the output slot into the inventory.
+fn collectOutput() void {
+    if (output_bar == .none or output_count == 0) return;
+    inventory.addToInventory(output_bar, output_count);
+    output_bar = .none;
+    output_count = 0;
+}
+
+/// Builds a centered round-square hitbox in viewport pixels.
+fn slotHitbox(center_px: Vec2f, size: f64) dw.geometry.Shape {
+    return .roundSquare(center_px - @as(Vec2f, @splat(size / 2.0)), size, 0.2);
+}
 
 pub fn draw() void {
     @setFloatMode(.optimized);
+    // The menu is only visible/interactive while opened via a furnace indicator.
+    if (!dw.indicators.menus.furnace) return;
+
+    const px_scale: Vec2f = .{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+
     const menu_pos: Vec2f32 = .{ 0.02, 0.75 };
     const menu_size: Vec2f32 = toSize(0.3) * Vec2f32{ 1.0, 0.5 };
     const menu_center: Vec2f32 = menu_pos + menu_size / Vec2f32{ 2.0, 2.0 };
 
-    // draw the menu...
-    addEntitySized(.{ // box rect (top left alignment)
+    // Slot centers, in UV and in viewport pixels.
+    const input_uv: Vec2f32 = menu_center - Vec2f32{ 0.1, 0.0 };
+    const output_uv: Vec2f32 = menu_center + Vec2f32{ 0.1, 0.0 };
+    const input_px: Vec2f = .{ @as(f64, input_uv[0]) * px_scale[0], @as(f64, input_uv[1]) * px_scale[1] };
+    const output_px: Vec2f = .{ @as(f64, output_uv[0]) * px_scale[0], @as(f64, output_uv[1]) * px_scale[1] };
+
+    const SLOT_SIZE: f64 = 20.0;
+    const ITEM_SIZE: f32 = 16.0;
+
+    const mouse_px: Vec2f = mouse.uv_position * px_scale;
+    const menu_hitbox = dw.geometry.Shape.roundSquare(
+        .{ @as(f64, menu_pos[0]) * px_scale[0], @as(f64, menu_pos[1]) * px_scale[1] },
+        @as(f64, menu_size[0]) * px_scale[0],
+        0.05,
+    );
+    const input_hitbox = slotHitbox(input_px, SLOT_SIZE);
+    const output_hitbox = slotHitbox(output_px, SLOT_SIZE);
+
+    const over_menu = menu_hitbox.contains(mouse_px);
+    const over_input = input_hitbox.contains(mouse_px);
+    const over_output = output_hitbox.contains(mouse_px);
+
+    // Claim the menu region so clicks don't fall through to the world (mining etc.).
+    if (over_menu) _ = mouse.tryCaptureDown(.crafting, true);
+
+    // Drop: a drag that started in the inventory and released over the input slot loads the ore.
+    if (over_input and mouse.just_mouse_up and mouse.released_focus == .inventory and inventory.selected_sprite.isOre()) {
+        loadOre(inventory.selected_sprite);
+    }
+    // While dragging an ore over the input slot, show the drop ("grabbing") cursor.
+    if (over_input and mouse.click_focus == .inventory) mouse.requestCursorType(.grabbing);
+
+    // Menu-internal clicks: take ore back out, or collect finished bars.
+    if (over_input and loaded_ore != .none) {
+        if (mouse.click_focus.permits(.crafting)) mouse.requestCursorType(.pointer);
+        if (mouse.isClicked(.crafting, true)) returnLoadedOre();
+    }
+    if (over_output and output_bar != .none) {
+        if (mouse.click_focus.permits(.crafting)) mouse.requestCursorType(.pointer);
+        if (mouse.isClicked(.crafting, true)) collectOutput();
+    }
+
+    addEntitySized(.{ // menu background panel (top-left aligned, UV space)
         .sprite = .rectangle,
         .position = menu_pos,
         .size = menu_size,
         .lcha = .{ 0.26, 0.2, 3.2, 1.0 },
     });
 
-    addEntitySized(.{ // draw item frames
-        .sprite = .wood_icon,
-        .position = menu_center - Vec2f32{ 0.1, 0.0 },
-        .size = toSize(0.04),
-        .system = .center_uv,
-        .lcha = .{ 0.65, -0.08, 0.0, 1.0 },
-    });
-    addEntitySized(.{
-        .sprite = .wood_icon,
-        .position = menu_center + Vec2f32{ 0.1, 0.0 },
-        .size = toSize(0.04),
-        .system = .center_uv,
-        .lcha = .{ 0.65, -0.08, 0.0, 1.0 },
-    });
+    // Slot frames.
+    inline for (.{ input_px, output_px }) |slot_px| {
+        addEntity(.{
+            .sprite = .wood_icon,
+            .position = .{ @floatCast(slot_px[0]), @floatCast(slot_px[1]) },
+            .size = @floatCast(SLOT_SIZE),
+            .lcha = .{ 0.65, -0.08, 0.0, 1.0 },
+        });
+    }
 
-    // draw progress bar for ore smelting
+    // Loaded ore+count goes in the input slot
+    if (loaded_ore != .none) {
+        addEntity(.{
+            .sprite = loaded_ore,
+            .position = .{ @floatCast(input_px[0]), @floatCast(input_px[1]) },
+            .size = ITEM_SIZE,
+        });
+        drawNumber(loaded_count, .{ @floatCast(input_px[0] + 2.0), @floatCast(input_px[1] + 2.0) }, .{
+            .font_size = 7.0,
+            .lcha = .{ 0.95, 0.1, 0.0, 1.0 },
+        });
+    }
+
+    // Finished bars+count goes in the output slot
+    if (output_bar != .none) {
+        addEntity(.{
+            .sprite = output_bar,
+            .position = .{ @floatCast(output_px[0]), @floatCast(output_px[1]) },
+            .size = ITEM_SIZE,
+        });
+        drawNumber(output_count, .{ @floatCast(output_px[0] + 2.0), @floatCast(output_px[1] + 2.0) }, .{
+            .font_size = 7.0,
+            .lcha = .{ 0.95, 0.1, 0.0, 1.0 },
+        });
+    }
+
+    // Progress bar between the slots.
     dw.progress.drawBar(
         SMELTING_STEPS,
-        smelting_progress / FRAMES_PER_STEP,
+        @intCast(smelting_progress / FRAMES_PER_STEP),
         menu_center,
         0.15,
         .center_uv,
         .{ 1.04, 0.12, -0.6, 1.0 },
     );
-}
-
-/// Updates smelting progress and logic.
-pub fn updateSmelting() void {
-    smelting_progress += 1;
-    if (smelting_progress > SMELTING_STEPS * FRAMES_PER_STEP) smelting_progress = 0;
 }

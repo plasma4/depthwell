@@ -1,4 +1,4 @@
-//! Defines the architecture of the fractal world, contains cache data, and some ore definitions.
+//! Defines the architecture of the fractal world with various datatypes  and edge flag logic.
 const std = @import("std");
 const dw = @import("../root.zig");
 const SegmentedList = dw.SegmentedList;
@@ -26,6 +26,91 @@ const CHUNK_SIZE_SQ = dw.CHUNK_SIZE_SQ;
 const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 const CHUNK_SIZE_LOG2 = dw.CHUNK_SIZE_LOG2;
 const ZOOM_FACTOR = dw.ZOOM_FACTOR;
+
+/// Generates a starting chunk at depth `STARTING_ZOOM_TIMES`.
+/// Is procedural and does not require all other chunks are pre-calculated.
+/// As in, it does not use something like cellular noise that needs a whole map up front.
+pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
+    const depth = STARTING_ZOOM_TIMES;
+    const chunk_seeds = quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth));
+
+    const seeds = memory.game.seed2;
+    const seed_vec2: dw.utils.Vec2u = seeds[2..4].*;
+    const seed_vec3: dw.utils.Vec2u = seeds[4..6].*;
+    const seed_vec4: dw.utils.Vec2u = seeds[6..8].*;
+    const seed_vec5: dw.utils.Vec2u = seeds[8..10].*;
+    const seed_vec6: dw.utils.Vec2u = seeds[10..12].*;
+    const seed_vec7: dw.utils.Vec2u = seeds[12..14].*;
+
+    var rng_decor = seeding.ChaCha12.init(&chunk_seeds.value[2]); // Decor data. See `ChunkSeeds` def for details.
+    var rng_seed = seeding.ChaCha12.init(&chunk_seeds.value[3]); // Seed data only.
+
+    const suffix = coord.suffix;
+    const cx = suffix[0];
+    const cy = suffix[1];
+    const max_suffix = getMaxSuffixAtDepth(depth);
+    for (0..CHUNK_SIZE) |block_y| {
+        for (0..CHUNK_SIZE) |block_x| {
+            const idx = block_x + block_y * CHUNK_SIZE;
+
+            const is_absolute_edge_x =
+                (cx == 0 and block_x < 2) or
+                (cx == max_suffix and block_x >= (CHUNK_SIZE - 2));
+            const is_absolute_edge_y =
+                (cy == 0 and block_y < 2) or
+                (cy == max_suffix and block_y >= (CHUNK_SIZE - 2));
+            if (is_absolute_edge_x or is_absolute_edge_y) {
+                chunk.blocks[idx] = Block.makeBasicBlock(.edge_stone, rng_seed.next());
+                continue;
+            }
+
+            const base_data = procedural.getBaseSpriteType(
+                @intCast(cx),
+                @intCast(cy),
+                @intCast(block_x),
+                @intCast(block_y),
+            );
+            var sprite = base_data.sprite;
+            if (sprite.isStone()) sprite = procedural.addOres(
+                base_data,
+                seed_vec3,
+                seed_vec4,
+                seed_vec5,
+                seed_vec6,
+                @intCast(cx * 16 + block_x),
+                @intCast(cy * 16 + block_y),
+            );
+            sprite = procedural.addStructures(
+                sprite,
+                @as(u32, @intCast(cx * 16)) + @as(u32, @intCast(block_x)),
+                @as(u32, @intCast(cy * 16)) + @as(u32, @intCast(block_y)),
+                seed_vec7,
+                seed_vec2,
+            );
+
+            // if (procedural.getStructureBlock(block_x, block_y, seeds[12..14].*)) |sp| {
+            //     sprite = sp;
+            // }
+
+            chunk.blocks[idx] = Block.makeBasicBlock(
+                sprite,
+                rng_seed.next(),
+            );
+        }
+    }
+
+    addEdgeFlags(chunk, coord, depth);
+    // Decorate the base chunk here so that child depths inherit the results
+    procedural.addDecorations(chunk, &rng_decor);
+
+    // Reset edge flags to 0xFF for empty blocks after decorations are completed!
+    for (0..CHUNK_SIZE_SQ) |idx| {
+        const block = &chunk.blocks[idx];
+        if (block.isEmpty()) {
+            block.edge_flags = 0xFF;
+        }
+    }
+}
 
 /// Stores and handles modifications of chunks. Functions across depths.
 pub const ModificationStore = struct {
@@ -1016,91 +1101,6 @@ pub fn getCachedChunk(key: DepthCoordinate) ?*const Chunk {
         }
     }
     return null;
-}
-
-/// Generates a starting chunk at depth `STARTING_ZOOM_TIMES`.
-/// Is procedural and does not require all other chunks are pre-calculated.
-/// As in, it does not use something like cellular noise that needs a whole map up front.
-pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
-    const depth = STARTING_ZOOM_TIMES;
-    const chunk_seeds = quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth));
-
-    const seeds = memory.game.seed2;
-    const seed_vec2: dw.utils.Vec2u = seeds[2..4].*;
-    const seed_vec3: dw.utils.Vec2u = seeds[4..6].*;
-    const seed_vec4: dw.utils.Vec2u = seeds[6..8].*;
-    const seed_vec5: dw.utils.Vec2u = seeds[8..10].*;
-    const seed_vec6: dw.utils.Vec2u = seeds[10..12].*;
-    const seed_vec7: dw.utils.Vec2u = seeds[12..14].*;
-
-    var rng_decor = seeding.ChaCha12.init(&chunk_seeds.value[2]); // Decor data. See `ChunkSeeds` def for details.
-    var rng_seed = seeding.ChaCha12.init(&chunk_seeds.value[3]); // Seed data only.
-
-    const suffix = coord.suffix;
-    const cx = suffix[0];
-    const cy = suffix[1];
-    const max_suffix = getMaxSuffixAtDepth(depth);
-    for (0..CHUNK_SIZE) |block_y| {
-        for (0..CHUNK_SIZE) |block_x| {
-            const idx = block_x + block_y * CHUNK_SIZE;
-
-            const is_absolute_edge_x =
-                (cx == 0 and block_x < 2) or
-                (cx == max_suffix and block_x >= (CHUNK_SIZE - 2));
-            const is_absolute_edge_y =
-                (cy == 0 and block_y < 2) or
-                (cy == max_suffix and block_y >= (CHUNK_SIZE - 2));
-            if (is_absolute_edge_x or is_absolute_edge_y) {
-                chunk.blocks[idx] = Block.makeBasicBlock(.edge_stone, rng_seed.next());
-                continue;
-            }
-
-            const base_data = procedural.getBaseSpriteType(
-                @intCast(cx),
-                @intCast(cy),
-                @intCast(block_x),
-                @intCast(block_y),
-            );
-            var sprite = base_data.sprite;
-            if (sprite.isStone()) sprite = procedural.addOres(
-                base_data,
-                seed_vec3,
-                seed_vec4,
-                seed_vec5,
-                seed_vec6,
-                @intCast(cx * 16 + block_x),
-                @intCast(cy * 16 + block_y),
-            );
-            sprite = procedural.addStructures(
-                sprite,
-                @as(u32, @intCast(cx * 16)) + @as(u32, @intCast(block_x)),
-                @as(u32, @intCast(cy * 16)) + @as(u32, @intCast(block_y)),
-                seed_vec7,
-                seed_vec2,
-            );
-
-            // if (procedural.getStructureBlock(block_x, block_y, seeds[12..14].*)) |sp| {
-            //     sprite = sp;
-            // }
-
-            chunk.blocks[idx] = Block.makeBasicBlock(
-                sprite,
-                rng_seed.next(),
-            );
-        }
-    }
-
-    addEdgeFlags(chunk, coord, depth);
-    // Decorate the base chunk here so that child depths inherit the results
-    procedural.addDecorations(chunk, &rng_decor);
-
-    // Reset edge flags to 0xFF for empty blocks after decorations are completed!
-    for (0..CHUNK_SIZE_SQ) |idx| {
-        const block = &chunk.blocks[idx];
-        if (block.isEmpty()) {
-            block.edge_flags = 0xFF;
-        }
-    }
 }
 
 /// Adds edge flags to an already generated chunk using a stack-safe halo buffer.
