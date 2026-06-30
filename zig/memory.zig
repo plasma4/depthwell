@@ -386,8 +386,8 @@ pub const Entity = struct {
     /// Current center position of the sprite (based on internal viewport).
     position: Vec2f32,
 
-    /// The size of the entity (based on internal viewport).
-    /// Square.
+    /// The size of the entity (based on internal viewport). Square shape.
+    /// Flip in the X-axis only by setting this to a negative value.
     size: f32 = 16.0,
 
     /// The rotation of the entity (radians).

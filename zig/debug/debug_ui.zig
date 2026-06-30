@@ -37,7 +37,8 @@ pub const ButtonDef = struct {
 };
 
 /// List of sliders (with a range that modifies a numeric variable)
-pub const sliders = [_]SliderDef{
+pub const sliders = [_]SliderDef{};
+pub const unused_silders = [_]SliderDef{
     .{
         .name = "Procedural scale",
         .min = 0.1,
@@ -71,6 +72,13 @@ pub const sliders = [_]SliderDef{
         .min = 0.0,
         .max = 1.0,
         .val = &procedural.density_max.value,
+        .regen = true,
+    },
+    .{
+        .name = "Hybrid procedural weight",
+        .min = 0.0,
+        .max = 1.0,
+        .val = &procedural.hybrid_weight.value,
         .regen = true,
     },
     .{
@@ -194,6 +202,7 @@ fn teleportRandomly() void {
 /// Handles a slider change to a new specified value.
 pub fn changeSlider(id: u32, val: f64) void {
     if (id >= sliders.len and id < 0) @panic("Slider ID invalid!");
+    if (sliders.len == 0) return;
     const s = sliders[id];
     s.val.* = val;
     if (s.on_change) |func| {

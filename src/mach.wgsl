@@ -1,4 +1,5 @@
 // -------
+// OLD: DO NOT USE
 // Main shader for Depthwell. Meant to work for both Mach Engine and web.
 // Does not work. Mach Engine work has been paused until Zig SPIR-V support completes.
 // -------
@@ -146,26 +147,9 @@ fn vs_tile(
 
     let local_pos = vec2<f32>(f32(bit_shift_x), f32(bit_shift_y));
 
-    let total_tiles = scene.map_size.x * scene.map_size.y;
     var out: TileOutput;
 
-    if instance_index == total_tiles {
-        // There's intentionally one more instance than the number of tiles to render the player!
-        let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
-        let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
-
-        // normalized device coordinates
-        let ndc = (screen_pos / scene.viewport_size) * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0);
-
-        out.position = vec4<f32>(ndc, 0.0, 1.0);
-        out.sprite_uv_origin = vec2<f32>(1.0 * SPRITE_W, 0.0 * SPRITE_H);
-        out.edge_flags = 255u;
-        out.sprite_id = 1u;
-        out.light = 1.0;
-        out.local_uv = local_pos;
-        return out;
-    }
-
+    // The player is no longer a tile instance; it is drawn through the entity pipeline (see vs_entity).
     let tile = unpack_tile(tiles[instance_index]);
     if tile.sprite_id == 0u && scene.wireframe_opacity == 0.0 {
         out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); // ideal outcode
@@ -440,23 +424,19 @@ fn fs_tile(
             // Evaluated: Refactored vector bitwise & into component-wise scalar operation
             let mods = vec2<u32>(tile_coords.x & 15u, tile_coords.y & 15u);
 
-            if id == 1u {
-                wire_color = vec4<f32>(1.0, 0.5, 0.0, 1.0);
-            } else {
-                // Evaluated: Refactored boolean vector bitwise AND/OR into standard logical operators
-                let is_chunk_edge = (mods.x == 0u && local_uv.x < inv_tile_scale) ||
-                                    (mods.y == 0u && local_uv.y < inv_tile_scale) ||
-                                    (mods.x == 15u && local_uv.x > (1.0 - inv_tile_scale)) ||
-                                    (mods.y == 15u && local_uv.y > (1.0 - inv_tile_scale));
+            // Evaluated: Refactored boolean vector bitwise AND/OR into standard logical operators
+            let is_chunk_edge = (mods.x == 0u && local_uv.x < inv_tile_scale) ||
+                                (mods.y == 0u && local_uv.y < inv_tile_scale) ||
+                                (mods.x == 15u && local_uv.x > (1.0 - inv_tile_scale)) ||
+                                (mods.y == 15u && local_uv.y > (1.0 - inv_tile_scale));
 
-                if is_chunk_edge {
-                    wire_color = vec4<f32>(1.0, 1.0, 0.0, min(1.0, scene.wireframe_opacity * 2.5));
-                } else {
-                    // neat-lookin' fancy wireframe coloring
-                    let rg = vec2<f32>(mods) * 0.0625;
-                    let b = 0.5 + f32(mods.x ^ mods.y) * 0.03125;
-                    wire_color = vec4<f32>(rg.x, rg.y, b, scene.wireframe_opacity);
-                }
+            if is_chunk_edge {
+                wire_color = vec4<f32>(1.0, 1.0, 0.0, min(1.0, scene.wireframe_opacity * 2.5));
+            } else {
+                // neat-lookin' fancy wireframe coloring
+                let rg = vec2<f32>(mods) * 0.0625;
+                let b = 0.5 + f32(mods.x ^ mods.y) * 0.03125;
+                wire_color = vec4<f32>(rg.x, rg.y, b, scene.wireframe_opacity);
             }
         } else {
             // Replaced the trailing 'else if' with an explicit 'else' enclosing 'if'
@@ -479,7 +459,7 @@ fn fs_tile(
     let nudges = vec3<f32>(lab_nudge_bits) / 7.0;
 
     // Apply light and nudges in a vectorized way
-    lch *= vec3<f32>(light, 0.9, 1.0) + vec3<f32>(nudges.x * 0.02, nudges.y * 0.3, nudges.z * 0.1);
+    lch *= vec3<f32>(light, 0.9, 1.0) + vec3<f32>(nudges.x * 0.02, nudges.y * 0.3, nudges.z * 0.06);
 
     var final_rgb = vec3<f32>(0.0);
     if edge_flags != 0xFFu {
@@ -496,7 +476,7 @@ fn fs_tile(
     lab = oklch_to_oklab(lch);
     final_rgb = oklab_to_linear_srgb(lab);
 
-    var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, id == 1u); // use chunk_opacity, unless this sprite is for the player
+    var final_a = tex_color.a * scene.chunk_opacity; // the player is now an entity, so all tiles use chunk_opacity
 
     // Overlay semi-transparent water body if this decoration pixel is underwater
     if is_decor_pixel_underwater {

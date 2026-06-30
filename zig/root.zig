@@ -76,6 +76,7 @@ pub const Sprite = sprite.Sprite;
 
 pub const seeding = @import("state/seeding.zig");
 pub const procedural = @import("state/procedural.zig");
+pub const structures = @import("state/structures.zig");
 pub const player = @import("state/player.zig");
 pub const world = @import("state/world.zig");
 pub const ancestor = @import("state/ancestor.zig");

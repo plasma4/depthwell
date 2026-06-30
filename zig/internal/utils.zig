@@ -10,4 +10,5 @@ pub const Vec2i = @Vector(2, i64);
 pub const Vec2u = @Vector(2, u64);
 pub const Vec2f = @Vector(2, f64);
 pub const Vec2f32 = @Vector(2, f32);
+pub const Vec4u = @Vector(4, u64);
 pub const Vec4f32 = @Vector(4, f32);

@@ -18,10 +18,10 @@ const toSize = dw.entity.toSizeUv;
 const mouse = dw.mouse;
 const inventory = dw.inventory;
 
-/// Number of bars in the progress bar (must be a multiple of 4 and at least 8).
-const SMELTING_STEPS = 8;
+/// Number of bars in the progress bar (must be a at least 8).
+const SMELTING_STEPS = 10;
 /// Logic ticks spent on each progress unit.
-const FRAMES_PER_STEP = 1;
+const FRAMES_PER_STEP = 2;
 /// Total ticks to smelt one loaded batch.
 const TOTAL_PROGRESS = SMELTING_STEPS * FRAMES_PER_STEP;
 
@@ -35,6 +35,12 @@ var output_bar: Sprite = .none;
 var output_count: u32 = 0;
 /// Smelting progress for the current batch, from 0 to `TOTAL_PROGRESS`.
 var smelting_progress: u16 = 0;
+
+/// Smoothed render position (viewport px) of the dragged-ore icon, giving it a slight trailing lag.
+/// Negative when no drag is active.
+var drag_pos_px: Vec2f = .{ -1.0, -1.0 };
+/// Mouse UV from the previous frame, used to gauge drag speed for the wiggle.
+var last_drag_uv: Vec2f = .{ -1.0, -1.0 };
 
 /// Resets the state of the furnace menu.
 /// TODO: use this on re-init
@@ -128,6 +134,59 @@ fn slotHitbox(center_px: Vec2f, size: f64) dw.geometry.Shape {
     return .roundSquare(center_px - @as(Vec2f, @splat(size / 2.0)), size, 0.2);
 }
 
+/// Draws the ore currently being dragged from the inventory toward the input slot with lag and wiggle effects.
+fn drawDragIcon(mouse_px: Vec2f) void {
+    const dragged = inventory.selected_sprite;
+    // A drag is "active" while the button is held (focus persists on the inventory) over an ore
+    if (mouse.click_focus != .inventory or !dragged.isOre() or mouse.uv_position[0] < 0.0) {
+        drag_pos_px = .{ -1.0, -1.0 };
+        last_drag_uv = mouse.uv_position;
+        return;
+    }
+
+    // Cursor speed this frame (in UV), scaling the wiggle amplitude
+    const uv_speed: f64 = if (last_drag_uv[0] < 0.0) 0.0 else blk: {
+        const d = mouse.uv_position - last_drag_uv;
+        break :blk @sqrt(d[0] * d[0] + d[1] * d[1]);
+    };
+    last_drag_uv = mouse.uv_position;
+
+    // Ease the rendered position toward the cursor!
+    if (drag_pos_px[0] < 0.0) {
+        drag_pos_px = mouse_px;
+    } else {
+        drag_pos_px += (mouse_px - drag_pos_px) * @as(Vec2f, @splat(0.5));
+    }
+
+    // Sine-wave wiggle effect that changes based no drag speed
+    const frame: f32 = @floatFromInt(dw.memory.game.frame);
+    const wiggle_amount: f32 = @min(@as(f32, @floatCast(uv_speed)) * 14.0, 1.0);
+    const wiggle: f32 = @sin(frame * 0.6) * wiggle_amount; // radians
+
+    // Fan out 1-3 copies based on how much of the ore is held.
+    const held = if (inventory.isInCreative()) @as(u64, 3) else inventory.inventory_counts[@intFromEnum(dragged)];
+    const copies: usize = @intCast(@min(@max(held, 1), 3));
+
+    // Pre-determined offsets (viewport px): back-left, back-right, then the front (centered) copy.
+    // Drawing back-to-front layers the centered copy on top.
+    const offsets = [3]Vec2f{ .{ -3.0, -2.0 }, .{ 3.0, -2.0 }, .{ 0.0, 0.0 } };
+    const start = 3 - copies;
+
+    var i: usize = start;
+    while (i < 3) : (i += 1) {
+        const is_front = (i == 2);
+        const off = offsets[i];
+        addEntity(.{
+            .sprite = dragged,
+            .position = .{ @floatCast(drag_pos_px[0] + off[0]), @floatCast(drag_pos_px[1] + off[1]) },
+            .size = if (is_front) 16.0 else 14.0,
+            .rotation = wiggle,
+            // Partial opacity; the front copy is a touch more opaque so the stack reads clearly.
+            .lcha = .{ 1.0, 0.0, 0.0, if (is_front) 0.8 else 0.6 },
+        });
+    }
+}
+
 pub fn draw() void {
     @setFloatMode(.optimized);
     // The menu is only visible/interactive while opened via a furnace indicator.
@@ -168,8 +227,6 @@ pub fn draw() void {
     if (over_input and mouse.just_mouse_up and mouse.released_focus == .inventory and inventory.selected_sprite.isOre()) {
         loadOre(inventory.selected_sprite);
     }
-    // While dragging an ore over the input slot, show the drop ("grabbing") cursor.
-    if (over_input and mouse.click_focus == .inventory) mouse.requestCursorType(.grabbing);
 
     // Menu-internal clicks: take ore back out, or collect finished bars.
     if (over_input and loaded_ore != .none) {
@@ -233,4 +290,7 @@ pub fn draw() void {
         .center_uv,
         .{ 1.04, 0.12, -0.6, 1.0 },
     );
+
+    // Dragged-ore icon follows the cursor on top of everything else.
+    drawDragIcon(mouse_px);
 }

@@ -1,5 +1,5 @@
 const std = @import("std");
-
+const builtin = @import("builtin");
 // Run zig build normally, and zig build -Doptimize=ReleaseFast for a quick production version test.
 // Use zig build -Dwasm-opt to use ReleaseFast AND highly aggressive wasm-opt (from Binaryen).
 // Use zig build -Dgen-enums as well to automatically construct src/enums.ts and zig test "zig/root.zig" to run all tests across the codebase.
@@ -12,8 +12,7 @@ pub fn build(b: *std.Build) void {
     const gen_enums = b.option(bool, "gen-enums", "Regenerate TypeScript enum definitions (default: no)") orelse false; // -Dgen-enums
     const wasm_opt = b.option(bool, "wasm-opt", "Add a very aggressive pass of optimizations provided by wasm-opt from Binaryen, forcing optimization level to ReleaseFast") orelse false; // -Dgen-enums
     const memory64 = b.option(bool, "memory64", "Utilize Memory64") orelse false; // -Dmemory64
-    // Relaxed SIMD is decoupled from Memory64 so the two can be isolated when debugging.
-    // It defaults to off; previously it was bundled with -Dmemory64.
+    // We can bundle this back with Zig in the future once inconsistencies are fixed.
     const relaxed_simd = b.option(bool, "relaxed-simd", "Enable relaxed SIMD when building for WASM (DANGEROUS: reorders instructions in concerning ways)") orelse false; // -Drelaxed-simd
     const build_native = b.option(bool, "native", "Build the native desktop application using Mach Engine (default: false)") orelse false;
 

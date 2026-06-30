@@ -83,7 +83,7 @@ struct TileOutput {
     // seed1: murmurmix32'ed from raw seed data and HP mixed
     // seed2: murmurmix32'ed from seed1
     // seed3: murmurmix32'ed from seed2
-    @location(7) @interpolate(flat) seeds: vec3u,
+    @location(7) @interpolate(flat) seeds: vec4u,
     @location(8) @interpolate(flat) waterlogged: u32,
 };
 
@@ -97,7 +97,7 @@ struct UnpackedTile {
     sprite_id: u32,
     light: f32,
     hp: u32,
-    seeds: vec3u,
+    seeds: vec4u,
     edge_flags: u32,
     waterlogged: u32,
 };
@@ -117,10 +117,11 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
 
     out.hp = extractBits(data.word1, 20u, 4u);
     // hp takes up the top 4 bits perfectly, 24-bit total
-    let s1 = murmurmix32(select(extractBits(data.word1, 0u, 24u), extractBits(data.word1, 0u, 20u), out.sprite_id >= DECOR_START));
+    let s0 = select(extractBits(data.word1, 0u, 24u), extractBits(data.word1, 0u, 20u), out.sprite_id >= DECOR_START);
+    let s1 = murmurmix32(s0);
     let s2 = murmurmix32(s1);
     let s3 = murmurmix32(s2);
-    out.seeds = vec3u(s1, s2, s3);
+    out.seeds = vec4u(s0, s1, s2, s3);
     out.waterlogged = extractBits(data.word1, 27u, 5u); // Also see meaning in zig/memory.zig.
     return out;
 }
@@ -134,25 +135,7 @@ fn vs_tile(
     // A bitmask where bits 1, 4, and 5 are set (0b110010 = 50) and bits 2, 3, and 5 are set (0b101100 = 44)
     let local_pos = vec2f((vec2u(50u, 44u) >> vec2u(vertex_index)) & vec2u(1u));
 
-    let total_tiles = scene.map_size.x * scene.map_size.y;
     var out: TileOutput;
-
-    if instance_index == total_tiles {
-        // There's intentionally one more instance than the number of tiles to render the player!
-        let world_pos = scene.player_screen_pos + local_pos * TILE_SIZE;
-        let screen_pos = (world_pos - scene.camera) * scene.zoom + (scene.viewport_size * 0.5);
-
-        // normalized device coordinates
-        let ndc = (screen_pos / scene.viewport_size) * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0);
-
-        out.position = vec4f(ndc, 0.0, 1.0);
-        out.sprite_uv_origin = vec2f(1.0 * SPRITE_W, 0.0 * SPRITE_H);
-        out.edge_flags = 255u;
-        out.sprite_id = 1u;
-        out.light = 1.0;
-        out.local_uv = local_pos;
-        return out;
-    }
 
     let tile = unpack_tile(tiles[instance_index]);
     if tile.sprite_id == 0u && scene.wireframe_opacity == 0.0 {
@@ -188,15 +171,15 @@ fn vs_tile(
         id += offset;
     } else if id == GEAR_ID + 2u || id == GEAR_ID + 5u {
         // seed-based variation for bushes and ceiling flowers
-        id = select(id, id + 1, extractBits(tile.seeds[0], 16u, 1u) == 1u); // 50% odds to select the variation
+        id = select(id, id + 1, extractBits(tile.seeds[1], 16u, 1u) == 1u); // 50% odds to select the variation
 
         // for 25%:
-        // let random_mod = extractBits(tile.seeds[0], 16u, 2u);
+        // let random_mod = extractBits(tile.seeds[1], 16u, 2u);
         // if random_mod == 0u {
         //     id++;
         // }
     } else if id == GEAR_ID + 7u || id == GEAR_ID + 10u { // variation for mushrooms
-        let bits = extractBits(tile.seeds[0], 16u, 2u);
+        let bits = extractBits(tile.seeds[1], 16u, 2u);
         id += select(bits, 0u, bits == 3u); // select variation (0, +1, or +2, 50% odds of 0)
     }
 
@@ -290,7 +273,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
     if in.edge_flags != 0xFFu && !is_decor {
-        erode_mask = erosion(in.local_uv, in.edge_flags, in.seeds[1], in.seeds[2]);
+        erode_mask = erosion(in.local_uv, in.edge_flags, in.seeds[2], in.seeds[3]);
         if erode_mask == 0u {
             if in.waterlogged != 0u {
                 let is_water_top = (in.waterlogged & 1u) != 0u;
@@ -337,15 +320,15 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
-    let seed = in.seeds[0];
+    let seed = in.seeds[1];
     let is_gem = id >= GEM_START && id < GEM_MASK_START;
     let is_ore = id >= ORE_START && id < GEM_START;
 
     var final_uv = in.sprite_uv_origin + safe_local_uv * vec2f(SPRITE_W, SPRITE_H);
 
-    // Apply 0-15 pixel shift for gems and ores using bits 16-23 of seed3
-    if is_gem || is_ore {
-        let shift_bits = extractBits(in.seeds[2], 16u, 8u);
+    // Apply 0-15 pixel shift for gems using bits 16-23 of seed3
+    if is_gem {
+        let shift_bits = extractBits(in.seeds[3], 16u, 8u);
         let shift = vec2f(vec2u(shift_bits & 0xFu, shift_bits >> 4u)) / 16.0;
         let wrapped_local = fract(in.local_uv + shift);
         let safe_wrapped = clamp(wrapped_local, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
@@ -365,12 +348,13 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     tex_color = vec4f(srgb_to_linear(tex_color.rgb) * hp_darkness_mult, tex_color.a);
 
     // ore sampling pixel logic
-    if is_gem || is_ore {
-        // 8 masks, first 4 for gems, second 4 for ore
-        let mask_variation = extractBits(seed, 15u, 2u) + select(4u, 0u, is_gem);
+    if is_gem {
+        // 8 masks, OLD: first 4 for gems, second 4 for ore, NEW: all 8 for gems only
+        // let mask_variation = extractBits(seed, 15u, 2u) + select(4u, 0u, is_gem);
+        let mask_variation = extractBits(in.seeds[0], 0u, 3u);
         let mask_id = GEM_MASK_START + mask_variation;
 
-        let flip = vec2f(vec2u(extractBits(seed, 25u, 1u), extractBits(seed, 26u, 1u)));
+        let flip = vec2f(vec2u(extractBits(in.seeds[0], 3u, 1u), extractBits(in.seeds[0], 4u, 1u)));
         let flipped_uv = mix(in.local_uv, 1.0 - in.local_uv, flip);
         // Use 2x2 grid logic for the background stone's ID
         let bg_id = STONE_START + (((in.tile_coords.y & 1u) << 1u) | (in.tile_coords.x & 1u));
@@ -411,21 +395,17 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         if is_block_edge {
             let mods = in.tile_coords & vec2u(15u);
 
-            if id == 1u {
-                wire_color = vec4f(1.0, 0.5, 0.0, 1.0);
-            } else {
-                // Is this pixel on the edge of a CHUNK?
-                let is_chunk_edge = any((mods == vec2u(0u)) & (in.local_uv < vec2f(inv_tile_scale))) ||
-                                    any((mods == vec2u(15u)) & (in.local_uv > vec2f(1.0 - inv_tile_scale)));
+            // Is this pixel on the edge of a CHUNK?
+            let is_chunk_edge = any((mods == vec2u(0u)) & (in.local_uv < vec2f(inv_tile_scale))) ||
+                                any((mods == vec2u(15u)) & (in.local_uv > vec2f(1.0 - inv_tile_scale)));
 
-                if is_chunk_edge {
-                    wire_color = vec4f(1.0, 1.0, 0.0, min(1.0, scene.wireframe_opacity * 2.5));
-                } else {
-                    // neat-lookin' fancy wireframe coloring
-                    let rg = vec2f(mods) * 0.0625;
-                    let b = 0.5 + f32(mods.x ^ mods.y) * 0.03125;
-                    wire_color = vec4f(rg.x, rg.y, b, scene.wireframe_opacity);
-                }
+            if is_chunk_edge {
+                wire_color = vec4f(1.0, 1.0, 0.0, min(1.0, scene.wireframe_opacity * 2.5));
+            } else {
+                // neat-lookin' fancy wireframe coloring
+                let rg = vec2f(mods) * 0.0625;
+                let b = 0.5 + f32(mods.x ^ mods.y) * 0.03125;
+                wire_color = vec4f(rg.x, rg.y, b, scene.wireframe_opacity);
             }
         } else if erode_mask == 0u {
             discard;
@@ -445,7 +425,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     let nudges = vec3f(lab_nudge_bits) / 7.0;
 
     // Apply light and nudges in a vectorized way
-    lch *= vec3f(in.light, 0.9, 1.0) + vec3f(nudges.x * 0.02, nudges.y * 0.3, nudges.z * 0.1);
+    lch *= vec3f(in.light, 0.9, 1.0) + vec3f(nudges.x * 0.02, nudges.y * 0.3, nudges.z * 0.06);
 
     var final_rgb = vec3f(0.0);
     if in.edge_flags != 0xFFu {
@@ -462,7 +442,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     lab = oklch_to_oklab(lch);
     final_rgb = oklab_to_linear_srgb(lab);
 
-    var final_a = tex_color.a * select(scene.chunk_opacity, 1.0, id == 1u); // use chunk_opacity, unless this sprite is for the player
+    var final_a = tex_color.a * scene.chunk_opacity; // the player is now an entity, so all tiles use chunk_opacity
 
     // Overlay semi-transparent water body if this decoration pixel is underwater
     if is_decor_pixel_underwater {

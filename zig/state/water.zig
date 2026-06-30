@@ -11,11 +11,49 @@ const Sprite = dw.Sprite;
 const Block = memory.Block;
 const Chunk = memory.Chunk;
 
+/// Debugging water invariant check: when enabled, `tickWater` asserts that the total water volume is stable in SimBuffer
+/// (as in, no water gets added or deleted from the game).
+/// May result in performance drops, especially in Debug (where this is intended to be used).
+///
+/// Only logs if an invalid state occurs.
+pub const VERIFY_WATER_MASS = false;
+
+/// Sums the water volume of every loaded SimBuffer chunk. Debug helper for `VERIFY_WATER_MASS`.
+fn totalSimWater() u64 {
+    var total: u64 = 0;
+    for (&SimBuffer.keys, 0..) |key, sim_idx| {
+        if (key == null) continue;
+        for (&SimBuffer.sim_buffer_ptr[sim_idx].blocks) |b| total += getVolume(b);
+    }
+    return total;
+}
+
 /// Global bitset of active chunks in the current frame (16x16 chunk grid).
 var active_chunks: std.StaticBitSet(256) = undefined;
+/// Per-cell "this cell has already taken its turn this tick" guard (prevents a cell moving twice in one sweep).
 var water_updated: std.StaticBitSet(256 * 256) = undefined;
+/// Per-cell "this cell RECEIVED sideways water this tick" guard. Such a cell is still allowed to fall
+/// (gravity, perpendicular to the sweep, never causes runaway) but is barred from immediately re-spreading sideways,
+/// which is what would chain-flow water across the sweep direction.
+/// Keeping gravity enabled stops freshly-pushed water from freezing into side columns / dribbling off ledges.
+var lateral_received: std.StaticBitSet(256 * 256) = undefined;
 /// Bitset keeping track of which active chunks actually had water flow changes.
 var chunks_to_update_flags: std.StaticBitSet(256) = undefined;
+/// Chunks (logical 16x16 index) queued by manual water placement (`world.modifyBlockType`) for batched edge-flag recompute on next tick.
+/// Persists between ticks (unlike `chunks_to_update_flags`) and is folded in at the flag phase.
+var pending_flag_chunks: std.StaticBitSet(256) = std.StaticBitSet(256).initEmpty();
+
+/// Queues a manually-placed water block's chunk plus its 4 orthogonal neighbors for a batched flag recompute,
+/// rather than recomputing each touched water block synchronously at placement time.
+/// Placement happens before `tickWater` within the same tick, so flags still resolve the same frame.
+pub fn queueWaterFlags(cx: u4, cy: u4) void {
+    const idx = (@as(usize, cy) << 4) | cx;
+    pending_flag_chunks.set(idx);
+    if (cx > 0) pending_flag_chunks.set(idx - 1);
+    if (cx < 15) pending_flag_chunks.set(idx + 1);
+    if (cy > 0) pending_flag_chunks.set(idx - 16);
+    if (cy < 15) pending_flag_chunks.set(idx + 16);
+}
 
 /// Helper to get the volume of a block (0 to 15 for water/waterlogged blocks, 0 otherwise).
 pub inline fn getVolume(ptr: Block) u4 {
@@ -47,65 +85,6 @@ pub inline fn setVolume(ptr: *Block, vol: u32) void {
             ptr.id = .water;
             ptr.hp = capped;
         }
-    }
-}
-
-/// Helper to set the volume (`hp`) of a block, modifying other properties as needed.
-inline fn setVolumeSticky(rx: i32, ry: i32, vol: u32) void {
-    const cx: u4 = @intCast(@divTrunc(rx, 16));
-    const cy: u4 = @intCast(@divTrunc(ry, 16));
-    const bx: u4 = @intCast(@mod(rx, 16));
-    const by: u4 = @intCast(@mod(ry, 16));
-    const sim_idx = SimBuffer.getIndex(cx, cy);
-    const coord = SimBuffer.keys[sim_idx] orelse return;
-
-    const key = world.DepthCoordinate.from(coord);
-    const idx = @as(usize, by) * 16 + bx;
-
-    const entry_idx = world.mod_store.index.get(key) orelse blk: {
-        const new_idx = world.mod_store.history.len;
-        _ = world.mod_store.history.addOne(world.alloc) catch memory.oom();
-        world.writeChunkModless(world.mod_store.history.at(new_idx), coord);
-        world.mod_store.index.put(key, new_idx) catch memory.oom();
-        break :blk new_idx;
-    };
-
-    const mc = world.mod_store.history.at(entry_idx);
-    const sim_chunk = &SimBuffer.sim_buffer_ptr[sim_idx];
-
-    const capped: u4 = @intCast(@min(vol, 15));
-
-    // Dirty the modified chunk and its 4 orthogonal neighbors for flag updates
-    const chunk_idx = (@as(usize, cy) << 4) | cx;
-    chunks_to_update_flags.set(chunk_idx);
-    if (cx > 0) chunks_to_update_flags.set(chunk_idx - 1);
-    if (cx < 15) chunks_to_update_flags.set(chunk_idx + 1);
-    if (cy > 0) chunks_to_update_flags.set(chunk_idx - 16);
-    if (cy < 15) chunks_to_update_flags.set(chunk_idx + 16);
-
-    inline for (.{ mc, sim_chunk }) |c| {
-        const ptr = &c.blocks[idx];
-        if (vol == 0) {
-            if (ptr.isDecor()) {
-                ptr.hp = 0;
-            } else {
-                ptr.id = .none;
-                ptr.hp = 0;
-                ptr.edge_flags = 0xFF;
-                ptr.waterlogged = 0;
-            }
-        } else {
-            if (ptr.isDecor()) {
-                ptr.hp = capped;
-            } else {
-                ptr.id = .water;
-                ptr.hp = capped;
-            }
-        }
-    }
-
-    if (world.ChunkCache.findIndex(coord)) |cache_idx| {
-        world.ChunkCache.chunks[cache_idx].blocks[idx] = mc.blocks[idx];
     }
 }
 
@@ -221,63 +200,25 @@ pub inline fn getWaterloggedStateSprites(
     return .{ .flags = flags, .volume = volume };
 }
 
-/// Computes volume + height of water column above (formally called hydrostatic pressure) dynamically.
-/// Capped at 15 steps to guarantee O(1) worst-case performance.
-inline fn getPressureLocal(
+/// Computes the water volume for a cell dynamically.
+/// Supports cross-chunk reads via horizontal offsets (`bx` of -1 or 16).
+/// Returns 0 if the requested neighbor chunk is missing.
+inline fn getVolumeLocal(
     curr: *Chunk,
     left: ?*Chunk,
     right: ?*Chunk,
-    top: ?*Chunk,
     bx: i32,
     by: i32,
 ) u32 {
-    const block_vol = blk: {
-        if (bx >= 0 and bx < 16) {
-            break :blk getVolume(curr.blocks[@as(usize, @intCast((by << 4) | bx))]);
-        } else if (bx < 0) {
-            const l = left orelse return 0;
-            break :blk getVolume(l.blocks[@as(usize, @intCast((by << 4) | (bx + 16)))]);
-        } else {
-            const r = right orelse return 0;
-            break :blk getVolume(r.blocks[@as(usize, @intCast((by << 4) | (bx - 16)))]);
-        }
-    };
-    if (block_vol == 0) return 0;
-
-    var col_above: u32 = 0;
-    var cy = by - 1;
-    while (col_above < 15) {
-        const v = blk: {
-            if (cy >= 0) {
-                if (bx >= 0 and bx < 16) {
-                    break :blk getVolume(curr.blocks[@as(usize, @intCast((cy << 4) | bx))]);
-                } else if (bx < 0) {
-                    const l = left orelse break :blk 0;
-                    break :blk getVolume(l.blocks[@as(usize, @intCast((cy << 4) | (bx + 16)))]);
-                } else {
-                    const r = right orelse break :blk 0;
-                    break :blk getVolume(r.blocks[@as(usize, @intCast((cy << 4) | (bx - 16)))]);
-                }
-            } else {
-                const t = top orelse break :blk 0;
-                const target_cy = cy + 16;
-                if (bx >= 0 and bx < 16) {
-                    break :blk getVolume(t.blocks[@as(usize, @intCast((target_cy << 4) | bx))]);
-                } else if (bx < 0) {
-                    break :blk 0;
-                } else {
-                    break :blk 0;
-                }
-            }
-        };
-        if (v > 0) {
-            col_above += 1;
-            cy -= 1;
-        } else {
-            break;
-        }
+    if (bx >= 0 and bx < 16) {
+        return getVolume(curr.blocks[@as(usize, @intCast((by << 4) | bx))]);
+    } else if (bx < 0) {
+        const l = left orelse return 0;
+        return getVolume(l.blocks[@as(usize, @intCast((by << 4) | (bx + 16)))]);
+    } else {
+        const r = right orelse return 0;
+        return getVolume(r.blocks[@as(usize, @intCast((by << 4) | (bx - 16)))]);
     }
-    return block_vol + col_above;
 }
 
 /// Helper to quickly fetch a `Chunk` pointer from `SimBuffer` coordinates.
@@ -491,7 +432,9 @@ inline fn notifyNeighborEdgeFlags(rx: i32, ry: i32) void {
 pub fn tickWater() void {
     const frame = memory.game.frame;
 
-    // Rebuild active chunk map using a flat contiguous block scan
+    // A chunk is simulated only if it has water AND is not "settled" (sleep/wake):
+    // a chunk that produced no flow last tick is asleep and skipped, so large still bodies are mostly free.
+    // Cross-border flow and `wake` clear neighboring settled bits (see the dirty pass below).
     active_chunks = std.StaticBitSet(256).initEmpty();
 
     var cy: u4 = 0;
@@ -505,22 +448,8 @@ pub fn tickWater() void {
                 continue;
             }
 
-            const chunk = &SimBuffer.sim_buffer_ptr[sim_idx];
-            var chunk_has_water = false;
-            for (&chunk.blocks) |b| {
-                if (b.id == .water or getVolume(b) > 0) {
-                    chunk_has_water = true;
-                    break;
-                }
-            }
-
-            if (chunk_has_water) {
+            if (SimBuffer.has_water.isSet(sim_idx) and !SimBuffer.water_settled.isSet(sim_idx)) {
                 active_chunks.set(chunk_idx);
-                // dilate chunk boundaries (so incoming borders are correctly activated)
-                if (cx > 0) active_chunks.set(chunk_idx - 1);
-                if (cx < 15) active_chunks.set(chunk_idx + 1);
-                if (cy > 0) active_chunks.set(chunk_idx - 16);
-                if (cy < 15) active_chunks.set(chunk_idx + 16);
             }
 
             if (cx == 15) break;
@@ -530,7 +459,16 @@ pub fn tickWater() void {
 
     if (active_chunks.count() == 0) return;
     water_updated = .initEmpty();
+    lateral_received = .initEmpty();
     chunks_to_update_flags = .initEmpty();
+
+    // Fold in chunks queued by manual water placement so their edge flags get one batched pass below
+    // (these chunks are active, since placement also sets their `has_water` bit)
+    // Pending is preserved across early returns above, so a placement is never dropped.
+    chunks_to_update_flags.setUnion(pending_flag_chunks);
+    pending_flag_chunks = std.StaticBitSet(256).initEmpty();
+
+    const water_before: u64 = if (VERIFY_WATER_MASS) totalSimWater() else 0;
 
     // Tracks which chunks within the 16x16 grid received any volume modifications
     var dirty_chunks = std.StaticBitSet(256).initEmpty();
@@ -550,7 +488,6 @@ pub fn tickWater() void {
             const curr = getChunkPtr(@intCast(rcx), @intCast(chunk_y)) orelse continue;
             const left = if (rcx > 0) getChunkPtr(@intCast(rcx - 1), @intCast(chunk_y)) else null;
             const right = if (rcx < 15) getChunkPtr(@intCast(rcx + 1), @intCast(chunk_y)) else null;
-            const top = if (chunk_y > 0) getChunkPtr(@intCast(rcx), @intCast(chunk_y - 1)) else null;
             const bottom = if (chunk_y < 15) getChunkPtr(@intCast(rcx), @intCast(chunk_y + 1)) else null;
 
             var by: i32 = 15;
@@ -603,7 +540,14 @@ pub fn tickWater() void {
                         }
                     }
 
-                    // Horizontal equalizing flow using hydrostatic math
+                    // Only spread sideways once the cell can no longer descend.
+                    const down_blocked = if (down_ptr) |dp| (!dp.isFlowable() or getVolume(dp.*) >= 15) else true;
+                    if (!down_blocked) continue;
+                    // If this cell only just received water do NOT let it re-spread sideways again.
+                    if (lateral_received.isSet(idx)) continue;
+
+                    // Horizontal equalizing flow: water moves toward the lower-volume neighbor,
+                    // equalizing a surface gradually ticks.
                     const left_ptr = if (rbx > 0)
                         &curr.blocks[@as(usize, @intCast((by << 4) | (rbx - 1)))]
                     else if (left) |l|
@@ -623,13 +567,13 @@ pub fn tickWater() void {
                     var left_vol: u32 = 0;
                     var right_vol: u32 = 0;
 
-                    const src_press = getPressureLocal(curr, left, right, top, rbx, by);
+                    const src_press = getVolumeLocal(curr, left, right, rbx, by);
                     var left_press: u32 = 0;
                     var right_press: u32 = 0;
 
                     if (left_ptr) |b| {
                         if (b.isFlowable()) {
-                            left_press = getPressureLocal(curr, left, right, top, rbx - 1, by);
+                            left_press = getVolumeLocal(curr, left, right, rbx - 1, by);
                             if (left_press < src_press) {
                                 left_ok = true;
                                 left_vol = getVolume(b.*);
@@ -638,7 +582,7 @@ pub fn tickWater() void {
                     }
                     if (right_ptr) |b| {
                         if (b.isFlowable()) {
-                            right_press = getPressureLocal(curr, left, right, top, rbx + 1, by);
+                            right_press = getVolumeLocal(curr, left, right, rbx + 1, by);
                             if (right_press < src_press) {
                                 right_ok = true;
                                 right_vol = getVolume(b.*);
@@ -682,7 +626,7 @@ pub fn tickWater() void {
                                 }
                                 if (rx > 0) {
                                     const left_idx = @as(usize, @intCast(ry)) * 256 + @as(usize, @intCast(rx - 1));
-                                    water_updated.set(left_idx);
+                                    lateral_received.set(left_idx);
                                 }
                             }
                             if (flow_right > 0) {
@@ -694,7 +638,7 @@ pub fn tickWater() void {
                                 }
                                 if (rx < 255) {
                                     const right_idx = @as(usize, @intCast(ry)) * 256 + @as(usize, @intCast(rx + 1));
-                                    water_updated.set(right_idx);
+                                    lateral_received.set(right_idx);
                                 }
                             }
                             src_vol = getVolume(block_ptr.*);
@@ -702,6 +646,25 @@ pub fn tickWater() void {
                     }
                 }
             }
+        }
+    }
+
+    if (VERIFY_WATER_MASS) {
+        const water_after = totalSimWater();
+        if (water_after != water_before) {
+            dw.logger.err(@src(), "Water mass NOT conserved in tickWater: {d} -> {d}", .{ water_before, water_after });
+        }
+    }
+
+    // A chunk that was simulated but produced no flow this tick is at equilibrium
+    // (this is independent of the alternating sweep direction, as a settled chunk yields zero flow under either),
+    // so it can be skipped until disturbed. Chunks that DID flow are handled now!
+    var act_it = active_chunks.iterator(.{});
+    while (act_it.next()) |idx| {
+        if (!dirty_chunks.isSet(idx)) {
+            const ax: u4 = @intCast(idx & 15);
+            const ay: u4 = @intCast(idx >> 4);
+            SimBuffer.water_settled.set(SimBuffer.getIndex(ax, ay));
         }
     }
 
@@ -716,6 +679,10 @@ pub fn tickWater() void {
 
         const key = world.DepthCoordinate.from(coord);
         const sim_chunk = &SimBuffer.sim_buffer_ptr[sim_idx];
+
+        // A dirtied chunk's water content changed so re-evaluate its flag so
+        // it stays active while it holds water, and it drops out of the simulation once it has fully drained.
+        SimBuffer.has_water.setValue(sim_idx, SimBuffer.chunkHasWater(sim_chunk));
 
         const entry_idx = world.mod_store.index.get(key) orelse blk: {
             const new_idx = world.mod_store.history.len;
@@ -737,6 +704,13 @@ pub fn tickWater() void {
         if (dx < 15) chunks_to_update_flags.set(idx + 1);
         if (dy > 0) chunks_to_update_flags.set(idx - 16);
         if (dy < 15) chunks_to_update_flags.set(idx + 16);
+
+        // Wake this chunk and its neighbors for next tick.
+        SimBuffer.water_settled.unset(sim_idx);
+        if (dx > 0) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx - 1, dy));
+        if (dx < 15) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx + 1, dy));
+        if (dy > 0) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx, dy - 1));
+        if (dy < 15) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx, dy + 1));
     }
 
     // Perform flag and packing updates selectively based on dirty chunk tracking
@@ -749,7 +723,9 @@ pub fn tickWater() void {
                 if (chunk_x == 15) break;
                 continue;
             }
-            if (!active_chunks.isSet(chunk_idx)) {
+            // Recompute flags for any flagged-and-loaded chunk (no longer gated on `active_chunks`, since
+            // sleep/wake dropped the boundary dilation; a dirtied neighbor still needs correct flags).
+            if (SimBuffer.keys[SimBuffer.getIndex(chunk_x, @intCast(chunk_y))] == null) {
                 if (chunk_x == 15) break;
                 continue;
             }
@@ -761,7 +737,6 @@ pub fn tickWater() void {
             const bottom = if (chunk_y < 15) getChunkPtr(chunk_x, @intCast(chunk_y + 1)) else null;
 
             updateChunkWaterFlags(curr, left, right, top, bottom, @intCast(chunk_x), chunk_y);
-
             if (chunk_x == 15) break;
         }
         if (chunk_y == 15) break;

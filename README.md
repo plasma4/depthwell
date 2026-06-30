@@ -61,7 +61,7 @@ Here are the basic terms (note that there are, for example, 16 possible subpixel
 - 1 Chunk = 16 Blocks = 256 Pixels = 4,096 Subpixels
 - **Depth**: How "deep" the player is. Depth starts at $2$. Each time you enter a portal, the world zooms in by $4\text{x}$, making everything look 4 times larger, and the depth increases by 1.
 - **$D$**: Shorthand for the current depth. You can think of depth $D-1$ as the coordinate space you occupied right _before_ entering a portal.
-- **The Event Horizon ($H$)**: Shorthand for $D-32$. When you are deep in the fractal ($D \ge 34$), the game stops tracking individual blocks shallower than 32 levels above you, replacing them with a simplified 4x4 background grid.
+- **The Event Horizon ($H$)**: Shorthand for $D-32$. When you are deep in the fractal ($D \ge 34$), the game stops tracking individual blocks shallower than 32 levels above you, replacing them with a simplified 4x4 background grid. (This is not necessarily related to game mechanics but instead internal.)
 
 The player starts off at `STARTING_ZOOM_TIMES`, which defaults to 4. So, $D$ starts off as 4 and $D-1$ doesn't exist until $D$ increases further.
 

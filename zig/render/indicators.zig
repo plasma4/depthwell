@@ -136,7 +136,7 @@ pub fn drawIndicators() void {
                         .size = slot_size,
                         // undo camera scale mult here
                         .lcha = if (menus.furnace)
-                            .{ 1.0, slot_size / @as(f32, @floatCast(memory.game.camera_scale)) * 0.004, 0.0, opacity }
+                            .{ 1.0, 0.05 + slot_size / @as(f32, @floatCast(memory.game.camera_scale)) * 0.008, 0.0, opacity }
                         else
                             .{ 0.8, -0.1 + slot_size / @as(f32, @floatCast(memory.game.camera_scale)) * 0.005, 0.0, opacity },
                     });

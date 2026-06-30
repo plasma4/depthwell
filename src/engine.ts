@@ -320,7 +320,8 @@ export class GameEngine {
         );
 
         // Draw all tiles as instances. Draws tiles as quads so we have vertexCount as 6.
-        const instanceCount = tileDataWidth * tileDataHeight + 1; // 1 extra instance to draw the player
+        // The player is no longer an extra tile instance; it renders through the entity pipeline.
+        const instanceCount = tileDataWidth * tileDataHeight;
         this.renderPass.draw(6, instanceCount);
         this.renderCallId++;
     }

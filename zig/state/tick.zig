@@ -6,6 +6,7 @@ const KeyBits = dw.KeyBits;
 
 /// Sets if the Z key should increase the depth recursively until D=32 is reached.
 var debug_recursively_increase_depth = false;
+const MAX_AUTO_DEPTH = 32;
 
 pub fn handleTick(logic_speed: f64, iterations: u32) void {
     var buffer: inventory.SlotBuffer = undefined;
@@ -43,15 +44,15 @@ pub fn handleTick(logic_speed: f64, iterations: u32) void {
         }
     }
 
-    // in prod, add is_debug here!
-    if (debug_recursively_increase_depth and memory.game.depth < dw.HORIZON_DEPTH) {
+    // TODO: in prod, add is_debug here!
+    if (debug_recursively_increase_depth and memory.game.depth < MAX_AUTO_DEPTH) {
         dw.world.pushLayer(
             .none,
             memory.game.getPlayerCoord(),
             memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
             memory.game.getBlockYInChunk(),
         );
-        if (memory.game.depth == dw.HORIZON_DEPTH) {
+        if (memory.game.depth == MAX_AUTO_DEPTH) {
             dw.logger.quick(.{ "{h}Position", memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth) });
             debug_recursively_increase_depth = false;
         }
@@ -67,10 +68,8 @@ pub fn handleTick(logic_speed: f64, iterations: u32) void {
             memory.game.getBlockXInChunk(), // convert a subpixel (0-4095) in a chunk to a block in a chunk (0-15)
             memory.game.getBlockYInChunk(),
         );
-        // debug_recursively_increase_depth = true;
-        if (memory.game.depth > dw.HORIZON_DEPTH and
-            memory.game.depth < dw.HORIZON_DEPTH * 2 + dw.startup.STARTING_ZOOM_TIMES)
-        {
+
+        if (memory.game.depth > dw.HORIZON_DEPTH) {
             var key = memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth);
             const target_depth = memory.game.depth - dw.HORIZON_DEPTH;
             while (key.depth > target_depth) {
@@ -89,6 +88,7 @@ pub fn handleTick(logic_speed: f64, iterations: u32) void {
         if (dw.indicators.menus.furnace) @import("../menus/furnace.zig").updateSmelting();
         if (!just_increased_depth) dw.mining.handleMiningAndPlacing(logic_speed); // mouse block and mining/placing logic all updated in this function
         dw.player.move(logic_speed); // logic that moves the player/camera based on keys
+        dw.player.tickAnimation(); // advance player sprite animation + facing on the logic tick
         dw.water.tickWater(); // fluid sim
         memory.game.frame +%= 1;
     }

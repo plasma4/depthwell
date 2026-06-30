@@ -215,34 +215,17 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 
 /// Returns how "strong" a `Sprite` is; how much mining_progress must be contributed to increase `hp` of a block.
 inline fn getSpriteStrength(s: Sprite) ?u64 {
-    if (!s.isSolid()) {
-        return 0;
-    } else if (s == .forest_furnace or s == .lava_furnace) {
-        return std.math.maxInt(u64);
-    } else if (s.isStone()) {
-        return 15;
-    } else if (s.isOre()) {
-        return switch (s) {
-            .copper => 30,
-            .iron => 35,
-            .silver => 45,
-            .gold => 60,
-            else => 80,
-        };
-    } else if (s.isGem()) {
-        return switch (s) {
-            .amethyst => 75,
-            .sapphire => 85,
-            .emerald => 95,
-            .ruby => 100,
-            else => 100,
-        };
-    } else return null;
+    const props = sprite.getSpriteProps(s);
+    if (!props.in_world) return null;
+    if (!props.solid) return 0;
+    if (props.strength == 0) return null;
+    return props.strength;
 }
 
 comptime {
     for (@typeInfo(Sprite).@"enum".fields) |field| {
         const field_sprite: Sprite = @enumFromInt(field.value);
+        if (std.mem.eql(u8, field.name, "_") or std.mem.eql(u8, field.name, "unselected")) continue;
 
         // If it's a valid, solid block, it MUST have a defined mining strength.
         if (field_sprite.isInWorld() and field_sprite.isFoundation()) {

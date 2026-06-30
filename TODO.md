@@ -1,18 +1,9 @@
 Codebase tasks:
 
-- Fix strange issue with interpolation/movement of indicators when camera moves being off (acts jerky by a frame)
-- Make drag-and-drop smelting actually show the icon
-    - There should be a little bit of wiggle or effect when dragging rapidly (interactive), not 100% opacity
-    - Show multiple of the ore in pre-determined orientations (maybe up to 3) if there's multiple
-- Improve performance of water, potentially by changing the algorithm
-    - The bottleneck is primarily that even if there are 1-2 water blocks per chunk, performance decreases
-    - Additionally, there is a very significant lag spike when first adding water to a chunk through manual modification
-- Switch out naive value noise in procedural.zig when use_f2_f1 is false for a potentially hybrid and performant algorithm
-    - Must analyze clock cycles/practically test to make sre it is no more than twice/frame
 - Create a performance testing system that benchmarks random chunk generation and water (can override procedural data, etc.).
     - Must be 0-cost in Release+no FORCE_DEBUG
 - Evaluate places with "harmful inlining", especially higher up the abstraction chain
-    - Evaluate a special case of inlining where functions like `state.procedural.getFbmWorleyValue` have anon variants (`__anon_18709`), potentially due to comptime splitting the function up
+    - Evaluate a special case of inlining where functions like `state.procedural.getFbmValue` have anon variants (`__anon_18709`), potentially due to comptime splitting the function up
     - Determine if more specific benchmarking programming is needed
 - Evaluate whether Chromium Performance tab testing is acceptable for WASM, especially on modern Apple devices
     - Determine the reliability of CPU throttling and WGSL testing

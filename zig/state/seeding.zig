@@ -271,7 +271,7 @@ pub const HashState = struct {
 pub const FastHash = struct {
     // Look inside
     // >It's not really secret.
-    // const secret = [_]u64{
+    // const secret: [4]u64 = {
     //     0xa0761d6478bd642f,
     //     0xe7037ed1a0b428db,
     //     0x8ebc6af09c88c6e3,

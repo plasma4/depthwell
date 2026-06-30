@@ -1,6 +1,5 @@
 //! Handles lower-level procedural logic by handling debug constants (such as gem odds and FBM size) as well as noise-based functions.
 //! Higher-level logic exists within `world.generateBaseChunk()`.
-//! TODO: also implement advanced ridged noise that uses absolute values (still performant and provides better terrain)
 const std = @import("std");
 const dw = @import("../root.zig");
 const types = dw.types;
@@ -17,19 +16,53 @@ const CHUNK_SIZE = dw.CHUNK_SIZE;
 const Sprite = dw.Sprite;
 const EdgeFlags = types.EdgeFlags;
 const oddsNum = seeding.oddsNum;
-const HashState = seeding.HashState;
 const FastHash = seeding.FastHash;
 const Seed = seeding.Seed;
 const Vec2f = dw.utils.Vec2f;
 const Vec2u = dw.utils.Vec2u;
+const Vec4u = dw.utils.Vec4u;
 
 // Lots of values controllable by debug sliders here!
 pub const dual_value_scale = TuningFloat(16.0);
 pub const base_gem_odds = TuningFloat(0.1);
 pub const procedural_cell_size = TuningFloat(1.0);
 pub const fbm_scale = TuningFloat(1.0);
-pub const density_min = TuningFloat(0.26);
-pub const density_max = TuningFloat(0.9);
+pub const density_min = TuningFloat(0.36);
+pub const density_max = TuningFloat(0.94);
+pub const hybrid_weight = TuningFloat(0.6);
+
+/// Generates a block for seeding (based on previous procedural generation logic).
+/// The terms moisture/density are used extremely loosely here.
+/// Moisture is over a larger area, acting as the "biome" for structure logic.
+pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
+    // check is_debug because these will always be off in non-dev
+    // sprite IDs in this range create a heatmap
+    if (dw.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
+        return @enumFromInt(65000 + @as(u20, @intFromFloat(moisture * 256.0)));
+    if (dw.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
+
+    if (density <= density_min.getF32() or density >= density_max.getF32()) {
+        if (moisture >= 0.93 and moisture <= 0.94) return .purple_strange_stone;
+        return .none;
+    } else if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
+        return .blue_strange_stone;
+    }
+
+    if (moisture >= 0.995) return .stone;
+    if (moisture >= 0.98 and moisture < 0.995) return .ancient_stone;
+    if (moisture >= 0.93 and moisture <= 0.94) return .red_stone;
+    if (moisture >= 0.9) return .none;
+
+    if (moisture >= 0.88 and moisture <= 0.92) return .lava_stone;
+    if (moisture >= 0.50 and density <= 0.53 and density <= 0.6) return .green_stone;
+
+    if (moisture >= 0.62 and density >= 0.83) return .seagreen_stone;
+    if (moisture <= 0.55 and density >= 0.60 and density <= 0.72) return .blue_stone;
+    if (density >= 0.40 and density <= 0.55) return .alt_blue_stone;
+
+    if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
+    return .stone;
+}
 
 /// Returns a struct with an a `value: f64` and `getF32()`.
 /// Allows for numbers to act like variables in Debug mode and constant-fold in all Release modes.
@@ -71,7 +104,7 @@ pub var USE_BASE_HEATMAP = false;
 pub var USE_ORE_HEATMAP = false;
 
 /// Configuration options passed to the FBM (Fractal Brownian Motion) and Worley
-/// noise generation algorithm (`getFbmWorleyValue`).
+/// noise generation algorithm (`getFbmValue()`).
 const TerrainOptions = struct {
     /// Controls the scale of the primary noise grid cells.
     /// Larger values stretch out the noise patterns.
@@ -99,51 +132,6 @@ const BaseTerrainData = struct {
     density: f32,
 };
 
-/// Creates a `HashState` given a seed, (base depth) coordinates, and power-of-two area where a structure may appear within.
-pub inline fn makeStructureHash(
-    struct_seed: Vec2u,
-    wx: u32,
-    wy: u32,
-    structure_area: comptime_int,
-    unique_id: comptime_int,
-) HashState {
-    // sadly this @compileError doesn't work properly
-    // if (!std.math.isPowerOfTwo(structure_area)) @compileError("Structure hash must be a power of two for performance!");
-    std.debug.assert(std.math.isPowerOfTwo(structure_area));
-    const struct_x_coord = wx / structure_area;
-    const struct_y_coord: u64 = @intCast(wy / structure_area);
-
-    // Since we don't plan to ask for 2^32 sequential hash2d() calls (which cycles the values), X and Y values are pretty much arbitrary.
-    // Hence, we craft a configuration with minimal "work" involved: unique ID bit-shifted is constant.
-
-    // What is critical is that sequential X/Y values don't coincide with the same exact HashState; << 32 solves that easily.
-    const init_x = struct_x_coord + (struct_y_coord << 32);
-    const init_y = @as(u64, unique_id) << 32;
-
-    return .{
-        .seed_vector = struct_seed,
-        .x = init_x,
-        .y = init_y,
-    };
-}
-
-/// Creates a `HashState` given a seed and (base depth) coordinates to a block, as well as a unique ID.
-pub inline fn makeBlockHash(
-    struct_seed: Vec2u,
-    wx: u32,
-    wy: u32,
-    unique_id: comptime_int,
-) HashState {
-    const init_x = wx + (@as(u64, wy) << 32);
-    const init_y = @as(u64, std.math.maxInt(u32) - unique_id) << 32;
-
-    return .{
-        .seed_vector = struct_seed,
-        .x = init_x,
-        .y = init_y,
-    };
-}
-
 /// Adds larger structures across multiple blocks in a deterministic fashion.
 /// Continues from steps 1-3 in `getBaseSpriteType()`.
 ///
@@ -156,447 +144,7 @@ pub fn addStructures(
     density_seed: Vec2u,
 ) Sprite {
     _ = density_seed;
-    // IMPORTANT: structure areas should be a power of 2 so that the modulo becomes an & instruction.
-
-    // Attempt to place structures in order of priority.
-    // If a structure returns a sprite, we return immediately.
-    if (addBasicRectStructure(starting_sprite, wx, wy, struct_seed)) |s| return s;
-    if (addAncientStructure(starting_sprite, wx, wy, struct_seed)) |s| return s;
-    if (addPillarStructure(starting_sprite, wx, wy, struct_seed)) |s| return s;
-    if (addGeodeStructure(starting_sprite, wx, wy, struct_seed)) |s| return s;
-
-    return starting_sprite;
-}
-
-/// Structure 1: basic rect with chest inside.
-/// SSSSSSSSSS
-/// S        S
-/// S c      S
-/// SSSSSSSSSS
-fn addBasicRectStructure(
-    starting_sprite: Sprite,
-    wx: u32,
-    wy: u32,
-    struct_seed: Vec2u,
-) ?Sprite {
-    const structure_area = 32;
-    var state = makeStructureHash(struct_seed, wx, wy, structure_area, 0);
-
-    // Fast odds check (3% chance)
-    if (state.getChance(0.03)) {
-        const size_x = 8;
-        const size_y = 5;
-
-        const x_in_area: i32 = @intCast(wx % structure_area); // modulo optimized to AND
-        const y_in_area: i32 = @intCast(wy % structure_area);
-
-        const max_pos_x = structure_area - size_x;
-        const max_pos_y = structure_area - size_y;
-
-        // Extract values using the state generator instead of manual bit-slicing
-        const pos_x = @as(i32, @intCast(state.getLimit(u32, max_pos_x)));
-        const pos_y = @as(i32, @intCast(state.getLimit(u32, max_pos_y)));
-        const chest_x = 1 + @as(i32, @intCast(state.getLimit(u32, size_x - 2)));
-
-        const struct_x = x_in_area - pos_x;
-        const struct_y = y_in_area - pos_y;
-
-        if (struct_x >= 0 and struct_y >= 0 and struct_x < size_x and struct_y < size_y) {
-            if (struct_x == 0 or struct_y == 0 or struct_x == size_x - 1 or struct_y == size_y - 1) {
-                return .seagreen_stone;
-            }
-
-            if (struct_y == size_y - 2 and struct_x == chest_x) {
-                return .chest;
-            }
-
-            return if (starting_sprite.isLiquid()) starting_sprite else .none;
-        }
-    }
-    return null;
-}
-
-/// Structure 2: ancient (fossil-like) run with chest inside
-///   SSSS
-///  SS  SS
-/// SS c SSS
-///  SSSSSS
-fn addAncientStructure(
-    starting_sprite: Sprite,
-    wx: u32,
-    wy: u32,
-    struct_seed: Vec2u,
-) ?Sprite {
-    _ = starting_sprite;
-    const structure_area = 64;
-    var state = makeStructureHash(struct_seed, wx, wy, structure_area, 1);
-
-    if (state.getChance(0.32)) {
-        const base_radius_x = state.getRange(i32, 6, 12);
-        const base_radius_y = state.getRange(i32, 4, 7);
-
-        const padding = 3;
-        const size_x = (base_radius_x + padding) * 2;
-        const size_y = (base_radius_y + padding) * 2;
-
-        const x_in_area: i32 = @intCast(wx % structure_area);
-        const y_in_area: i32 = @intCast(wy % structure_area);
-
-        const max_pos_x: i32 = @max(1, @as(i32, structure_area) - size_x);
-        const max_pos_y: i32 = @max(1, @as(i32, structure_area) - size_y);
-
-        const pos_x = state.getLimit(i32, max_pos_x);
-        const pos_y = state.getLimit(i32, max_pos_y);
-
-        const struct_x = x_in_area - pos_x;
-        const struct_y = y_in_area - pos_y;
-
-        // Reject early if outside bounding box
-        if (struct_x >= 0 and struct_y >= 0 and struct_x < size_x and struct_y < size_y) {
-            const center_x = size_x >> 1;
-            const center_y = size_y >> 1;
-            const dx = struct_x - center_x;
-            const dy = struct_y - center_y;
-
-            const skew_x = state.getRange(i32, -1, 2);
-            const skew_y = state.getRange(i32, -1, 2);
-            const local_noise_x = state.getRange(i32, -1, 1);
-
-            const rx = base_radius_x + skew_x + local_noise_x;
-            const ry = base_radius_y + skew_y;
-
-            if (rx > 0 and ry > 0) {
-                const dist_sq = (dx * dx * ry * ry) + (dy * dy * rx * rx);
-                const outer_bound = rx * rx * ry * ry;
-
-                const wall_thickness = 2;
-                const inner_rx: i32 = @max(1, rx - wall_thickness);
-                const inner_ry: i32 = @max(1, ry - wall_thickness);
-
-                if (dist_sq <= outer_bound) {
-                    // Elliptical inner boundary check
-                    const inner_dist_sq = (dx * dx * inner_ry * inner_ry) + (dy * dy * inner_rx * inner_rx);
-                    const inner_bound = inner_rx * inner_rx * inner_ry * inner_ry;
-
-                    if (inner_dist_sq > inner_bound) {
-                        const erosion_factor = (wx ^ wy) % 7;
-                        if (erosion_factor == 0) return .none;
-                        return .ancient_stone;
-                    } else {
-                        const floor_y = center_y + inner_ry - 1;
-
-                        // Prevent boundary clipping by limiting chest selection to inner_rx/2
-                        const chest_range = inner_rx;
-                        const chest_offset = (-inner_rx >> 1) + state.getLimit(i32, chest_range);
-                        const chest_x = center_x + chest_offset;
-
-                        if (struct_y == floor_y and struct_x == chest_x) {
-                            return .chest;
-                        }
-                        return .none;
-                    }
-                }
-            }
-        }
-    }
-    return null;
-}
-
-/// Structure 3: Pillar thing
-/// SSSSSSSSSSSSSSSS
-/// S   P     P    S
-/// S   P     P    S
-/// S      c       S
-/// S     SSS      S
-/// SSSSSSSSSSSSSSSS
-fn addPillarStructure(
-    starting_sprite: Sprite,
-    wx: u32,
-    wy: u32,
-    struct_seed: Vec2u,
-) ?Sprite {
-    _ = starting_sprite;
-    const structure_area = 128;
-    var state = makeStructureHash(struct_seed, wx, wy, structure_area, 2);
-
-    if (state.getChance(0.08)) {
-        const size_x = 24;
-        const size_y = 12;
-
-        const x_in_area: i32 = @intCast(wx % structure_area);
-        const y_in_area: i32 = @intCast(wy % structure_area);
-
-        const max_pos_x = structure_area - size_x;
-        const max_pos_y = structure_area - size_y;
-
-        const pos_x = @as(i32, @intCast(state.getLimit(u32, max_pos_x)));
-        const pos_y = @as(i32, @intCast(state.getLimit(u32, max_pos_y)));
-        const bit = state.getChance(0.5);
-
-        const struct_x = x_in_area - pos_x;
-        const struct_y = y_in_area - pos_y;
-
-        // Bounding box check
-        if (struct_x >= 0 and struct_y >= 0 and struct_x < size_x and struct_y < size_y) {
-            // Outermost stone frame
-            if (struct_x == 0 or struct_y == 0 or struct_x == size_x - 1 or struct_y == size_y - 1) {
-                return .ancient_stone;
-            }
-
-            // Columns are placed every 5 blocks on the x-axis, centered vertically
-            const rel_col_x = @rem((struct_x - 3), 5);
-            const is_pillar_column = rel_col_x == 1;
-            const is_pillar_row = (struct_y >= 3 and struct_y <= size_y - 4);
-
-            if (is_pillar_column and is_pillar_row) {
-                // Don't block the very center where the tomb altar sits
-                const is_near_center = (struct_x >= size_x / 2 - 3 and struct_x <= size_x / 2 + 2);
-                if (!is_near_center) {
-                    return .mossy_stone;
-                }
-            }
-
-            // Central altar and chest placement
-            const altar_x = size_x / 2;
-            const altar_y = size_y - 3;
-            if (struct_y == altar_y and struct_x == altar_x) {
-                return .chest;
-            }
-            if (struct_y == altar_y + 1 and (struct_x >= altar_x - 1 and struct_x <= altar_x + 1)) {
-                return .seagreen_stone; // Solid base under chest
-            }
-
-            if (struct_y == size_y - 2 or (struct_y == size_y - 3 and bit)) {
-                return .water;
-            }
-
-            return .none;
-        }
-    }
-    return null;
-}
-
-/// Structure 4: Geode (ore shell containing yummy gems)
-///       OOOOO
-///     OO GGG OO
-///   OO GGGGG  OO
-///     OO GGG OO
-///       OOOOO
-fn addGeodeStructure(
-    starting_sprite: Sprite,
-    wx: u32,
-    wy: u32,
-    struct_seed: Vec2u,
-) ?Sprite {
-    _ = starting_sprite;
-    const structure_area = 128;
-    var state = makeStructureHash(struct_seed, wx, wy, structure_area, 3);
-
-    if (state.getChance(0.88)) {
-        const radius = state.getRange(i32, 5, 10);
-        const core_radius = radius - 2;
-
-        const x_in_area: i32 = @intCast(wx % structure_area);
-        const y_in_area: i32 = @intCast(wy % structure_area);
-
-        const max_pos_x = structure_area - (radius * 2);
-        const max_pos_y = structure_area - (radius * 2);
-        std.debug.assert(max_pos_x >= 0 and max_pos_y >= 0);
-        const pos_x = @as(i32, @intCast(state.getLimit(u32, @intCast(max_pos_x))));
-        const pos_y = @as(i32, @intCast(state.getLimit(u32, @intCast(max_pos_y))));
-
-        const struct_x = x_in_area - pos_x;
-        const struct_y = y_in_area - pos_y;
-
-        // Center of the geode relative to the area
-        const center_x = radius;
-        const center_y = radius;
-        const dx = struct_x - center_x;
-        const dy = struct_y - center_y;
-
-        // Determine the shell's block type
-        const shell_rand = state.getLimit(u32, 5);
-        const shell: Sprite = switch (shell_rand) {
-            0, 1 => .pink_stone,
-            2, 3 => .alt_blue_stone,
-            4 => .ancient_stone,
-            else => unreachable,
-        };
-
-        // Check if within the bounding box of the geode
-        if (struct_x >= 0 and struct_y >= 0 and struct_x < radius * 2 and struct_y < radius * 2) {
-            const dist_sq = (dx * dx) + (dy * dy);
-
-            if (dist_sq <= core_radius * core_radius) {
-                // We are in the core (center area)! Determine whether to use stone or a gem.
-                var block_state = makeBlockHash(struct_seed, wx, wy, 3);
-                const core_rand = block_state.getLimit(u32, 50);
-                const which_stone = state.getLimit(u32, 3);
-                return switch (core_rand) {
-                    0, 1, 2, 3, 4 => .amethyst,
-                    5, 6, 7, 8 => .sapphire,
-                    9, 10 => .emerald,
-                    11 => .ruby,
-
-                    else =>
-                    // Gems weren't selected: determine a default stone type that's consistent across all blocks in the core
-                    if (dist_sq >= (core_radius - 1) * (core_radius - 1))
-                        if (shell == .pink_stone) .stone else ([_]Sprite{ .stone, .green_stone, .seagreen_stone })[which_stone]
-                    else
-                        .stone,
-                };
-            } else if (dist_sq <= radius * radius) {
-                return shell;
-            }
-        }
-    }
-    return null;
-}
-
-/// A highly optimized bilinear value noise implementation.
-/// Bypasses domain warping and multi-tap cellular distance lookups entirely.
-fn getBilinearValueNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
-    const fx = @as(f32, @floatFromInt(x)) / cell_size;
-    const fy = @as(f32, @floatFromInt(y)) / cell_size;
-
-    const x0 = @floor(fx);
-    const y0 = @floor(fy);
-    const tx = fx - x0;
-    const ty = fy - y0;
-
-    const ix0: u64 = @intFromFloat(x0);
-    const iy0: u64 = @intFromFloat(y0);
-
-    // Commented out: -20t^7 + 70t^6 - 84t^5 + 35t^4.
-    // const u = tx * tx * tx * tx * (tx * (tx * (35.0 - 20.0 * tx) - 84.0) + 70.0);
-    // const v = ty * ty * ty * ty * (ty * (ty * (35.0 - 20.0 * ty) - 84.0) + 70.0);
-    const u = tx * tx * tx * (tx * (tx * 6.0 - 15.0) + 10.0);
-    const v = ty * ty * ty * (ty * (ty * 6.0 - 15.0) + 10.0);
-
-    // Direct 4-tap lookup
-    const h00 = FastHash.hash2d(seed_vector, ix0, iy0);
-    const h10 = FastHash.hash2d(seed_vector, ix0 +% 1, iy0);
-    const h01 = FastHash.hash2d(seed_vector, ix0, iy0 +% 1);
-    const h11 = FastHash.hash2d(seed_vector, ix0 +% 1, iy0 +% 1);
-
-    const v00 = @as(f32, @floatFromInt(h00)) / POW_2_64;
-    const v10 = @as(f32, @floatFromInt(h10)) / POW_2_64;
-    const v01 = @as(f32, @floatFromInt(h01)) / POW_2_64;
-    const v11 = @as(f32, @floatFromInt(h11)) / POW_2_64;
-
-    const nx0 = v00 + u * (v10 - v00);
-    const nx1 = v01 + u * (v11 - v01);
-    return nx0 + v * (nx1 - nx0);
-}
-
-/// Returns a value between 0-1, used as a terrain starting point for the default depth of 3.
-/// Note that if F2-F1 calculations are not required, `getBilinearValueNoise()` is called directly.
-fn getFbmWorleyValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: TerrainOptions) f32 {
-    if (!options.use_f2_f1) {
-        return getBilinearValueNoise(seed_vector, x, y, options.cell_size);
-    }
-
-    const fx: f32 = @floatFromInt(x);
-    const fy: f32 = @floatFromInt(if (options.horizontally_wide) y * 2 else y);
-
-    const h_stretch = 1.5;
-    const fbm_octaves = 3;
-    var warp_x: f32 = 0;
-    var warp_y: f32 = 0;
-
-    var freq: u64 = 1;
-    var amp: f32 = options.fbm_shift_size;
-
-    const inv_fbm_scale = 1.0 / fbm_scale.getF32();
-    const inv_dual_value_scale = 1.0 / dual_value_scale.getF32();
-    amp *= inv_fbm_scale;
-
-    if (amp > 0) {
-        inline for (0..fbm_octaves) |_| {
-            const noise = getDualValueNoise(seed_vector, x * freq, y * freq, inv_dual_value_scale);
-            warp_x += noise[0] * amp;
-            warp_y += noise[1] * amp;
-            amp *= 0.55; // 55%, not 50%!
-            freq *%= 2;
-        }
-    }
-
-    const cell_size = options.cell_size * procedural_cell_size.getF32();
-    const inv_cell_size = 1.0 / cell_size;
-    const cell_w = cell_size * h_stretch;
-    const inv_cell_w = 1.0 / cell_w;
-
-    const wx = fx + warp_x;
-    const wy = fy + warp_y;
-
-    // Fast division-free float-to-int mapping
-    const cx_f = @floor(wx * inv_cell_w);
-    const cy_f = @floor(wy * inv_cell_size);
-    const cx_i: i64 = @intFromFloat(cx_f);
-    const cy_i: i64 = @intFromFloat(cy_f);
-
-    var d1_sq = std.math.inf(f32);
-    var d2_sq = std.math.inf(f32);
-
-    // Worley search stuff! Uses a lot of optimization tricks.
-    inline for (0..2) |ox| {
-        inline for (0..2) |oy| {
-            const cur_x: u64 = @bitCast(cx_i + ox);
-            const cur_y: u64 = @bitCast(cy_i + oy);
-
-            const h = FastHash.hash2d(seed_vector, cur_x, cur_y);
-            const off_x = @as(f32, @floatFromInt(@as(u32, @truncate(h)))) * INV_POW_2_32;
-            const off_y = @as(f32, @floatFromInt(@as(u32, @truncate(h >> 32)))) * INV_POW_2_32;
-
-            const px = (@as(f32, @floatFromInt(cx_i + ox)) + off_x) * cell_w;
-            const py = (@as(f32, @floatFromInt(cy_i + oy)) + off_y) * cell_size;
-
-            const dx = wx - px;
-            const dy = wy - py;
-            const dist_sq = dx * dx + dy * dy;
-
-            if (dist_sq < d1_sq) {
-                d2_sq = d1_sq;
-                d1_sq = dist_sq;
-            } else if (dist_sq < d2_sq) {
-                d2_sq = dist_sq;
-            }
-        }
-    }
-
-    return @min((@sqrt(d2_sq) - @sqrt(d1_sq)) * inv_cell_size, 1.0);
-}
-
-/// Generates a block for seeding (based on previous procedural generation logic).
-/// The terms moisture/density are used extremely loosely here.
-/// Moisture is over a larger area, acting as the "biome" for structure logic.
-pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
-    // check is_debug because these will always be off in non-dev
-    // sprite IDs in this range create a heatmap
-    if (dw.is_debug and USE_BASE_HEATMAP and !USE_ORE_HEATMAP)
-        return @enumFromInt(65000 + @as(u20, @intFromFloat(moisture * 256.0)));
-    if (dw.is_debug and USE_BASE_HEATMAP and USE_ORE_HEATMAP) return .stone;
-
-    if (density <= density_min.getF32() or density >= density_max.getF32()) {
-        if (moisture >= 0.93 and moisture <= 0.94) return .purple_strange_stone;
-        return .none;
-    } else if (density <= 0.04 and moisture >= 0.3 and moisture <= 0.4) {
-        return .blue_strange_stone;
-    }
-
-    if (moisture >= 0.98) return .ancient_stone;
-    if (moisture > 0.9) return .none;
-
-    if (moisture >= 0.93 and moisture <= 0.94) return .red_stone;
-    if (moisture >= 0.88 and moisture <= 0.92) return .lava_stone;
-    if (moisture >= 0.50 and density <= 0.53 and density <= 0.6) return .green_stone;
-
-    if (moisture >= 0.62 and density >= 0.83) return .seagreen_stone;
-    if (moisture <= 0.55 and density >= 0.60 and density <= 0.72) return .blue_stone;
-    if (density >= 0.40 and density <= 0.55) return .alt_blue_stone;
-
-    if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
-    return .stone;
+    return dw.structures.addStructures(starting_sprite, wx, wy, struct_seed);
 }
 
 /// Returns a base sprite type. Does 3 passes:
@@ -610,7 +158,7 @@ pub inline fn getBaseSpriteType(
     block_x: u4,
     block_y: u4,
 ) BaseTerrainData {
-    const moisture = getFbmWorleyValue( // acts as a biome selector
+    const moisture = getFbmValue( // acts as a biome selector
         memory.game.getHashSeed(.moisture), // code is INLINED, so this is okay presumably
         // .{ 0, 0 },
         chunk_x * 16 + block_x,
@@ -621,7 +169,7 @@ pub inline fn getBaseSpriteType(
             .horizontally_wide = false,
         },
     );
-    const density = getFbmWorleyValue( // more granular density
+    const density = getFbmValue( // more granular density
         memory.game.getHashSeed(.density),
         // .{ 0, 0 },
         chunk_x * 16 + block_x,
@@ -630,6 +178,7 @@ pub inline fn getBaseSpriteType(
             .cell_size = 80.0, // smaller cells for cave terrain
             .fbm_shift_size = 24.0,
             .horizontally_wide = true,
+            .use_f2_f1 = true,
         },
     );
 
@@ -640,52 +189,6 @@ pub inline fn getBaseSpriteType(
         .moisture = moisture,
         .density = density,
     };
-}
-
-/// Returns two independent noise values (32-bit float) using vectorized 4-corner value noise.
-fn getDualValueNoise(seed: Vec2u, x: u64, y: u64, inv_scale: f32) dw.utils.Vec2f32 {
-    const fx_raw = @as(f32, @floatFromInt(x)) * inv_scale;
-    const fy_raw = @as(f32, @floatFromInt(y)) * inv_scale;
-
-    const x0_f = @floor(fx_raw);
-    const y0_f = @floor(fy_raw);
-    const x0: u64 = @intFromFloat(x0_f);
-    const y0: u64 = @intFromFloat(y0_f);
-
-    const tx = fx_raw - x0_f;
-    const ty = fy_raw - y0_f;
-
-    // Fade curves
-    const u = tx * tx * tx * (tx * (tx * 6.0 - 15.0) + 10.0);
-    const v = ty * ty * ty * (ty * (ty * 6.0 - 15.0) + 10.0);
-
-    // Prepare 4 corners: (x0, y0), (x0+1, y0), (x0, y0+1), (x0+1, y0+1)
-    const Vec4u = @Vector(4, u64);
-    const vx: Vec4u = .{ x0, x0 +% 1, x0, x0 +% 1 };
-    const vy: Vec4u = .{ y0, y0, y0 +% 1, y0 +% 1 };
-
-    // Generate 4 values all at once!
-    const h_vec = FastHash.hash2d_4x(seed, vx, vy);
-
-    var res: dw.utils.Vec2f32 = .{ 0, 0 };
-
-    inline for (0..2) |i| {
-        const shift: u6 = @intCast(i * 32);
-        const shifted = h_vec >> @as(Vec4u, @splat(shift));
-        const truncated: @Vector(4, u32) = @truncate(shifted);
-        const floats: @Vector(4, f32) = @floatFromInt(truncated);
-        const v_vec = floats * @as(@Vector(4, f32), @splat(INV_POW_2_32));
-
-        const v00 = v_vec[0];
-        const v10 = v_vec[1];
-        const v01 = v_vec[2];
-        const v11 = v_vec[3];
-
-        const nx0 = v00 + u * (v10 - v00);
-        const nx1 = v01 + u * (v11 - v01);
-        res[i] = nx0 + v * (nx1 - nx0);
-    }
-    return res;
 }
 
 /// Generates ores over certain types of blocks, returning a sprite type (possibly changed to an ore type).
@@ -703,8 +206,8 @@ pub fn addOres(
 ) Sprite {
     var sprite = base_data.sprite;
 
-    // Generate new density for ores: the seed vector should be different from the `getFbmWorleyDensity()` vector.
-    const v1 = getFbmWorleyValue( // smaller cells, less FBM variation
+    // Generate new density for ores with a DIFFERENT set of 4 seed vectors (sent as args!)
+    const v1 = getFbmValue( // smaller cells, less FBM variation
         seed_vector_1,
         x,
         y,
@@ -715,7 +218,7 @@ pub fn addOres(
             .use_f2_f1 = true,
         },
     );
-    const v2 = getFbmWorleyValue( // larger cells, much more FBM variation
+    const v2 = getFbmValue( // larger cells, much more FBM variation
         seed_vector_2,
         x,
         y,
@@ -735,21 +238,26 @@ pub fn addOres(
         sprite = selectSprite(
             .{ sprite, .copper },
             true,
-            .{ v2, 0.0, 0.2 },
+            .{ v2, 0.0, 0.04 },
         );
-        if (sprite == .copper or v2 >= 0.7) return sprite;
+        sprite = selectSprite(
+            .{ sprite, .copper },
+            true,
+            .{ v2, 0.9, 0.93 },
+        );
+        if (sprite == .copper) return sprite;
 
         sprite = selectSprite(
             .{ sprite, .iron },
             true,
-            .{ v1, 0.55, 0.65 },
+            .{ v1, 0.55, 0.565 },
         );
         if (sprite == .iron and base_data.sprite != .blue_strange_stone) return sprite;
 
         sprite = selectSprite(
             .{ sprite, .silver },
             base_data.density <= 0.48,
-            .{ v1, 0.2, 0.26 },
+            .{ v1, 0.2, 0.21 },
         );
         sprite = selectSprite(
             .{ sprite, .silver },
@@ -771,7 +279,7 @@ pub fn addOres(
             const random_value = FastHash.float2d(seed_vector_3, @intCast(x), @intCast(y));
 
             if (random_value <= base_gem_odds.value) {
-                const v3 = getFbmWorleyValue(
+                const v3 = getFbmValue(
                     seed_vector_4,
                     y,
                     x,
@@ -945,4 +453,391 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
     //     var block = &target_chunk.blocks[id];
     //     if (!block.isFoundation()) block.edge_flags = 0xFF;
     // }
+}
+
+/// Quintic fade 6t^5 - 15t^4 + 10t^3 (Perlin's smootherstep): zero 1st AND 2nd derivative at 0/1.
+inline fn fade(t: f32) f32 {
+    // Alternative: -20t^7 + 70t^6 - 84t^5 + 35t^4.
+    // const u = tx * tx * tx * tx * (tx * (tx * (35.0 - 20.0 * tx) - 84.0) + 70.0);
+    // const v = ty * ty * ty * ty * (ty * (ty * (35.0 - 20.0 * ty) - 84.0) + 70.0);
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+
+/// A highly optimized bilinear value noise implementation.
+/// Bypasses domain warping and multi-tap cellular distance lookups entirely.
+///
+/// Use for: basic, boring but fast noise.
+fn getBilinearValueNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
+    const fx = @as(f32, @floatFromInt(x)) / cell_size;
+    const fy = @as(f32, @floatFromInt(y)) / cell_size;
+
+    const x0 = @floor(fx);
+    const y0 = @floor(fy);
+    const tx = fx - x0;
+    const ty = fy - y0;
+
+    const ix0: u64 = @intFromFloat(x0);
+    const iy0: u64 = @intFromFloat(y0);
+
+    const u = fade(tx);
+    const v = fade(ty);
+
+    // Vectorized 4-tap lookup
+    const vx: Vec4u = .{ ix0, ix0 +% 1, ix0, ix0 +% 1 };
+    const vy: Vec4u = .{ iy0, iy0, iy0 +% 1, iy0 +% 1 };
+    const h = FastHash.hash2d_4x(seed_vector, vx, vy);
+
+    // Fast u32 to f32 vector conversion
+    const truncated: @Vector(4, u32) = @truncate(h);
+    const floats: @Vector(4, f32) = @floatFromInt(truncated);
+    const v_vec = floats * @as(@Vector(4, f32), @splat(INV_POW_2_32));
+
+    const v00 = v_vec[0];
+    const v10 = v_vec[1];
+    const v01 = v_vec[2];
+    const v11 = v_vec[3];
+
+    const nx0 = v00 + u * (v10 - v00);
+    const nx1 = v01 + u * (v11 - v01);
+    return nx0 + v * (nx1 - nx0);
+}
+
+/// Returns a value between 0-1, used as a terrain starting point for the default depth of 3.
+/// Note that if F2-F1 calculations are not requested, `getPerlinNoise()` is called after FBM.
+/// If F2-F1 calculations are requested, then Worley noise is used instead.
+///
+/// Use for: terraced blocks, cellular clusters, and erosion basins.
+fn getFbmValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: TerrainOptions) f32 {
+    if (!options.use_f2_f1) {
+        // Excellent for sharp branching networks and rich ore veins
+        return fbm(getPerlinNoise, seed_vector, x, y, options.cell_size, 3);
+    }
+
+    const fx: f32 = @floatFromInt(x);
+    const fy: f32 = @floatFromInt(if (options.horizontally_wide) y * 2 else y);
+
+    const h_stretch = 1.5;
+    const fbm_octaves = 3;
+    var warp_x: f32 = 0;
+    var warp_y: f32 = 0;
+
+    var freq: u64 = 1;
+    var amp: f32 = options.fbm_shift_size;
+
+    const inv_fbm_scale = 1.0 / fbm_scale.getF32();
+    const inv_dual_value_scale = 1.0 / dual_value_scale.getF32();
+    amp *= inv_fbm_scale;
+
+    if (amp > 0) {
+        inline for (0..fbm_octaves) |_| {
+            const n = getDualValueNoise(seed_vector, x * freq, y * freq, inv_dual_value_scale);
+            warp_x += n[0] * amp;
+            warp_y += n[1] * amp;
+            amp *= 0.55; // 55%, not 50%!
+            freq *%= 2;
+        }
+    }
+
+    const cell_size = options.cell_size * procedural_cell_size.getF32();
+    const inv_cell_size = 1.0 / cell_size;
+    const cell_w = cell_size * h_stretch;
+    const inv_cell_w = 1.0 / cell_w;
+
+    const wx = fx + warp_x;
+    const wy = fy + warp_y;
+
+    // Fast division-free float-to-int mapping
+    const cx_f = @floor(wx * inv_cell_w);
+    const cy_f = @floor(wy * inv_cell_size);
+    const cx_i: i64 = @intFromFloat(cx_f);
+    const cy_i: i64 = @intFromFloat(cy_f);
+
+    var d1_sq = std.math.inf(f32);
+    var d2_sq = std.math.inf(f32);
+
+    // Vectorized 4-tap Worley grid search
+    const ox_vec = Vec4u{ 0, 0, 1, 1 };
+    const oy_vec = Vec4u{ 0, 1, 0, 1 };
+    const cur_x_vec: Vec4u = @bitCast(@as(@Vector(4, i64), @splat(cx_i)) + @as(@Vector(4, i64), @bitCast(ox_vec)));
+    const cur_y_vec: Vec4u = @bitCast(@as(@Vector(4, i64), @splat(cy_i)) + @as(@Vector(4, i64), @bitCast(oy_vec)));
+
+    const h_vec = FastHash.hash2d_4x(seed_vector, cur_x_vec, cur_y_vec);
+
+    const truncated_x: @Vector(4, u32) = @truncate(h_vec);
+    const truncated_y: @Vector(4, u32) = @truncate(h_vec >> @splat(32));
+
+    const off_x_vec = @as(@Vector(4, f32), @floatFromInt(truncated_x)) * @as(@Vector(4, f32), @splat(INV_POW_2_32));
+    const off_y_vec = @as(@Vector(4, f32), @floatFromInt(truncated_y)) * @as(@Vector(4, f32), @splat(INV_POW_2_32));
+
+    const cx_f_vec: @Vector(4, f32) = .{
+        @floatFromInt(cx_i),
+        @floatFromInt(cx_i),
+        @floatFromInt(cx_i + 1),
+        @floatFromInt(cx_i + 1),
+    };
+    const cy_f_vec: @Vector(4, f32) = .{
+        @floatFromInt(cy_i),
+        @floatFromInt(cy_i + 1),
+        @floatFromInt(cy_i),
+        @floatFromInt(cy_i + 1),
+    };
+
+    const px_vec = (cx_f_vec + off_x_vec) * @as(@Vector(4, f32), @splat(cell_w));
+    const py_vec = (cy_f_vec + off_y_vec) * @as(@Vector(4, f32), @splat(cell_size));
+
+    const dx_vec = @as(@Vector(4, f32), @splat(wx)) - px_vec;
+    const dy_vec = @as(@Vector(4, f32), @splat(wy)) - py_vec;
+    const dist_sq_vec = dx_vec * dx_vec + dy_vec * dy_vec;
+
+    inline for (0..4) |i| {
+        const dist_sq = dist_sq_vec[i];
+        if (dist_sq < d1_sq) {
+            d2_sq = d1_sq;
+            d1_sq = dist_sq;
+        } else if (dist_sq < d2_sq) {
+            d2_sq = dist_sq;
+        }
+    }
+
+    return @min((@sqrt(d2_sq) - @sqrt(d1_sq)) * inv_cell_size, 1.0);
+}
+
+/// Returns two independent noise values (32-bit float) using vectorized 4-corner value noise.
+///
+/// Use for: distorting other noise functions.
+fn getDualValueNoise(seed: Vec2u, x: u64, y: u64, inv_scale: f32) dw.utils.Vec2f32 {
+    const fx_raw = @as(f32, @floatFromInt(x)) * inv_scale;
+    const fy_raw = @as(f32, @floatFromInt(y)) * inv_scale;
+
+    const x0_f = @floor(fx_raw);
+    const y0_f = @floor(fy_raw);
+    const x0: u64 = @intFromFloat(x0_f);
+    const y0: u64 = @intFromFloat(y0_f);
+
+    const tx = fx_raw - x0_f;
+    const ty = fy_raw - y0_f;
+
+    // Use fade curves
+    const u = fade(tx);
+    const v = fade(ty);
+
+    // Prepare 4 corners: (x0, y0), (x0+1, y0), (x0, y0+1), (x0+1, y0+1)
+    const vx: Vec4u = .{ x0, x0 +% 1, x0, x0 +% 1 };
+    const vy: Vec4u = .{ y0, y0, y0 +% 1, y0 +% 1 };
+
+    // Generate 4 values all at once!
+    const h_vec = FastHash.hash2d_4x(seed, vx, vy);
+
+    var res: dw.utils.Vec2f32 = .{ 0, 0 };
+
+    inline for (0..2) |i| {
+        const shift: u6 = @intCast(i * 32);
+        const shifted = h_vec >> @as(Vec4u, @splat(shift));
+        const truncated: @Vector(4, u32) = @truncate(shifted);
+        const floats: @Vector(4, f32) = @floatFromInt(truncated);
+        const v_vec = floats * @as(@Vector(4, f32), @splat(INV_POW_2_32));
+
+        const v00 = v_vec[0];
+        const v10 = v_vec[1];
+        const v01 = v_vec[2];
+        const v11 = v_vec[3];
+
+        const nx0 = v00 + u * (v10 - v00);
+        const nx1 = v01 + u * (v11 - v01);
+        res[i] = nx0 + v * (nx1 - nx0);
+    }
+    return res;
+}
+
+/// Normalization factor to push Perlin's ~[-0.71, 0.71] range toward [-1, 1].
+pub const PERLIN_NORM: f32 = @sqrt(2.0);
+
+/// Maps a 64-bit hash to a value in [0, 1).
+inline fn hashToUnit(h: u64) f32 {
+    return @as(f32, @floatFromInt(h)) / POW_2_64;
+}
+
+/// 8-direction gradient dot product (classic Perlin gradient set). The low 3 hash bits select the direction;
+/// the 4 cardinal + 4 diagonal set is cheap and visually isotropic enough for 2D.
+inline fn grad2(h: u64, dx: f32, dy: f32) f32 {
+    return switch (@as(u3, @truncate(h))) {
+        0 => dx + dy,
+        1 => dx - dy,
+        2 => -dx + dy,
+        3 => -dx - dy,
+        4 => dx,
+        5 => -dx,
+        6 => dy,
+        7 => -dy,
+    };
+}
+
+/// Shared grid setup holding cell coordinates, fractional progression, and pre-computed hashes.
+const Lattice = struct {
+    x0: u64,
+    y0: u64,
+    tx: f32,
+    ty: f32,
+    u: f32,
+    v: f32,
+    h: Vec4u,
+};
+
+inline fn lattice(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) Lattice {
+    const fx = @as(f32, @floatFromInt(x)) / cell_size;
+    const fy = @as(f32, @floatFromInt(y)) / cell_size;
+    const x0_f = @floor(fx);
+    const y0_f = @floor(fy);
+    const x0: u64 = @intFromFloat(x0_f);
+    const y0: u64 = @intFromFloat(y0_f);
+    const tx = fx - x0_f;
+    const ty = fy - y0_f;
+    const vx: Vec4u = .{ x0, x0 +% 1, x0, x0 +% 1 };
+    const vy: Vec4u = .{ y0, y0, y0 +% 1, y0 +% 1 };
+    return .{
+        .x0 = x0,
+        .y0 = y0,
+        .tx = tx,
+        .ty = ty,
+        .u = fade(tx),
+        .v = fade(ty),
+        .h = FastHash.hash2d_4x(seed_vector, vx, vy),
+    };
+}
+
+/// Perlin gradient noise. Interpolates corner gradient dot-products instead of raw values,
+/// removing value-noise plateaus for smooth, continuous slopes.
+///
+/// Use for: organic, flowing hills/valleys.
+pub fn getPerlinNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
+    const l = lattice(seed_vector, x, y, cell_size);
+    const n00 = grad2(l.h[0], l.tx, l.ty);
+    const n10 = grad2(l.h[1], l.tx - 1.0, l.ty);
+    const n01 = grad2(l.h[2], l.tx, l.ty - 1.0);
+    const n11 = grad2(l.h[3], l.tx - 1.0, l.ty - 1.0);
+    const nx0 = n00 + l.u * (n10 - n00);
+    const nx1 = n01 + l.u * (n11 - n01);
+    const raw = (nx0 + l.v * (nx1 - nx0)) * PERLIN_NORM;
+    return std.math.clamp(raw * 0.5 + 0.5, 0.0, 1.0);
+}
+
+/// Sharp ridged noise (`(1 - |perlin|)^2`).
+/// Folds the gradient field at zero into crisp ridge lines, then squares to thin them.
+///
+/// Use for: sharp branching ridges, mineral veins, and fracture lines.
+pub fn getRidgedNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
+    const signed = getPerlinNoise(seed_vector, x, y, cell_size) * 2.0 - 1.0;
+    const r = 1.0 - @abs(signed);
+    return r * r;
+}
+
+/// Billow noise; effectively `|perlin|`. Bunches the field into rounded puff shapes.
+/// Look: cloud/cauliflower clumps and lumpy pockets.
+pub fn getBillowNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
+    const signed = getPerlinNoise(seed_vector, x, y, cell_size) * 2.0 - 1.0;
+    return @abs(signed);
+}
+
+/// Hybrid value+gradient. Shares a single set of 4 corner hashes between a value-noise term and gradient term,
+/// lerping between them via `hybrid_weight`.
+///
+/// Use for: biome-related logic.
+pub fn getHybridNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
+    const l = lattice(seed_vector, x, y, cell_size);
+
+    // Value term calculation
+    const v00 = hashToUnit(l.h[0]);
+    const v10 = hashToUnit(l.h[1]);
+    const v01 = hashToUnit(l.h[2]);
+    const v11 = hashToUnit(l.h[3]);
+    const val = (v00 + l.u * (v10 - v00)) + l.v * ((v01 + l.u * (v11 - v01)) - (v00 + l.u * (v10 - v00)));
+
+    // Gradient term calculation
+    const g00 = grad2(l.h[0], l.tx, l.ty);
+    const g10 = grad2(l.h[1], l.tx - 1.0, l.ty);
+    const g01 = grad2(l.h[2], l.tx, l.ty - 1.0);
+    const g11 = grad2(l.h[3], l.tx - 1.0, l.ty - 1.0);
+    const gx0 = g00 + l.u * (g10 - g00);
+    const gx1 = g01 + l.u * (g11 - g01);
+    const grad = std.math.clamp((gx0 + l.v * (gx1 - gx0)) * PERLIN_NORM * 0.5 + 0.5, 0.0, 1.0);
+
+    const w = hybrid_weight.getF32();
+    return val + w * (grad - val);
+}
+
+/// Approximate normalization factor for 2D simplex (~70x scaling).
+pub const SIMPLEX_NORM: f32 = 70.0;
+
+const F2: f32 = @sqrt(3.0) - 1.0 / 2.0;
+const G2: f32 = (3.0 - @sqrt(3.0)) / 6.0;
+
+/// 2D simplex noise. Samples a skewed triangular lattice (3 contributions, radial falloff)
+/// to eliminate axis-aligned directional bias.
+///
+/// Use for: organic, isotropic flow.
+pub fn getSimplexNoise(seed_vector: Vec2u, x: u32, y: u32, cell_size: f32) f32 {
+    const xin = @as(f32, @floatFromInt(x)) / cell_size;
+    const yin = @as(f32, @floatFromInt(y)) / cell_size;
+
+    const s = (xin + yin) * F2;
+    const i_f = @floor(xin + s);
+    const j_f = @floor(yin + s);
+    const t = (i_f + j_f) * G2;
+    const x0 = xin - (i_f - t);
+    const y0 = yin - (j_f - t);
+
+    // Coordinate check to evaluate which triangular region is sampled
+    const off_x: f32 = if (x0 > y0) 1.0 else 0.0;
+    const off_y: f32 = if (x0 > y0) 0.0 else 1.0;
+
+    const x1 = x0 - off_x + G2;
+    const y1 = y0 - off_y + G2;
+    const x2 = x0 - 1.0 + 2.0 * G2;
+    const y2 = y0 - 1.0 + 2.0 * G2;
+
+    const ii: u64 = @bitCast(@as(i64, @intFromFloat(i_f)));
+    const jj: u64 = @bitCast(@as(i64, @intFromFloat(j_f)));
+    const vx: Vec4u = .{ ii, ii +% @as(u64, @intFromFloat(off_x)), ii +% 1, 0 };
+    const vy: Vec4u = .{ jj, jj +% @as(u64, @intFromFloat(off_y)), jj +% 1, 0 };
+    const h = FastHash.hash2d_4x(seed_vector, vx, vy);
+
+    var n: f32 = 0;
+    inline for (.{
+        .{ x0, y0, 0 },
+        .{ x1, y1, 1 },
+        .{ x2, y2, 2 },
+    }) |c| {
+        const cx = c[0];
+        const cy = c[1];
+        var tt = 0.5 - cx * cx - cy * cy;
+        if (tt > 0) {
+            tt *= tt;
+            n += tt * tt * grad2(h[c[2]], cx, cy);
+        }
+    }
+    const raw = n * SIMPLEX_NORM;
+    return std.math.clamp(raw * 0.5 + 0.5, 0.0, 1.0);
+}
+
+/// Generic fractal Brownian motion: stack `octaves` of any candidate noise at halving amplitude and
+/// cell size.
+pub inline fn fbm(
+    comptime noiseFn: fn (Vec2u, u32, u32, f32) f32,
+    seed_vector: Vec2u,
+    x: u32,
+    y: u32,
+    cell_size: f32,
+    comptime octaves: u32,
+) f32 {
+    var sum: f32 = 0;
+    var amp: f32 = 1.0;
+    var norm: f32 = 0;
+    var cs: f32 = cell_size;
+    inline for (0..octaves) |_| {
+        sum += amp * (noiseFn(seed_vector, x, y, cs) - 0.5);
+        norm += amp;
+        amp *= 0.5;
+        cs *= 0.5;
+    }
+    return std.math.clamp(sum / norm + 0.5, 0.0, 1.0);
 }

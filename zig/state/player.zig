@@ -14,34 +14,33 @@ const Vec2i = dw.utils.Vec2i;
 const Vec2f = dw.utils.Vec2f;
 
 /// Minimum camera zoom/scale allowed. This is strategically calculated to make sure the default render distance is safe.
-/// Too small and `SimBuffer` nor `ChunkCache` would no longer be able to reliably cache and work as intended.
+/// The `SimBuffer` size automatically adjusts when setting this to a very small value.
 ///
 /// Setting this to a very small value is useful for testing cache validity or performance, however.
-pub const CAMERA_MIN_ZOOM = 1.0 / 25.0;
-
+pub const CAMERA_MIN_ZOOM = 1.0 / 10.0;
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
 /// Any more and it would look weird, and camera deadzone would start to no longer work.
-pub const CAMERA_MAX_ZOOM = 2.0; // 200%
-
+pub const CAMERA_MAX_ZOOM = 1.5; // 150%
+/// Camera scale the game starts at.
 pub const STARTING_CAMERA_SCALE = 1.0; // 100%
 
 /// The base speed of the player.
-pub var PLAYER_BASE_SPEED: f64 = 0.6;
+pub var PLAYER_BASE_SPEED: f64 = 0.60;
 /// How strong the gravity is.
-pub var GRAVITY: f64 = 0.4;
+pub var GRAVITY: f64 = 0.25;
 /// How high the player jumps.
-pub var JUMP_FORCE: f64 = 6.0;
+pub var JUMP_FORCE: f64 = 5.00;
 /// Friction of player movement (horizontal).
-pub var FRICTION_X: f64 = 0.15;
+pub var FRICTION_X: f64 = 0.200;
 /// Friction of player movement (vertical).
 pub var FRICTION_Y: f64 = 0.025;
 /// How many frames the player can still jump after leaving a ledge.
 const COYOTE_TIME_FRAMES: u8 = 3;
 
 /// The size of the player's width. The player is assumed to be centered at the bottom as a rectangle.
-pub const PLAYER_HITBOX_WIDTH = 64;
+pub const PLAYER_HITBOX_WIDTH = 180;
 /// The size of the player's height. The player is assumed to be centered at the bottom as a rectangle.
-pub const PLAYER_HITBOX_HEIGHT = 160;
+pub const PLAYER_HITBOX_HEIGHT = 224;
 /// Prevent block-skipping with collisions when travelling quickly.
 const CCD_STEP_SIZE = CHUNK_SIZE_SQ;
 
@@ -62,6 +61,92 @@ pub var subpixel_accum: Vec2f = .{ 0.0, 0.0 }; // note that vectors are smartly 
 var is_grounded: bool = false;
 /// Frames remaining for coyote time jump.
 var coyote_frames: u8 = 0;
+
+const Sprite = dw.Sprite;
+
+/// Which way the player is currently facing. Drives the horizontal sprite mirror.
+/// Updated from horizontal velocity in `tickAnimation`; held across idle frames.
+pub var facing_right: bool = true;
+
+/// High-level animation states the player can be in. Pick the clip for each in `clips`.
+pub const AnimState = enum { idle, walk, jump, fall };
+
+/// A single animation clip: an ordered list of sprite frames, each shown for `frame_ticks` logic ticks.
+/// `loop` repeats the clip; otherwise it holds on the final frame.
+pub const Clip = struct {
+    frames: []const Sprite,
+    /// Logic ticks each frame is held (animation runs on the 60Hz logic tick, not the render frame).
+    frame_ticks: u16,
+    loop: bool = true,
+};
+
+/// Per-state clips. Tune `frame_ticks` to extend the animation duration.
+const clips = std.EnumArray(AnimState, Clip).init(.{
+    .idle = .{ .frames = &.{.player}, .frame_ticks = 30 },
+    .walk = .{ .frames = &.{.player}, .frame_ticks = 8 },
+    .jump = .{ .frames = &.{.player}, .frame_ticks = 4, .loop = false },
+    .fall = .{ .frames = &.{.player}, .frame_ticks = 4, .loop = false },
+});
+
+/// Velocity (subpixels/tick) below which the player is considered horizontally still (for idle vs walk).
+const WALK_VELOCITY_THRESHOLD: f64 = 0.05;
+
+var anim_state: AnimState = .idle;
+var anim_frame: usize = 0;
+var anim_timer: u16 = 0;
+
+/// Derives the animation state the player should be in from the current physics state.
+fn desiredAnimState() AnimState {
+    if (!is_grounded) {
+        return if (memory.game.player_velocity[1] < 0) .jump else .fall;
+    }
+    return if (@abs(memory.game.player_velocity[0]) > WALK_VELOCITY_THRESHOLD) .walk else .idle;
+}
+
+/// Advances the player's animation by one logic tick and updates facing. Call once per logic tick.
+pub fn tickAnimation() void {
+    // Update facing only on meaningful horizontal motion, so it holds when idle.
+    const vx = memory.game.player_velocity[0];
+    if (vx > WALK_VELOCITY_THRESHOLD) {
+        facing_right = true;
+    } else if (vx < -WALK_VELOCITY_THRESHOLD) {
+        facing_right = false;
+    }
+
+    const next_state = desiredAnimState();
+    if (next_state != anim_state) {
+        anim_state = next_state;
+        anim_frame = 0;
+        anim_timer = 0;
+    }
+
+    const clip = clips.get(anim_state);
+    anim_timer += 1;
+    if (anim_timer >= clip.frame_ticks) {
+        anim_timer = 0;
+        if (anim_frame + 1 < clip.frames.len) {
+            anim_frame += 1;
+        } else if (clip.loop) {
+            anim_frame = 0;
+        }
+    }
+}
+
+/// The sprite frame to render for the player this frame.
+pub fn currentSprite() Sprite {
+    const clip = clips.get(anim_state);
+    return clip.frames[@min(anim_frame, clip.frames.len - 1)];
+}
+
+/// Adds the player as a render entity at the grid-aligned screen position computed in `render/chunk.zig`.
+/// Mirrored horizontally to match `facing_right`. Should only be called from `entity.updateEntities`.
+pub fn drawPlayerEntity() void {
+    dw.entity.addEntity(.{
+        .sprite = currentSprite(),
+        .position = dw.chunks.player_screen_pos,
+        .size = if (facing_right) dw.chunks.player_screen_size else -dw.chunks.player_screen_size,
+    });
+}
 
 /// Moves the player, handling camera changes.
 pub fn move(logic_speed: f64) void {

@@ -44,6 +44,9 @@ pub fn updateEntities(time_diff: f64) void {
 
     inventory.addDroppedItemsAsEntities(time_diff); // pass in delta time in ms
 
+    // The player is a world-space entity (see render/chunk.zig for its grid-aligned position).
+    dw.player.drawPlayerEntity();
+
     // draw indicators (icons above certain sprites)
     dw.indicators.drawIndicators();
     @import("../menus/furnace.zig").draw();
@@ -68,7 +71,7 @@ pub fn updateEntities(time_diff: f64) void {
         .{ 0.04, 0.01 },
         0.4,
         .top_left_uv,
-        .{ 1.0, 0.2, -1.3, 1.0 },
+        .{ 1.0, 0.1, -1.3, 1.0 }, // high chroma, starts from pink/red
     );
 
     memory.setScratchProp(0, entity_count);
@@ -232,8 +235,8 @@ pub fn addRawEntity(entity: WGSLEntity) void {
     if (entity.size[0] == 0.0 or entity.size[1] == 0.0) return;
     if (entity.lcha[3] <= 0.0) return;
 
-    // Viewport-based culling (accounting for rotation)
-    const half_diag = entity.size * @as(Vec2f32, @splat(if (entity.rotation == 0.0) 0.5 else 1.0 / std.math.sqrt(2.0)));
+    // Viewport-based culling (accounting for rotation). Use @abs since a horizontal flip negates size.x.
+    const half_diag = @abs(entity.size) * @as(Vec2f32, @splat(if (entity.rotation == 0.0) 0.5 else 1.0 / std.math.sqrt(2.0)));
     const min_x = entity.position[0] - half_diag[0];
     const max_x = entity.position[0] + half_diag[0];
     const min_y = entity.position[1] - half_diag[1];
@@ -260,7 +263,7 @@ pub fn addEntity(entity: Entity) void {
             Vec2f32{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
         .size = .{
             entity.size / dw.SCREEN_WIDTH,
-            entity.size / dw.SCREEN_HEIGHT,
+            @abs(entity.size) / dw.SCREEN_HEIGHT,
         },
         .rotation = entity.rotation,
         .id = sprite.Sprite.asEntity(entity.sprite),

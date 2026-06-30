@@ -8,9 +8,9 @@ const procedural = dw.procedural;
 const Coordinate = dw.world.Coordinate;
 
 /// Index where stone-like sprites begin.
-const STONE_START = 4;
+const STONE_START = 6;
 /// Index where stone-like sprites end.
-const STONE_END = STONE_START + 13;
+const STONE_END = STONE_START + 12;
 
 /// Index where smelted bar sprites begin.
 const BAR_START = STONE_END + 4;
@@ -49,10 +49,12 @@ pub const Sprite = enum(u16) {
     /// Edge stone (2 variations).
     edge_stone = 2,
 
+    wood = 4,
+    white_plate,
+
     // stone types!
     blue_strange_stone = STONE_START,
     purple_strange_stone,
-    wood,
     blue_stone,
     alt_blue_stone,
     pink_stone,
@@ -136,17 +138,21 @@ pub const Sprite = enum(u16) {
     /// Simple up-arrow icon.
     arrow,
 
+    /// Quarter portion of a center part of the progress bar that is unfilled.
+    progress_small_unfilled = NUMBER_START + 13,
+    /// Quarter portion of a center part of the progress bar that is unfilled.
+    progress_small_filled,
     /// Leftmost part of the progress bar.
-    progress_left = NUMBER_START + 13,
+    progress_left = NUMBER_START + 15,
     /// Center part of the progress bar.
-    progress_center = NUMBER_START + 18,
+    progress_center = NUMBER_START + 20,
     /// Right part of the progress bar.
-    progress_right = NUMBER_START + 23,
+    progress_right = NUMBER_START + 25,
 
     /// Pickaxe icon.
-    pickaxe = NUMBER_START + 28,
+    pickaxe = NUMBER_START + 30,
     /// Generic water block (filled). Default internal water type; after all pickaxes.
-    water = NUMBER_START + 28 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
+    water = NUMBER_START + 30 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
     water_icon,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
@@ -155,7 +161,10 @@ pub const Sprite = enum(u16) {
 
     /// Retrieves the fully compile-time property data for this sprite.
     pub inline fn props(self: @This()) SpriteFlags {
-        return getSpriteFlags(self);
+        const val = @intFromEnum(self);
+        if (val < MAX_SPRITE_ID) return dense_flags_table[val];
+        if (self == .unselected) return unselected_flags;
+        return .{};
     }
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
@@ -262,6 +271,17 @@ pub const Sprite = enum(u16) {
 /// Centralized database describing all sprite properties.
 /// Rules are checked in order, with later rules overriding earlier ones.
 const rules = [_]SpriteRule{
+    // Non-stone solid blocks
+    .{
+        .{ .list = &[_]Sprite{ .wood, .white_plate } },
+        .{
+            .in_world = true,
+            .item = true,
+            .solid = true,
+            .foundation = true,
+            .strength = 40,
+        },
+    },
     // Stone blocks
     .{
         .{ .range = .{ .blue_strange_stone, .stone } },
@@ -344,15 +364,14 @@ const rules = [_]SpriteRule{
         .{ .single = .none },
         .{ .in_world = true },
     },
-    // Fruits
+
+    // Fruits and drop overrides
     .{
         .{
             .range = .{ .fruit_blue_lemon, .bacon },
         },
         .{ .item = true },
     },
-
-    // specific overrides
     .{
         .{ .single = .bush },
         .{
@@ -363,10 +382,38 @@ const rules = [_]SpriteRule{
             },
         },
     },
+
+    // Ore/gem strengths
     .{
         .{ .single = .iron },
         .{ .strength = 35 },
     },
+    .{
+        .{ .single = .silver },
+        .{ .strength = 45 },
+    },
+    .{
+        .{ .single = .gold },
+        .{ .strength = 60 },
+    },
+    .{
+        .{ .single = .amethyst },
+        .{ .strength = 75 },
+    },
+    .{
+        .{ .single = .sapphire },
+        .{ .strength = 85 },
+    },
+    .{
+        .{ .single = .emerald },
+        .{ .strength = 95 },
+    },
+    .{
+        .{ .single = .ruby },
+        .{ .strength = 100 },
+    },
+
+    // Evolution rules on depth increase
     .{
         .{ .single = .mushroom },
         .{ .hitbox = .small_bottom_decor },
@@ -387,6 +434,8 @@ const rules = [_]SpriteRule{
         .{ .single = .redder_stone },
         .{ .evolves_to = .lava_stone },
     },
+
+    // For 2x1 trees, drop 1x1
     .{
         .{ .list = &[_]Sprite{
             .big_tree1_left,
@@ -526,6 +575,7 @@ pub const DropHandlers = struct {
 /// TODO: add a category field so there's no more range arithmetic.
 pub const SpriteProps = struct {
     in_world: bool = false,
+    // This can be defaulted to true for debugging and potentially testing sprite misalignment.
     item: bool = false,
     solid: bool = false,
     liquid: bool = false,
@@ -623,10 +673,6 @@ fn getPropsForSprite(comptime s: Sprite) SpriteProps {
             mergeProps(&p, rule[1]);
         }
     }
-    if (is_debug and s == .inventory_selected_red) {
-        p.in_world = true;
-        p.item = true;
-    }
     return p;
 }
 
@@ -712,14 +758,6 @@ const unselected_flags: SpriteFlags = .{
     .hitbox = unselected_props.hitbox,
     .anchor = unselected_props.anchor,
 };
-
-/// Constant-time lookup of precomputed packed sprite flags. O(1) array access.
-pub inline fn getSpriteFlags(s: Sprite) SpriteFlags {
-    const val = @intFromEnum(s);
-    if (val < MAX_SPRITE_ID) return dense_flags_table[val];
-    if (s == .unselected) return unselected_flags;
-    return SpriteFlags{};
-}
 
 /// The total number of valid sprites that are considered valid items.
 pub const item_sprite_count: usize = blk: {

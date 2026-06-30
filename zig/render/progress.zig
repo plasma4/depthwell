@@ -11,7 +11,8 @@ const toSize = dw.entity.toSizeUv;
 /// The progress bar sprites have been pre-made to be shifted by 8 degrees per 4-pixel bar.
 const HUE_AMOUNT = 2.0 * std.math.pi / 360.0 * 8;
 
-/// Draws a progress bar with 4n bars (at least 8) using entities.
+/// Draws a progress bar with any width > 8 using entities.
+/// Draws a progress bar with any width > 8 using entities.
 pub fn drawBar(
     width: u16,
     progress: u16,
@@ -23,17 +24,17 @@ pub fn drawBar(
     // It's quite complicated to do this!
     @setFloatMode(.optimized);
 
-    // The width of the progress bar must be a multiple of 4 and at least 8.
-    std.debug.assert(width >= 8 and width % 4 == 0);
+    // The width of the progress bar must be greater than 8.
+    std.debug.assert(width > 8);
     // The progress cannot be larger than the width of the bar itself.
     std.debug.assert(progress <= width);
 
     // Calculate the size of each individual progress bar sprite.
-    const s = toSize(render_width / @as(f32, @floatFromInt(width / 4)));
+    const s = toSize(render_width / (@as(f32, @floatFromInt(width)) / 4.0));
     // If the position type is centered, then we'll want to handle that too.
     const pos =
         if (system == .center_uv or system == .center_viewport)
-            position - Vec2f32{ s[0] / 2.0 * @as(f32, @floatFromInt(width / 4 - 1)), 0.0 }
+            position - Vec2f32{ (render_width - s[0]) / 2.0, 0.0 }
         else
             position;
 
@@ -48,8 +49,9 @@ pub fn drawBar(
         .system = system,
     });
 
+    const num_full_centers = width / 4 - 1;
     var i: u16 = 1;
-    while (i < width / 4 - 1) : (i += 1) {
+    while (i < num_full_centers) : (i += 1) {
         // Now, we draw as many center bars as needed.
         addEntitySized(.{
             // -| clamps the value so there's no integer overflow.
@@ -68,15 +70,39 @@ pub fn drawBar(
         });
     }
 
-    // Finally, draw the right edge of the progress bar.
+    // Compute the remnants for the sub-4 pixel precision.
+    const rem_pixels = width % 4;
+    const rem_start_pixel = 4 * num_full_centers;
+    const start_x_small = s[0] * @as(f32, @floatFromInt(num_full_centers));
+
+    var j: u16 = 0;
+    while (j < rem_pixels) : (j += 1) {
+        const rem_pixel_index = rem_start_pixel + j;
+        // Draw the remaining small progress bars to achieve exact single-pixel width precision.
+        addEntitySized(.{
+            .sprite = if (progress > rem_pixel_index) Sprite.progress_small_filled else Sprite.progress_small_unfilled,
+            .position = pos + Vec2f32{ start_x_small + (s[0] * @as(f32, @floatFromInt(j)) / 4.0), 0 },
+            .size = s,
+            .lcha = base_lcha + Vec4f32{
+                0.0,
+                0.0,
+                HUE_AMOUNT * @as(f32, @floatFromInt(@min(rem_pixel_index, progress -| 1))),
+                0.0,
+            },
+            .system = system,
+        });
+    }
+
+    // Finally, draw the right edge of the standard part of the progress bar.
+    const right_cap_start_pixel = width - 4;
     addEntitySized(.{
-        .sprite = @enumFromInt(@intFromEnum(Sprite.progress_right) + (progress -| 4 * i)),
-        .position = pos + Vec2f32{ s[0] * @as(f32, @floatFromInt(i)), 0 },
+        .sprite = @enumFromInt(@intFromEnum(Sprite.progress_right) + @min(progress -| right_cap_start_pixel, 4)),
+        .position = pos + Vec2f32{ s[0] * @as(f32, @floatFromInt(right_cap_start_pixel)) / 4.0, 0 },
         .size = s,
         .lcha = base_lcha + Vec4f32{
             0.0,
             0.0,
-            HUE_AMOUNT * @as(f32, @floatFromInt(@min(4 * i, progress -| 1))),
+            HUE_AMOUNT * @as(f32, @floatFromInt(@min(right_cap_start_pixel, progress -| 1))),
             0.0,
         },
         .system = system,

@@ -20,6 +20,13 @@ const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 /// (See `render/indicators.zig`.)
 pub var current_dt: f64 = 0.0;
 
+/// Grid-aligned player position in logical viewport pixels (480x270, center of the sprite), recomputed
+/// every render frame in `updateRenderProperties`. The player is drawn as a render entity (see
+/// `player.drawPlayerEntity`) rather than as a tile, so this is shared with the entity pass.
+pub var player_screen_pos: dw.utils.Vec2f32 = .{ 0.0, 0.0 };
+/// Player sprite size (one world tile) in logical viewport pixels, matching the current zoom.
+pub var player_screen_size: f32 = 16.0;
+
 /// Adds visible chunk data to the scratch buffer, as well as properties.
 /// This is used in `render.prepareVisibleData()`.
 pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
@@ -123,7 +130,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
         }
     }
 
-    updateRenderProperties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom);
+    updateRenderProperties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom, interpolated_zoom);
 }
 
 /// Sets scratch properties containing information to TypeScript for renderFrame.
@@ -137,6 +144,7 @@ inline fn updateRenderProperties(
     min_cy: i32,
     dt: f64,
     effective_zoom: f64,
+    interpolated_zoom: f64,
 ) void {
     // Calculate the camera position relative to the tile grid origin
     const grid_origin_sub_x = @as(f64, @floatFromInt(min_cx)) * @as(f64, @floatFromInt(dw.SUBPIXELS_IN_CHUNK));
@@ -151,6 +159,16 @@ inline fn updateRenderProperties(
     const player_vel_y = game.player_pos[1] - game.last_player_pos[1];
     const player_interpolated_x = @as(f64, @floatFromInt(game.player_pos[0])) + @as(f64, @floatFromInt(player_vel_x)) * dt;
     const player_interpolated_y = @as(f64, @floatFromInt(game.player_pos[1])) + @as(f64, @floatFromInt(player_vel_y)) * dt;
+
+    // Player render position for the ENTITY pass (logical 480x270 px, sprite center). This is the same
+    // world->screen mapping the tile grid uses (1 px = CHUNK_SIZE subpixels, scaled by zoom), so the
+    // player entity stays pixel-aligned with the blocks. `interpolated_zoom` is the logical (non-resolution-
+    // scaled) zoom, matching how other entities are positioned.
+    player_screen_pos = .{
+        @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + (player_interpolated_x - interp_cam_x) * interpolated_zoom / CHUNK_SIZE_FLOAT),
+        @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + (player_interpolated_y - interp_cam_y) * interpolated_zoom / CHUNK_SIZE_FLOAT),
+    };
+    player_screen_size = @floatCast(CHUNK_SIZE_FLOAT * interpolated_zoom);
 
     // Position player in the middle of the screen plus their offset from the camera center
     const player_render_x = (player_interpolated_x - grid_origin_sub_x - CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT / 2) / CHUNK_SIZE_FLOAT;
