@@ -1,8 +1,8 @@
 //! CPU lighting pass over the visible block buffer. Writes 0..255 brightness to `Block.light`.
 //! WGSL multiplies tile colors by `light / 255`.
 //!
-//! Uses a non-additive MAXIMUM flood (adjacent lights don't blow out past 255).
-//! Spreads to 8 neighbors with a `sqrt(2)` diagonal cost for circular falloff.
+//! Uses a non-additive MAXIMUM flood algorithm (nothing past `MAX_LIGHT`, and simple).
+//! Spreads to 8 neighbors with a diagonal cost for circular falloff.
 //! Solid/liquid blocks become less bright faster (Terraria-style).
 
 const std = @import("std");

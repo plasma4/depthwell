@@ -262,9 +262,15 @@ pub fn draw() void {
             .position = .{ @floatCast(input_px[0]), @floatCast(input_px[1]) },
             .size = ITEM_SIZE,
         });
-        drawNumber(loaded_count, .{ @floatCast(input_px[0] + 2.0), @floatCast(input_px[1] + 2.0) }, .{
-            .font_size = 7.0,
-            .lcha = .{ 0.95, 0.1, 0.0, 1.0 },
+
+        // draw amount and shadow
+        drawNumber(loaded_count, .{ @floatCast(input_px[0] + 2.4), @floatCast(input_px[1] + 4.4) }, .{
+            .font_size = 6.0,
+            .lcha = .{ 0.30, 0.22, 1.0, 0.8 },
+        });
+        drawNumber(loaded_count, .{ @floatCast(input_px[0] + 3.0), @floatCast(input_px[1] + 5.0) }, .{
+            .font_size = 6.0,
+            .lcha = .{ 0.85, 0.30, 1.2, 1.0 },
         });
     }
 
@@ -275,9 +281,13 @@ pub fn draw() void {
             .position = .{ @floatCast(output_px[0]), @floatCast(output_px[1]) },
             .size = ITEM_SIZE,
         });
-        drawNumber(output_count, .{ @floatCast(output_px[0] + 2.0), @floatCast(output_px[1] + 2.0) }, .{
-            .font_size = 7.0,
-            .lcha = .{ 0.95, 0.1, 0.0, 1.0 },
+        drawNumber(output_count, .{ @floatCast(output_px[0] + 2.4), @floatCast(output_px[1] + 4.4) }, .{
+            .font_size = 6.0,
+            .lcha = .{ 0.30, 0.22, 1.6, 0.8 },
+        });
+        drawNumber(output_count, .{ @floatCast(output_px[0] + 3.0), @floatCast(output_px[1] + 5.0) }, .{
+            .font_size = 6.0,
+            .lcha = .{ 0.85, 0.30, 1.8, 1.0 },
         });
     }
 
