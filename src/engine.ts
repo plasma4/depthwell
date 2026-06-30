@@ -431,10 +431,10 @@ export class GameEngine {
         // this.sceneDataU32[14] = 0;
         // this.sceneDataU32[15] = 0;
 
-        this.sceneDataF32[16] = gridOriginX; // grid origin x (modulo 256 chunks)
-        this.sceneDataF32[17] = gridOriginY; // grid origin y (modulo 256 chunks)
-        this.sceneDataF32[18] = absCamX; // grid origin z (modulo 256 chunks, absolute camera x)
-        this.sceneDataF32[19] = absCamY; // grid origin w (modulo 256 chunks, absolute camera y)
+        this.sceneDataF32[16] = gridOriginX; // grid origin x (water, modulo 256 chunks)
+        this.sceneDataF32[17] = gridOriginY; // grid origin y (water, modulo 256 chunks)
+        this.sceneDataF32[18] = absCamX; // grid origin z (absolute camera x, modulo BG_WRAP_CHUNKS)
+        this.sceneDataF32[19] = absCamY; // grid origin w (absolute camera y, modulo BG_WRAP_CHUNKS)
 
         this.device.queue.writeBuffer(
             this.uniformBuffer,

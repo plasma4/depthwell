@@ -10,6 +10,7 @@ const player = dw.player;
 const seeding = dw.seeding;
 const procedural = dw.procedural;
 
+/// Defines options for a single slider.
 pub const SliderDef = struct {
     /// Label identifying the slider.
     name: []const u8,
@@ -25,6 +26,7 @@ pub const SliderDef = struct {
     regen: bool = false,
 };
 
+/// Defines options for a single button.
 pub const ButtonDef = struct {
     /// Text to put inside the button.
     name: []const u8,
@@ -37,8 +39,9 @@ pub const ButtonDef = struct {
 };
 
 /// List of sliders (with a range that modifies a numeric variable)
-pub const sliders = [_]SliderDef{};
-pub const unused_silders = [_]SliderDef{
+pub const sliders = procedural_sliders ++ player_sliders ++ render_sliders;
+
+const procedural_sliders = [_]SliderDef{
     .{
         .name = "Procedural scale",
         .min = 0.1,
@@ -88,6 +91,9 @@ pub const unused_silders = [_]SliderDef{
         .val = &procedural.base_gem_odds.value,
         .regen = true,
     },
+};
+
+const player_sliders = [_]SliderDef{
     .{
         .name = "Base player speed",
         .min = 0.1,
@@ -118,6 +124,9 @@ pub const unused_silders = [_]SliderDef{
         .max = 1.0,
         .val = &player.FRICTION_Y,
     },
+};
+
+const render_sliders = [_]SliderDef{
     .{
         .name = "Wireframe opacity",
         .min = 0.0,

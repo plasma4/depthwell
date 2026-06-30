@@ -731,9 +731,15 @@ const CHUNK_CACHE_SIZE: usize = blk: {
     const Z: f64 = player.CAMERA_MIN_ZOOM;
     const S_b: f64 = @floatFromInt(SIM_BUFFER_WIDTH);
 
+    // Per-side border, in chunks, of the render/lighting window (see `chunk.zig` and
+    // `lighting.CHUNK_MARGIN`): `margin` chunks each side for light bleed, plus 1 for the
+    // floor-alignment straddle. Must track CHUNK_MARGIN so widening light range grows the cache.
+    const margin: f64 = @floatFromInt(dw.lighting.CHUNK_MARGIN);
+    const border = 2.0 * margin + 1.0;
+
     // get maximum possible visible chunk grid dimensions
-    const C_w = @ceil(W / (256.0 * Z)) + 2.0;
-    const C_h = @ceil(H / (256.0 * Z)) + 2.0;
+    const C_w = @ceil(W / (256.0 * Z)) + border;
+    const C_h = @ceil(H / (256.0 * Z)) + border;
     const total_visible = C_w * C_h;
 
     // how many of those chunks overlap with the active SimBuffer?

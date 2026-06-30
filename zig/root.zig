@@ -16,18 +16,26 @@ pub const is_debug = FORCE_DEBUG or builtin.is_test or builtin.mode == .Debug;
 // Note: changing these constants below will probably have disasterous consequences.
 // A lot of logic is hard-coded, such as `[6][6]Sprite` use, and a lot of logic is bound to break if these constants are modified.
 
-/// Represents log2(CHUNK_SIZE).
+/// Represents `log2(CHUNK_SIZE)`.
 pub const CHUNK_SIZE_LOG2: comptime_int = 4;
-/// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
+
+/// The core dimension, 16: how many units one level spans of the level below, along a single axis.
+/// - blocks per chunk edge
+/// - pixels per block edge
+/// - subpixels per pixel edge
 pub const CHUNK_SIZE: comptime_int = 16;
-/// The main number (as a float) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
-pub const CHUNK_SIZE_FLOAT: comptime_float = @floatFromInt(CHUNK_SIZE);
-/// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
+/// `CHUNK_SIZE` squared, 256, along a single axis:
+/// - subpixels per block edge
+/// - pixels per chunk edge
 pub const CHUNK_SIZE_SQ: comptime_int = CHUNK_SIZE * CHUNK_SIZE;
-/// A float representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
-pub const CHUNK_SIZE_FLOAT_SQ: comptime_float = CHUNK_SIZE_FLOAT * CHUNK_SIZE_FLOAT;
-/// An integer representing the number of subpixels within a chunk. The player's X and Y coordinate should wrap around such that it is between 0 and this value (inclusive).
+/// `CHUNK_SIZE` cubed, 4096: subpixels per chunk edge.
+/// Player X/Y wrap within [0, 4095] (= this value minus one).
 pub const SUBPIXELS_IN_CHUNK: comptime_int = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+
+/// Float equivalent of `CHUNK_SIZE`.
+pub const CHUNK_SIZE_FLOAT: comptime_float = @floatFromInt(CHUNK_SIZE);
+/// Float equivalent of `CHUNK_SIZE_SQ`.
+pub const CHUNK_SIZE_FLOAT_SQ: comptime_float = @floatFromInt(CHUNK_SIZE_SQ);
 
 /// Represents log2(ZOOM_FACTOR).
 pub const ZOOM_LOG2: comptime_int = 2;
@@ -63,6 +71,7 @@ pub const ColorRgba = @import("visual/color_rgba.zig").ColorRgba;
 pub const render = @import("render/render.zig");
 pub const sound = @import("render/sound.zig");
 pub const chunks = @import("render/chunk.zig");
+pub const lighting = @import("render/lighting.zig");
 pub const entity = @import("render/entity.zig");
 pub const progress = @import("render/progress.zig");
 pub const indicators = @import("render/indicators.zig");

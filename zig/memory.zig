@@ -19,11 +19,8 @@ const Vec2f = dw.utils.Vec2f;
 const Vec2f32 = dw.utils.Vec2f32;
 const Vec4f32 = dw.utils.Vec4f32;
 
-/// Represents log2(CHUNK_SIZE).
 const CHUNK_SIZE_LOG2 = dw.CHUNK_SIZE_LOG2;
-/// The main number (as an integer) representing the number of blocks in a chunk, number of pixels in a block, and number of subpixels in a pixel.
 const CHUNK_SIZE = dw.CHUNK_SIZE;
-/// An integer representing the number of subpixels in a block, pixels in a chunk, number of blocks in a chunk, number of pixels in a block, and number of possible subpixel positions within a pixel.
 const CHUNK_SIZE_SQ = dw.CHUNK_SIZE_SQ;
 
 const ZOOM_FACTOR = dw.ZOOM_FACTOR;
@@ -55,22 +52,22 @@ pub const SeedType = enum {
 pub const GameState = extern struct {
     /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095), from the CENTER of the sprite.
     player_pos: Vec2i align(MAIN_ALIGN_BYTES) = .{ 0, 0 },
-    /// Represents the player's previous subpixel position.
-    /// Importantly, this is not necessarily equal to the player's velocity, as this handles teleports!
+    /// The per-frame delta from this to `player_pos` is the raw movement, but is NOT the velocity:
+    /// teleports move `player_pos` without contributing velocity.
     last_player_pos: Vec2i = .{ 0, 0 },
-    /// Represents the player's active chunk coordinate.
+    /// Represents the player's active chunk coordinate (chunk they are currently in; excluding the quadrant part of a `Coordinate`).
     player_chunk: Vec2u = .{ 0, 0 },
-    /// Represents the player's current movement velocity.
+    /// Represents the player's current movement velocity (subpixels).
     player_velocity: Vec2f = .{ 0, 0 },
-    /// Represents the camera's position.
+    /// Absolute camera subpixel position (same space as `player_pos`); set equal to it on teleport.
     camera_pos: Vec2i = .{ 0, 0 },
-    /// Represents the camera's movement in a frame (derivative of `camera_pos`).
+    /// Previous-frame `camera_pos`. The per-frame camera movement is `camera_pos - last_camera_pos`.
     last_camera_pos: Vec2i = .{ 0, 0 },
     /// Represents the camera's zoom scale.
     camera_scale: f64 = player.STARTING_CAMERA_SCALE,
     /// Represents the camera's zoom scale change rate (multiplier, acts as derivative of camera_scale change).
     camera_scale_change: f64 = 1.0,
-    /// Represents how many layers deep the player is (defaults to 3).
+    /// Represents how many layers deep the player is. Automatically setup in startup.zig.
     depth: u64 = 0,
 
     /// Represents which quadrant (0-3) of the `QuadCache` the player is in (starts at 0 when depth is <= 16).
@@ -265,7 +262,7 @@ pub const Block = packed struct(u64) {
             .id = sprite_type,
             .hp = if (sprite_type == .water) 15 else 0,
             .edge_flags = 0,
-            .light = 0,
+            .light = 255,
             .seed = @truncate(seed_bits),
             .waterlogged = 0,
         };

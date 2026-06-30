@@ -20,12 +20,22 @@ const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 /// (See `render/indicators.zig`.)
 pub var current_dt: f64 = 0.0;
 
-/// Grid-aligned player position in logical viewport pixels (480x270, center of the sprite), recomputed
-/// every render frame in `updateRenderProperties`. The player is drawn as a render entity (see
-/// `player.drawPlayerEntity`) rather than as a tile, so this is shared with the entity pass.
+/// Grid-aligned player position in logical viewport pixels (480x270, center of the sprite), recomputed every render frame
+/// The player is drawn as a render entity so this is shared with the entity pass.
 pub var player_screen_pos: dw.utils.Vec2f32 = .{ 0.0, 0.0 };
 /// Player sprite size (one world tile) in logical viewport pixels, matching the current zoom.
 pub var player_screen_size: f32 = 16.0;
+
+/// Seamless wrap period (in chunks) for the FBM background camera coordinate.
+/// Must match `src/shader.wgsl`; noise lattice repeats every 32 units.
+/// With base_scale = 1/64, the farthest layer moves 1/16 unit/chunk (needs factor of 512).
+/// Warp coefficients (9/20, 17/20) require a factor of 20 to clear denominators.
+/// Update if shader coefficients change so it remains a multiple of 32 for all layers.
+pub const BG_WRAP_CHUNKS = 512 * 20;
+comptime {
+    // 512 covers the 1/16 unit/chunk base scale; 20 covers warp-coefficient denominators.
+    std.debug.assert(BG_WRAP_CHUNKS % 512 == 0 and BG_WRAP_CHUNKS % 20 == 0);
+}
 
 /// Adds visible chunk data to the scratch buffer, as well as properties.
 /// This is used in `render.prepareVisibleData()`.
@@ -61,11 +71,15 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const edge_right = interp_cam_x + half_w_sp;
     const edge_bottom = interp_cam_y + half_h_sp;
 
-    // find the chunk indices that end up covering the screen, with just enough buffer
-    const min_cx: i32 = @intFromFloat(@floor(edge_left / subpixels_per_chunk));
-    const min_cy: i32 = @intFromFloat(@floor(edge_top / subpixels_per_chunk));
-    const max_cx = @as(i32, @intFromFloat(@floor(edge_right / subpixels_per_chunk))) + 1;
-    const max_cy = @as(i32, @intFromFloat(@floor(edge_bottom / subpixels_per_chunk))) + 1;
+    // find the chunk indices that end up covering the screen, padded on every side by the lighting
+    // margin so off-screen light sources that can bleed onscreen are present during the flood. The
+    // margin is shared from `lighting` (>= 1, so it also supplies the far-edge rounding pad the old
+    // hard-coded `+ 1` provided). See `lighting.CHUNK_MARGIN`.
+    const margin: i32 = @intCast(dw.lighting.CHUNK_MARGIN);
+    const min_cx = @as(i32, @intFromFloat(@floor(edge_left / subpixels_per_chunk))) - margin;
+    const min_cy = @as(i32, @intFromFloat(@floor(edge_top / subpixels_per_chunk))) - margin;
+    const max_cx = @as(i32, @intFromFloat(@floor(edge_right / subpixels_per_chunk))) + margin;
+    const max_cy = @as(i32, @intFromFloat(@floor(edge_bottom / subpixels_per_chunk))) + margin;
 
     // determine the dimensions of the grid to render (cw/ch is how many chunks wide/high the current render-window is)
     const cw: u32 = @intCast(max_cx - min_cx + 1);
@@ -91,7 +105,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
                     if (target_coord.suffix[0] > world.max_possible_suffix or target_coord.suffix[1] > world.max_possible_suffix) {
                         for (0..CHUNK_SIZE) |ly| {
                             const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
-                            @memset(out[row_start .. row_start + CHUNK_SIZE], dw.sprite.AIR_BLOCK);
+                            @memset(out[row_start .. row_start + CHUNK_SIZE], memory.Block.empty);
                         }
                         continue;
                     }
@@ -124,11 +138,22 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
             } else {
                 for (0..CHUNK_SIZE) |ly| {
                     const row_start = (gy * CHUNK_SIZE + ly) * wb + gx * CHUNK_SIZE;
-                    @memset(out[row_start .. row_start + CHUNK_SIZE], dw.sprite.AIR_BLOCK);
+                    @memset(out[row_start .. row_start + CHUNK_SIZE], memory.Block.empty);
                 }
             }
         }
     }
+
+    // Compute frame lighting using continuous, dt-interpolated player positions (in subpixels)
+    // relative to the visible chunk buffer, preventing light-snapping between blocks (bad!).
+    const player_vel_x = game.player_pos[0] - game.last_player_pos[0];
+    const player_vel_y = game.player_pos[1] - game.last_player_pos[1];
+    const player_interp_x = @as(f64, @floatFromInt(game.player_pos[0])) + @as(f64, @floatFromInt(player_vel_x)) * dt;
+    const player_interp_y = @as(f64, @floatFromInt(game.player_pos[1])) + @as(f64, @floatFromInt(player_vel_y)) * dt;
+    const subpixels_per_block: f64 = @floatFromInt(dw.CHUNK_SIZE_SQ);
+    const player_bx: f32 = @floatCast(@as(f64, @floatFromInt(-min_cx * CHUNK_SIZE)) + player_interp_x / subpixels_per_block);
+    const player_by: f32 = @floatCast(@as(f64, @floatFromInt(-min_cy * CHUNK_SIZE)) + player_interp_y / subpixels_per_block);
+    dw.lighting.applyLighting(out, wb, hb, player_bx, player_by);
 
     updateRenderProperties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom, interpolated_zoom);
 }
@@ -183,11 +208,12 @@ inline fn updateRenderProperties(
     const abs_grid_x = @as(f64, @floatFromInt(abs_grid_cx * @as(i32, dw.CHUNK_SIZE)));
     const abs_grid_y = @as(f64, @floatFromInt(abs_grid_cy * @as(i32, dw.CHUNK_SIZE)));
 
-    // Modulo every 512 chunks to seamlessly loop background coordinates (farthest layer needs 512-chunk period)
-    const player_cx_bg_mod = @as(i64, @intCast(game.player_chunk[0] % 512));
-    const player_cy_bg_mod = @as(i64, @intCast(game.player_chunk[1] % 512));
-    const abs_grid_bg_cx = @mod(player_cx_bg_mod + min_cx, 512);
-    const abs_grid_bg_cy = @mod(player_cy_bg_mod + min_cy, 512);
+    // Wrap the background's absolute camera every `BG_WRAP_CHUNKS` chunks so the FBM background loops
+    // seamlessly when walking OR zooming across the boundary (see the constant's doc comment for the contract).
+    const player_cx_bg_mod = @as(i64, @intCast(game.player_chunk[0] % BG_WRAP_CHUNKS));
+    const player_cy_bg_mod = @as(i64, @intCast(game.player_chunk[1] % BG_WRAP_CHUNKS));
+    const abs_grid_bg_cx = @mod(player_cx_bg_mod + min_cx, BG_WRAP_CHUNKS);
+    const abs_grid_bg_cy = @mod(player_cy_bg_mod + min_cy, BG_WRAP_CHUNKS);
 
     const abs_grid_bg_x = @as(f64, @floatFromInt(abs_grid_bg_cx * @as(i32, dw.CHUNK_SIZE)));
     const abs_grid_bg_y = @as(f64, @floatFromInt(abs_grid_bg_cy * @as(i32, dw.CHUNK_SIZE)));

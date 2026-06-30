@@ -110,10 +110,10 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     // out.edge_flags = 0u; // test
 
     // only apply to ores
-    // let light_u = extractBits(data.word0, 24u, 8u);
+    let light_u = extractBits(data.word0, 24u, 8u);
     // out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
 
-    out.light = 1.0;
+    out.light = f32(extractBits(data.word0, 24u, 8u)) / 255.0;
 
     out.hp = extractBits(data.word1, 20u, 4u);
     // hp takes up the top 4 bits perfectly, 24-bit total
@@ -412,11 +412,11 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
-    // convert to oklab and nudge values with seed
+    // Convert to oklab and nudge values with seed
     var lab = linear_srgb_to_oklab(tex_color.rgb);
     var lch = oklab_to_oklch(lab);
 
-    // we use 9 out of the 28 seed bits here
+    // We use 9 out of the 28 seed bits here
     let lab_nudge_bits = vec3u(
         extractBits(seed, 0u, 3u), // shift lightness (0-1)
         extractBits(seed, 3u, 3u), // shift chroma, which acts similar to saturation (in practice, between 0-0.4)
@@ -424,12 +424,19 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     );
     let nudges = vec3f(lab_nudge_bits) / 7.0;
 
-    // Apply light and nudges in a vectorized way
-    lch *= vec3f(in.light, 0.9, 1.0) + vec3f(nudges.x * 0.02, nudges.y * 0.3, nudges.z * 0.06);
+    // Scale chroma with light intensity to prevent high-chroma lighting leakage in the dark
+    let chroma_light_scale = max(0.0, in.light);
+
+    // Apply light and nudges (Chroma y is scaled by the light level)
+    lch *= vec3f(
+        in.light + nudges.x * 0.02,
+        (0.9 + nudges.y * 0.3) * chroma_light_scale,
+        1.0 + nudges.z * 0.06
+    );
 
     var final_rgb = vec3f(0.0);
     if in.edge_flags != 0xFFu {
-        // add the edge darkening and base light value, with the function using bits 10-16
+        // Add the edge darkening and base light value, with the function using bits 10-16
         let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, seed);
         lch.x *= (1.0 - darkening);
 
@@ -438,7 +445,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         }
     }
 
-    // convert OKLCH result to OKLAB, then finally back to float-based RGB
+    // Convert OKLCH result to OKLAB, then finally back to float-based RGB
     lab = oklch_to_oklab(lch);
     final_rgb = oklab_to_linear_srgb(lab);
 
@@ -822,6 +829,12 @@ fn oklab_water(sprite_rgb: vec3f, water_rgb: vec3f, weight: f32) -> vec3f {
 */
 
 // FBM background logic
+
+// How strongly the background tracks camera zoom. 1.0 = locked 1:1 to the world (old behavior); lower
+// values make the background zoom slower than the camera for a parallax-depth feel, pivoting at zoom 1.0.
+// Kept < 1 so far-out custom camera modes barely zoom the background.
+const BG_ZOOM_PARALLAX: f32 = 0.35;
+
 struct BackgroundOutput {
     @builtin(position) position: vec4f,
     @location(0) screen_offset: vec2f,
@@ -841,8 +854,10 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
 
     let screen_uv = vec2f(x, -y) * 0.5 + 0.5;
 
-    // Center the scale pivot to the screen center (camera and player viewport center)
-    out.screen_offset = ((screen_uv - 0.5) * scene.viewport_size) / scene.zoom;
+    // Center the scale pivot to the screen center (camera and player viewport center). The zoom is
+    // compressed so the background scales slower than the camera (parallax depth); see BG_ZOOM_PARALLAX.
+    let bg_zoom = pow(scene.zoom, BG_ZOOM_PARALLAX);
+    out.screen_offset = ((screen_uv - 0.5) * scene.viewport_size) / bg_zoom;
 
     // Zig-zag wrapping for colors
     var t_wrap = (scene.time * 0.3) % 2.0;
@@ -859,7 +874,7 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
 
 @fragment
 fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
-    const base_scale = 0.015625; // Exactly 1.0 / 64.0 for seamless 256-chunk alignment
+    const base_scale = 0.015625; // Exactly 1.0 / 64.0; see `BG_WRAP_CHUNKS` (chunk.zig) for the seamless-wrap contract
     let absolute_camera = scene.grid_origin.zw;
     let t = scene.time;
 

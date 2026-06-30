@@ -787,15 +787,6 @@ pub const possible_item_sprites = blk: {
     break :blk result;
 };
 
-/// Empty block of id `Sprite.none`.
-pub const AIR_BLOCK: memory.Block = .{
-    .id = .none,
-    .seed = 0,
-    .light = 0,
-    .hp = 0,
-    .edge_flags = 0xFF,
-};
-
 // Comptime sanity validation check
 comptime {
     @setEvalBranchQuota(1e6);
