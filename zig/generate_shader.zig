@@ -65,8 +65,7 @@ pub fn main(init: std.process.Init) !void {
         try cwd.writeFile(init.io, .{ .sub_path = SHADER_PATH, .data = new_content });
     }
 
-    // Update the content-hash cache so build.zig can skip rebuilding this tool next time (same
-    // protocol as generate_types.zig).
+    // Update the content-hash cache so build.zig can skip rebuilding this tool next time!
     const args = try init.minimal.args.toSlice(allocator);
     if (args.len < 4) return;
     const cache_root = args[1];

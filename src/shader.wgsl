@@ -11,11 +11,11 @@
 // Do NOT edit values between the markers by hand; edit the Sprite enum instead.
 const TILES_PER_ROW: f32 = 8.0;
 const TILES_PER_COLUMN: f32 = 18.0;
-const STONE_START: u32 = 19u;
-const ORE_START: u32 = 27u;
-const GEM_START: u32 = 31u;
-const GEM_MASK_START: u32 = 39u;
-const WATER_START: u32 = 139u;
+const STONE_START: u32 = 20u;
+const ORE_START: u32 = 28u;
+const GEM_START: u32 = 32u;
+const GEM_MASK_START: u32 = 40u;
+const WATER_START: u32 = 140u;
 // #endregion generated-constants
 
 const PI = radians(180.0);

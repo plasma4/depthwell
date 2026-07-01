@@ -761,14 +761,14 @@ pub const Xoshiro512 = struct {
     }
 };
 
-/// Stafford Mix 13 for 64-bit entropy avalanching.
+/// Basic seeding algorithm for 64-bit entropy avalanching.
 pub inline fn staffordMix13(value: u64) u64 {
     var z = (value ^ (value >> 30)) *% 0xbf58476d1ce4e5b9;
     z = (z ^ (z >> 27)) *% 0x94d049bb133111eb;
     return z ^ (z >> 31);
 }
 
-/// BROKEN WHEN EXPORTING, DO NOT USE FOR WASM, AS JS LOGIC EXISTS ALREADY.
+/// DO NOT USE FOR WASM, AS JS LOGIC EXISTS ALREADY. (Can be used for native in the future.)
 /// Converts a base-26 [a-z]-only string to 64 bytes.
 /// Precondition: input is no longer than 100 characters
 pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {

@@ -1,5 +1,4 @@
 //! Handles structure generation logic and compile-time machinations for structures.
-//! Handles structure generation logic and compile-time machinations for structures.
 const std = @import("std");
 const dw = @import("../root.zig");
 

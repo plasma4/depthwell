@@ -74,8 +74,8 @@ pub fn generate(
         const shell_rand = state.getLimit(u32, 5);
         const shell: Sprite = switch (shell_rand) {
             0, 1 => .pink_stone,
-            2, 3 => .alt_blue_stone,
-            4 => .ancient_stone,
+            2, 3 => .purple_stone,
+            4 => .redder_stone,
             else => unreachable,
         };
 
@@ -94,7 +94,7 @@ pub fn generate(
 
                 // Gems weren't selected: determine a default stone type that's consistent across all blocks in the core
                 else => if (dist_sq >= (core_radius - 1) * (core_radius - 1))
-                    if (shell == .pink_stone) .stone else ([_]Sprite{ .stone, .green_stone, .seagreen_stone })[which_stone]
+                    if (shell == .redder_stone) .stone else ([_]Sprite{ .stone, .alt_blue_stone, .purple_stone })[which_stone]
                 else
                     .stone,
             };

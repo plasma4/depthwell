@@ -14,7 +14,7 @@ const DropHandlers = dw.drops.DropHandlers;
 /// Index where stone-like sprites begin.
 const STONE_START = 6;
 /// Index where stone-like sprites end.
-const STONE_END = STONE_START + 13;
+const STONE_END = STONE_START + 14;
 
 /// Index where smelted bar sprites begin.
 const BAR_START = STONE_END + 4;
@@ -62,12 +62,13 @@ pub const Sprite = enum(u16) {
     blue_stone,
     alt_blue_stone,
     pink_stone,
+    purple_stone,
     red_stone,
+    redder_stone,
+    lava_stone,
+    mossy_stone,
     seagreen_stone,
     green_stone,
-    lava_stone,
-    redder_stone,
-    mossy_stone,
     ancient_stone,
     sulfuric_stone,
     /// "Plain" stone type, with 2x2 variations to prevent an overly tiling look.

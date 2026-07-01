@@ -5,7 +5,8 @@ const base = 26n;
 export function makeSeed(seedLength = 100) {
     if (seedLength <= 0) return "";
     // 72 bytes > 2.47*10^173.
-    // The amount of possible seed combinations is around ~3.29*10^141, so this is more than sufficient!
+    // The amount of possible seed combinations is around ~3.29*10^141,
+    // so this is more than sufficient to prevent statistical biases!
     const bytes = new Uint8Array(72);
     crypto.getRandomValues(bytes);
 
