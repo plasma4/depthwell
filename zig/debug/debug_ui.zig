@@ -143,28 +143,32 @@ const render_sliders = [_]SliderDef{
 
 /// List of debug buttons that either execute functions or toggle booleans.
 pub const buttons = [_]ButtonDef{
-    .{
-        .name = "Teleport to edge",
-        .action = teleportToEdge,
-    },
+    // .{
+    //     .name = "Teleport to edge",
+    //     .action = teleportToEdge,
+    // },
     .{
         .name = "Teleport randomly",
         .action = teleportRandomly,
     },
     .{
-        .name = "Toggle base heatmap",
-        .toggle = &procedural.USE_BASE_HEATMAP,
-        .regen = true,
-    },
-    .{
-        .name = "Toggle ore heatmap",
-        .toggle = &procedural.USE_ORE_HEATMAP,
-        .regen = true,
-    },
-    .{
         .name = "Toggle creative",
         .toggle = &dw.inventory.IN_CREATIVE,
     },
+    .{
+        .name = "Toggle global light",
+        .toggle = &dw.lighting.DEBUG_LIGHT,
+    },
+    // .{
+    //     .name = "Toggle base heatmap",
+    //     .toggle = &procedural.USE_BASE_HEATMAP,
+    //     .regen = true,
+    // },
+    // .{
+    //     .name = "Toggle ore heatmap",
+    //     .toggle = &procedural.USE_ORE_HEATMAP,
+    //     .regen = true,
+    // },
 };
 
 /// Teleports to the top left quadrant. Then, tries to find a valid spawn point.

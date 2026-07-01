@@ -1,5 +1,5 @@
 //! Handles water logic, updating the physics and edge flags as necessary.
-//! Water level goes from 0-15.
+//! Water level goes from 0-15; the simulation keeps total water within the `SimBuffer` the same.
 const std = @import("std");
 const dw = @import("../root.zig");
 const memory = dw.memory;
@@ -10,6 +10,10 @@ const SimBuffer = world.SimBuffer;
 const Sprite = dw.Sprite;
 const Block = memory.Block;
 const Chunk = memory.Chunk;
+
+const CHUNK_SIZE = dw.CHUNK_SIZE;
+const CHUNK_SIZE_LOG2 = dw.CHUNK_SIZE_LOG2;
+const SIM_BUFFER_SIZE = dw.world.SIM_BUFFER_SIZE;
 
 /// Debugging water invariant check: when enabled, `tickWater` asserts that the total water volume is stable in SimBuffer
 /// (as in, no water gets added or deleted from the game).
@@ -29,30 +33,34 @@ fn totalSimWater() u64 {
 }
 
 /// Global bitset of active chunks in the current frame (16x16 chunk grid).
-var active_chunks: std.StaticBitSet(256) = undefined;
+var active_chunks: std.StaticBitSet(SIM_BUFFER_SIZE) = undefined;
 /// Per-cell "this cell has already taken its turn this tick" guard (prevents a cell moving twice in one sweep).
-var water_updated: std.StaticBitSet(256 * 256) = undefined;
-/// Per-cell "this cell RECEIVED sideways water this tick" guard. Such a cell is still allowed to fall
-/// (gravity, perpendicular to the sweep, never causes runaway) but is barred from immediately re-spreading sideways,
-/// which is what would chain-flow water across the sweep direction.
-/// Keeping gravity enabled stops freshly-pushed water from freezing into side columns / dribbling off ledges.
-var lateral_received: std.StaticBitSet(256 * 256) = undefined;
+var water_updated: std.StaticBitSet(world.SIM_GRID_SIZE_SQ) = undefined;
+/// Per-cell "this cell RECEIVED sideways water this tick" guard.
+var lateral_received: std.StaticBitSet(world.SIM_GRID_SIZE_SQ) = undefined;
 /// Bitset keeping track of which active chunks actually had water flow changes.
-var chunks_to_update_flags: std.StaticBitSet(256) = undefined;
-/// Chunks (logical 16x16 index) queued by manual water placement (`world.modifyBlockType`) for batched edge-flag recompute on next tick.
-/// Persists between ticks (unlike `chunks_to_update_flags`) and is folded in at the flag phase.
-var pending_flag_chunks: std.StaticBitSet(256) = std.StaticBitSet(256).initEmpty();
+var chunks_to_update_flags: std.StaticBitSet(SIM_BUFFER_SIZE) = undefined;
+/// Chunks queued by manual water placement for batched edge-flag recompute on next tick.
+var pending_flag_chunks: std.StaticBitSet(SIM_BUFFER_SIZE) = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
 
-/// Queues a manually-placed water block's chunk plus its 4 orthogonal neighbors for a batched flag recompute,
-/// rather than recomputing each touched water block synchronously at placement time.
-/// Placement happens before `tickWater` within the same tick, so flags still resolve the same frame.
-pub fn queueWaterFlags(cx: u4, cy: u4) void {
-    const idx = (@as(usize, cy) << 4) | cx;
+/// Resets all water simulation states, clearing pending flag updates and tracking bitsets.
+pub fn reset() void {
+    pending_flag_chunks = .initEmpty();
+    active_chunks = .initEmpty();
+    water_updated = .initEmpty();
+    lateral_received = .initEmpty();
+    chunks_to_update_flags = .initEmpty();
+}
+
+/// Queues a manually-placed water block's chunk plus its 4 orthogonal neighbors for a batched flag recompute.
+/// Flags will resolve in the same tick.
+pub fn queueWaterFlags(cx: world.SimIndexType, cy: world.SimIndexType) void {
+    const idx = (@as(usize, cy) << world.SIM_WIDTH_LOG2) | cx;
     pending_flag_chunks.set(idx);
     if (cx > 0) pending_flag_chunks.set(idx - 1);
-    if (cx < 15) pending_flag_chunks.set(idx + 1);
-    if (cy > 0) pending_flag_chunks.set(idx - 16);
-    if (cy < 15) pending_flag_chunks.set(idx + 16);
+    if (cx < world.SIM_BUFFER_WIDTH - 1) pending_flag_chunks.set(idx + 1);
+    if (cy > 0) pending_flag_chunks.set(idx - world.SIM_BUFFER_WIDTH);
+    if (cy < world.SIM_BUFFER_WIDTH - 1) pending_flag_chunks.set(idx + world.SIM_BUFFER_WIDTH);
 }
 
 /// Helper to get the volume of a block (0 to 15 for water/waterlogged blocks, 0 otherwise).
@@ -202,7 +210,6 @@ pub inline fn getWaterloggedStateSprites(
 
 /// Computes the water volume for a cell dynamically.
 /// Supports cross-chunk reads via horizontal offsets (`bx` of -1 or 16).
-/// Returns 0 if the requested neighbor chunk is missing.
 inline fn getVolumeLocal(
     curr: *Chunk,
     left: ?*Chunk,
@@ -210,14 +217,14 @@ inline fn getVolumeLocal(
     bx: i32,
     by: i32,
 ) u32 {
-    if (bx >= 0 and bx < 16) {
-        return getVolume(curr.blocks[@as(usize, @intCast((by << 4) | bx))]);
+    if (bx >= 0 and bx < CHUNK_SIZE) {
+        return getVolume(curr.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | bx))]);
     } else if (bx < 0) {
         const l = left orelse return 0;
-        return getVolume(l.blocks[@as(usize, @intCast((by << 4) | (bx + 16)))]);
+        return getVolume(l.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | (bx + CHUNK_SIZE)))]);
     } else {
         const r = right orelse return 0;
-        return getVolume(r.blocks[@as(usize, @intCast((by << 4) | (bx - 16)))]);
+        return getVolume(r.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | (bx - CHUNK_SIZE)))]);
     }
 }
 
@@ -238,29 +245,29 @@ inline fn getLocalBlockPtr(
     bx: i32,
     by: i32,
 ) ?*Block {
-    if (bx >= 0 and bx < 16 and by >= 0 and by < 16) {
+    if (bx >= 0 and bx < CHUNK_SIZE and by >= 0 and by < CHUNK_SIZE) {
         const c = curr orelse return null;
-        return &c.blocks[@as(usize, @intCast((by << 4) | bx))];
+        return &c.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | bx))];
     }
     if (bx < 0) {
-        if (bx >= -16 and by >= 0 and by < 16) {
+        if (bx >= -@as(i32, CHUNK_SIZE) and by >= 0 and by < CHUNK_SIZE) {
             const l = left orelse return null;
-            return &l.blocks[@as(usize, @intCast((by << 4) | (bx + 16)))];
+            return &l.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | (bx + CHUNK_SIZE)))];
         }
-    } else if (bx >= 16) {
-        if (bx < 32 and by >= 0 and by < 16) {
+    } else if (bx >= CHUNK_SIZE) {
+        if (bx < 2 * CHUNK_SIZE and by >= 0 and by < CHUNK_SIZE) {
             const r = right orelse return null;
-            return &r.blocks[@as(usize, @intCast((by << 4) | (bx - 16)))];
+            return &r.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | (bx - CHUNK_SIZE)))];
         }
     } else if (by < 0) {
-        if (by >= -16 and bx >= 0 and bx < 16) {
+        if (by >= -@as(i32, CHUNK_SIZE) and bx >= 0 and bx < CHUNK_SIZE) {
             const t = top orelse return null;
-            return &t.blocks[@as(usize, @intCast(((by + 16) << 4) | bx))];
+            return &t.blocks[@as(usize, @intCast(((by + CHUNK_SIZE) << CHUNK_SIZE_LOG2) | bx))];
         }
-    } else if (by >= 16) {
-        if (by < 32 and bx >= 0 and bx < 16) {
+    } else if (by >= CHUNK_SIZE) {
+        if (by < 2 * CHUNK_SIZE and bx >= 0 and bx < CHUNK_SIZE) {
             const b = bottom orelse return null;
-            return &b.blocks[@as(usize, @intCast(((by - 16) << 4) | bx))];
+            return &b.blocks[@as(usize, @intCast(((by - CHUNK_SIZE) << CHUNK_SIZE_LOG2) | bx))];
         }
     }
     return null;
@@ -268,19 +275,19 @@ inline fn getLocalBlockPtr(
 
 /// Recalculates water edge flags and packages neighbor heights using the local cache.
 pub fn updateWaterEdgeFlags(x: i32, y: i32) void {
-    if (x < 0 or x >= 256 or y < 0 or y >= 256) return;
-    const cx: u4 = @intCast(@divTrunc(x, 16));
-    const cy: u4 = @intCast(@divTrunc(y, 16));
-    const bx: i32 = @intCast(@mod(x, 16));
-    const by: i32 = @intCast(@mod(y, 16));
+    if (x < 0 or x >= world.SIM_GRID_SIZE or y < 0 or y >= world.SIM_GRID_SIZE) return;
+    const cx: world.SimIndexType = @intCast(@divTrunc(x, CHUNK_SIZE));
+    const cy: world.SimIndexType = @intCast(@divTrunc(y, CHUNK_SIZE));
+    const bx: i32 = @intCast(@mod(x, CHUNK_SIZE));
+    const by: i32 = @intCast(@mod(y, CHUNK_SIZE));
 
     const curr = getChunkPtr(cx, cy) orelse return;
     const left = if (cx > 0) getChunkPtr(cx - 1, cy) else null;
-    const right = if (cx < 15) getChunkPtr(cx + 1, cy) else null;
+    const right = if (cx < world.SIM_BUFFER_WIDTH - 1) getChunkPtr(cx + 1, cy) else null;
     const top = if (cy > 0) getChunkPtr(cx, cy - 1) else null;
-    const bottom = if (cy < 15) getChunkPtr(cx, cy + 1) else null;
+    const bottom = if (cy < world.SIM_BUFFER_WIDTH - 1) getChunkPtr(cx, cy + 1) else null;
 
-    const ptr = &curr.blocks[@as(usize, @intCast((by << 4) | bx))];
+    const ptr = &curr.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | bx))];
     if (getVolume(ptr.*) == 0 and !world.shouldHaveEdgeFlags(ptr.id)) return;
 
     var flags: u8 = 0;
@@ -341,10 +348,10 @@ fn updateChunkWaterFlags(
     _ = cy;
     const c = curr orelse return;
     var by: i32 = 0;
-    while (by < 16) : (by += 1) {
+    while (by < CHUNK_SIZE) : (by += 1) {
         var bx: i32 = 0;
-        while (bx < 16) : (bx += 1) {
-            const ptr = &c.blocks[@as(usize, @intCast((by << 4) | bx))];
+        while (bx < CHUNK_SIZE) : (bx += 1) {
+            const ptr = &c.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | bx))];
             if (getVolume(ptr.*) == 0 and !world.shouldHaveEdgeFlags(ptr.id)) continue;
 
             var flags: u8 = 0;
@@ -427,24 +434,20 @@ inline fn notifyNeighborEdgeFlags(rx: i32, ry: i32) void {
     }
 }
 
-/// Runs a single frame of the water simulation for blocks within the `SimBuffer`.
-/// This simulation has been (somewhat) optimized and is also fully mass-conserving.
+/// Runs a single frame of the (mass-conserving) water simulation for blocks within the `SimBuffer`.
 pub fn tickWater() void {
     const frame = memory.game.frame;
 
-    // A chunk is simulated only if it has water AND is not "settled" (sleep/wake):
-    // a chunk that produced no flow last tick is asleep and skipped, so large still bodies are mostly free.
-    // Cross-border flow and `wake` clear neighboring settled bits (see the dirty pass below).
-    active_chunks = std.StaticBitSet(256).initEmpty();
+    active_chunks = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
 
-    var cy: u4 = 0;
+    var cy: world.SimIndexType = 0;
     while (true) : (cy += 1) {
-        var cx: u4 = 0;
+        var cx: world.SimIndexType = 0;
         while (true) : (cx += 1) {
-            const chunk_idx = (@as(usize, cy) << 4) | cx;
+            const chunk_idx = (@as(usize, cy) << world.SIM_WIDTH_LOG2) | cx;
             const sim_idx = SimBuffer.getIndex(cx, cy);
             if (SimBuffer.keys[sim_idx] == null) {
-                if (cx == 15) break;
+                if (cx == world.SIM_BUFFER_WIDTH - 1) break;
                 continue;
             }
 
@@ -452,9 +455,9 @@ pub fn tickWater() void {
                 active_chunks.set(chunk_idx);
             }
 
-            if (cx == 15) break;
+            if (cx == world.SIM_BUFFER_WIDTH - 1) break;
         }
-        if (cy == 15) break;
+        if (cy == world.SIM_BUFFER_WIDTH - 1) break;
     }
 
     if (active_chunks.count() == 0) return;
@@ -462,55 +465,47 @@ pub fn tickWater() void {
     lateral_received = .initEmpty();
     chunks_to_update_flags = .initEmpty();
 
-    // Fold in chunks queued by manual water placement so their edge flags get one batched pass below
-    // (these chunks are active, since placement also sets their `has_water` bit)
-    // Pending is preserved across early returns above, so a placement is never dropped.
     chunks_to_update_flags.setUnion(pending_flag_chunks);
-    pending_flag_chunks = std.StaticBitSet(256).initEmpty();
+    pending_flag_chunks = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
 
     const water_before: u64 = if (VERIFY_WATER_MASS) totalSimWater() else 0;
 
-    // Tracks which chunks within the 16x16 grid received any volume modifications
-    var dirty_chunks = std.StaticBitSet(256).initEmpty();
+    var dirty_chunks = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
 
-    // Run water simulation ONLY on active chunks
-    var chunk_y: i32 = 15;
+    var chunk_y: i32 = world.SIM_BUFFER_WIDTH - 1;
     while (chunk_y >= 0) : (chunk_y -= 1) {
         const left_to_right = (frame % 2 == 0);
         var chunk_x: i32 = 0;
-        while (chunk_x < 16) : (chunk_x += 1) {
-            const rcx = if (left_to_right) chunk_x else 15 - chunk_x;
-            const chunk_idx = (@as(usize, @intCast(chunk_y)) << 4) | @as(usize, @intCast(rcx));
+        while (chunk_x < world.SIM_BUFFER_WIDTH) : (chunk_x += 1) {
+            const rcx = if (left_to_right) chunk_x else (world.SIM_BUFFER_WIDTH - 1) - chunk_x;
+            const chunk_idx = (@as(usize, @intCast(chunk_y)) << world.SIM_WIDTH_LOG2) | @as(usize, @intCast(rcx));
 
             if (!active_chunks.isSet(chunk_idx)) continue;
 
-            // For dilated boundaries that fall outside simulated buffer ranges, add safety checking
             const curr = getChunkPtr(@intCast(rcx), @intCast(chunk_y)) orelse continue;
             const left = if (rcx > 0) getChunkPtr(@intCast(rcx - 1), @intCast(chunk_y)) else null;
-            const right = if (rcx < 15) getChunkPtr(@intCast(rcx + 1), @intCast(chunk_y)) else null;
-            const bottom = if (chunk_y < 15) getChunkPtr(@intCast(rcx), @intCast(chunk_y + 1)) else null;
+            const right = if (rcx < world.SIM_BUFFER_WIDTH - 1) getChunkPtr(@intCast(rcx + 1), @intCast(chunk_y)) else null;
+            const bottom = if (chunk_y < world.SIM_BUFFER_WIDTH - 1) getChunkPtr(@intCast(rcx), @intCast(chunk_y + 1)) else null;
 
-            var by: i32 = 15;
+            var by: i32 = CHUNK_SIZE - 1;
             while (by >= 0) : (by -= 1) {
                 var bx: i32 = 0;
-                while (bx < 16) : (bx += 1) {
-                    const rbx = if (left_to_right) bx else 15 - bx;
-                    const rx = rcx * 16 + rbx;
-                    const ry = chunk_y * 16 + by;
-                    const idx = @as(usize, @intCast(ry)) * 256 + @as(usize, @intCast(rx));
+                while (bx < CHUNK_SIZE) : (bx += 1) {
+                    const rbx = if (left_to_right) bx else (CHUNK_SIZE - 1) - bx;
+                    const rx = rcx * CHUNK_SIZE + rbx;
+                    const ry = chunk_y * CHUNK_SIZE + by;
+                    const idx = @as(usize, @intCast(ry)) * world.SIM_GRID_SIZE + @as(usize, @intCast(rx));
 
                     if (water_updated.isSet(idx)) continue;
 
-                    // Fetch block by pointer to prevent stale local copies during modifications
-                    const block_ptr = &curr.blocks[@as(usize, @intCast((by << 4) | rbx))];
+                    const block_ptr = &curr.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | rbx))];
                     var src_vol = getVolume(block_ptr.*);
                     if (src_vol == 0) continue;
 
                     water_updated.set(idx);
 
-                    // Gravity flow!
-                    const down_ptr = if (by < 15)
-                        &curr.blocks[@as(usize, @intCast(((by + 1) << 4) | rbx))]
+                    const down_ptr = if (by < CHUNK_SIZE - 1)
+                        &curr.blocks[@as(usize, @intCast(((by + 1) << CHUNK_SIZE_LOG2) | rbx))]
                     else if (bottom) |b|
                         &b.blocks[@as(usize, @intCast(rbx))]
                     else
@@ -525,13 +520,12 @@ pub fn tickWater() void {
                                 const cap: u32 = if (is_free_fall) 15 else 4;
                                 const amt = @min(@min(src_vol, available), cap);
 
-                                // Perform direct, solid transfer on SimBuffer pointers
                                 setVolume(block_ptr, src_vol - amt);
                                 setVolume(dp, dest_vol + amt);
 
                                 dirty_chunks.set(chunk_idx);
-                                if (by == 15 and bottom != null) {
-                                    dirty_chunks.set(chunk_idx + 16);
+                                if (by == CHUNK_SIZE - 1 and bottom != null) {
+                                    dirty_chunks.set(chunk_idx + world.SIM_BUFFER_WIDTH);
                                 }
 
                                 src_vol = getVolume(block_ptr.*);
@@ -540,25 +534,21 @@ pub fn tickWater() void {
                         }
                     }
 
-                    // Only spread sideways once the cell can no longer descend.
                     const down_blocked = if (down_ptr) |dp| (!dp.isFlowable() or getVolume(dp.*) >= 15) else true;
                     if (!down_blocked) continue;
-                    // If this cell only just received water do NOT let it re-spread sideways again.
                     if (lateral_received.isSet(idx)) continue;
 
-                    // Horizontal equalizing flow: water moves toward the lower-volume neighbor,
-                    // equalizing a surface gradually ticks.
                     const left_ptr = if (rbx > 0)
-                        &curr.blocks[@as(usize, @intCast((by << 4) | (rbx - 1)))]
+                        &curr.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | (rbx - 1)))]
                     else if (left) |l|
-                        &l.blocks[@as(usize, @intCast((by << 4) | 15))]
+                        &l.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | (CHUNK_SIZE - 1)))]
                     else
                         null;
 
-                    const right_ptr = if (rbx < 15)
-                        &curr.blocks[@as(usize, @intCast((by << 4) | (rbx + 1)))]
+                    const right_ptr = if (rbx < CHUNK_SIZE - 1)
+                        &curr.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | (rbx + 1)))]
                     else if (right) |r|
-                        &r.blocks[@as(usize, @intCast((by << 4) | 0))]
+                        &r.blocks[@as(usize, @intCast((by << CHUNK_SIZE_LOG2) | 0))]
                     else
                         null;
 
@@ -625,19 +615,19 @@ pub fn tickWater() void {
                                     dirty_chunks.set(chunk_idx - 1);
                                 }
                                 if (rx > 0) {
-                                    const left_idx = @as(usize, @intCast(ry)) * 256 + @as(usize, @intCast(rx - 1));
+                                    const left_idx = @as(usize, @intCast(ry)) * world.SIM_GRID_SIZE + @as(usize, @intCast(rx - 1));
                                     lateral_received.set(left_idx);
                                 }
                             }
                             if (flow_right > 0) {
                                 setVolume(right_ptr.?, right_vol + flow_right);
-                                if (rbx < 15) {
+                                if (rbx < CHUNK_SIZE - 1) {
                                     dirty_chunks.set(chunk_idx);
                                 } else if (right != null) {
                                     dirty_chunks.set(chunk_idx + 1);
                                 }
-                                if (rx < 255) {
-                                    const right_idx = @as(usize, @intCast(ry)) * 256 + @as(usize, @intCast(rx + 1));
+                                if (rx < world.SIM_GRID_SIZE - 1) {
+                                    const right_idx = @as(usize, @intCast(ry)) * world.SIM_GRID_SIZE + @as(usize, @intCast(rx + 1));
                                     lateral_received.set(right_idx);
                                 }
                             }
@@ -656,32 +646,25 @@ pub fn tickWater() void {
         }
     }
 
-    // A chunk that was simulated but produced no flow this tick is at equilibrium
-    // (this is independent of the alternating sweep direction, as a settled chunk yields zero flow under either),
-    // so it can be skipped until disturbed. Chunks that DID flow are handled now!
     var act_it = active_chunks.iterator(.{});
     while (act_it.next()) |idx| {
         if (!dirty_chunks.isSet(idx)) {
-            const ax: u4 = @intCast(idx & 15);
-            const ay: u4 = @intCast(idx >> 4);
+            const ax: world.SimIndexType = @intCast(idx & (world.SIM_BUFFER_WIDTH - 1));
+            const ay: world.SimIndexType = @intCast(idx >> world.SIM_WIDTH_LOG2);
             SimBuffer.water_settled.set(SimBuffer.getIndex(ax, ay));
         }
     }
 
-    // Perform flag and packing updates selectively based on dirty chunk tracking
-    // Defer dirty chunk updates to history and ChunkCache to execute them in easy single-step block transfers!
     var dirty_it = dirty_chunks.iterator(.{});
     while (dirty_it.next()) |idx| {
-        const dy: u4 = @intCast(idx >> 4);
-        const dx: u4 = @intCast(idx & 15);
+        const dy: world.SimIndexType = @intCast(idx >> world.SIM_WIDTH_LOG2);
+        const dx: world.SimIndexType = @intCast(idx & (world.SIM_BUFFER_WIDTH - 1));
         const sim_idx = SimBuffer.getIndex(dx, dy);
         const coord = SimBuffer.keys[sim_idx] orelse continue;
 
         const key = world.DepthCoordinate.from(coord);
         const sim_chunk = &SimBuffer.sim_buffer_ptr[sim_idx];
 
-        // A dirtied chunk's water content changed so re-evaluate its flag so
-        // it stays active while it holds water, and it drops out of the simulation once it has fully drained.
         SimBuffer.has_water.setValue(sim_idx, SimBuffer.chunkHasWater(sim_chunk));
 
         const entry_idx = world.mod_store.index.get(key) orelse blk: {
@@ -695,50 +678,46 @@ pub fn tickWater() void {
         const mc = world.mod_store.history.at(entry_idx);
         mc.blocks = sim_chunk.blocks;
 
-        if (world.ChunkCache.findIndex(coord)) |cache_idx| {
-            world.ChunkCache.chunks[cache_idx].blocks = sim_chunk.blocks;
+        if (world.chunk_cache.findIndex(coord)) |cache_idx| {
+            world.chunk_cache.chunks[cache_idx].blocks = sim_chunk.blocks;
         }
 
         chunks_to_update_flags.set(idx);
         if (dx > 0) chunks_to_update_flags.set(idx - 1);
-        if (dx < 15) chunks_to_update_flags.set(idx + 1);
-        if (dy > 0) chunks_to_update_flags.set(idx - 16);
-        if (dy < 15) chunks_to_update_flags.set(idx + 16);
+        if (dx < world.SIM_BUFFER_WIDTH - 1) chunks_to_update_flags.set(idx + 1);
+        if (dy > 0) chunks_to_update_flags.set(idx - world.SIM_BUFFER_WIDTH);
+        if (dy < world.SIM_BUFFER_WIDTH - 1) chunks_to_update_flags.set(idx + world.SIM_BUFFER_WIDTH);
 
-        // Wake this chunk and its neighbors for next tick.
         SimBuffer.water_settled.unset(sim_idx);
         if (dx > 0) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx - 1, dy));
-        if (dx < 15) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx + 1, dy));
+        if (dx < world.SIM_BUFFER_WIDTH - 1) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx + 1, dy));
         if (dy > 0) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx, dy - 1));
-        if (dy < 15) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx, dy + 1));
+        if (dy < world.SIM_BUFFER_WIDTH - 1) SimBuffer.water_settled.unset(SimBuffer.getIndex(dx, dy + 1));
     }
 
-    // Perform flag and packing updates selectively based on dirty chunk tracking
     chunk_y = 0;
     while (true) : (chunk_y += 1) {
-        var chunk_x: u4 = 0;
+        var chunk_x: world.SimIndexType = 0;
         while (true) : (chunk_x += 1) {
-            const chunk_idx = (@as(usize, @intCast(chunk_y)) << 4) | chunk_x;
+            const chunk_idx = (@as(usize, @intCast(chunk_y)) << world.SIM_WIDTH_LOG2) | chunk_x;
             if (!chunks_to_update_flags.isSet(chunk_idx)) {
-                if (chunk_x == 15) break;
+                if (chunk_x == world.SIM_BUFFER_WIDTH - 1) break;
                 continue;
             }
-            // Recompute flags for any flagged-and-loaded chunk (no longer gated on `active_chunks`, since
-            // sleep/wake dropped the boundary dilation; a dirtied neighbor still needs correct flags).
             if (SimBuffer.keys[SimBuffer.getIndex(chunk_x, @intCast(chunk_y))] == null) {
-                if (chunk_x == 15) break;
+                if (chunk_x == world.SIM_BUFFER_WIDTH - 1) break;
                 continue;
             }
 
             const curr = getChunkPtr(chunk_x, @intCast(chunk_y));
             const left = if (chunk_x > 0) getChunkPtr(chunk_x - 1, @intCast(chunk_y)) else null;
-            const right = if (chunk_x < 15) getChunkPtr(chunk_x + 1, @intCast(chunk_y)) else null;
+            const right = if (chunk_x < world.SIM_BUFFER_WIDTH - 1) getChunkPtr(chunk_x + 1, @intCast(chunk_y)) else null;
             const top = if (chunk_y > 0) getChunkPtr(chunk_x, @intCast(chunk_y - 1)) else null;
-            const bottom = if (chunk_y < 15) getChunkPtr(chunk_x, @intCast(chunk_y + 1)) else null;
+            const bottom = if (chunk_y < world.SIM_BUFFER_WIDTH - 1) getChunkPtr(chunk_x, @intCast(chunk_y + 1)) else null;
 
             updateChunkWaterFlags(curr, left, right, top, bottom, @intCast(chunk_x), chunk_y);
-            if (chunk_x == 15) break;
+            if (chunk_x == world.SIM_BUFFER_WIDTH - 1) break;
         }
-        if (chunk_y == 15) break;
+        if (chunk_y == world.SIM_BUFFER_WIDTH - 1) break;
     }
 }

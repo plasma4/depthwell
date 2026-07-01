@@ -34,14 +34,14 @@ pub fn drawIndicators() void {
     const player_coord = game.getPlayerCoord();
 
     // Fetch camera interpolation time fraction
-    const dt = dw.chunks.current_dt + 1.0;
+    const dt = dw.chunks.current_dt;
     const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dt);
 
     // Compute interpolated camera positions
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
 
-    // Interpolate FROM last_camera_pos TO camera_pos (dt is in 0..1).
+    // Interpolate last_camera_pos to camera_pos now
     const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
     const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
 
@@ -166,14 +166,14 @@ pub fn isHoveringFurnaceIndicator() bool {
     const player_coord = game.getPlayerCoord();
 
     // Fetch camera interpolation time fraction
-    const dt = dw.chunks.current_dt + 1.0;
+    const dt = dw.chunks.current_dt;
     const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dt);
 
     // Compute interpolated camera positions
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
 
-    // See drawIndicators(): interpolate from last_camera_pos so the hitbox matches the rendered indicator position exactly.
+    // Interpolate last_camera_pos to camera_pos now
     const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
     const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
 

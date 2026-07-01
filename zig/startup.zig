@@ -38,7 +38,16 @@ pub fn init() void {
     if (!alreadyStarted) {
         alreadyStarted = true;
         logger.log(@src(), "Hello from Zig!", .{});
+    } else {
+        // TODO: continue to implement full reset logic, and eventually test this
+        @import("menus/furnace.zig").reset();
+        dw.water.reset();
+        if (!world.arena.reset(.retain_capacity)) @panic("Arena allocator reset failed!");
+        world.SimBuffer.reset();
+        memory.game = .{};
+        world.clearCaches(true);
     }
+
     var temp_seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 1));
     inline for (&memory.game.seed2) |*s| {
         s.* = temp_seed.next();

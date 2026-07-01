@@ -62,7 +62,7 @@ pub fn generate(
 
     const pos_x = @as(i32, @intCast(state.getLimit(u32, max_pos_x)));
     const pos_y = @as(i32, @intCast(state.getLimit(u32, max_pos_y)));
-    const bit = state.getChance(0.5);
+    const water_bit = state.getChance(0.5);
 
     const struct_x = i_wx - (cx * i_area + pos_x);
     const struct_y = i_wy - (cy * i_area + pos_y);
@@ -96,7 +96,7 @@ pub fn generate(
             return .seagreen_stone;
         }
 
-        if (struct_y == size_y - 2 or (struct_y == size_y - 3 and bit)) {
+        if (struct_y == size_y - 2 or (struct_y == size_y - 3 and water_bit)) {
             return .water;
         }
 

@@ -803,7 +803,7 @@ pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {
     }
 }
 
-/// Bridge to WASM, creates seed data from a string using bijective mapping
+/// Bridge to WASM, creates seed data from a string using bijective mapping.
 pub fn wasmSeedFromString(noalias str_ptr: [*]const u8, str_len: u64, noalias output_ptr: *Seed) void {
     const temp: usize = @intCast(str_len);
     const input = str_ptr[0..temp];

@@ -40,14 +40,14 @@ pub const AncestorCache = struct {
     /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
     pub const NUM_TIERS = HORIZON_DEPTH;
 
-    var keys: [NUM_TIERS][TIER_SETS][TIER_WAYS]DepthCoordinate = @splat(@splat(@splat(DepthCoordinate.invalid)));
-    var chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined;
-    var clock: [NUM_TIERS][TIER_SETS]u4 = @splat(@splat(0));
-    var hand: [NUM_TIERS][TIER_SETS]u2 = @splat(@splat(0));
+    keys: [NUM_TIERS][TIER_SETS][TIER_WAYS]DepthCoordinate = @splat(@splat(@splat(DepthCoordinate.invalid))),
+    chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined,
+    clock: [NUM_TIERS][TIER_SETS]u4 = @splat(@splat(0)),
+    hand: [NUM_TIERS][TIER_SETS]u2 = @splat(@splat(0)),
 
     /// Retrieves a chunk by `DepthCoordinate`; searches the specific depth tier.
     /// Returns a mutable pointer.
-    pub fn get(key: DepthCoordinate) ?*Chunk {
+    pub fn get(self: *@This(), key: DepthCoordinate) ?*Chunk {
         std.debug.assert(!isHorizonDepth(key.depth));
 
         const d: usize = @intCast(key.depth % NUM_TIERS);
@@ -55,11 +55,11 @@ pub const AncestorCache = struct {
         const set_idx: usize = @intCast(h % TIER_SETS);
 
         inline for (0..TIER_WAYS) |way| {
-            const cache_key = keys[d][set_idx][way];
+            const cache_key = self.keys[d][set_idx][way];
             if (cache_key.depth != 0) {
                 if (cache_key.eql(key)) {
-                    clock[d][set_idx] |= (@as(u4, 1) << way);
-                    return &chunks[d][set_idx * TIER_WAYS + way];
+                    self.clock[d][set_idx] |= (@as(u4, 1) << way);
+                    return &self.chunks[d][set_idx * TIER_WAYS + way];
                 }
             }
         }
@@ -68,47 +68,49 @@ pub const AncestorCache = struct {
 
     /// Allocates a slot in the appropriate tier based on depth and returns a mutable pointer.
     /// This allows `generateChunk()` to write directly into the cache memory.
-    pub fn allocateSlot(key: DepthCoordinate) *Chunk {
+    pub fn allocateSlot(self: *@This(), key: DepthCoordinate) *Chunk {
         std.debug.assert(!isHorizonDepth(key.depth));
         const d: usize = @intCast(key.depth % NUM_TIERS);
         const h = key.hash();
         const set_idx: usize = @intCast(h % TIER_SETS);
 
-        var hand_val = hand[d][set_idx];
+        var hand_val = self.hand[d][set_idx];
         while (true) {
             const way = hand_val;
             hand_val +%= 1; // % TIER_WAYS not needed, power of 2
 
             const mask = @as(u4, 1) << way;
-            if ((clock[d][set_idx] & mask) != 0) {
+            if ((self.clock[d][set_idx] & mask) != 0) {
                 // Give second chance and clear reference bit.
-                clock[d][set_idx] &= ~mask;
+                self.clock[d][set_idx] &= ~mask;
             } else {
                 // Found eviction candidate.
-                keys[d][set_idx][way] = key;
-                clock[d][set_idx] |= mask;
-                hand[d][set_idx] = hand_val;
-                return &chunks[d][set_idx * TIER_WAYS + way];
+                self.keys[d][set_idx][way] = key;
+                self.clock[d][set_idx] |= mask;
+                self.hand[d][set_idx] = hand_val;
+                return &self.chunks[d][set_idx * TIER_WAYS + way];
             }
         }
     }
 
     /// Allocates a slot and inserts a chunk directly.
-    pub fn insert(key: DepthCoordinate, chunk: Chunk) *const Chunk {
-        const slot = allocateSlot(key);
+    pub fn insert(self: *@This(), key: DepthCoordinate, chunk: Chunk) *const Chunk {
+        const slot = self.allocateSlot(key);
         slot.* = chunk;
         return slot;
     }
 
     /// Clears the `AncestorCache` and resets clock data.
-    pub fn clear() void {
+    pub fn clear(self: *@This()) void {
         for (0..NUM_TIERS) |i| {
-            @memset(&keys[i], @splat(DepthCoordinate.invalid));
-            @memset(&clock[i], 0);
-            @memset(&hand[i], 0);
+            @memset(&self.keys[i], @splat(DepthCoordinate.invalid));
+            @memset(&self.clock[i], 0);
+            @memset(&self.hand[i], 0);
         }
     }
 };
+
+pub var ancestor_cache: AncestorCache = .{};
 
 /// Parent coordinate and block offset info.
 pub const ParentInfo = struct {
@@ -144,10 +146,10 @@ pub fn getAncestorChunk(key: DepthCoordinate) *const Chunk {
     if (world.mod_store.get(key)) |mod| return mod;
 
     // Check the ancestor cache
-    if (AncestorCache.get(key)) |cached| return cached;
+    if (ancestor_cache.get(key)) |cached| return cached;
 
     // Generate the chunk into the cache slot
-    const slot = AncestorCache.allocateSlot(key);
+    const slot = ancestor_cache.allocateSlot(key);
     world.generateChunk(slot, key);
     return slot;
 }
@@ -305,9 +307,9 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
         const block_idx = (@as(usize, by) << dw.CHUNK_SIZE_LOG2) | bx;
 
         if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx];
-        if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx];
+        if (ancestor_cache.get(key)) |cached| return cached.blocks[block_idx];
 
-        const slot = AncestorCache.allocateSlot(key);
+        const slot = ancestor_cache.allocateSlot(key);
         world.generateBaseChunk(slot, key.asCoord());
         return slot.blocks[block_idx];
     }
@@ -319,7 +321,7 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
     const block_idx = (@as(usize, by) << dw.CHUNK_SIZE_LOG2) | bx;
 
     if (world.mod_store.get(key)) |modified| return modified.blocks[block_idx];
-    if (AncestorCache.get(key)) |cached| return cached.blocks[block_idx];
+    if (ancestor_cache.get(key)) |cached| return cached.blocks[block_idx];
 
     const p = getParentInfo(key, bx, by);
     const parent_block = getInheritedMaterial(p.coord.asDepthCoordinate(target_depth - 1), p.bx, p.by);

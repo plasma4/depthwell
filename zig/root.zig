@@ -16,8 +16,9 @@ pub const is_debug = FORCE_DEBUG or builtin.is_test or builtin.mode == .Debug;
 // Note: changing these constants below will probably have disasterous consequences.
 // A lot of logic is hard-coded, such as `[6][6]Sprite` use, and a lot of logic is bound to break if these constants are modified.
 
-/// Represents `log2(CHUNK_SIZE)`.
+/// Represents log2(CHUNK_SIZE).
 pub const CHUNK_SIZE_LOG2: comptime_int = 4;
+// (Note: we use u4 instead of a type defined here for simplicity: these are hard-coded and not subjected to change regardless.)
 
 /// The core dimension, 16: how many units one level spans of the level below, along a single axis.
 /// - blocks per chunk edge
@@ -199,13 +200,13 @@ pub export fn mixSeedF64(number: u64) f64 { // same thing as mix_seed but f64
     )) / seeding.POW_2_64;
 }
 
-pub export fn wasmSeedFromString() void {
-    seeding.wasmSeedFromString(
-        memory.scratch_buffer.ptr,
-        memory.mem.scratch_len,
-        &memory.game.seed,
-    );
-}
+// pub export fn wasmSeedFromString() void {
+//     seeding.wasmSeedFromString(
+//         memory.scratch_buffer.ptr,
+//         memory.mem.scratch_len,
+//         &memory.game.seed,
+//     );
+// }
 
 // Layout logic
 pub export fn getMemoryLayoutPtr() u64 { // pointer-like *const memory.MemoryLayout, Memory64 hack
@@ -214,12 +215,12 @@ pub export fn getMemoryLayoutPtr() u64 { // pointer-like *const memory.MemoryLay
 pub export fn scratchAlloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
     return @intFromPtr(memory.scratchAlloc(len));
 }
-pub export fn wasmAlloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
-    return @intFromPtr(memory.wasmAlloc(len));
-}
-pub export fn wasmFree(ptr: u64, len: usize) void {
-    memory.wasmFree(@ptrFromInt(@as(usize, @intCast(ptr))), len); // Memory64 hack
-}
+// pub export fn wasmAlloc(len: usize) u64 { // pointer-like [*]u8, Memory64 hack
+//     return @intFromPtr(memory.wasmAlloc(len));
+// }
+// pub export fn wasmFree(ptr: u64, len: usize) void {
+//     memory.wasmFree(@ptrFromInt(@as(usize, @intCast(ptr))), len); // Memory64 hack
+// }
 
 /// Returns if code is in debugging mode for JS to see.
 pub export fn isDebug() bool {

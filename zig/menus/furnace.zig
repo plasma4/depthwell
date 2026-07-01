@@ -3,8 +3,8 @@
 //! Smelting state is GLOBAL (shared by all furnaces);
 //! the in-world furnace indicators only toggle `dw.indicators.menus.furnace` (whether this menu is open).
 //!
-//! Because ore forms of metals are useless, the interaction is can be extremely simple: dragging an ore from the
-//! inventory onto the input slot loads ALL of that ore at once, and bars collect fairly rapidly.
+//! Because ore forms of metals are useless, the interaction is can be extremely simple.
+//! Dragging an ore from the inventory onto the input slot loads ALL of that ore at once!
 const std = @import("std");
 const dw = @import("../root.zig");
 
@@ -43,7 +43,6 @@ var drag_pos_px: Vec2f = .{ -1.0, -1.0 };
 var last_drag_uv: Vec2f = .{ -1.0, -1.0 };
 
 /// Resets the state of the furnace menu.
-/// TODO: use this on re-init
 pub fn reset() void {
     loaded_ore = .none;
     loaded_count = 0;

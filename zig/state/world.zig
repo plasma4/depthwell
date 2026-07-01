@@ -392,13 +392,18 @@ pub const DepthCoordinateContext = struct {
 };
 
 /// Width of the simulation buffer.
-/// This is hard-coded and a lot of stuff WILL break if this value is modified.
-const SIM_BUFFER_WIDTH = 16;
-/// Represents log2(SIM_BUFFER_WIDTH).
-const SIM_WIDTH_LOG2 = std.math.log2(SIM_BUFFER_WIDTH);
-
+pub const SIM_BUFFER_WIDTH = 16;
 /// Size of the simulation buffer (`SIM_BUFFER_WIDTH` squared).
-const SIM_BUFFER_SIZE = SIM_BUFFER_WIDTH * SIM_BUFFER_WIDTH;
+pub const SIM_BUFFER_SIZE = SIM_BUFFER_WIDTH * SIM_BUFFER_WIDTH;
+/// Represents log2(SIM_BUFFER_WIDTH).
+pub const SIM_WIDTH_LOG2 = std.math.log2(SIM_BUFFER_WIDTH);
+/// Width of the simulation buffer in blocks.
+pub const SIM_GRID_SIZE = SIM_BUFFER_WIDTH * CHUNK_SIZE;
+/// Square size of the simulation buffer block grid (total blocks).
+pub const SIM_GRID_SIZE_SQ = SIM_GRID_SIZE * SIM_GRID_SIZE;
+
+/// Represents the integer type needed to represent indexes inside the simulation buffer.
+pub const SimIndexType = std.meta.Int(.unsigned, SIM_WIDTH_LOG2);
 
 /// A combined pool of SimBuffer and chunk cache data.
 var chunk_pool: [SIM_BUFFER_SIZE + CHUNK_CACHE_SIZE]Chunk = undefined;
@@ -409,25 +414,28 @@ comptime {
 
 /// The simulation buffer containing 16x16 chunks, centered around the player.
 pub const SimBuffer = struct {
-    /// Size of the outside ring `background_generation_tick` uses.
-    const RING_SIZE = 68;
+    /// Size of the outside ring `precacheChunks()` uses.
+    const RING_SIZE = 4 * SIM_BUFFER_WIDTH + 4;
     const RING_OFFSETS = blk: {
         var offs: [RING_SIZE]Vec2i = undefined;
         var i: usize = 0;
-        // Top and bottom rows (18 chunks each)
-        var x: i64 = -9;
-        while (x <= 8) : (x += 1) {
-            offs[i] = .{ x, -9 };
+        const half_width = @as(i64, SIM_BUFFER_WIDTH) / 2;
+        const min_off = -half_width - 1;
+        const max_off = half_width;
+        // Top and bottom rows (2 * (SIM_BUFFER_WIDTH + 2) chunks total)
+        var x: i64 = min_off;
+        while (x <= max_off) : (x += 1) {
+            offs[i] = .{ x, min_off };
             i += 1;
-            offs[i] = .{ x, 8 };
+            offs[i] = .{ x, max_off };
             i += 1;
         }
-        // Left and right columns (16 chunks each, avoiding corners already covered)
-        var y: i64 = -8;
-        while (y <= 7) : (y += 1) {
-            offs[i] = .{ -9, y };
+        // Left and right columns (avoiding corners already covered)
+        var y: i64 = min_off + 1;
+        while (y <= max_off - 1) : (y += 1) {
+            offs[i] = .{ min_off, y };
             i += 1;
-            offs[i] = .{ 8, y };
+            offs[i] = .{ max_off, y };
             i += 1;
         }
         break :blk offs;
@@ -447,39 +455,31 @@ pub const SimBuffer = struct {
     /// Only cleared/woken up by new flow, manual changes (`wake()`), or chunk (re)loads.
     pub var water_settled: std.StaticBitSet(SIM_BUFFER_SIZE) = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
 
-    /// Wakes the loaded slot holding `coord` and its 4 orthogonal neighbors (clears their settled bit),
-    /// so the water simulation re-evaluates them. Called whenever a block is modified near water.
-    pub fn wake(coord: Coordinate) void {
-        const og = origin orelse return;
-        const dx = coord.suffix[0] -% og.suffix[0];
-        const dy = coord.suffix[1] -% og.suffix[1];
-        if ((dx | dy) >= SIM_BUFFER_WIDTH) return;
-        const cx: u4 = @intCast(dx);
-        const cy: u4 = @intCast(dy);
-        water_settled.unset(getIndex(cx, cy));
-        if (cx > 0) water_settled.unset(getIndex(cx - 1, cy));
-        if (cx < 15) water_settled.unset(getIndex(cx + 1, cy));
-        if (cy > 0) water_settled.unset(getIndex(cx, cy - 1));
-        if (cy < 15) water_settled.unset(getIndex(cx, cy + 1));
-    }
-
-    /// Scans a chunk for any water/waterlogged block. Used to (re)initialize `has_water` on chunk load
-    /// and to lazily re-evaluate the flag for dirtied chunks during `water.tickWater`.
-    pub fn chunkHasWater(chunk: *const Chunk) bool {
-        for (&chunk.blocks) |b| {
-            if (b.id == .water or water.getVolume(b) > 0) return true;
-        }
-        return false;
-    }
-
     /// The coordinate corresponding to the chunk at the "logical" (0, 0) of the 16x16 window.
     var origin: ?Coordinate = null;
-    const SimIndexType = std.meta.Int(.unsigned, SIM_WIDTH_LOG2);
     var ring_x: SimIndexType = 0;
     var ring_y: SimIndexType = 0;
 
     /// Mask for the 16x16 buffer.
     const SIM_MASK = SIM_BUFFER_WIDTH - 1;
+
+    /// Resets the `SimBuffer` completely, clearing tracking, ring buffer offsets, and background scanners.
+    pub fn reset() void {
+        @memset(&keys, null);
+        has_water = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
+        water_settled = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
+        origin = null;
+        ring_x = 0;
+        ring_y = 0;
+        bg_scan_id = 0;
+    }
+
+    /// Returns the internal index into the chunk array.
+    pub inline fn getIndex(cx: SimIndexType, cy: SimIndexType) usize {
+        const rx = (ring_x +% cx) & SIM_MASK;
+        const ry = (ring_y +% cy) & SIM_MASK;
+        return (@as(usize, ry) << SIM_WIDTH_LOG2) | rx;
+    }
 
     /// Attempts to retrieve a chunk from the buffer, returning null if non-existent.
     pub fn get(coord: Coordinate) ?*Chunk {
@@ -496,6 +496,41 @@ pub const SimBuffer = struct {
         return null;
     }
 
+    /// Clears the whole `SimBuffer`, invalidating previous data.
+    pub inline fn clear() void {
+        @memset(&keys, null);
+        has_water = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
+        water_settled = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
+        origin = null;
+        ring_x = 0;
+        ring_y = 0;
+    }
+
+    /// Wakes the loaded slot holding `coord` and its 4 orthogonal neighbors (clears their settled bit),
+    /// so the water simulation re-evaluates them. Called whenever a block is modified near water.
+    pub fn wake(coord: Coordinate) void {
+        const og = origin orelse return;
+        const dx = coord.suffix[0] -% og.suffix[0];
+        const dy = coord.suffix[1] -% og.suffix[1];
+        if ((dx | dy) >= SIM_BUFFER_WIDTH) return;
+        const cx: SimIndexType = @intCast(dx);
+        const cy: SimIndexType = @intCast(dy);
+        water_settled.unset(getIndex(cx, cy));
+        if (cx > 0) water_settled.unset(getIndex(cx - 1, cy));
+        if (cx < SIM_BUFFER_WIDTH - 1) water_settled.unset(getIndex(cx + 1, cy));
+        if (cy > 0) water_settled.unset(getIndex(cx, cy - 1));
+        if (cy < SIM_BUFFER_WIDTH - 1) water_settled.unset(getIndex(cx, cy + 1));
+    }
+
+    /// Scans a chunk for any water/waterlogged block. Used to (re)initialize `has_water` on chunk load
+    /// and to lazily re-evaluate the flag for dirtied chunks during `water.tickWater`.
+    pub fn chunkHasWater(chunk: *const Chunk) bool {
+        for (&chunk.blocks) |b| {
+            if (b.id == .water or water.getVolume(b) > 0) return true;
+        }
+        return false;
+    }
+
     /// Marks the loaded slot holding `coord` (if any) as containing water, so `tickWater` keeps it
     /// active. Used when water is placed manually (`modifyBlockType`) outside the simulation.
     pub fn markWater(coord: Coordinate) void {
@@ -508,23 +543,6 @@ pub const SimBuffer = struct {
                 if (k.eql(coord)) has_water.set(id);
             }
         }
-    }
-
-    /// Returns the internal index into the chunk array.
-    pub inline fn getIndex(cx: u4, cy: u4) usize {
-        const rx = (ring_x +% cx) & SIM_MASK;
-        const ry = (ring_y +% cy) & SIM_MASK;
-        return (@as(usize, ry) << SIM_WIDTH_LOG2) | rx;
-    }
-
-    /// Clears the whole `SimBuffer`, invalidating previous data.
-    pub inline fn clear() void {
-        @memset(&keys, null);
-        has_water = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
-        water_settled = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
-        origin = null;
-        ring_x = 0;
-        ring_y = 0;
     }
 
     /// Helper to safely step an origin coordinate, returning the furthest possible coordinate
@@ -552,8 +570,9 @@ pub const SimBuffer = struct {
     /// Synchronizes the buffer to center on the provided coordinate/position.
     /// Safely handles shifts exceeding 1 chunk per frame via `shift`.
     pub inline fn sync(coord: Coordinate, shift: Vec2i) void {
+        const half_width = @as(i64, SIM_BUFFER_WIDTH) / 2;
         const og = origin orelse {
-            fullRefresh(getClampedMove(coord, -8, -8));
+            fullRefresh(getClampedMove(coord, -half_width, -half_width));
             return;
         };
 
@@ -566,10 +585,12 @@ pub const SimBuffer = struct {
         }
 
         // Teleport or large jump fallback
-        const target_origin = getClampedMove(coord, -8, -8);
+        const target_origin = getClampedMove(coord, -half_width, -half_width);
         if (!og.eql(target_origin)) fullRefresh(target_origin);
     }
 
+    /// Completely invalidates the current buffer state and rebuilds it from scratch centered around a brand-new origin.
+    /// Typically triggered upon world initialization, player teleportation, or high-velocity threshold jumps.
     fn fullRefresh(new_origin: Coordinate) void {
         origin = new_origin;
         ring_x = 0;
@@ -591,6 +612,9 @@ pub const SimBuffer = struct {
         }
     }
 
+    /// Shifts the tracking window incrementally by a certain amount of chunks (internal).
+    /// Mutates the ring buffer offsets to avoid expensive memory copying,
+    /// and replaces ONLY the rows or columns that have newly entered the 16x16 boundary window.
     fn incrementalRefresh(dx: i64, dy: i64) void {
         const old_origin = origin.?;
         const new_origin = getClampedMove(old_origin, dx, dy);
@@ -651,8 +675,8 @@ pub const SimBuffer = struct {
     /// Background caching heuristic: scans the boundary immediately outside the 16x16 chunk in the
     /// direction of movement and creates it in `ChunkCache` before the player reaches it.
     ///
-    /// Fairly naive, generating `default_amount` chunks when called (suggested value of 1-2).
-    /// It is recommended to set a higher `max_amount` (so more budget is available in high-velocity falling situations).
+    /// Generates `default_amount` chunks when called (suggested value of 1-2).
+    /// It is recommended to set a higher `max_amount` (suggested value of ~4, so more budget is available in high-velocity falling situations).
     pub fn precacheChunks(
         player_coord: Coordinate,
         velocity: Vec2f,
@@ -670,9 +694,12 @@ pub const SimBuffer = struct {
         const vy = velocity[1];
         const budget: u32 = if (vx * vx + vy * vy < 500.0) default_amount else max_amount;
 
+        const half_width = @as(i64, SIM_BUFFER_WIDTH) / 2;
+        const min_off = -half_width - 1;
+
         // Priority target based on movement
-        const tx: i64 = if (vx > 1.0) 8 else if (vx < -1.0) -9 else (if (game.frame % 2 == 0) @as(i64, 8) else -9);
-        const ty: i64 = if (vy > 1.0) 8 else if (vy < -1.0) -9 else 8; // Default downward for gravity
+        const tx: i64 = if (vx > 1.0) half_width else if (vx < -1.0) min_off else (if (game.frame % 2 == 0) half_width else min_off);
+        const ty: i64 = if (vy > 1.0) half_width else if (vy < -1.0) min_off else half_width; // Default downward for gravity
 
         // Check the three chunks in the primary direction of travel
         const targets = if (@abs(vy) > @abs(vx))
@@ -683,9 +710,9 @@ pub const SimBuffer = struct {
         for (targets) |off| {
             if (generated_count >= budget) break;
             if (player_coord.move(off)) |c| {
-                if (get(c) == null and ChunkCache.findIndex(c) == null) {
-                    const slot = ChunkCache.allocateIndex(c);
-                    generateChunk(&ChunkCache.chunks[slot], c.asDepthCoordinate(memory.game.depth));
+                if (get(c) == null and chunk_cache.findIndex(c) == null) {
+                    const slot = chunk_cache.allocateIndex(c);
+                    generateChunk(&chunk_cache.chunks[slot], c.asDepthCoordinate(memory.game.depth));
                     generated_count += 1;
                 }
             }
@@ -697,9 +724,9 @@ pub const SimBuffer = struct {
             const off = RING_OFFSETS[bg_scan_id];
             bg_scan_id = (bg_scan_id + 1) % RING_SIZE;
             if (player_coord.move(off)) |c| {
-                if (get(c) == null and ChunkCache.findIndex(c) == null) {
-                    const slot = ChunkCache.allocateIndex(c);
-                    generateChunk(&ChunkCache.chunks[slot], c.asDepthCoordinate(memory.game.depth));
+                if (get(c) == null and chunk_cache.findIndex(c) == null) {
+                    const slot = chunk_cache.allocateIndex(c);
+                    generateChunk(&chunk_cache.chunks[slot], c.asDepthCoordinate(memory.game.depth));
                     generated_count += 1;
                 }
             }
@@ -710,17 +737,17 @@ pub const SimBuffer = struct {
 /// Returns a pointer to a block in the active 256x256 SimBuffer grid.
 /// Treat out of bounds or inactive chunks as solid.
 pub inline fn getSimBlockPtr(x: i32, y: i32) ?*Block {
-    if (x < 0 or x >= 256 or y < 0 or y >= 256) return null;
+    if (x < 0 or x >= SIM_GRID_SIZE or y < 0 or y >= SIM_GRID_SIZE) return null;
     const ux: usize = @intCast(x);
     const uy: usize = @intCast(y);
-    const cx: u4 = @intCast(ux / 16);
-    const cy: u4 = @intCast(uy / 16);
-    const bx: u4 = @intCast(ux % 16);
-    const by: u4 = @intCast(uy % 16);
+    const cx: SimIndexType = @intCast(ux / CHUNK_SIZE);
+    const cy: SimIndexType = @intCast(uy / CHUNK_SIZE);
+    const bx: std.meta.Int(.unsigned, CHUNK_SIZE_LOG2) = @intCast(ux % CHUNK_SIZE);
+    const by: std.meta.Int(.unsigned, CHUNK_SIZE_LOG2) = @intCast(uy % CHUNK_SIZE);
     const chunk_idx = SimBuffer.getIndex(cx, cy);
     if (SimBuffer.keys[chunk_idx] == null) return null;
     const chunk = &SimBuffer.sim_buffer_ptr[chunk_idx];
-    return &chunk.blocks[(@as(usize, @intCast(by)) << 4) | bx];
+    return &chunk.blocks[(@as(usize, by) << CHUNK_SIZE_LOG2) | bx];
 }
 
 /// The safe cache size is dynamically calculated based on minimum zoom and screen resolution.
@@ -768,29 +795,29 @@ const CHUNK_CACHE_SETS = CHUNK_CACHE_SIZE / CHUNK_CACHE_WAYS;
 /// A static cache that caches chunks when a generation is attempted.
 pub const ChunkCache = struct {
     /// Keys storing `Coordinate` values structured as a 4-way set-associative cache.
-    var keys: [CHUNK_CACHE_SETS][CHUNK_CACHE_WAYS]?Coordinate = @splat(@splat(null));
+    keys: [CHUNK_CACHE_SETS][CHUNK_CACHE_WAYS]?Coordinate = @splat(@splat(null)),
     /// Chunks referenced by `keys` at the current depth.
-    pub var chunks: *[CHUNK_CACHE_SIZE]Chunk = chunk_pool[0..CHUNK_CACHE_SIZE];
+    chunks: *[CHUNK_CACHE_SIZE]Chunk = chunk_pool[0..CHUNK_CACHE_SIZE],
 
     // crazy int-type creation tech (unused for simplicity)
     // const WaysBitType = std.meta.Int(.unsigned, CHUNK_CACHE_WAYS);
     // const WaysIndexType = std.meta.Int(.unsigned, std.math.log2(CHUNK_CACHE_WAYS));
 
     /// Data for clock data structure implementation per set.
-    var clock_bits: [CHUNK_CACHE_SETS]u4 = @splat(0);
+    clock_bits: [CHUNK_CACHE_SETS]u4 = @splat(0),
     /// Where the hand is located in the clock data structure per set.
-    var hands: [CHUNK_CACHE_SETS]u2 = @splat(0);
+    hands: [CHUNK_CACHE_SETS]u2 = @splat(0),
 
     /// Finds the index of a `Coordinate` in the cache, marking it as "recently used."
     /// Returns null if non-existent.
-    pub inline fn findIndex(coord: Coordinate) ?usize {
+    pub inline fn findIndex(self: *@This(), coord: Coordinate) ?usize {
         const h = coord.hash();
         const set_idx: usize = @intCast(h % CHUNK_CACHE_SETS);
 
         inline for (0..CHUNK_CACHE_WAYS) |way| {
-            if (keys[set_idx][way]) |k| {
+            if (self.keys[set_idx][way]) |k| {
                 if (k.eql(coord)) {
-                    clock_bits[set_idx] |= (@as(u4, 1) << way);
+                    self.clock_bits[set_idx] |= (@as(u4, 1) << way);
                     return set_idx * CHUNK_CACHE_WAYS + way;
                 }
             }
@@ -799,34 +826,36 @@ pub const ChunkCache = struct {
     }
 
     /// Evicts an entry using the clock algorithm and returns the index for the new `Coordinate` inside the cache.
-    pub inline fn allocateIndex(coord: Coordinate) usize {
+    pub inline fn allocateIndex(self: *@This(), coord: Coordinate) usize {
         const h = coord.hash();
         const set_idx: usize = @intCast(h % CHUNK_CACHE_SETS);
-        var hand_val = hands[set_idx];
+        var hand_val = self.hands[set_idx];
 
         while (true) {
             const way = hand_val;
             hand_val +%= 1;
 
             const mask = @as(u4, 1) << way;
-            if ((clock_bits[set_idx] & mask) != 0) {
-                clock_bits[set_idx] &= ~mask;
+            if ((self.clock_bits[set_idx] & mask) != 0) {
+                self.clock_bits[set_idx] &= ~mask;
             } else {
-                keys[set_idx][way] = coord;
-                clock_bits[set_idx] |= mask;
-                hands[set_idx] = hand_val;
+                self.keys[set_idx][way] = coord;
+                self.clock_bits[set_idx] |= mask;
+                self.hands[set_idx] = hand_val;
                 return set_idx * CHUNK_CACHE_WAYS + way;
             }
         }
     }
 
     /// Clears the whole `ChunkCache`, invalidating previous data.
-    pub inline fn clear() void {
-        @memset(&keys, @splat(null));
-        @memset(&clock_bits, 0);
-        @memset(&hands, 0);
+    pub inline fn clear(self: *@This()) void {
+        @memset(&self.keys, @splat(null));
+        @memset(&self.clock_bits, 0);
+        @memset(&self.hands, 0);
     }
 };
+
+pub var chunk_cache: ChunkCache = .{};
 
 const QuadrantEdgeDetails = struct {
     most_top: bool,
@@ -976,7 +1005,7 @@ pub const QuadCache = struct {
     }
 };
 
-/// The QuadCache that stores information about the 4 quadrants and their seeds.
+/// The QuadCache that stores information about the 4 quadrants and their history.
 pub var quad_cache: QuadCache = .{
     .path_hashes = undefined,
     .left_path = SegmentedList(u64, QuadCache.PATH_PREALLOC_SIZE){}, // easiest to do prealloc with larger stack size in case
@@ -1007,42 +1036,42 @@ pub fn writeChunk(chunk: *Chunk, coord: Coordinate) void {
         return;
     }
 
-    if (ChunkCache.findIndex(coord)) |i| {
-        chunk.* = ChunkCache.chunks[i];
+    if (chunk_cache.findIndex(coord)) |i| {
+        chunk.* = chunk_cache.chunks[i];
         return;
     }
 
-    const slot_index = ChunkCache.allocateIndex(coord);
+    const slot_index = chunk_cache.allocateIndex(coord);
     const key = DepthCoordinate.from(coord);
 
     if (mod_store.get(key)) |modified_chunk| {
         // Modified state!
-        ChunkCache.chunks[slot_index].blocks = modified_chunk.*.blocks;
+        chunk_cache.chunks[slot_index].blocks = modified_chunk.*.blocks;
     } else { // generate procedurally
-        generateChunk(&ChunkCache.chunks[slot_index], coord.asDepthCoordinate(memory.game.depth));
+        generateChunk(&chunk_cache.chunks[slot_index], coord.asDepthCoordinate(memory.game.depth));
     }
 
-    chunk.* = ChunkCache.chunks[slot_index];
+    chunk.* = chunk_cache.chunks[slot_index];
 }
 
 /// Same as `write_chunk`, but avoids checking `SimBuffer` first.
 pub fn writeChunkSkip(chunk: *Chunk, coord: Coordinate) void {
-    if (ChunkCache.findIndex(coord)) |i| {
-        chunk.* = ChunkCache.chunks[i];
+    if (chunk_cache.findIndex(coord)) |i| {
+        chunk.* = chunk_cache.chunks[i];
         return;
     }
 
-    const slot_index = ChunkCache.allocateIndex(coord);
+    const slot_index = chunk_cache.allocateIndex(coord);
     const key = DepthCoordinate.from(coord);
 
     if (mod_store.get(key)) |modified_chunk| {
         // Modified state!
-        ChunkCache.chunks[slot_index].blocks = modified_chunk.*.blocks;
+        chunk_cache.chunks[slot_index].blocks = modified_chunk.*.blocks;
     } else { // generate procedurally
-        generateChunk(&ChunkCache.chunks[slot_index], coord.asDepthCoordinate(memory.game.depth));
+        generateChunk(&chunk_cache.chunks[slot_index], coord.asDepthCoordinate(memory.game.depth));
     }
 
-    chunk.* = ChunkCache.chunks[slot_index];
+    chunk.* = chunk_cache.chunks[slot_index];
 }
 
 /// Same as `write_chunk`, but avoids checking `mod_store`.
@@ -1052,15 +1081,15 @@ pub fn writeChunkModless(chunk: *Chunk, coord: Coordinate) void {
         return;
     }
 
-    if (ChunkCache.findIndex(coord)) |i| {
-        chunk.* = ChunkCache.chunks[i];
+    if (chunk_cache.findIndex(coord)) |i| {
+        chunk.* = chunk_cache.chunks[i];
         return;
     }
 
-    const slot_index = ChunkCache.allocateIndex(coord);
+    const slot_index = chunk_cache.allocateIndex(coord);
     const key = DepthCoordinate.from(coord);
-    generateChunk(&ChunkCache.chunks[slot_index], key);
-    chunk.* = ChunkCache.chunks[slot_index];
+    generateChunk(&chunk_cache.chunks[slot_index], key);
+    chunk.* = chunk_cache.chunks[slot_index];
 }
 
 /// Gets a new instance of a `Chunk` at the current depth.
@@ -1125,15 +1154,15 @@ pub fn getCachedChunk(key: DepthCoordinate) ?*const Chunk {
         if (SimBuffer.get(key.asCoord())) |cached_ptr| {
             return cached_ptr;
         }
-        if (ChunkCache.findIndex(key.asCoord())) |i| {
-            return &ChunkCache.chunks[i];
+        if (chunk_cache.findIndex(key.asCoord())) |i| {
+            return &chunk_cache.chunks[i];
         }
     }
     if (mod_store.get(key)) |modified_chunk| {
         return modified_chunk;
     }
     if (key.depth != memory.game.depth) {
-        if (dw.ancestor.AncestorCache.get(key)) |cached| {
+        if (dw.ancestor.ancestor_cache.get(key)) |cached| {
             return cached;
         }
     }
@@ -1371,8 +1400,8 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
     // Any block change near water can let it flow again, so wake the surrounding chunks (sleep/wake).
     SimBuffer.wake(coord);
 
-    if (ChunkCache.findIndex(coord)) |index| {
-        const block: *Block = &ChunkCache.chunks[index].blocks[idx];
+    if (chunk_cache.findIndex(coord)) |index| {
+        const block: *Block = &chunk_cache.chunks[index].blocks[idx];
         block.id = new_sprite;
         block.hp = initial_hp;
         block.edge_flags = 0xFF;
@@ -1458,7 +1487,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 switch (current_sprite.anchor()) {
                     .none => {},
                     .floor => {
-                        const below = if (lby < 15)
+                        const below = if (lby < CHUNK_SIZE - 1)
                             getBlockAt(target_coord, lbx, lby + 1, memory.game.depth).id
                         else
                             getBlockAt(target_coord.moveY(1) orelse target_coord, lbx, 0, memory.game.depth).id;
@@ -1468,14 +1497,14 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                         const above = if (lby > 0)
                             getBlockAt(target_coord, lbx, lby - 1, memory.game.depth).id
                         else
-                            getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
+                            getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, CHUNK_SIZE - 1, memory.game.depth).id;
                         if (!above.isSolid()) broken = true;
                     },
                     .suspended => {
                         const above = if (lby > 0)
                             getBlockAt(target_coord, lbx, lby - 1, memory.game.depth).id
                         else
-                            getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, 15, memory.game.depth).id;
+                            getBlockAt(target_coord.moveY(-1) orelse target_coord, lbx, CHUNK_SIZE - 1, memory.game.depth).id;
                         if (!above.isSolid() and above != current_sprite) broken = true;
                     },
                     // TODO: add needs_pair_left and needs_pair_right for larger plants
@@ -1504,10 +1533,10 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                         sc.blocks[block_id].edge_flags = 0xFF;
                         sc.blocks[block_id].waterlogged = 0;
                     }
-                    if (ChunkCache.findIndex(target_coord)) |index| {
-                        ChunkCache.chunks[index].blocks[block_id].id = .none;
-                        ChunkCache.chunks[index].blocks[block_id].edge_flags = 0xFF;
-                        ChunkCache.chunks[index].blocks[block_id].waterlogged = 0;
+                    if (chunk_cache.findIndex(target_coord)) |index| {
+                        chunk_cache.chunks[index].blocks[block_id].id = .none;
+                        chunk_cache.chunks[index].blocks[block_id].edge_flags = 0xFF;
+                        chunk_cache.chunks[index].blocks[block_id].waterlogged = 0;
                     }
 
                     flag_worklist.append(alloc, .{ // use append() instead of at() to prevent panics
@@ -1564,9 +1593,9 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     c.blocks[block_id].edge_flags = flags;
                     c.blocks[block_id].waterlogged = waterlogged;
                 }
-                if (ChunkCache.findIndex(target_coord)) |index| {
-                    ChunkCache.chunks[index].blocks[block_id].edge_flags = flags;
-                    ChunkCache.chunks[index].blocks[block_id].waterlogged = waterlogged;
+                if (chunk_cache.findIndex(target_coord)) |index| {
+                    chunk_cache.chunks[index].blocks[block_id].edge_flags = flags;
+                    chunk_cache.chunks[index].blocks[block_id].waterlogged = waterlogged;
                 }
                 const m_key = DepthCoordinate.from(target_coord);
                 if (mod_store.index.get(m_key)) |id_val| {
@@ -1610,9 +1639,9 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
             sim_chunk.blocks[id].id = .none;
             sim_chunk.blocks[id].waterlogged = 0;
         }
-        if (ChunkCache.findIndex(coord)) |index| {
-            ChunkCache.chunks[index].blocks[id].id = .none;
-            ChunkCache.chunks[index].blocks[id].waterlogged = 0;
+        if (chunk_cache.findIndex(coord)) |index| {
+            chunk_cache.chunks[index].blocks[id].id = .none;
+            chunk_cache.chunks[index].blocks[id].waterlogged = 0;
         }
 
         _ = updateLocalEdgeFlags(coord, bx, by);
@@ -1627,8 +1656,8 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
         if (SimBuffer.get(coord)) |sim_chunk| {
             sim_chunk.blocks[id].hp = new_hp;
         }
-        if (ChunkCache.findIndex(coord)) |index| {
-            ChunkCache.chunks[index].blocks[id].hp = new_hp;
+        if (chunk_cache.findIndex(coord)) |index| {
+            chunk_cache.chunks[index].blocks[id].hp = new_hp;
         }
     }
     return false;
@@ -1640,20 +1669,20 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
 pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
     if (depth == memory.game.depth) { // easy!
         if (SimBuffer.get(coord)) |chunk| return chunk.blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
-        if (ChunkCache.findIndex(coord)) |i| {
-            return ChunkCache.chunks[i].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
+        if (chunk_cache.findIndex(coord)) |i| {
+            return chunk_cache.chunks[i].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
         }
 
-        const slot_index = ChunkCache.allocateIndex(coord);
+        const slot_index = chunk_cache.allocateIndex(coord);
         const key = DepthCoordinate.from(coord);
 
         if (mod_store.get(key)) |modified_chunk| {
             // Modified state!
-            ChunkCache.chunks[slot_index].blocks = modified_chunk.*.blocks;
+            chunk_cache.chunks[slot_index].blocks = modified_chunk.*.blocks;
         } else { // generate procedurally
-            generateChunk(&ChunkCache.chunks[slot_index], key);
+            generateChunk(&chunk_cache.chunks[slot_index], key);
         }
-        return ChunkCache.chunks[slot_index].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
+        return chunk_cache.chunks[slot_index].blocks[(@as(usize, ly) << CHUNK_SIZE_LOG2) | lx];
     }
 
     if (memory.game.depth >= dw.HORIZON_DEPTH) {
@@ -1699,7 +1728,7 @@ pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
     }
 
     // not the current depth ):
-    // use this function, which also checks AncestorCache
+    // use this function, which also checks ancestor_cache
     return dw.ancestor.getInheritedMaterial(
         coord.asDepthCoordinate(depth),
         lx,
@@ -1710,12 +1739,12 @@ pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
 /// Clears all caches.
 pub fn clearCaches(comptime clear_ancestors: bool) void {
     SimBuffer.clear();
-    ChunkCache.clear();
+    chunk_cache.clear();
     quad_cache.seed_clock_bits = @splat(0);
     quad_cache.seed_hand = @splat(0);
     quad_cache.seed_cache_keys = @splat(@splat(DepthCoordinate.invalid));
 
-    if (clear_ancestors) dw.ancestor.AncestorCache.clear();
+    if (clear_ancestors) dw.ancestor.ancestor_cache.clear();
 }
 
 /// Increases the game's depth by 1, invalidates caches, moves the player, and handles data modification.
