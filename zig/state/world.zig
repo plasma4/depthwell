@@ -531,8 +531,90 @@ pub const SimBuffer = struct {
         return false;
     }
 
-    /// Marks the loaded slot holding `coord` (if any) as containing water, so `tickWater` keeps it
-    /// active. Used when water is placed manually (`modifyBlockType`) outside the simulation.
+    /// Reads a block relative to `(bx, by)` in `chunk` (coordinate `coord`) WITHOUT side effects:
+    /// in-chunk reads hit `chunk`, cross-chunk reads hit only the loaded SimBuffer. Returns null when
+    /// the neighbor falls in a chunk that is not currently resident (or past the world edge), so the
+    /// caller can skip validating that block instead of triggering procedural regeneration.
+    fn getResidentNeighbor(coord: Coordinate, chunk: *const Chunk, bx: u4, by: u4, ndx: i32, ndy: i32) ?Block {
+        const nx = @as(i32, bx) + ndx;
+        const ny = @as(i32, by) + ndy;
+        if (nx >= 0 and nx < CHUNK_SIZE and ny >= 0 and ny < CHUNK_SIZE) {
+            return chunk.blocks[(@as(usize, @intCast(ny)) << CHUNK_SIZE_LOG2) | @as(usize, @intCast(nx))];
+        }
+        const dcx: i64 = if (nx < 0) -1 else if (nx >= CHUNK_SIZE) 1 else 0;
+        const dcy: i64 = if (ny < 0) -1 else if (ny >= CHUNK_SIZE) 1 else 0;
+        const ncoord = coord.move(.{ dcx, dcy }) orelse return null;
+        const nchunk = get(ncoord) orelse return null;
+        const lx: usize = @intCast(nx & (CHUNK_SIZE - 1)); // wraps -1 -> 15, 16 -> 0 (CHUNK_SIZE is a power of two)
+        const ly: usize = @intCast(ny & (CHUNK_SIZE - 1));
+        return nchunk.blocks[(ly << CHUNK_SIZE_LOG2) | lx];
+    }
+
+    /// Debug integrity check: scans every loaded chunk and verifies each block's `edge_flags` is a
+    /// possible state given its neighborhood. Returns true when all checked blocks are consistent.
+    ///
+    /// Rules enforced (see `updateVisibleChunks`/`recalcEdgeFlags` for the authoritative computation):
+    /// - Air is unconstrained (the renderer ignores its edge flags) and is skipped.
+    /// - A block that is neither a foundation nor a liquid (decoration, edge stone) must carry the
+    ///   reset sentinel `0xFF`.
+    /// - A foundation/liquid block's flags must equal the recomputed value: a bit is set toward a
+    ///   neighbor that is a foundation (for solids) or solid-or-liquid (for liquids).
+    ///
+    /// Blocks whose 8 neighbors are not all resident in the loaded window are skipped, since their
+    /// flags were derived from cache/procedural data this side-effect-free scan cannot reproduce.
+    /// O(loaded_chunks * 256 * 8); performs no allocation. Intended for debug assertions/tests.
+    pub fn checkEdgeFlags() bool {
+        var all_valid = true;
+        for (keys, 0..) |maybe_key, slot| {
+            const coord = maybe_key orelse continue;
+            const chunk = &sim_buffer_ptr[slot];
+            for (0..CHUNK_SIZE) |by| {
+                for (0..CHUNK_SIZE) |bx| {
+                    const block = chunk.blocks[(by << CHUNK_SIZE_LOG2) | bx];
+                    if (block.isEmpty()) continue;
+
+                    const participates = block.isFoundation() or block.isLiquid();
+                    if (!participates) {
+                        if (block.edge_flags != 0xFF) {
+                            reportInvalidEdge(coord, @intCast(bx), @intCast(by), block.edge_flags, 0xFF);
+                            all_valid = false;
+                        }
+                        continue;
+                    }
+
+                    var expected: u8 = 0;
+                    var all_resident = true;
+                    inline for ([_]i32{ -1, 0, 1 }) |ndy| {
+                        inline for ([_]i32{ -1, 0, 1 }) |ndx| {
+                            // center (self) is comptime-skipped; only probe while all neighbors so far are resident
+                            if ((ndx != 0 or ndy != 0) and all_resident) {
+                                if (getResidentNeighbor(coord, chunk, @intCast(bx), @intCast(by), ndx, ndy)) |n| {
+                                    const set = if (block.isLiquid()) n.isSolid() or n.isLiquid() else n.isFoundation();
+                                    if (set) expected |= types.EdgeFlags.getFlagBit(ndx, ndy);
+                                } else all_resident = false;
+                            }
+                        }
+                    }
+                    if (!all_resident) continue;
+
+                    if (block.edge_flags != expected) {
+                        reportInvalidEdge(coord, @intCast(bx), @intCast(by), block.edge_flags, expected);
+                        all_valid = false;
+                    }
+                }
+            }
+        }
+        return all_valid;
+    }
+
+    /// Logs a single edge-flag mismatch found by `checkEdgeFlags()` (debug builds only).
+    fn reportInvalidEdge(coord: Coordinate, bx: u4, by: u4, got: u8, expected: u8) void {
+        if (!dw.is_debug) return;
+        logger.err(@src(), "Invalid edge flags at chunk {any} block ({d}, {d}): got 0b{b:0>8}, expected 0b{b:0>8}", .{ coord, bx, by, got, expected });
+    }
+
+    /// Marks the loaded slot holding `coord` (if any) as containing water, so `tickWater()` keeps it
+    /// active. Used when water is placed manually (`modifyBlockType()`) outside the simulation.
     pub fn markWater(coord: Coordinate) void {
         const og = origin orelse return;
         const dx = coord.suffix[0] -% og.suffix[0];
@@ -756,7 +838,6 @@ const CHUNK_CACHE_SIZE: usize = blk: {
     const W: f64 = @floatFromInt(dw.SCREEN_WIDTH);
     const H: f64 = @floatFromInt(dw.SCREEN_HEIGHT);
     const Z: f64 = player.CAMERA_MIN_ZOOM;
-    const S_b: f64 = @floatFromInt(SIM_BUFFER_WIDTH);
 
     // Per-side border, in chunks, of the render/lighting window (see `chunk.zig` and
     // `lighting.CHUNK_MARGIN`): `margin` chunks each side for light bleed, plus 1 for the
@@ -764,27 +845,25 @@ const CHUNK_CACHE_SIZE: usize = blk: {
     const margin: f64 = @floatFromInt(dw.lighting.CHUNK_MARGIN);
     const border = 2.0 * margin + 1.0;
 
-    // get maximum possible visible chunk grid dimensions
+    // Maximum possible visible chunk grid dimensions (at the most zoomed-out camera scale).
     const C_w = @ceil(W / (256.0 * Z)) + border;
     const C_h = @ceil(H / (256.0 * Z)) + border;
-    const total_visible = C_w * C_h;
 
-    // how many of those chunks overlap with the active SimBuffer?
-    const overlap_w = @min(C_w, S_b);
-    const overlap_h = @min(C_h, S_b);
-    const overlap = overlap_w * overlap_h;
-
-    // chunks that are visible but reside outside the SimBuffer boundary are here
-    const outside = total_visible - overlap;
-
-    // Add a sliding safety buffer just in case
-    const raw_cache_size = outside + 32.0;
+    // Provision for the ENTIRE visible window rather than only the part that spills outside the
+    // SimBuffer. The old sizing assumed the 16x16 SimBuffer always contained the view, which is only
+    // barely true at min zoom (<1 chunk of horizontal slack) and is briefly false for the first frame
+    // after any `clearCaches` (teleport/depth change) — both let a boundary straddle thrash a tiny
+    // cache into per-frame regeneration. Adding a one-chunk shift ring on every side, plus fixed
+    // slack, and doubling for set-associative conflict headroom keeps hits robust. Chunks are 2KiB, so
+    // this over-provisioning is cheap (a few hundred KiB) insurance against a render-loop hitch.
+    const windowed = (C_w + 2.0) * (C_h + 2.0);
+    const raw_cache_size = windowed * 2.0 + 32.0;
 
     const integer_cache_size = @as(usize, @intFromFloat(@ceil(raw_cache_size)));
     const aligned_size = ((integer_cache_size + (CHUNK_CACHE_WAYS - 1)) / CHUNK_CACHE_WAYS) * CHUNK_CACHE_WAYS;
 
-    // Maintain a pretty conservative minimum baseline size
-    break :blk @max(aligned_size, 64);
+    // Conservative minimum baseline (also the floor for tiny screens / high zoom).
+    break :blk @max(aligned_size, 256);
 };
 
 /// Ways that the cache is split (must be a power of two).
@@ -1054,7 +1133,7 @@ pub fn writeChunk(chunk: *Chunk, coord: Coordinate) void {
     chunk.* = chunk_cache.chunks[slot_index];
 }
 
-/// Same as `write_chunk`, but avoids checking `SimBuffer` first.
+/// Same as `writeChunk()`, but avoids checking `SimBuffer` first.
 pub fn writeChunkSkip(chunk: *Chunk, coord: Coordinate) void {
     if (chunk_cache.findIndex(coord)) |i| {
         chunk.* = chunk_cache.chunks[i];
@@ -1074,7 +1153,7 @@ pub fn writeChunkSkip(chunk: *Chunk, coord: Coordinate) void {
     chunk.* = chunk_cache.chunks[slot_index];
 }
 
-/// Same as `write_chunk`, but avoids checking `mod_store`.
+/// Same as `writeChunk()`, but avoids checking `mod_store`.
 pub fn writeChunkModless(chunk: *Chunk, coord: Coordinate) void {
     if (SimBuffer.get(coord)) |cached_ptr| {
         chunk.* = cached_ptr.*;

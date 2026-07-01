@@ -236,7 +236,7 @@ pub fn addRawEntity(entity: WGSLEntity) void {
     if (entity.lcha[3] <= 0.0) return;
 
     // Viewport-based culling (accounting for rotation). Use @abs since a horizontal flip negates size.x.
-    const half_diag = @abs(entity.size) * @as(Vec2f32, @splat(if (entity.rotation == 0.0) 0.5 else 1.0 / std.math.sqrt(2.0)));
+    const half_diag = @abs(entity.size) * @as(Vec2f32, @splat(if (entity.rotation == 0.0) 0.5 else 1.0 / @sqrt(2.0)));
     const min_x = entity.position[0] - half_diag[0];
     const max_x = entity.position[0] + half_diag[0];
     const min_y = entity.position[1] - half_diag[1];

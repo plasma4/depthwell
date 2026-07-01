@@ -8,7 +8,7 @@
 const std = @import("std");
 const dw = @import("../root.zig");
 
-const Sprite = dw.sprite.Sprite;
+const Sprite = dw.Sprite;
 const Vec2f = dw.utils.Vec2f;
 const Vec2f32 = dw.utils.Vec2f32;
 const addEntity = dw.entity.addEntity;

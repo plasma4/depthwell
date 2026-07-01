@@ -174,17 +174,6 @@ export async function create(
         code: SHADER_SOURCE, // already pre-processed
     });
 
-    const pipelineConstants = {
-        TILES_PER_ROW: exports.getTilesPerRow(),
-        TILES_PER_COLUMN: exports.getTilesPerColumn(),
-        STONE_START: exports.getStoneStart(),
-        ORE_START: exports.getOreStart(),
-        GEM_START: exports.getGemStart(),
-        GEM_MASK_START: exports.getGemMaskStart(),
-        GEAR_ID: exports.getGearStart(),
-        WATER_START: exports.getWaterStart(),
-    };
-
     const bindGroupLayout = device.createBindGroupLayout({
         label: "Main bind group layout",
         entries: [
@@ -223,12 +212,10 @@ export async function create(
         vertex: {
             module: shaderModule,
             entryPoint: "vs_tile",
-            constants: pipelineConstants,
         },
         fragment: {
             module: shaderModule,
             entryPoint: "fs_tile",
-            constants: pipelineConstants,
             targets: [
                 {
                     format: format,
@@ -262,12 +249,10 @@ export async function create(
         vertex: {
             module: shaderModule,
             entryPoint: "vs_background",
-            constants: pipelineConstants,
         },
         fragment: {
             module: shaderModule,
             entryPoint: "fs_background",
-            constants: pipelineConstants,
             targets: [{ format: format }],
         },
         primitive: {
@@ -286,12 +271,10 @@ export async function create(
         vertex: {
             module: shaderModule,
             entryPoint: "vs_entity",
-            constants: pipelineConstants,
         },
         fragment: {
             module: shaderModule,
             entryPoint: "fs_entity",
-            constants: pipelineConstants,
             targets: [
                 {
                     format: format,

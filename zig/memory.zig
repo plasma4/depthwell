@@ -224,13 +224,13 @@ pub const Block = packed struct(u64) {
 
     /// Internal sprite ID.
     id: Sprite,
-    /// Edge flags: which neighbors are air (for edge-darkening and culling).
+    /// Edge flags: explains details for neighbors (for both shader and procedural generation).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
     /// See types/types.zig for more details on correspondence.
     ///
-    /// A 1 bit for a solid block ordinarily indicates an edge with an adjacent solid block.
-    /// A 1 bit for a liquid block means that there is either solid or liquid adjacent.
-    /// Edge flags are reset to 255 for decorations (non-blocks or liquids) after a decorations pass.
+    /// - A 1 bit for a solid block ordinarily indicates an edge with an adjacent solid block.
+    /// - A 1 bit for a liquid block means that there is either solid or liquid adjacent.
+    /// Edge flags must be reset to 255 for decorations (non-blocks or liquids) after a final decoration pass.
     edge_flags: u8,
     /// The brightness of the tile.
     light: u8,
@@ -243,8 +243,12 @@ pub const Block = packed struct(u64) {
     /// - For liquid (water) and decoration blocks: the water volume level from 0 to 15.
     hp: u4,
 
-    /// Padding to align fields.
-    padding: u3 = 0,
+    /// Type of color lighting should use.
+    /// - 0: default white
+    /// - 1: warm orange glow
+    /// TODO: implement color lighting logic within lighting.zig
+    lighting_color: u3 = 0,
+
     /// Dual-purpose directional waterlogging field:
     /// - For liquid blocks: represents adjacent water heights/volumes.
     /// - For non-liquid blocks: bits represent surrounding waterlogged cardinal directions.
@@ -268,12 +272,12 @@ pub const Block = packed struct(u64) {
         };
     }
 
-    /// Determines if the block's type is one that should interact with the edge flags and procedural generation. This returns false for edge stone, unlike `is_solid`.
+    /// Determines if the block's type is one that should interact with the edge flags and procedural generation. This returns false for edge stone, unlike `isSolid()`.
     pub inline fn isFoundation(self: @This()) bool {
         return self.id.isFoundation();
     }
 
-    /// Determines if the block's type is considered solid, and should interact with the physics, player, and edge flags. This returns true for edge stone, unlike `is_solid`.
+    /// Determines if the block's type is considered solid, and should interact with the physics, player, and edge flags. This returns true for edge stone, unlike `isSolid()`.
     pub inline fn isSolid(self: @This()) bool {
         return self.id.isSolid();
     }
@@ -304,7 +308,7 @@ pub const Block = packed struct(u64) {
     }
 
     /// Returns the cascade anchoring rules for this block.
-    pub inline fn anchor(self: @This()) dw.block.AnchorKind {
+    pub inline fn anchor(self: @This()) dw.sprite.AnchorKind {
         return self.id.anchor();
     }
 

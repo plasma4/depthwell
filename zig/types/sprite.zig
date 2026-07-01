@@ -7,10 +7,14 @@ const procedural = dw.procedural;
 
 const Coordinate = dw.world.Coordinate;
 
+// Drop resolution lives in `state/drops.zig`.
+const DropConfig = dw.drops.DropConfig;
+const DropHandlers = dw.drops.DropHandlers;
+
 /// Index where stone-like sprites begin.
 const STONE_START = 6;
 /// Index where stone-like sprites end.
-const STONE_END = STONE_START + 12;
+const STONE_END = STONE_START + 13;
 
 /// Index where smelted bar sprites begin.
 const BAR_START = STONE_END + 4;
@@ -35,7 +39,7 @@ const FRUIT_COUNT = 10;
 const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = GEAR_ID + 19;
+pub const INVENTORY_START = GEAR_ID + 22;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 4;
 
@@ -65,6 +69,7 @@ pub const Sprite = enum(u16) {
     redder_stone,
     mossy_stone,
     ancient_stone,
+    sulfuric_stone,
     /// "Plain" stone type, with 2x2 variations to prevent an overly tiling look.
     stone = STONE_END,
 
@@ -116,8 +121,8 @@ pub const Sprite = enum(u16) {
     big_mushroom = GEAR_ID + 10, // 3 variations
     forest_furnace = GEAR_ID + 13,
     lava_furnace,
-    torch,
-    chest,
+    campfire, // 4 variations
+    chest = GEAR_ID + 15 + 4,
     portal,
     fire = INVENTORY_START - 1,
 
@@ -168,7 +173,7 @@ pub const Sprite = enum(u16) {
     }
 
     /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
-    /// This returns false for edge stone, unlike `is_solid`. Assumes invalid block types are impossible.
+    /// This returns false for edge stone, unlike `isSolid()`. Assumes invalid block types are impossible.
     pub inline fn isFoundation(self: @This()) bool {
         return self.props().foundation;
     }
@@ -188,7 +193,7 @@ pub const Sprite = enum(u16) {
     }
 
     /// Determines if the sprite's type is considered solid, and should interact with the physics, player, and edge flags.
-    /// This returns true for edge stone, unlike `is_solid`.
+    /// This returns true for edge stone, unlike `isSolid()`.
     pub inline fn isSolid(self: @This()) bool {
         return self.props().solid;
     }
@@ -230,6 +235,11 @@ pub const Sprite = enum(u16) {
         return self.props().anchor;
     }
 
+    /// Returns the broad `Category` classification for this sprite.
+    pub inline fn category(self: @This()) Category {
+        return self.props().category;
+    }
+
     /// Determines if the sprite is a heatmap (between types 65000-65256).
     pub inline fn isHeatmap(self: @This()) bool {
         const id = @intFromEnum(self);
@@ -257,8 +267,7 @@ pub const Sprite = enum(u16) {
     /// Returns whether a sprite is a decoration block.
     /// Precondition: the sprite is valid.
     pub inline fn isDecor(self: @This()) bool {
-        const val = @intFromEnum(self);
-        return val >= DECOR_START and !self.isSolid() and self != .water;
+        return self.props().category == .decor;
     }
 
     /// Converts a sprite into an entity ID, handling atlas ID remaps.
@@ -291,13 +300,14 @@ const rules = [_]SpriteRule{
             .solid = true,
             .foundation = true,
             .stone = true,
+            .category = .stone,
             .strength = 15,
         },
     },
     // Smelted bars (inventory items only; not placeable in the world)
     .{
         .{ .range = .{ .copper_bar, .gold_bar } },
-        .{ .item = true },
+        .{ .item = true, .category = .bar },
     },
     // Ores
     .{
@@ -308,6 +318,7 @@ const rules = [_]SpriteRule{
             .solid = true,
             .foundation = true,
             .ore = true,
+            .category = .ore,
             .strength = 30,
         },
     },
@@ -320,6 +331,7 @@ const rules = [_]SpriteRule{
             .solid = true,
             .foundation = true,
             .gem = true,
+            .category = .gem,
             .strength = 15,
         },
     },
@@ -333,11 +345,12 @@ const rules = [_]SpriteRule{
         .{ .list = &[_]Sprite{
             .rock,           .bush,     .small_tree,   .spiral_plant,
             .ceiling_flower, .mushroom, .big_mushroom, .forest_furnace,
-            .lava_furnace,   .torch,    .chest,        .portal,
+            .lava_furnace,   .campfire, .chest,        .portal,
         } },
         .{
             .in_world = true,
             .item = true,
+            .category = .decor,
         },
     },
     // Non-item decor (corresponds to small_tree)
@@ -348,7 +361,7 @@ const rules = [_]SpriteRule{
             .big_tree2_left,
             .big_tree2_right,
         } },
-        .{ .in_world = true },
+        .{ .in_world = true, .category = .decor },
     },
     // Liquids
     .{
@@ -469,6 +482,7 @@ const rules = [_]SpriteRule{
             .portal,
             .lava_furnace,
             .forest_furnace,
+            .campfire,
         } },
         .{ .anchor = .floor },
     },
@@ -506,73 +520,21 @@ pub const AnchorKind = enum(u2) {
     suspended = 3,
 };
 
-/// Strategy to resolve block drop items upon destruction.
-pub const DropStrategy = enum {
-    /// Drops itself if `.isItem()` returns true.
-    self,
-    /// Guaranteed to drop nothing.
-    none,
-    /// Drops a predetermined list of static items.
-    static,
-    /// Runs a custom function to determine drops.
-    dynamic,
-};
-
-/// Type signature for deterministic coordinate-based drop calculations.
-pub const DropFn = *const fn (coord: Coordinate, bx: u4, by: u4) []const Sprite;
-
-/// Configuration defining how a block drops items.
-pub const DropConfig = struct {
-    strategy: DropStrategy = .self,
-    static_items: []const Sprite = &.{},
-    dynamic_fn: ?DropFn = null,
-};
-
-/// Contains custom functions for `dynamic_fn` in the `DropConfig`.
-pub const DropHandlers = struct {
-    /// Converts a bush drop to various fruits based on world coordinates and seeds.
-    pub fn bushDrop(coord: Coordinate, bx: u4, by: u4) []const Sprite {
-        const oddsNum = dw.seeding.oddsNum;
-        const depth = memory.game.depth;
-        const key = coord.asDepthCoordinate(depth);
-        const chunk_seeds = dw.world.quad_cache.getChunkSeeds(key);
-
-        // Deterministic hash based on the absolute block coordinate in the world
-        const abs_x = coord.suffix[0] *% 16 + bx; // (no +% needed)
-        const abs_y = coord.suffix[1] *% 16 + by;
-        const seed_val = dw.seeding.FastHash.hash2d(
-            chunk_seeds.value[3].value[0..2].*,
-            abs_x,
-            abs_y,
-        );
-
-        const roll = seed_val;
-        if (roll <= oddsNum(0.05)) {
-            return &[_]Sprite{.fruit_ruby_candy};
-        } else if (roll <= oddsNum(0.15)) {
-            return &[_]Sprite{.fruit_splitty};
-        } else if (roll <= oddsNum(0.30)) {
-            return &[_]Sprite{.fruit_teal_lemon};
-        } else if (roll <= oddsNum(0.45)) {
-            return &[_]Sprite{.fruit_blue_lemon};
-        } else if (roll <= oddsNum(0.60)) {
-            return &[_]Sprite{.copperfruit};
-        } else if (roll <= oddsNum(0.70)) {
-            return &[_]Sprite{.ploopus1};
-        } else if (roll <= oddsNum(0.80)) {
-            return &[_]Sprite{.ploopus2};
-        } else if (roll <= oddsNum(0.90)) {
-            return &[_]Sprite{.divato};
-        } else if (roll <= oddsNum(0.96)) {
-            return &[_]Sprite{.circuspin};
-        } else {
-            return &[_]Sprite{.bacon};
-        }
-    }
+/// Broad classification of a sprite, replacing scattered ID-range arithmetic.
+/// Add new variants freely; `Category` is `u3`, so up to 8 fit in `SpriteFlags`.
+pub const Category = enum(u3) {
+    /// No special category (air, masks, UI, water, edge stone, misc solids).
+    none = 0,
+    stone,
+    ore,
+    gem,
+    /// Smelted bar (inventory-only item).
+    bar,
+    /// World decoration (non-solid placeable: plants, furniture, interactables).
+    decor,
 };
 
 /// Consolidated properties of each sprite.
-/// TODO: add a category field so there's no more range arithmetic.
 pub const SpriteProps = struct {
     in_world: bool = false,
     // This can be defaulted to true for debugging and potentially testing sprite misalignment.
@@ -583,6 +545,7 @@ pub const SpriteProps = struct {
     stone: bool = false,
     ore: bool = false,
     gem: bool = false,
+    category: Category = .none,
     strength: u64 = 0,
     hitbox: HitboxKind = .full,
     anchor: AnchorKind = .none,
@@ -602,7 +565,7 @@ pub const SpriteFlags = packed struct(u16) {
     gem: bool = false,
     hitbox: HitboxKind = .full, // 3 bits
     anchor: AnchorKind = .none, // 2 bits
-    padding: u3 = 0,
+    category: Category = .none, // 3 bits (fills the former padding, keeping the struct 16-bit)
 };
 
 /// Targeting selector for assigning properties at compile-time.
@@ -647,6 +610,7 @@ fn mergeProps(dest: *SpriteProps, src: SpriteProps) void {
     if (src.stone) dest.stone = src.stone;
     if (src.ore) dest.ore = src.ore;
     if (src.gem) dest.gem = src.gem;
+    if (src.category != .none) dest.category = src.category;
     if (src.strength != 0) dest.strength = src.strength;
     if (src.hitbox != .full) dest.hitbox = src.hitbox;
     if (src.anchor != .none) dest.anchor = src.anchor;
@@ -739,6 +703,7 @@ const dense_flags_table: [MAX_SPRITE_ID]SpriteFlags = blk: {
             .gem = p.gem,
             .hitbox = p.hitbox,
             .anchor = p.anchor,
+            .category = p.category,
         };
     }
     break :blk table;
@@ -757,6 +722,7 @@ const unselected_flags: SpriteFlags = .{
     .gem = unselected_props.gem,
     .hitbox = unselected_props.hitbox,
     .anchor = unselected_props.anchor,
+    .category = unselected_props.category,
 };
 
 /// The total number of valid sprites that are considered valid items.

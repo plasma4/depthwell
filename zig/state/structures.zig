@@ -5,7 +5,7 @@ const dw = @import("../root.zig");
 
 const HashState = dw.seeding.HashState;
 const Vec2u = dw.utils.Vec2u;
-const Sprite = dw.sprite.Sprite;
+const Sprite = dw.Sprite;
 
 pub const BasicRect = @import("structures/BasicRect.zig");
 pub const Ancient = @import("structures/Ancient.zig");

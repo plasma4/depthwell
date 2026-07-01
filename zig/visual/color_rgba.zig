@@ -245,7 +245,7 @@ pub const ColorRgba = extern union {
             const lab_b = 0.0259040371 * l + 0.7827717662 * m - 0.8086758031 * s;
 
             // Convert to OKLCH
-            const oklch_chroma = std.math.sqrt(lab_a * lab_a + lab_b * lab_b);
+            const oklch_chroma = @sqrt(lab_a * lab_a + lab_b * lab_b);
             const oklch_hue = std.math.atan2(lab_b, lab_a);
 
             return .{ lab_l, oklch_chroma, oklch_hue, @as(f32, @floatFromInt(rgba.channels.a)) / 255.0 };

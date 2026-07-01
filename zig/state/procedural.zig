@@ -152,14 +152,14 @@ pub fn addStructures(
 /// 1. Generate an initial terrain density+moisture value using the seed vectors.
 /// 2. Generate a block from those values.
 /// 3. Generates larger structures with FBM Worley and valid placement checks.
-pub inline fn getBaseSpriteType(
+pub fn getBaseSpriteType(
     chunk_x: u32,
     chunk_y: u32,
     block_x: u4,
     block_y: u4,
 ) BaseTerrainData {
     const moisture = getFbmValue( // acts as a biome selector
-        memory.game.getHashSeed(.moisture), // code is INLINED, so this is okay presumably
+        memory.game.getHashSeed(.moisture),
         // .{ 0, 0 },
         chunk_x * 16 + block_x,
         chunk_y * 16 + block_y,

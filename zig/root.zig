@@ -83,7 +83,9 @@ pub const geometry = @import("types/geometry.zig");
 
 pub const sprite = @import("types/sprite.zig");
 pub const Sprite = sprite.Sprite;
+pub const variation = @import("types/variation.zig");
 
+pub const drops = @import("state/drops.zig");
 pub const seeding = @import("state/seeding.zig");
 pub const procedural = @import("state/procedural.zig");
 pub const structures = @import("state/structures.zig");
@@ -143,30 +145,14 @@ pub export fn prepareVisibleData(time_interpolated: f64, time_diff: f64, canvas_
     render.prepareVisibleData(time_interpolated, time_diff, canvas_w, canvas_h);
 }
 
-// TODO: route these through sprite.zig fn accessors instead
+// Atlas dimensions, still used by engineMaker.ts (verbose log). The sprite-layout START constants
+// (STONE_START, ORE_START, …) are no longer exported: they are baked into shader.wgsl at build time
+// by zig/generate_shader.zig, sourced directly from the Sprite enum.
 pub export fn getTilesPerRow() u32 {
     return 8; // Sprites are saved as a .png in a sprite sheet 128 pixels wide, and each individual sprite is 16x16.
 }
 pub export fn getTilesPerColumn() u32 {
     return sprite.max_sprite_value / 8 + 1; // works out from 0-indexing
-}
-pub export fn getStoneStart() u32 {
-    return @intCast(@intFromEnum(Sprite.stone));
-}
-pub export fn getOreStart() u32 {
-    return @intCast(@intFromEnum(Sprite.copper));
-}
-pub export fn getGemStart() u32 {
-    return @intCast(@intFromEnum(Sprite.amethyst));
-}
-pub export fn getGemMaskStart() u32 {
-    return sprite.MASK_START;
-}
-pub export fn getGearStart() u32 {
-    return @intCast(@intFromEnum(Sprite.gear));
-}
-pub export fn getWaterStart() u32 {
-    return @intCast(@intFromEnum(Sprite.water));
 }
 
 pub export fn handleMouse(mouse_x: f64, mouse_y: f64, action: u32) void {
@@ -247,6 +233,13 @@ comptime {
 
         pub export fn testScratchAlloc() void {
             memory.runScratchAllocTests();
+        }
+
+        pub export fn testEdgeFlags() void {
+            if (world.SimBuffer.checkEdgeFlags())
+                logger.log(@src(), "Edge flag validity check passed for all resident SimBuffer chunks.", .{})
+            else
+                logger.err(@src(), "Edge flag validity check FAILED (see logged mismatches above).", .{});
         }
 
         pub export fn logInventory() void {

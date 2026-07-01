@@ -2,7 +2,7 @@
 //! WGSL multiplies tile colors by `light / 255`.
 //!
 //! Uses a non-additive BFS flood-fill algorithm.
-//! Spreads to 8 neighbors with a sqrt(2) diagonal cost for circular falloff.
+//! Spreads to 8 neighbors with a sqrt(2) diagonal cost for an approximated circular falloff.
 //! Based on the block type (air, solid, or liquid) the decay rate of the liquid can be changed.
 
 const std = @import("std");
@@ -17,16 +17,16 @@ pub const MAX_LIGHT: u8 = 255;
 /// Min baseline brightness for unlit cells.
 pub const AMBIENT_LIGHT: u8 = 0;
 /// Debug ambient light brightness if the debug boolean is enabled.
-pub const AMBIENT_LIGHT_DEBUG: u8 = 128;
+pub const AMBIENT_LIGHT_DEBUG: u8 = 192;
 
 pub var DEBUG_LIGHT = false;
 
 // Light strength values for various sources:
-pub const PLAYER_LIGHT: u16 = 320;
-pub const TORCH_LIGHT: u16 = 200;
-pub const PLATE_LIGHT: u16 = 120;
+pub const PLAYER_LIGHT: u16 = 340;
+pub const CAMPFIRE_LIGHT: u16 = 300;
+pub const PLATE_LIGHT: u16 = 140;
 
-// Orthogonal decay rates per block type. Air should always be the lowest!
+// Orthogonal decay rates per block type. Air should always be the lowest (decay slowest)!
 pub const AIR_FALLOFF: u16 = 10;
 pub const SOLID_FALLOFF: u16 = 48;
 pub const LIQUID_FALLOFF: u16 = 18;
@@ -34,7 +34,7 @@ pub const LIQUID_FALLOFF: u16 = 18;
 /// Simulates the worst-case (straight line, air) light path to find max reach distance in blocks.
 fn maxAirReachBlocks() comptime_int {
     comptime {
-        var brightest_possible_source: u16 = @max(PLAYER_LIGHT, @max(TORCH_LIGHT, PLATE_LIGHT));
+        var brightest_possible_source: u16 = @max(PLAYER_LIGHT, @max(CAMPFIRE_LIGHT, PLATE_LIGHT));
         var blocks: comptime_int = 0;
         const light = @min(AMBIENT_LIGHT, AMBIENT_LIGHT_DEBUG);
         while (brightest_possible_source > AIR_FALLOFF and (brightest_possible_source - AIR_FALLOFF) > light) {
@@ -50,20 +50,12 @@ pub const CHUNK_MARGIN: u32 = @max(1, std.math.divCeil(u32, maxAirReachBlocks(),
 
 /// Scales orthogonal falloff to diagonal step! Always evaluated at comptime (only 3 medium types).
 inline fn diagFalloff(comptime ortho: u16) u16 {
-    return comptime @intFromFloat(@round(@as(f64, @floatFromInt(ortho)) * std.math.sqrt(2.0)));
-}
-
-comptime {
-    // allow light u16
-    // if (PLAYER_LIGHT > MAX_LIGHT or TORCH_LIGHT > MAX_LIGHT or PLATE_LIGHT > MAX_LIGHT) {
-    //     @compileError("A light source emits more than MAX_LIGHT.");
-    // }
-    if (AIR_FALLOFF == 0) @compileError("AIR_FALLOFF must be positive so light has finite range.");
+    return comptime @intFromFloat(@round(@as(f64, @floatFromInt(ortho)) * @sqrt(2.0)));
 }
 
 inline fn blockEmission(id: Sprite) u16 {
     return switch (id) {
-        .torch => TORCH_LIGHT,
+        .campfire => CAMPFIRE_LIGHT,
         .white_plate => PLATE_LIGHT,
         else => 0,
     };
@@ -78,12 +70,35 @@ inline fn stepCost(block: Block, comptime diagonal: bool) u16 {
 
 /// Reusable BFS frontier queue.
 var queue: std.ArrayList(u32) = .empty;
-/// Reusable high-precision light calculation buffer.
-var light_buffer: std.ArrayList(u16) = .empty;
+/// Reusable high-precision light calculation buffer (packed: upper 16-bits = non-orange, lower 16-bits = orange).
+var light_buffer: std.ArrayList(u32) = .empty;
+
+inline fn packLight(orange: u16, other: u16) u32 {
+    return @as(u32, orange) | (@as(u32, other) << 16);
+}
+
+inline fn unpackOrange(p: u32) u16 {
+    return @as(u16, @intCast(p & 0xFFFF));
+}
+
+inline fn unpackOther(p: u32) u16 {
+    return @as(u16, @intCast(p >> 16));
+}
+
+const ORANGE_MASK: u16 = 0x8000;
+const LIGHT_MASK: u16 = 0x7FFF;
+
+/// Returns true if the block is an orange/campfire-type light source, which creates a warm glow in the shader.
+inline fn isOrangeSource(id: Sprite) bool {
+    return switch (id) {
+        .campfire => true,
+        else => false,
+    };
+}
 
 /// Seeds the 2x2 cells surrounding the player using their continuous sub-pixel position.
-/// Light drops off by Euclidean distance through `stepCost()`.
-inline fn seedPlayerLight(out: []const Block, light_slice: []u16, w: i32, h: i32, px: f32, py: f32) void {
+/// Light drops off similar to Euclidean distance through `stepCost()`.
+inline fn seedPlayerLight(out: []const Block, light_slice: []u32, w: i32, h: i32, px: f32, py: f32) void {
     const cx0: i32 = @intFromFloat(@floor(px - 0.5));
     const cy0: i32 = @intFromFloat(@floor(py - 0.5));
 
@@ -100,8 +115,11 @@ inline fn seedPlayerLight(out: []const Block, light_slice: []u16, w: i32, h: i32
                 const drop = @round(@sqrt(dx * dx + dy * dy) * falloff);
                 if (@as(f32, PLAYER_LIGHT) > drop) {
                     const val: u16 = @intFromFloat(@as(f32, PLAYER_LIGHT) - drop);
-                    if (val > light_slice[i]) {
-                        light_slice[i] = val;
+                    const current_packed = light_slice[i];
+                    const current_other = unpackOther(current_packed);
+                    if (val > current_other) {
+                        const current_orange = unpackOrange(current_packed);
+                        light_slice[i] = packLight(current_orange, val);
                         queue.append(memory.page_allocator, @intCast(i)) catch memory.oom();
                     }
                 }
@@ -122,26 +140,33 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
 
     const ambient = if (dw.is_debug and DEBUG_LIGHT) AMBIENT_LIGHT_DEBUG else AMBIENT_LIGHT;
 
-    // Reset buffer to ambient and seed static world emissive blocks.
+    // Reset buffer to ambient and seed static world emissive blocks with their respective type.
     for (out, 0..) |block, i| {
         const emission = blockEmission(block.id);
         if (emission > ambient) {
-            light_slice[i] = emission;
+            const is_orange = isOrangeSource(block.id);
+            if (is_orange) {
+                light_slice[i] = packLight(emission, ambient);
+            } else {
+                light_slice[i] = packLight(ambient, emission);
+            }
             queue.append(memory.page_allocator, @intCast(i)) catch memory.oom();
         } else {
-            light_slice[i] = ambient;
+            light_slice[i] = packLight(ambient, ambient);
         }
     }
 
-    // Seed continuous player source into the u16 buffer.
+    // Seed continuous player source into the u32 buffer.
     seedPlayerLight(out, light_slice, w, h, player_bx, player_by);
 
     // BFS flood: Expand to 8 neighbors. Re-enqueue neighbors if a brighter (better) path is found.
     var head: usize = 0;
     while (head < queue.items.len) : (head += 1) {
         const idx = queue.items[head];
-        const light = light_slice[idx];
-        if (light <= ambient) continue;
+        const packed_light = light_slice[idx];
+        const orange_light = unpackOrange(packed_light);
+        const other_light = unpackOther(packed_light);
+        if (orange_light <= ambient and other_light <= ambient) continue;
 
         const cx: i32 = @intCast(idx % wb);
         const cy: i32 = @intCast(idx / wb);
@@ -158,9 +183,18 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
                 const diagonal = d[0] != 0 and d[1] != 0;
                 const cost = stepCost(out[ni], diagonal);
 
-                const new_light: u16 = if (light > cost) light - cost else ambient;
-                if (new_light > light_slice[ni]) {
-                    light_slice[ni] = new_light;
+                const new_orange: u16 = if (orange_light > cost) orange_light - cost else ambient;
+                const new_other: u16 = if (other_light > cost) other_light - cost else ambient;
+
+                const neighbor_packed = light_slice[ni];
+                const neighbor_orange = unpackOrange(neighbor_packed);
+                const neighbor_other = unpackOther(neighbor_packed);
+
+                // Relax both fields simultaneously using branchless max evaluations
+                if (new_orange > neighbor_orange or new_other > neighbor_other) {
+                    const next_orange = @max(new_orange, neighbor_orange);
+                    const next_other = @max(new_other, neighbor_other);
+                    light_slice[ni] = packLight(next_orange, next_other);
                     queue.append(memory.page_allocator, @intCast(ni)) catch memory.oom();
                 }
             }
@@ -169,6 +203,13 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
 
     // Write the final high-precision values back to the u8 block buffer clamped to MAX_LIGHT.
     for (out, light_slice) |*block, l| {
-        block.light = @intCast(@min(l, @as(u16, MAX_LIGHT)));
+        const orange = unpackOrange(l);
+        const other = unpackOther(l);
+        const max_light = @max(orange, other);
+        block.light = @intCast(@min(max_light, @as(u16, MAX_LIGHT)));
+
+        // Block is orange if it receives more orange light than non-orange, or is in the core radius (>= 255)
+        const is_orange = (orange >= other) or (orange >= 255);
+        block.lighting_color = @intFromBool(is_orange and max_light > ambient);
     }
 }

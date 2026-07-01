@@ -119,19 +119,14 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
                     // Iterate through each block in the row instead of doing a blind @memcpy
                     for (0..CHUNK_SIZE) |lx| {
                         var block = chunk.blocks[chunk_row_start + lx];
-                        const was_liquid = block.isLiquid();
 
-                        // Check if the block is liquid at the top, replace it with the top sprite instead if so (enum ID + 1)
-                        const block_above_flag = dw.types.EdgeFlags.getFlagBit(0, -1);
-                        if (was_liquid and (block.edge_flags & block_above_flag == 0)) {
-                            block.id = @enumFromInt(@intFromEnum(block.id) + 1);
-                            // edge flags preserve
-                        }
-
-                        if (!block.isFoundation() and !was_liquid) {
+                        if (!block.isFoundation() and !block.isLiquid()) {
                             // since decor aren't foundation/liquid blocks, they don't get edge flags
                             block.edge_flags = 0xFF;
                         }
+                        // Sprite variation (2x2 stone, liquid surfaces, seed picks, campfire animation)
+                        // is applied AFTER lighting; see `applyVariation` below. Lighting queries sprite
+                        // properties by ID, so it must run on the base (unvaried) IDs first.
                         out[row_start + lx] = block;
                     }
                 }
@@ -155,7 +150,21 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const player_by: f32 = @floatCast(@as(f64, @floatFromInt(-min_cy * CHUNK_SIZE)) + player_interp_y / subpixels_per_block);
     dw.lighting.applyLighting(out, wb, hb, player_bx, player_by);
 
+    applyVariation(out, wb, game.frame);
+
     updateRenderProperties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom, interpolated_zoom);
+}
+
+/// Applies sprite variation/animation to the final visible buffer, in place, just before it is sent
+/// to the GPU. Runs AFTER lighting so the lighting pass sees base (unvaried) sprite IDs.
+///
+/// Uses grid-relative tile coordinates (`i % wb`, `i / wb`); because the grid origin is chunk-aligned
+/// (an even tile offset), their parity matches absolute tile parity, so positional variants
+/// (2x2 stone, checkerboard edge stone) are seamless across the world exactly as the old shader was.
+inline fn applyVariation(out: []memory.Block, wb: u32, frame: u32) void {
+    for (out, 0..) |*block, i| {
+        block.id = dw.variation.resolveVariant(block.*, i % wb, i / wb, frame);
+    }
 }
 
 /// Sets scratch properties containing information to TypeScript for renderFrame.

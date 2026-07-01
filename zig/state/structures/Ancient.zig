@@ -7,7 +7,7 @@ const std = @import("std");
 const dw = @import("../../root.zig");
 const HashState = dw.seeding.HashState;
 const Vec2u = dw.utils.Vec2u;
-const Sprite = dw.sprite.Sprite;
+const Sprite = dw.Sprite;
 const structures = @import("../structures.zig");
 const Rect = structures.Rect;
 
@@ -103,7 +103,7 @@ pub fn generate(
                 if (inner_dist_sq > inner_bound) {
                     const erosion_factor = (wx ^ wy) % 7;
                     if (erosion_factor == 0) return .none;
-                    return .ancient_stone;
+                    return .sulfuric_stone;
                 } else {
                     const floor_y = center_y + inner_ry - 1;
                     const chest_range = inner_rx;

@@ -206,6 +206,11 @@ pub fn build(b: *std.Build) void {
             generateEnums(b, &[_][]const u8{ "zig/root.zig", "zig/types/types.zig", "zig/memory.zig" });
         }
 
+        // Bake sprite-layout constants into src/shader.wgsl. Not behind -Dgen-enums: these must always
+        // match the current Sprite enum, and it is guarded by its own content hash so the host tool is
+        // only rebuilt when the source values (sprite.zig / mining.zig) actually change.
+        generateShaderConstants(b, &[_][]const u8{ "zig/types/sprite.zig", "zig/input/mining.zig" });
+
         if (aseprite_path) |path| {
             const export_main = addAsepriteStep(b, path, "aseprite/main.aseprite", "main", "main.png");
             const export_masked = addAsepriteStep(b, path, "aseprite/main.aseprite", "masks", "mainMasked.png");
@@ -332,4 +337,47 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
 
     // Add to the main install step
     b.getInstallStep().dependOn(&install_ts.step);
+}
+
+/// Regenerates the `// #region generated-constants` block in `src/shader.wgsl` from the Sprite enum.
+/// Mirrors `generateEnums`: hashes `paths`, skips entirely when unchanged, otherwise builds and runs
+/// `zig/generate_shader.zig` (which rewrites the shader in place and updates the cache).
+fn generateShaderConstants(b: *std.Build, paths: []const []const u8) void {
+    const cache_root = b.cache_root.path orelse ".";
+    const cache_path = b.pathJoin(&.{ cache_root, "shader_const_hashes.txt" });
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+
+    for (paths) |path| {
+        const content = b.build_root.handle.readFileAlloc(b.graph.io, path, b.allocator, .unlimited) catch |err| {
+            std.debug.panic("Skipping shader-constant generation; could not read {s}: {any}\n", .{ path, err });
+        };
+        defer b.allocator.free(content);
+        hasher.update(content);
+    }
+
+    var current_hash_binary: [32]u8 = undefined;
+    hasher.final(&current_hash_binary);
+    const current_hash_hex: []const u8 = &std.fmt.bytesToHex(current_hash_binary, .lower);
+
+    const old_hash_hex = b.build_root.handle.readFileAlloc(b.graph.io, cache_path, b.allocator, .limited(1024)) catch |err| blk: {
+        if (err != error.FileNotFound) std.debug.panic("Could not read shader cache: {any}\n", .{err});
+        break :blk b.allocator.alloc(u8, 0) catch "";
+    };
+    defer if (old_hash_hex.len > 0) b.allocator.free(old_hash_hex);
+
+    if (std.mem.eql(u8, current_hash_hex, old_hash_hex)) return;
+
+    const gen_tool = b.addExecutable(.{
+        .name = "generate_shader",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig/generate_shader.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+
+    const run_gen = b.addRunArtifact(gen_tool);
+    run_gen.has_side_effects = true;
+    run_gen.addArgs(&.{ cache_root, cache_path, current_hash_hex });
+    b.getInstallStep().dependOn(&run_gen.step);
 }

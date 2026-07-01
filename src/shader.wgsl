@@ -3,30 +3,34 @@
 // -------
 
 // These are sprite sheet constants.
-// Sprites are saved as a .png in a sprite sheet 160 pixels wide, and each asset is 16x16.
+// Sprites are saved as a .png in a sprite sheet 128 pixels wide, and each asset is 16x16.
 // See zig/state/world.zig's Sprite definitions for sprite type list.
-override TILES_PER_ROW: f32 = 1.0;
-override TILES_PER_COLUMN: f32 = 1.0;
-override STONE_START: u32 = 1u;
-override ORE_START: u32 = 1u;
-override GEM_START: u32 = 1u;
-override GEM_MASK_START: u32 = 1u;
-override GEAR_ID: u32 = 1u;
-override WATER_START: u32 = 1u;
+
+// #region generated-constants
+// Auto-generated from zig/types/sprite.zig by zig/generate_shader.zig (runs during `zig build`).
+// Do NOT edit values between the markers by hand; edit the Sprite enum instead.
+const TILES_PER_ROW: f32 = 8.0;
+const TILES_PER_COLUMN: f32 = 18.0;
+const STONE_START: u32 = 19u;
+const ORE_START: u32 = 27u;
+const GEM_START: u32 = 31u;
+const GEM_MASK_START: u32 = 39u;
+const WATER_START: u32 = 139u;
+// #endregion generated-constants
 
 const PI = radians(180.0);
 const TAU = radians(360.0);
 
-override TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
-override HP_SAMPLE_START: u32 = GEM_MASK_START + 8u; // there are 8 gem masks and 16 HP masks
-override DECOR_START: u32 = HP_SAMPLE_START + 16u;
+const TILES_PER_ROW_U: u32 = u32(TILES_PER_ROW);
+const HP_SAMPLE_START: u32 = GEM_MASK_START + 8u; // there are 8 gem masks and 16 HP masks
+const DECOR_START: u32 = HP_SAMPLE_START + 16u;
 
 const TILE_SIZE: f32 = 16.0;
 const PIXEL_UV_SIZE: f32 = 1.0 / TILE_SIZE;
-override ATLAS_WIDTH: f32 = TILE_SIZE * TILES_PER_ROW;
-override ATLAS_HEIGHT: f32 = TILE_SIZE * TILES_PER_COLUMN;
-override SPRITE_W: f32 = TILE_SIZE / ATLAS_WIDTH;
-override SPRITE_H: f32 = TILE_SIZE / ATLAS_HEIGHT;
+const ATLAS_WIDTH: f32 = TILE_SIZE * TILES_PER_ROW;
+const ATLAS_HEIGHT: f32 = TILE_SIZE * TILES_PER_COLUMN;
+const SPRITE_W: f32 = TILE_SIZE / ATLAS_WIDTH;
+const SPRITE_H: f32 = TILE_SIZE / ATLAS_HEIGHT;
 const TEXTURE_BLEEDING_EPSILON = 0.5 / TILE_SIZE;
 
 // See EdgeFlags in zig/types/types.zig.
@@ -84,7 +88,8 @@ struct TileOutput {
     // seed2: murmurmix32'ed from seed1
     // seed3: murmurmix32'ed from seed2
     @location(7) @interpolate(flat) seeds: vec4u,
-    @location(8) @interpolate(flat) waterlogged: u32,
+    @location(8) @interpolate(flat) lighting_color: u32,
+    @location(9) @interpolate(flat) waterlogged: u32,
 };
 
 struct TileData {
@@ -99,9 +104,12 @@ struct UnpackedTile {
     hp: u32,
     seeds: vec4u,
     edge_flags: u32,
+    lighting_color: u32,
     waterlogged: u32,
 };
 
+// Unpacks 64-bit tile data into various properties.
+// Said properties are arranged and explained in more detail in zig/memory.zig's Block struct.
 fn unpack_tile(data: TileData) -> UnpackedTile {
     var out: UnpackedTile;
 
@@ -122,7 +130,8 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     let s2 = murmurmix32(s1);
     let s3 = murmurmix32(s2);
     out.seeds = vec4u(s0, s1, s2, s3);
-    out.waterlogged = extractBits(data.word1, 27u, 5u); // Also see meaning in zig/memory.zig.
+    out.lighting_color = extractBits(data.word1, 24u, 3u);
+    out.waterlogged = extractBits(data.word1, 27u, 5u);
     return out;
 }
 
@@ -160,28 +169,9 @@ fn vs_tile(
     // update: this messes with water visually
     const vertical_offset = 0;
 
-    // add to ID based on pre-determined shifts
-    if id == STONE_START {
-        // 2x2 grid stone pattern (like a 32x32 sprite)
-        let offset = ((tile_coords.y & 1u) << 1u) | (tile_coords.x & 1u);
-        id += offset;
-    } else if id == 2 { // (IDs here hard-coded, like player)
-        // edge stone alternates in a checkerboard pattern
-        let offset = (tile_coords.x & 1u) ^ (tile_coords.y & 1u);
-        id += offset;
-    } else if id == GEAR_ID + 2u || id == GEAR_ID + 5u {
-        // seed-based variation for bushes and ceiling flowers
-        id = select(id, id + 1, extractBits(tile.seeds[1], 16u, 1u) == 1u); // 50% odds to select the variation
-
-        // for 25%:
-        // let random_mod = extractBits(tile.seeds[1], 16u, 2u);
-        // if random_mod == 0u {
-        //     id++;
-        // }
-    } else if id == GEAR_ID + 7u || id == GEAR_ID + 10u { // variation for mushrooms
-        let bits = extractBits(tile.seeds[1], 16u, 2u);
-        id += select(bits, 0u, bits == 3u); // select variation (0, +1, or +2, 50% odds of 0)
-    }
+    // Sprite variation/animation (2x2 stone, checkerboard edge stone, seed-picked bushes/mushrooms,
+    // liquid surfaces, campfire animation) is now resolved in Zig; see zig/types/variation.zig.
+    // `id` here is already the final atlas frame, so no per-sprite shifting happens in the shader.
 
     // apply to screen_pos.y before converting to normalized device coordinates
     // subtract from Y because in screen space, lower values are "higher" up
@@ -206,6 +196,7 @@ fn vs_tile(
     out.tile_coords = tile_coords;
     out.light = tile.light;
     out.local_uv = local_pos;
+    out.lighting_color = tile.lighting_color;
     out.waterlogged = tile.waterlogged;
     return out;
 }
@@ -447,6 +438,14 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
 
     // Convert OKLCH result to OKLAB, then finally back to float-based RGB
     lab = oklch_to_oklab(lch);
+    if (in.lighting_color & 1) == 1 {
+        // warmth color shift
+        lab.y += 0.015; // +a channel (more red/magenta)
+        lab.z += 0.04; // +b channel (more yellow)
+
+        // slightly boost brightness
+        // lab.x *= 1.05;
+    }
     final_rgb = oklab_to_linear_srgb(lab);
 
     var final_a = tex_color.a * scene.chunk_opacity; // the player is now an entity, so all tiles use chunk_opacity
@@ -786,6 +785,13 @@ fn water_effect(coord: vec2f, t: f32) -> f32 {
 
 // Procedural effect for lighting (linear sRGB)
 fn water_body_linear(in: TileOutput) -> vec4f {
+    let light_val = max(0.0, in.light);
+
+    // Performance shortcut: skip expensive caustic/wave calculations if the pixel is dark
+    if light_val <= 0.005 {
+        return vec4f(vec3f(0.0), 0.5);
+    }
+
     let world = water_world(in);
     let t = scene.time;
 
@@ -804,7 +810,19 @@ fn water_body_linear(in: TileOutput) -> vec4f {
     lch.x = clamp(lch.x + caustic, 0.26, 0.90);
     lch.y = clamp(lch.y + caustic * 0.10, 0.04, 0.28);
 
-    let rgb = oklab_to_linear_srgb(oklch_to_oklab(lch));
+    // Apply light multiplier to both lightness and chroma to prevent light leakage in the dark
+    lch.x *= light_val;
+    lch.y *= light_val;
+
+    var lab = oklch_to_oklab(lch);
+
+    // Apply campfire warmth color shift (scaled by light intensity)
+    if (in.lighting_color & 1u) == 1u {
+        lab.y += 0.015 * light_val; // +a channel (more red/magenta)
+        lab.z += 0.04 * light_val;  // +b channel (more yellow)
+    }
+
+    let rgb = oklab_to_linear_srgb(lab);
     return vec4f(rgb, 0.5);
 }
 

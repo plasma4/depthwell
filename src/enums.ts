@@ -46,12 +46,6 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly prepareVisibleData: (arg0: number, arg1: number, arg2: number, arg3: number) => void;
     readonly getTilesPerRow: () => number;
     readonly getTilesPerColumn: () => number;
-    readonly getStoneStart: () => number;
-    readonly getOreStart: () => number;
-    readonly getGemStart: () => number;
-    readonly getGemMaskStart: () => number;
-    readonly getGearStart: () => number;
-    readonly getWaterStart: () => number;
     readonly handleMouse: (arg0: number, arg1: number, arg2: number) => void;
     readonly tick: (arg0: number, arg1: number) => void;
     readonly mixSeed: (arg0: bigint) => bigint;
