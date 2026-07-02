@@ -17,7 +17,7 @@ const Vec2f = dw.utils.Vec2f;
 /// The `SimBuffer` size automatically adjusts when setting this to a very small value.
 ///
 /// Setting this to a very small value is useful for testing cache validity or performance, however.
-pub const CAMERA_MIN_ZOOM = 1.0 / 4.0;
+pub const CAMERA_MIN_ZOOM = 1.0 / 10.0;
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
 /// Any more and it would look weird, and camera deadzone would start to no longer work.
 pub const CAMERA_MAX_ZOOM = 1.5; // 150%

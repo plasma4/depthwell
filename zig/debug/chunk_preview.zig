@@ -4,6 +4,7 @@ const memory = dw.memory;
 const Entity = memory.Entity;
 
 const CHUNK_SIZE = dw.CHUNK_SIZE;
+const MAX_HP = memory.Block.MAX_HP;
 const Vec2f32 = dw.utils.Vec2f32;
 const EdgeFlags = dw.types.EdgeFlags;
 const addEntity = dw.entity.addEntity;
@@ -158,7 +159,7 @@ pub fn drawChunkPreview() void {
                 tile_size,
                 thick,
             );
-            if (x == 15) if (neighbors[3]) |n| drawNeighborFlag(
+            if (x == MAX_HP) if (neighbors[3]) |n| drawNeighborFlag(
                 &dw.entity.entity_count,
                 n.getBlock(0, @intCast(y)),
                 block_pos,
@@ -168,13 +169,13 @@ pub fn drawChunkPreview() void {
             );
             if (y == 0) if (neighbors[0]) |n| drawNeighborFlag(
                 &dw.entity.entity_count,
-                n.getBlock(@intCast(x), 15),
+                n.getBlock(@intCast(x), MAX_HP),
                 block_pos,
                 .N,
                 tile_size,
                 thick,
             );
-            if (y == 15) if (neighbors[1]) |n| drawNeighborFlag(
+            if (y == MAX_HP) if (neighbors[1]) |n| drawNeighborFlag(
                 &dw.entity.entity_count,
                 n.getBlock(@intCast(x), 0),
                 block_pos,

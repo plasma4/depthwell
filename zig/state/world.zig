@@ -27,6 +27,34 @@ const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 const CHUNK_SIZE_LOG2 = dw.CHUNK_SIZE_LOG2;
 const ZOOM_FACTOR = dw.ZOOM_FACTOR;
 
+/// Final foundation sprite at an absolute base-depth block, plus the plain-stone base it grew from
+/// (`base` is only meaningful when `id` is an ore/gem overlay).
+const BaseFoundation = struct { id: Sprite, base: Sprite };
+
+/// Resolves the base-depth sprite at absolute chunk (`cx`, `cy`) + local block (`bx`, `by`).
+/// Same as `generateBaseChunk()`: finds world-edge stone, base terrain, ore dispersal (stone only), then structures.
+/// Decorations, however, are excluded.
+///
+/// Both the generator and its base-depth edge-flag halo call this,
+/// so a neighbor recomputed for the halo carries the same ore id as the real chunk;
+/// `id_edge_flags` then connects a vein to its continuation across the chunk border instead of cutting it off.
+inline fn resolveBaseFoundation(cx: u64, cy: u64, bx: u4, by: u4) BaseFoundation {
+    const max_suffix = getMaxSuffixAtDepth(STARTING_ZOOM_TIMES);
+    const on_edge_x = (cx == 0 and bx < 2) or (cx == max_suffix and bx >= (CHUNK_SIZE - 2));
+    const on_edge_y = (cy == 0 and by < 2) or (cy == max_suffix and by >= (CHUNK_SIZE - 2));
+    if (on_edge_x or on_edge_y) return .{ .id = .edge_stone, .base = .none };
+
+    const seeds = memory.game.seed2;
+    const base_data = procedural.getBaseSpriteType(@intCast(cx), @intCast(cy), bx, by);
+    const wx: u32 = @intCast(cx * CHUNK_SIZE + bx);
+    const wy: u32 = @intCast(cy * CHUNK_SIZE + by);
+
+    var sprite = base_data.sprite;
+    if (sprite.isStone()) sprite = procedural.addOres(base_data, seeds[4..6].*, seeds[6..8].*, seeds[8..10].*, seeds[10..12].*, wx, wy);
+    sprite = procedural.addStructures(sprite, wx, wy, seeds[12..14].*, seeds[2..4].*);
+    return .{ .id = sprite, .base = base_data.sprite };
+}
+
 /// Generates a starting chunk at depth `STARTING_ZOOM_TIMES`.
 /// Is procedural and does not require all other chunks are pre-calculated.
 /// As in, it does not use something like cellular noise that needs a whole map up front.
@@ -34,68 +62,24 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     const depth = STARTING_ZOOM_TIMES;
     const chunk_seeds = quad_cache.getChunkSeeds(coord.asDepthCoordinate(depth));
 
-    const seeds = memory.game.seed2;
-    const seed_vec2: dw.utils.Vec2u = seeds[2..4].*;
-    const seed_vec3: dw.utils.Vec2u = seeds[4..6].*;
-    const seed_vec4: dw.utils.Vec2u = seeds[6..8].*;
-    const seed_vec5: dw.utils.Vec2u = seeds[8..10].*;
-    const seed_vec6: dw.utils.Vec2u = seeds[10..12].*;
-    const seed_vec7: dw.utils.Vec2u = seeds[12..14].*;
-
     var rng_decor = seeding.ChaCha12.init(&chunk_seeds.value[2]); // Decor data. See `ChunkSeeds` def for details.
     var rng_seed = seeding.ChaCha12.init(&chunk_seeds.value[3]); // Seed data only.
 
     const suffix = coord.suffix;
     const cx = suffix[0];
     const cy = suffix[1];
-    const max_suffix = getMaxSuffixAtDepth(depth);
     for (0..CHUNK_SIZE) |block_y| {
         for (0..CHUNK_SIZE) |block_x| {
             const idx = block_x + block_y * CHUNK_SIZE;
 
-            const is_absolute_edge_x =
-                (cx == 0 and block_x < 2) or
-                (cx == max_suffix and block_x >= (CHUNK_SIZE - 2));
-            const is_absolute_edge_y =
-                (cy == 0 and block_y < 2) or
-                (cy == max_suffix and block_y >= (CHUNK_SIZE - 2));
-            if (is_absolute_edge_x or is_absolute_edge_y) {
-                chunk.blocks[idx] = Block.makeBasicBlock(.edge_stone, rng_seed.next());
-                continue;
-            }
-
-            const base_data = procedural.getBaseSpriteType(
-                @intCast(cx),
-                @intCast(cy),
-                @intCast(block_x),
-                @intCast(block_y),
-            );
-            var sprite = base_data.sprite;
-            if (sprite.isStone()) sprite = procedural.addOres(
-                base_data,
-                seed_vec3,
-                seed_vec4,
-                seed_vec5,
-                seed_vec6,
-                @intCast(cx * 16 + block_x),
-                @intCast(cy * 16 + block_y),
-            );
-            sprite = procedural.addStructures(
-                sprite,
-                @as(u32, @intCast(cx * 16)) + @as(u32, @intCast(block_x)),
-                @as(u32, @intCast(cy * 16)) + @as(u32, @intCast(block_y)),
-                seed_vec7,
-                seed_vec2,
-            );
-
-            // if (procedural.getStructureBlock(block_x, block_y, seeds[12..14].*)) |sp| {
-            //     sprite = sp;
-            // }
-
-            chunk.blocks[idx] = Block.makeBasicBlock(
-                sprite,
-                rng_seed.next(),
-            );
+            const bf = resolveBaseFoundation(cx, cy, @intCast(block_x), @intCast(block_y));
+            const spec: memory.BlockSpec = .{
+                .id = bf.id,
+                // Overlay sprites remember the stone they replaced so the shader can composite them over it.
+                .base_id = if (bf.id.isOre() or bf.id.isGem()) bf.base else .none,
+                .seed = rng_seed.next(),
+            };
+            chunk.blocks[idx] = spec.compile();
         }
     }
 
@@ -108,6 +92,7 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
         const block = &chunk.blocks[idx];
         if (block.isEmpty()) {
             block.edge_flags = 0xFF;
+            block.id_edge_flags = 0xFF;
         }
     }
 }
@@ -121,18 +106,18 @@ pub const ModificationStore = struct {
         DepthCoordinateContext,
         std.hash_map.default_max_load_percentage,
     ),
-    /// Expandable list that stores modified `Chunk` data (256KiB pre-allocation).
-    history: SegmentedList(Chunk, 128) = .{},
+    /// Expandable list that stores modified `Chunk` data (1MiB inline pre-allocation: `256 * @sizeOf(Chunk)`).
+    history: SegmentedList(Chunk, 256) = .{},
 
-    pub fn init(allocator: std.mem.Allocator) ModificationStore {
-        return .{
-            .index = std.HashMap(
-                DepthCoordinate,
-                usize,
-                DepthCoordinateContext,
-                std.hash_map.default_max_load_percentage,
-            ).init(allocator),
-        };
+    /// Initializes in-place to avoid stack overflow problems.
+    pub fn init(self: *ModificationStore, allocator: std.mem.Allocator) void {
+        self.index = std.HashMap(
+            DepthCoordinate,
+            usize,
+            DepthCoordinateContext,
+            std.hash_map.default_max_load_percentage,
+        ).init(allocator);
+        self.history = .{};
     }
 
     /// Gets an existing modification for reading.
@@ -658,10 +643,19 @@ pub const SimBuffer = struct {
             return;
         };
 
-        // Use shift directly for incremental updates if distance is small
+        // Small shift: slide the window by `shift` without rebuilding it.
+        // incrementalRefresh() advances ring_x/ring_y by exactly `shift`, so it is only valid when the
+        // origin also advances by exactly `shift`. At a world edge (depth < HORIZON_DEPTH) the origin move
+        // clamps to fewer chunks, which would desync the ring from the origin and make get() map every
+        // resident chunk to the wrong slot (all lookups then miss) until the next fullRefresh. Fall back
+        // to a full refresh in that case so the two never drift apart.
         if (@abs(shift[0]) < SIM_BUFFER_WIDTH and @abs(shift[1]) < SIM_BUFFER_WIDTH) {
             if (shift[0] != 0 or shift[1] != 0) {
-                incrementalRefresh(shift[0], shift[1]);
+                if (og.move(shift) != null) {
+                    incrementalRefresh(shift[0], shift[1]);
+                } else {
+                    fullRefresh(getClampedMove(coord, -half_width, -half_width));
+                }
             }
             return;
         }
@@ -697,6 +691,9 @@ pub const SimBuffer = struct {
     /// Shifts the tracking window incrementally by a certain amount of chunks (internal).
     /// Mutates the ring buffer offsets to avoid expensive memory copying,
     /// and replaces ONLY the rows or columns that have newly entered the 16x16 boundary window.
+    ///
+    /// PRECONDITION: `origin.move(.{dx, dy})` must not clamp (caller `sync()` guarantees this). ring_x/ring_y
+    /// advance by the full `dx`/`dy` here, so a clamped origin move would desync them from the origin.
     fn incrementalRefresh(dx: i64, dy: i64) void {
         const old_origin = origin.?;
         const new_origin = getClampedMove(old_origin, dx, dy);
@@ -849,13 +846,8 @@ const CHUNK_CACHE_SIZE: usize = blk: {
     const C_w = @ceil(W / (256.0 * Z)) + border;
     const C_h = @ceil(H / (256.0 * Z)) + border;
 
-    // Provision for the ENTIRE visible window rather than only the part that spills outside the
-    // SimBuffer. The old sizing assumed the 16x16 SimBuffer always contained the view, which is only
-    // barely true at min zoom (<1 chunk of horizontal slack) and is briefly false for the first frame
-    // after any `clearCaches` (teleport/depth change) — both let a boundary straddle thrash a tiny
-    // cache into per-frame regeneration. Adding a one-chunk shift ring on every side, plus fixed
-    // slack, and doubling for set-associative conflict headroom keeps hits robust. Chunks are 2KiB, so
-    // this over-provisioning is cheap (a few hundred KiB) insurance against a render-loop hitch.
+    // Provision for the ENTIRE visible window,
+    // rather than only the part that spills outside the SimBuffer with a significant extra buffer.
     const windowed = (C_w + 2.0) * (C_h + 2.0);
     const raw_cache_size = windowed * 2.0 + 32.0;
 
@@ -1213,14 +1205,15 @@ pub fn generateChunk(chunk: *Chunk, key: DepthCoordinate) void {
                 parent_neighborhood[py + 1][px + 1],
             };
 
-            const final_sprite = dw.ancestor.applyAncestorLogic(
+            var spec = dw.ancestor.applyAncestorLogic(
                 parent_sprite,
                 neighbors,
                 key,
                 @intCast(block_x),
                 @intCast(block_y),
             );
-            chunk.blocks[idx] = Block.makeBasicBlock(final_sprite.id, rng4.next());
+            spec.seed = rng4.next();
+            chunk.blocks[idx] = spec.compile();
         }
     }
 
@@ -1261,7 +1254,6 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
     }
 
     const is_base = (depth == STARTING_ZOOM_TIMES);
-    const seeds = memory.game.seed2;
 
     // Fill the 1-pixel border (72 pixels total)
     var hy: i32 = -1;
@@ -1275,30 +1267,16 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
             const lx: u4 = @intCast(@mod(hx, @as(i32, CHUNK_SIZE)));
             const ly: u4 = @intCast(@mod(hy, @as(i32, CHUNK_SIZE)));
 
-            // If we are at the base depth, we MUST bypass cached neighbor chunks to ensure
-            // that calculated edge flags are independent of neighboring decoration states.
-            // This guarantees perfectly deterministic RNG consumption during addDecorations!
+            // At base depth we MUST recompute the neighbor deterministically (rather than read cached
+            // neighbor chunks) so edge flags stay independent of neighboring decoration states, keeping
+            // RNG consumption during addDecorations() perfectly deterministic. resolveBaseFoundation()
+            // includes the ore pass, so id_edge_flags matches the adjacent chunk's ore across the border.
             if (is_base) {
                 const target_nc = coord.moveAtDepth(.{ ndx, ndy }, depth) orelse {
                     halo[@intCast(hy + 1)][@intCast(hx + 1)] = .none;
                     continue;
                 };
-                const abs_nc = target_nc.suffix;
-                const base_data = procedural.getBaseSpriteType(
-                    @intCast(abs_nc[0]),
-                    @intCast(abs_nc[1]),
-                    lx,
-                    ly,
-                );
-                var s = base_data.sprite;
-                s = procedural.addStructures(
-                    s,
-                    @as(u32, @intCast(abs_nc[0] * 16)) + lx,
-                    @as(u32, @intCast(abs_nc[1] * 16)) + ly,
-                    seeds[12..14].*,
-                    seeds[2..4].*,
-                );
-                halo[@intCast(hy + 1)][@intCast(hx + 1)] = s;
+                halo[@intCast(hy + 1)][@intCast(hx + 1)] = resolveBaseFoundation(target_nc.suffix[0], target_nc.suffix[1], lx, ly).id;
                 continue;
             }
 
@@ -1331,6 +1309,9 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
 
             const state = water.getWaterloggedStateSprites(top_nb, bottom_nb, left_nb, right_nb, above_left_nb, above_right_nb);
 
+            // Same-sprite flags are computed for ALL foundation blocks (one extra compare per neighbor);
+            // restrict to isOre()/isGem() here if that ever becomes worth the branch.
+            var id_flags: u8 = 0;
             inline for (.{ -1, 0, 1 }) |dy| {
                 inline for (.{ -1, 0, 1 }) |dx| {
                     if (dx == 0 and dy == 0) continue;
@@ -1340,10 +1321,14 @@ fn addEdgeFlags(target_chunk: *Chunk, coord: Coordinate, depth: u64) void {
                     if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(sprite)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
                         flags |= types.EdgeFlags.getFlagBit(dx, dy);
                     }
+                    if (sprite == current_sprite) {
+                        id_flags |= types.EdgeFlags.getFlagBit(dx, dy);
+                    }
                 }
             }
 
             target_chunk.blocks[y * CHUNK_SIZE + x].edge_flags = flags;
+            target_chunk.blocks[y * CHUNK_SIZE + x].id_edge_flags = id_flags;
             target_chunk.blocks[y * CHUNK_SIZE + x].waterlogged = state.flags;
         }
     }
@@ -1407,7 +1392,9 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
 
             const state = water.getWaterFlags(top_nb, bottom_nb, left_nb, right_nb, above_left_nb, above_right_nb);
 
+            // Same-sprite flags computed for ALL foundation blocks (see `addEdgeFlags()` for the toggle note).
             var flags: u8 = 0;
+            var id_flags: u8 = 0;
             inline for (.{ -1, 0, 1 }) |dy| {
                 inline for (.{ -1, 0, 1 }) |dx| {
                     if (dx == 0 and dy == 0) continue;
@@ -1417,9 +1404,13 @@ fn addEdgeFlagsFractal(target_chunk: *Chunk, key: DepthCoordinate, parent_neighb
                     if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(sprite)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
                         flags |= types.EdgeFlags.getFlagBit(dx, dy);
                     }
+                    if (sprite == current_sprite) {
+                        id_flags |= types.EdgeFlags.getFlagBit(dx, dy);
+                    }
                 }
             }
             current_block.edge_flags = flags;
+            current_block.id_edge_flags = id_flags;
             current_block.waterlogged = state.flags;
         }
     }
@@ -1443,7 +1434,9 @@ inline fn isBothLiquid(sprite_a: Sprite, sprite_b: Sprite) bool {
 /// Applies a block modification, changing the `Sprite` type and resetting `hp`.
 /// Mutates `ModificationStore` and caches in-place.
 /// Returns whether `update_local_edge_flags` instantly removed the current block due to being in an invalid position.
-pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bool {
+///
+/// `prev_block` is the block that occupied this cell BEFORE this action began. The caller must pass the original block (e.g. mining reads it before deleting).
+pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite, prev_block: Block) bool {
     const key = DepthCoordinate.from(coord);
     const idx = @as(usize, by) * CHUNK_SIZE + bx;
 
@@ -1458,19 +1451,33 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
         break :blk new_idx;
     };
 
-    const initial_hp: u4 = if (new_sprite == .water) 15 else 0;
+    const initial_hp: u4 = if (new_sprite == .water) Block.MAX_HP else 0;
 
     const c: *Chunk = mod_store.history.at(entry_idx);
+
+    // Derive the overlay's underlay from what was here before, so replacing (say) a blue_stone block
+    // with gold keeps showing blue_stone behind the ore mask. Priority: inherit a previous overlay's
+    // underlay, else grow inside the previous solid block, else fall back to plain stone.
+    // Non-ore/gem placements carry no underlay.
+    const new_base: Sprite = if (new_sprite.isOre() or new_sprite.isGem())
+        (if (prev_block.base_id != .none) prev_block.base_id else if (prev_block.id.isFoundation()) prev_block.id else .stone)
+    else
+        .none;
+
     c.blocks[idx].id = new_sprite;
+    c.blocks[idx].base_id = new_base;
     c.blocks[idx].hp = initial_hp;
     c.blocks[idx].edge_flags = 0xFF;
+    c.blocks[idx].id_edge_flags = 0xFF;
     c.blocks[idx].waterlogged = 0;
 
     if (SimBuffer.get(coord)) |sim_chunk| {
         const block: *Block = &sim_chunk.blocks[idx];
         block.id = new_sprite;
+        block.base_id = new_base;
         block.hp = initial_hp;
         block.edge_flags = 0xFF;
+        block.id_edge_flags = 0xFF;
         block.waterlogged = 0;
     }
 
@@ -1482,8 +1489,10 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite) bo
     if (chunk_cache.findIndex(coord)) |index| {
         const block: *Block = &chunk_cache.chunks[index].blocks[idx];
         block.id = new_sprite;
+        block.base_id = new_base;
         block.hp = initial_hp;
         block.edge_flags = 0xFF;
+        block.id_edge_flags = 0xFF;
         block.waterlogged = 0;
     }
 
@@ -1605,16 +1614,19 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     const target_chunk: *Chunk = mod_store.history.at(mod_id);
                     target_chunk.blocks[block_id].id = .none;
                     target_chunk.blocks[block_id].edge_flags = 0xFF;
+                    target_chunk.blocks[block_id].id_edge_flags = 0xFF;
                     target_chunk.blocks[block_id].waterlogged = 0;
 
                     if (SimBuffer.get(target_coord)) |sc| {
                         sc.blocks[block_id].id = .none;
                         sc.blocks[block_id].edge_flags = 0xFF;
+                        sc.blocks[block_id].id_edge_flags = 0xFF;
                         sc.blocks[block_id].waterlogged = 0;
                     }
                     if (chunk_cache.findIndex(target_coord)) |index| {
                         chunk_cache.chunks[index].blocks[block_id].id = .none;
                         chunk_cache.chunks[index].blocks[block_id].edge_flags = 0xFF;
+                        chunk_cache.chunks[index].blocks[block_id].id_edge_flags = 0xFF;
                         chunk_cache.chunks[index].blocks[block_id].waterlogged = 0;
                     }
 
@@ -1630,6 +1642,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
 
                 // Recalculate flags for foundation blocks
                 var flags: u8 = 0;
+                var id_flags: u8 = 0;
                 var waterlogged: u5 = 0;
 
                 const left_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx) - 1, @as(i32, lby), memory.game.depth);
@@ -1643,13 +1656,14 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
 
                 if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid()) {
                     flags = 0xFF;
+                    id_flags = 0xFF;
                     if (current_sprite.isDecor()) {
                         waterlogged = state.flags;
                     }
                 } else {
                     waterlogged = state.flags;
 
-                    // Recalculate edge flags
+                    // Recalculate edge flags (same-sprite flags for all foundation blocks; see `addEdgeFlags()`)
                     inline for (.{ -1, 0, 1 }) |ndy| {
                         inline for (.{ -1, 0, 1 }) |ndx| {
                             if (ndx == 0 and ndy == 0) continue;
@@ -1664,21 +1678,27 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                             if ((!current_sprite.isLiquid() and shouldHaveEdgeFlags(neighbor_block.id)) or (current_sprite.isLiquid() and is_solid_or_liquid)) {
                                 flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
                             }
+                            if (neighbor_block.id == current_sprite) {
+                                id_flags |= types.EdgeFlags.getFlagBit(ndx, ndy);
+                            }
                         }
                     }
                 }
 
                 if (SimBuffer.get(target_coord)) |c| {
                     c.blocks[block_id].edge_flags = flags;
+                    c.blocks[block_id].id_edge_flags = id_flags;
                     c.blocks[block_id].waterlogged = waterlogged;
                 }
                 if (chunk_cache.findIndex(target_coord)) |index| {
                     chunk_cache.chunks[index].blocks[block_id].edge_flags = flags;
+                    chunk_cache.chunks[index].blocks[block_id].id_edge_flags = id_flags;
                     chunk_cache.chunks[index].blocks[block_id].waterlogged = waterlogged;
                 }
                 const m_key = DepthCoordinate.from(target_coord);
                 if (mod_store.index.get(m_key)) |id_val| {
                     mod_store.history.at(id_val).blocks[block_id].edge_flags = flags;
+                    mod_store.history.at(id_val).blocks[block_id].id_edge_flags = id_flags;
                     mod_store.history.at(id_val).blocks[block_id].waterlogged = waterlogged;
                 }
             }
@@ -2052,7 +2072,7 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
                             child_key,
                             local_bx,
                             local_by,
-                        );
+                        ).compile();
                     }
                 } else next_materials[y_idx][x_idx] = .empty;
             }

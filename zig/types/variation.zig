@@ -84,7 +84,7 @@ fn murmurmix32(number: u32) u32 {
 }
 
 /// Picks a weighted variant offset from a block seed (see `seed_pick`).
-fn seedPick(seed: u20, count: u8) u16 {
+fn seedPick(seed: u32, count: u8) u16 {
     const bits_needed = std.math.log2_int_ceil(u8, count);
     // Mirror the shader: `seeds[1]` is a double-mixed seed; the variant reads its bits 16+.
     const mixed = murmurmix32(murmurmix32(seed));
@@ -97,16 +97,20 @@ fn seedPick(seed: u20, count: u8) u16 {
 /// (animation) variation. `tx`/`ty` are ABSOLUTE tile coordinates; `frame` is the current render frame.
 /// Returns `block.id` unchanged when the sprite has no variation rule.
 pub fn resolveVariant(block: Block, tx: u64, ty: u64, frame: u32) Sprite {
-    const id = @intFromEnum(block.id);
-    if (id >= dw.sprite.MAX_SPRITE_ID) return block.id;
-    const rule = variant_table[id] orelse return block.id;
+    return resolveSpriteVariant(block.id, block.seed, block.edge_flags, tx, ty, frame);
+}
+
+pub fn resolveSpriteVariant(sprite: Sprite, seed: u32, edge_flags: u8, tx: u64, ty: u64, frame: u32) Sprite {
+    const id = @intFromEnum(sprite);
+    if (id >= dw.sprite.MAX_SPRITE_ID) return sprite;
+    const rule = variant_table[id] orelse return sprite;
 
     const offset: u16 = switch (rule.kind) {
         .grid_2x2 => @intCast(((ty & 1) << 1) | (tx & 1)),
         .checkerboard => @intCast((tx & 1) ^ (ty & 1)),
-        .seed_pick => seedPick(block.seed, rule.count),
+        .seed_pick => seedPick(seed, rule.count),
         .animate => @intCast((frame / rule.period_frames) % rule.count),
-        .water_top => if ((block.edge_flags & ABOVE_BIT) == 0) 1 else 0,
+        .water_top => if ((edge_flags & ABOVE_BIT) == 0) 1 else 0,
     };
 
     return @enumFromInt(id + offset);

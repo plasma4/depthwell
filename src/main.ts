@@ -364,7 +364,7 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 // Build the fancy debug UI in the corner!
 if (is_dev && engine.isDebug) {
     // Populate scratch buffer with JSON data about the debug UI, and parse it!
-    engine.exports.debugBuildUiMetadata();
+    (engine.exports.debugBuildUiMetadata as () => void)();
     const jsonStr = engine.readStr();
 
     const meta = JSON.parse(jsonStr);
@@ -386,7 +386,8 @@ if (is_dev && engine.isDebug) {
     meta.buttons.forEach((b: any) => {
         const btn = document.createElement("button");
         btn.textContent = b.name;
-        btn.onclick = () => engine.exports.clickDebugUiButton(b.id);
+        btn.onclick = () =>
+            (engine.exports.clickDebugUiButton as (id: number) => void)(b.id);
         container.appendChild(btn);
     });
 
@@ -409,7 +410,12 @@ if (is_dev && engine.isDebug) {
         input.oninput = (e) => {
             const val = parseFloat((e.target as HTMLInputElement).value);
             label.textContent = `${s.name}: ${val.toFixed(2)}`;
-            engine.exports.changeDebugUiSlider(s.id, val);
+            (
+                engine.exports.changeDebugUiSlider as (
+                    id: number,
+                    val: number,
+                ) => void
+            )(s.id, val);
         };
 
         wrapper.appendChild(label);

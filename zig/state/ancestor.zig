@@ -197,26 +197,27 @@ pub inline fn getCornerId(id: u4) u2 {
         2 * dw.utils.intFromBool(u64, id_col >= 2);
 }
 
-/// Applies deterministic logic to a child `Block` based on its parent and 8 parent neighbors.
+/// Applies deterministic logic to a child block based on its parent and 8 parent neighbors.
+/// Returns a `memory.BlockSpec` (temp procedural information) that can be compiled to `Block` later.
 /// Correctly determines the child's `seed` property when returning it if the block is not empty.
 /// Decorations are applied afterward in `procedural.applyAncestorDecorations()`. TODO: actually add this!
-/// TODO: also add culling system for invalid decor block configurations in ancestor, see how to deal with spiral plant
+/// TODO: also add culling system for invalid decor block configurations in ancestor, determine how to deal with spiral plant
 pub fn applyAncestorLogic(
     parent_block: Block,
     parent_neighbors: [8]Block,
     key: DepthCoordinate,
     bx: u4,
     by: u4,
-) Block {
+) memory.BlockSpec {
     var parent_sprite = parent_block.id;
     // const parent_seed = parent_block.seed;
 
-    if (parent_sprite.isEmpty()) return .empty;
+    if (parent_sprite.isEmpty()) return .{};
     const seeds = world.quad_cache.getChunkSeeds(key);
     var noise_hash_1 = seeding.FastHash.hash2d(.{ seeds.value[0].value[0], seeds.value[0].value[1] }, bx, by);
     const noise_hash_2 = seeding.FastHash.hash2d(.{ seeds.value[0].value[2], seeds.value[0].value[3] }, bx, by);
     if (parent_sprite == .edge_stone)
-        return Block.makeBasicBlock(parent_sprite, @truncate(noise_hash_2));
+        return .{ .id = parent_sprite, .seed = noise_hash_2 };
 
     // Structural logic!
     const local_id = (by % 4) * 4 + (bx % 4);
@@ -236,28 +237,29 @@ pub fn applyAncestorLogic(
         if (id == local_id and parent_sprite.isFoundation()) {
             const corner_id = getCornerId(id);
             const is_corner_empty = !corners_nonempty[corner_id];
-            if (is_corner_empty) return .empty;
+            if (is_corner_empty) return .{};
         }
     }
 
     // Inherit plant still!
     if (parent_sprite == .spiral_plant)
-        return .makeBasicBlock(.spiral_plant, @truncate(noise_hash_2));
+        return .{ .id = .spiral_plant, .seed = noise_hash_2 };
 
     if (parent_sprite == .mushroom) {
         // Only make specific sub-blocks of a mushroom parent become big mushroom!
         return if ((bx % 4 == 1 or bx % 4 == 2) and by % 4 == 3)
-            .makeBasicBlock(.big_mushroom, @truncate(noise_hash_2))
+            .{ .id = .big_mushroom, .seed = noise_hash_2 }
         else
-            .empty; // bypass edges logic too
+            .{}; // bypass edges logic too
     }
 
     // Fallback for all other non-foundation blocks (decorations, chests, furnaces, liquids, etc.)
     if (!parent_sprite.isFoundation()) {
-        return Block.makeBasicBlock(parent_sprite.evolvesTo(), @truncate(noise_hash_2));
+        return .{ .id = parent_sprite.evolvesTo(), .seed = noise_hash_2 };
     }
 
     // var seed = parent_block.seed;
+    var inherited_base = parent_block.base_id;
     if (parent_sprite.isFoundation()) { // we don't want non-solid blocks to become solid, since the player could be in them
         const edges_list = comptime get4x4List(
             \\1111
@@ -275,13 +277,16 @@ pub fn applyAncestorLogic(
                     noise_hash_1 >>= @bitSizeOf(@TypeOf(noise));
 
                     const parent = parent_neighbors[noise];
-                    if (!parent.isEmpty()) parent_sprite = parent.id;
-                    if (parent_sprite == .edge_stone) return .empty;
+                    if (!parent.isEmpty()) {
+                        parent_sprite = parent.id;
+                        inherited_base = parent.base_id;
+                    }
+                    if (parent_sprite == .edge_stone) return .{};
                 } else if (noise_hash_1 % 8 == 2) {
                     // 12.5% odds for edges to become empty
                     const corner_id = getCornerId(id);
                     const is_corner_empty = !corners_nonempty[corner_id];
-                    if (is_corner_empty) return .empty;
+                    if (is_corner_empty) return .{};
                 }
             }
         }
@@ -296,8 +301,14 @@ pub fn applyAncestorLogic(
         evolved_sprite = .blue_stone;
     }
 
-    // Return the new block, passing the hash down as the new seed for the next generation.
-    return Block.makeBasicBlock(evolved_sprite, @truncate(noise_hash_2));
+    // Ores/gems keep the parent's underlay so veins stay visually consistent across zooms (plain stone fallback).
+    const base_id: Sprite = if (evolved_sprite.isOre() or evolved_sprite.isGem())
+        (if (inherited_base != .none) inherited_base else .stone)
+    else
+        .none;
+
+    // Return the new spec, passing the hash down as the new seed for the next generation.
+    return .{ .id = evolved_sprite, .base_id = base_id, .seed = noise_hash_2 };
 }
 
 /// Traces the lineage of a single block type. Target depth is described in the `DepthCoordinate`.
@@ -358,7 +369,7 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
         }
     }
 
-    return applyAncestorLogic(parent_block, neighbors, key, bx, by);
+    return applyAncestorLogic(parent_block, neighbors, key, bx, by).compile();
 }
 
 /// Fetches a 6x6 neighborhood of parent IDs for the generator. Requires a specific depth and location.

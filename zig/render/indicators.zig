@@ -33,17 +33,16 @@ pub fn drawIndicators() void {
     const game = &memory.game;
     const player_coord = game.getPlayerCoord();
 
-    // Fetch camera interpolation time fraction
-    const dt = dw.chunks.current_dt;
-    const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dt);
+    // Zoom uses the raw fraction; position uses the +1.0-shifted fraction. See dw.chunks.current_dt.
+    const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dw.chunks.current_dt);
+    const cam_dt = dw.chunks.current_dt + 1.0;
 
-    // Compute interpolated camera positions
+    // Interpolate last_camera_pos toward camera_pos, matching the world's position curve
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
 
-    // Interpolate last_camera_pos to camera_pos now
-    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
-    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
+    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * cam_dt);
+    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * cam_dt);
 
     const mouse_pixel_pos = mouse.uv_position * dw.utils.Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
 
@@ -112,8 +111,8 @@ pub fn drawIndicators() void {
                     const is_hovering = hitbox.contains(.{ dx_mouse, dy_mouse });
 
                     if (is_hovering) {
-                        // Try to claim down click state. Permits upgrading .canvas or .none -> .indicator
-                        _ = mouse.tryCaptureDown(.indicator, true);
+                        // Down-capture for .indicator is claimed centrally in mouse.processDownCaptures()
+                        // (via isHoveringFurnaceIndicator), so this frame's click_focus is already settled.
 
                         // Only change mouse appearance if current focus permits UI actions
                         if (mouse.click_focus.permits(.indicator)) {
@@ -165,17 +164,16 @@ pub fn isHoveringFurnaceIndicator() bool {
     const game = &memory.game;
     const player_coord = game.getPlayerCoord();
 
-    // Fetch camera interpolation time fraction
-    const dt = dw.chunks.current_dt;
-    const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dt);
+    // Zoom uses the raw fraction; position uses the +1.0-shifted fraction. See dw.chunks.current_dt.
+    const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dw.chunks.current_dt);
+    const cam_dt = dw.chunks.current_dt + 1.0;
 
-    // Compute interpolated camera positions
+    // Interpolate last_camera_pos toward camera_pos, matching the world's position curve
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
 
-    // Interpolate last_camera_pos to camera_pos now
-    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * dt);
-    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * dt);
+    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * cam_dt);
+    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * cam_dt);
 
     const mouse_pixel_pos = mouse.uv_position * dw.utils.Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
 

@@ -189,7 +189,7 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             const curr_item_sp_x = curr_offset[0] * 4096 + @as(i64, item.subpixel_x);
             const curr_item_sp_y = curr_offset[1] * 4096 + @as(i64, item.subpixel_y);
 
-            // Interpolate using the global dt from chunk rendering
+            // Position interpolation uses the +1.0-shifted fraction; zoom below uses the raw one. See dw.chunks.current_dt.
             const dt = dw.chunks.current_dt + 1.0;
             const interp_item_sp_x = @as(f64, @floatFromInt(prev_item_sp_x)) +
                 @as(f64, @floatFromInt(curr_item_sp_x - prev_item_sp_x)) * dt;
@@ -207,8 +207,8 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             const delta_x_sp = interp_item_sp_x - interp_cam_x;
             const delta_y_sp = interp_item_sp_y - interp_cam_y;
 
-            // do the same interpolation change
-            const interpolated_zoom = memory.game.camera_scale * std.math.pow(f64, memory.game.camera_scale_change, dt);
+            // Zoom bases on the current camera_scale, so it takes the RAW fraction (dt - 1.0), not the shifted one.
+            const interpolated_zoom = memory.game.camera_scale * std.math.pow(f64, memory.game.camera_scale_change, dt - 1.0);
 
             // Translate subpixels offset to screen space (1 pixel becomes 16 subpixels!)
             const screen_x: f32 = @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0));
@@ -493,7 +493,8 @@ pub fn drawInventory(time_diff: f64) void {
         mouse.requestCursorType(.grabbing);
     }
     if (hovered_inventory_sprite) |s| {
-        // Capture click down specifically for the inventory system
+        // .inventory down-capture is already claimed centrally in mouse.processDownCaptures(); this
+        // re-capture is idempotent for the focus but still carries the slot-selection side effect.
         if (mouse.tryCaptureDown(.inventory, true)) {
             selected_sprite = s;
             selected_row = getSelectedIndex() / 10;

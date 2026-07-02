@@ -84,17 +84,22 @@ struct TileOutput {
     @location(4) @interpolate(flat) edge_flags: u32,
     @location(5) @interpolate(flat) light: f32,
     @location(6) @interpolate(flat) hp: u32,
-    // seed1: murmurmix32'ed from raw seed data and HP mixed
+    // seed0: raw seed data and HP mixed
+    // seed1: murmurmix32'ed from seed0
     // seed2: murmurmix32'ed from seed1
     // seed3: murmurmix32'ed from seed2
     @location(7) @interpolate(flat) seeds: vec4u,
     @location(8) @interpolate(flat) lighting_color: u32,
     @location(9) @interpolate(flat) waterlogged: u32,
+    // base_id in bits 0-15, id_edge_flags (same-sprite edge flags) in bits 16-23
+    @location(10) @interpolate(flat) base_data: u32,
 };
 
 struct TileData {
     word0: u32,
     word1: u32,
+    word2: u32,
+    word3: u32,
 };
 
 // Unpacked definition of tile (also see Block in zig/memory.zig)
@@ -104,34 +109,36 @@ struct UnpackedTile {
     hp: u32,
     seeds: vec4u,
     edge_flags: u32,
+    base_id: u32,
+    id_edge_flags: u32,
     lighting_color: u32,
     waterlogged: u32,
 };
 
-// Unpacks 64-bit tile data into various properties.
+// Unpacks 128-bit tile data into various properties.
 // Said properties are arranged and explained in more detail in zig/memory.zig's Block struct.
 fn unpack_tile(data: TileData) -> UnpackedTile {
     var out: UnpackedTile;
 
     out.sprite_id = extractBits(data.word0, 0u, 16u);
     out.edge_flags = extractBits(data.word0, 16u, 8u);
-    // out.edge_flags = 0u; // test
-
-    // only apply to ores
-    let light_u = extractBits(data.word0, 24u, 8u);
-    // out.light = select(1.0, f32(light_u) / 3000.0 + 1.0, out.sprite_id >= ORE_START && out.sprite_id < GEM_START);
-
+    // out.edge_flags = 0u; // override test example
     out.light = f32(extractBits(data.word0, 24u, 8u)) / 255.0;
 
-    out.hp = extractBits(data.word1, 20u, 4u);
-    // hp takes up the top 4 bits perfectly, 24-bit total
-    let s0 = select(extractBits(data.word1, 0u, 24u), extractBits(data.word1, 0u, 20u), out.sprite_id >= DECOR_START);
+    // The HP is automatically folded into the 28-bit seed by accessing just this word!
+    out.hp = extractBits(data.word1, 0u, 4u);
+    let s0 = data.word1;
     let s1 = murmurmix32(s0);
     let s2 = murmurmix32(s1);
     let s3 = murmurmix32(s2);
     out.seeds = vec4u(s0, s1, s2, s3);
-    out.lighting_color = extractBits(data.word1, 24u, 3u);
-    out.waterlogged = extractBits(data.word1, 27u, 5u);
+
+    out.base_id = extractBits(data.word2, 0u, 16u);
+    out.id_edge_flags = extractBits(data.word2, 16u, 8u);
+    out.lighting_color = extractBits(data.word2, 24u, 8u);
+
+    out.waterlogged = extractBits(data.word3, 0u, 8u);
+    // remaining 24 bits unused
     return out;
 }
 
@@ -198,6 +205,7 @@ fn vs_tile(
     out.local_uv = local_pos;
     out.lighting_color = tile.lighting_color;
     out.waterlogged = tile.waterlogged;
+    out.base_data = tile.base_id | (tile.id_edge_flags << 16u);
     return out;
 }
 
@@ -264,7 +272,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     let safe_local_uv = clamp(in.local_uv, vec2f(TEXTURE_BLEEDING_EPSILON), vec2f(1.0 - TEXTURE_BLEEDING_EPSILON));
 
     if in.edge_flags != 0xFFu && !is_decor {
-        erode_mask = erosion(in.local_uv, in.edge_flags, in.seeds[2], in.seeds[3]);
+        erode_mask = erosion(in.local_uv, in.edge_flags, in.seeds[2], in.seeds[3], 0u);
         if erode_mask == 0u {
             if in.waterlogged != 0u {
                 let is_water_top = (in.waterlogged & 1u) != 0u;
@@ -338,17 +346,24 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var tex_color = textureSampleLevel(sprite_atlas, pixel_sampler, final_uv, 0.0);
     tex_color = vec4f(srgb_to_linear(tex_color.rgb) * hp_darkness_mult, tex_color.a);
 
-    // ore sampling pixel logic
+    let base_id = extractBits(in.base_data, 0u, 16u);
+    let id_edge_flags = extractBits(in.base_data, 16u, 8u);
+
+    // gem sampling pixel logic
     if is_gem {
         // 8 masks, OLD: first 4 for gems, second 4 for ore, NEW: all 8 for gems only
         // let mask_variation = extractBits(seed, 15u, 2u) + select(4u, 0u, is_gem);
-        let mask_variation = extractBits(in.seeds[0], 0u, 3u);
+
+        // First 4 bits in seeds[0] are for HP, do NOT trust
+        let mask_variation = extractBits(in.seeds[0], 4u, 3u);
         let mask_id = GEM_MASK_START + mask_variation;
 
-        let flip = vec2f(vec2u(extractBits(in.seeds[0], 3u, 1u), extractBits(in.seeds[0], 4u, 1u)));
+        let flip = vec2f(vec2u(extractBits(in.seeds[0], 7u, 1u), extractBits(in.seeds[0], 8u, 1u)));
+
         let flipped_uv = mix(in.local_uv, 1.0 - in.local_uv, flip);
-        // Use 2x2 grid logic for the background stone's ID
-        let bg_id = STONE_START + (((in.tile_coords.y & 1u) << 1u) | (in.tile_coords.x & 1u));
+        // Background is the block's real underlay (variation-resolved in Zig); fall back to the old
+        // 2x2 plain-stone parity for gems with no base_id (e.g. player-placed ones).
+        let bg_id = select(STONE_START + (((in.tile_coords.y & 1u) << 1u) | (in.tile_coords.x & 1u)), base_id, base_id != 0u);
 
         // Calculate UVs for the background stone
         let bg_grid = vec2f(f32(bg_id % TILES_PER_ROW_U), f32(bg_id / TILES_PER_ROW_U));
@@ -374,6 +389,35 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
             tex_mask.a + u_dist
         );
         tex_color = vec4f(final_rgb_ore, tex_color.a);
+    }
+
+    var ore_darkening: f32 = 0.0;
+    var ore_chroma_mult: f32 = 1.0;
+    var ore_light_mult: f32 = 1.0;
+    var base_brightening: f32 = 0.0;
+
+    if is_ore && base_id != 0u {
+        // Evaluate shrunk erosion (passing 1u) which handles the 1px shrinkage of edges and corners symmetrically
+        var ore_mask = erosion(in.local_uv, id_edge_flags, in.seeds[2], in.seeds[3], 1u);
+
+        if ore_mask == 0u {
+            // Rebuild tex_color from the base tile directly before OKLCH conversion
+            let base_grid = vec2f(f32(base_id % TILES_PER_ROW_U), f32(base_id / TILES_PER_ROW_U));
+            let base_uv = (base_grid + safe_local_uv) * vec2f(SPRITE_W, SPRITE_H);
+            let tex_base = textureSampleLevel(sprite_atlas, pixel_sampler, base_uv, 0.0);
+            tex_color = vec4f(srgb_to_linear(tex_base.rgb) * hp_darkness_mult, tex_color.a);
+
+            // Now, calculate proximity to the unconnected tile edges, or the ore boundary
+            let width_bonus = -0.22 + f32(extractBits(in.seeds[3], 24u, 3u)) / 128.0;
+            let ore_edge_proximity = calculate_edge_darkening(in.local_uv, id_edge_flags, in.seeds[2], width_bonus, 0.1);
+            base_brightening = ore_edge_proximity * 0.15; // subtle rim-light highlight on the base sprite near the ore boundary
+        } else {
+            // Confine darkening to a thin band near unconnected edges so the interior stays bright.
+            let width_bonus = -0.22 + f32(extractBits(in.seeds[3], 24u, 3u)) / 128.0;
+            ore_darkening = calculate_edge_darkening(in.local_uv, id_edge_flags, in.seeds[2], width_bonus, 0.1);
+            ore_light_mult = (1.0 - ore_darkening) * select(1.0, 0.7, ore_mask == 2u) * 1.1; // 1.1: brighter interior by default
+            ore_chroma_mult = (1.0 + ore_darkening * 0.15) * select(1.0, 1.1, ore_mask == 2u);
+        }
     }
 
     var wire_color = vec4f(0.0);
@@ -407,6 +451,12 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var lab = linear_srgb_to_oklab(tex_color.rgb);
     var lch = oklab_to_oklch(lab);
 
+    // Apply pre-calculated ore modifications to OKLCH
+    if is_ore && base_id != 0u {
+        lch.x *= ore_light_mult * (1.0 + base_brightening);
+        lch.y *= ore_chroma_mult;
+    }
+
     // We use 9 out of the 28 seed bits here
     let lab_nudge_bits = vec3u(
         extractBits(seed, 0u, 3u), // shift lightness (0-1)
@@ -428,7 +478,7 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var final_rgb = vec3f(0.0);
     if in.edge_flags != 0xFFu {
         // Add the edge darkening and base light value, with the function using bits 10-16
-        let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, seed);
+        let darkening = calculate_edge_darkening(in.local_uv, in.edge_flags, seed, 0.0, 0.0);
         lch.x *= (1.0 - darkening);
 
         if erode_mask == 2u {
@@ -440,8 +490,8 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     lab = oklch_to_oklab(lch);
     if (in.lighting_color & 1) == 1 {
         // warmth color shift
-        lab.y += 0.015; // +a channel (more red/magenta)
-        lab.z += 0.04; // +b channel (more yellow)
+        lab.y += 0.024; // +a channel (more red/magenta)
+        lab.z += 0.06; // +b channel (more yellow)
 
         // slightly boost brightness
         // lab.x *= 1.05;
@@ -482,9 +532,10 @@ fn murmurmix32(number: u32) -> u32 {
 }
 
 // Complex logic that returns 0u if a pixel should be TRANSPARENT ("eroded"), 1u for NORMAL, or 2u for BORDER (darkened).
-fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { // uv of sprite, edge flags, and mixed seeds
-    let px = u32(local_uv.x * TILE_SIZE);
-    let py = u32(local_uv.y * TILE_SIZE);
+// Border radius is increased if shrink equals 1.
+fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32, shrink: u32) -> u32 { // uv of sprite, edge flags, mixed seeds, and erosion shrink amount
+    let px = u32(clamp(local_uv.x, 0.0, 0.9999) * TILE_SIZE);
+    let py = u32(clamp(local_uv.y, 0.0, 0.9999) * TILE_SIZE);
 
     let has_top = (edge_flags & EDGE_TOP) != 0u;
     let has_bottom = (edge_flags & EDGE_BOTTOM) != 0u;
@@ -496,10 +547,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     let has_br = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = 3u + extractBits(seed3, 0u, 2u);
-    let r_tr = 3u + extractBits(seed3, 2u, 2u);
-    let r_bl = 3u + extractBits(seed3, 4u, 2u);
-    let r_br = 3u + extractBits(seed3, 6u, 2u);
+    let r_tl = select(4u, 7u, shrink == 1u) + extractBits(seed3, 0u, 2u);
+    let r_tr = select(4u, 7u, shrink == 1u) + extractBits(seed3, 2u, 2u);
+    let r_bl = select(4u, 7u, shrink == 1u) + extractBits(seed3, 4u, 2u);
+    let r_br = select(4u, 7u, shrink == 1u) + extractBits(seed3, 6u, 2u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 
@@ -568,6 +619,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         if px >= notch_pos && px < notch_pos + notch_width {
             if notch_dir == 0u { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
+        depth += shrink;
 
         // Only apply straight edge outside the corner rounding zones
         let left_safe = select(0u, r_tl, !has_left);
@@ -590,6 +642,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         if px >= notch_pos && px < notch_pos + notch_width {
             if notch_dir == 0u { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
+        depth += shrink;
 
         let left_safe = select(0u, r_bl, !has_left);
         let right_safe = select(16u, 16u - r_br, !has_right);
@@ -611,6 +664,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         if py >= notch_pos && py < notch_pos + notch_width {
             if notch_dir == 0u { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
+        depth += shrink;
 
         let top_safe = select(0u, r_tl, !has_top);
         let bottom_safe = select(16u, 16u - r_bl, !has_bottom);
@@ -632,6 +686,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
         if py >= notch_pos && py < notch_pos + notch_width {
             if notch_dir == 0u { depth += 1u; } else { depth = max(depth, 1u) - 1u; }
         }
+        depth += shrink;
 
         let top_safe = select(0u, r_tr, !has_top);
         let bottom_safe = select(16u, 16u - r_br, !has_bottom);
@@ -645,7 +700,7 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32) -> u32 { //
     // Inner corners (no diagonal neighbor)
 
     if !has_tl && has_top && has_left {
-        let r = 1u + extractBits(seed3, 8u, 2u); // 1-4 pixel radius
+        let r = 1u + extractBits(seed3, 8u, 2u); // 1-4 pixel radius (shrink not added)
         if px < r && py < r {
             let dx = px + 1u; // +1, so the circle center is at (-0.5, -0.5) effectively
             let dy = py + 1u;
@@ -704,9 +759,11 @@ fn popcount8(v: u32) -> u32 {
 }
 
 // Calculates edge darkening procedurally based on flags calculated in Zig.
-fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32) -> f32 {
-    let edge_width = 0.40 + f32(extractBits(seed, 9u, 3u)) / 32.0;
-    let edge_strength = 0.4 + f32(extractBits(seed, 12u, 3u)) / 32.0;
+// `width_bonus` widens the darkening band inward and `strength_bonus` deepens the peak darkening
+// (both 0.0 for normal terrain); ores pass seed-derived values. See ORE_EDGE_WIDTH/STRENGTH_BONUS.
+fn calculate_edge_darkening(local_uv: vec2f, edge_flags: u32, seed: u32, width_bonus: f32, strength_bonus: f32) -> f32 {
+    let edge_width = 0.40 + f32(extractBits(seed, 9u, 3u)) / 32.0 + width_bonus;
+    let edge_strength = 0.4 + f32(extractBits(seed, 12u, 3u)) / 32.0 + strength_bonus;
 
     let dists = vec4f(local_uv.y, 1.0 - local_uv.y, local_uv.x, 1.0 - local_uv.x);
     let edge_masks = vec4u(edge_flags) & vec4u(EDGE_TOP, EDGE_BOTTOM, EDGE_LEFT, EDGE_RIGHT);
@@ -848,8 +905,8 @@ fn oklab_water(sprite_rgb: vec3f, water_rgb: vec3f, weight: f32) -> vec3f {
 
 // FBM background logic
 
-// How strongly the background tracks camera zoom. 1.0 = locked 1:1 to the world (old behavior); lower
-// values make the background zoom slower than the camera for a parallax-depth feel, pivoting at zoom 1.0.
+// How strongly the background tracks camera zoom. 1.0 = locked 1:1 to the world;
+// lower values make the background zoom slower than the camera for a parallax-depth feel, pivoting at zoom 1.0.
 // Kept < 1 so far-out custom camera modes barely zoom the background.
 const BG_ZOOM_PARALLAX: f32 = 0.35;
 
@@ -896,8 +953,12 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let absolute_camera = scene.grid_origin.zw;
     let t = scene.time;
 
+    // Scale down coordinates by 0.5 to make the background appear twice as large.
+    let screen_offset_scaled = in.screen_offset * 0.5;
+    let absolute_camera_scaled = absolute_camera * 0.5;
+
     // The farthest background layer (64x "slower")
-    let st1 = (in.screen_offset + absolute_camera * 0.015625) * base_scale;
+    let st1 = (screen_offset_scaled + absolute_camera_scaled * 0.015625) * base_scale;
     let angle1 = (t / 600.0) * TAU; // 10-minute cycle!
     let drift1 = vec2f(cos(angle1), sin(angle1)) * 0.5;
 
@@ -914,7 +975,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let layer1_rgb = layer1_intensity * color1;
 
     // Far background layer (32x "slower")
-    let st2 = (in.screen_offset + absolute_camera * 0.03125) * base_scale;
+    let st2 = (screen_offset_scaled + absolute_camera_scaled * 0.03125) * base_scale;
     let angle2 = (t / 180.0) * TAU; // 3-minute cycle
     let drift2_x = vec2f(cos(angle2), sin(angle2)) * 1.0;
     let drift2_y = vec2f(sin(angle2), -cos(angle2)) * 0.8;
@@ -935,7 +996,7 @@ fn fs_background(in: BackgroundOutput) -> @location(0) vec4f {
     let layer2_rgb = layer2_intensity * color2;
 
     // Middle background layer (8x "slower")
-    let st3 = (in.screen_offset + absolute_camera * 0.125) * base_scale;
+    let st3 = (screen_offset_scaled + absolute_camera_scaled * 0.125) * base_scale;
     let angle3 = (t / 60.0) * TAU; // only 60s
     let drift3_x = vec2f(cos(angle3), sin(angle3)) * 1.8;
     let drift3_y = vec2f(sin(angle3), -cos(angle3)) * 1.5;

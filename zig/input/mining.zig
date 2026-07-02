@@ -40,9 +40,6 @@ pub var pickaxe_type: PickaxeType = .stone;
 
 /// Updates mining and placing blocks. Should be called from `tick()` inside root.zig.
 pub fn handleMiningAndPlacing(logic_speed: f64) void {
-    _ = mouse.tryCaptureDown(.inventory, inventory.getHoveredInventorySprite() != null);
-    _ = mouse.tryCaptureDown(.indicator, dw.indicators.isHoveringFurnaceIndicator());
-
     mouse.updateMouseLocation(); // update to get correct mouse position data
 
     if (mouse.block_position_changed) {
@@ -85,7 +82,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
             const strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
 
             if (inventory.isInCreative() or (strength != std.math.maxInt(u64) and mining_progress >= strength) and
-                (!block.isLiquid() or block.hp == 15))
+                (!block.isLiquid() or block.hp == memory.Block.MAX_HP))
             {
                 mining_progress = 0;
                 // sprite type being none check also prevents unneeded memory waste with data update
@@ -146,6 +143,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                                     mouse.mouse_block_x,
                                     mouse.mouse_block_y,
                                     sprite_type,
+                                    block, // pre-mined block seeds the ore's underlay (see modifyBlockType)
                                 )) {
                                     // If TRUE, then the block was NOT successfully modified. Revert selection if so.
                                     // This fixes funny issues involving deselection due to invalid placement
@@ -172,6 +170,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     mouse.mouse_block_x,
                     mouse.mouse_block_y,
                     sprite_type,
+                    block, // empty here (placing into air), so ores fall back to a plain-stone underlay
                 )) {
                     // If TRUE, then the block was NOT successfully modified. Revert selection if so.
                     // This fixes funny issues involving instant deselection with invalid placement

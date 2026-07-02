@@ -128,6 +128,25 @@ pub inline fn isClicked(category: ClickFocus, is_hovered: bool) bool {
     return just_mouse_up and released_focus == category and is_hovered;
 }
 
+/// Handles a fresh pointerdown across every interactive UI layer BEFORE world mining runs.
+/// Must be called once per tick, ahead of `mining.handleMiningAndPlacing()` (see `state/tick.zig`).
+///
+/// `handleMouse()` optimistically sets `click_focus = .canvas` on pointerdown, so without this pass the first frame of a click can be problematic,
+/// Categories are visited in enum order (highest priority first); the first hovered layer claims the click, matching `ClickFocus` precedence.
+pub fn processDownCaptures() void {
+    if (!just_mouse_down) return;
+    inline for (@typeInfo(ClickFocus).@"enum".fields) |field| {
+        switch (@as(ClickFocus, @enumFromInt(field.value))) {
+            // not interactive layers: .none is idle, .canvas is the fallback owner set on pointerdown
+            .none, .canvas => {},
+            .indicator => _ = tryCaptureDown(.indicator, dw.indicators.isHoveringFurnaceIndicator()),
+            .inventory => _ = tryCaptureDown(.inventory, inventory.getHoveredInventorySprite() != null),
+            .crafting => _ = tryCaptureDown(.crafting, @import("../menus/furnace.zig").isHoveringOnMenu()),
+            // intentionally non-exhaustive to catch errors
+        }
+    }
+}
+
 /// Handles mouse logic, where `x` and `y` values are between 0-1, acting like a UV over the whole canvas from HTML.
 /// Action 0 (LEFT CLICK) : pointermove
 /// Action 1 (LEFT CLICK) : pointerdown
@@ -148,6 +167,7 @@ pub fn handleMouse(x: f64, y: f64, action: u32) void {
         }
         click_focus = .none;
     }
+    processDownCaptures();
 }
 
 /// Resets transient frame transition flags. Called at the end of `updateEntities()`.

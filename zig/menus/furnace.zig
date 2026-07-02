@@ -25,6 +25,28 @@ const FRAMES_PER_STEP = 2;
 /// Total ticks to smelt one loaded batch.
 const TOTAL_PROGRESS = SMELTING_STEPS * FRAMES_PER_STEP;
 
+/// Menu panel placement and size in UV space (top-left aligned).
+/// Single-sourced so `draw()` and the `isHoveringMenu()` hit test can never drift apart.
+const MENU_POS: Vec2f32 = .{ 0.02, 0.75 };
+const MENU_SIZE: Vec2f32 = toSize(0.3) * Vec2f32{ 1.0, 0.5 };
+
+/// Round-rect hitbox covering the whole menu panel, in viewport pixels.
+fn menuHitbox() dw.geometry.Shape {
+    const px_scale: Vec2f = .{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+    return dw.geometry.Shape.roundSquare(
+        .{ @as(f64, MENU_POS[0]) * px_scale[0], @as(f64, MENU_POS[1]) * px_scale[1] },
+        @as(f64, MENU_SIZE[0]) * px_scale[0],
+        0.05,
+    );
+}
+
+/// Whether the cursor is over a menu panel (such as furnace smelting). Always false while the menu is closed.
+/// Used by `mouse.processDownCaptures()` to keep pointerdown from falling through to the world.
+pub fn isHoveringOnMenu() bool {
+    if (!dw.indicators.menus.furnace) return false;
+    return menuHitbox().contains(mouse.uv_position * Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT });
+}
+
 /// Ore currently loaded in the input slot (`.none` if empty).
 var loaded_ore: Sprite = .none;
 /// How many ore units are loaded.
@@ -193,8 +215,8 @@ pub fn draw() void {
 
     const px_scale: Vec2f = .{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
 
-    const menu_pos: Vec2f32 = .{ 0.02, 0.75 };
-    const menu_size: Vec2f32 = toSize(0.3) * Vec2f32{ 1.0, 0.5 };
+    const menu_pos = MENU_POS;
+    const menu_size = MENU_SIZE;
     const menu_center: Vec2f32 = menu_pos + menu_size / Vec2f32{ 2.0, 2.0 };
 
     // Slot centers, in UV and in viewport pixels.
@@ -207,20 +229,13 @@ pub fn draw() void {
     const ITEM_SIZE: f32 = 16.0;
 
     const mouse_px: Vec2f = mouse.uv_position * px_scale;
-    const menu_hitbox = dw.geometry.Shape.roundSquare(
-        .{ @as(f64, menu_pos[0]) * px_scale[0], @as(f64, menu_pos[1]) * px_scale[1] },
-        @as(f64, menu_size[0]) * px_scale[0],
-        0.05,
-    );
     const input_hitbox = slotHitbox(input_px, SLOT_SIZE);
     const output_hitbox = slotHitbox(output_px, SLOT_SIZE);
 
-    const over_menu = menu_hitbox.contains(mouse_px);
+    // .crafting down-capture is claimed centrally in mouse.processDownCaptures() (via isHoveringMenu),
+    // so by here click_focus already reflects whether this click started on the menu panel.
     const over_input = input_hitbox.contains(mouse_px);
     const over_output = output_hitbox.contains(mouse_px);
-
-    // Claim the menu region so clicks don't fall through to the world (mining etc.).
-    if (over_menu) _ = mouse.tryCaptureDown(.crafting, true);
 
     // Drop: a drag that started in the inventory and released over the input slot loads the ore.
     if (over_input and mouse.just_mouse_up and mouse.released_focus == .inventory and inventory.selected_sprite.isOre()) {

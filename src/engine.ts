@@ -287,7 +287,8 @@ export class GameEngine {
         // Read metadata from scratch_properties, matching from prepare_visible_data
         const tileDataWidth = Number(this.getScratchProperty(0));
         const tileDataHeight = Number(this.getScratchProperty(1));
-        const u32Count = tileDataWidth * tileDataHeight * 2;
+        // 4 u32 words per tile (128-bit Block; see zig/memory.zig)
+        const u32Count = tileDataWidth * tileDataHeight * 4;
         this.tileMapWidth = tileDataWidth;
         this.tileMapHeight = tileDataHeight;
 

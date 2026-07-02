@@ -39,11 +39,14 @@ pub fn init() void {
         alreadyStarted = true;
         logger.log(@src(), "Hello from Zig!", .{});
     } else {
-        // TODO: continue to implement full reset logic, and eventually test this
-        @import("menus/furnace.zig").reset();
-        dw.water.reset();
         if (!world.arena.reset(.retain_capacity)) @panic("Arena allocator reset failed!");
+
+        @import("menus/furnace.zig").reset();
         world.SimBuffer.reset();
+        world.mod_store.clear();
+        dw.water.reset();
+        dw.lighting.setup();
+
         memory.game = .{};
         world.clearCaches(true);
     }

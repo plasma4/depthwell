@@ -1,5 +1,6 @@
 #!/bin/bash
 npm run build
+zig build -Doptimize=ReleaseSafe
 RESULT=$?
 if [ $RESULT -ne 0 ]; then
     echo "Error: Build for NPM failed; commit stopped."

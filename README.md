@@ -26,12 +26,12 @@ For inventory hotkeys:
 
 To build `node_modules`, run `npm install`.
 
-Run `zig build` to build Zig code and automatically update detect `main.aseprite` changes, `zig test "zig/root.zig"` to run (all) tests, and `zig build -Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
+Run `zig build` to build Zig code and automatically detect `main.aseprite` changes, `zig test "zig/root.zig"` to run (all) tests, and `zig build -Dgen-enums` to simultaneously build and generate `enums.ts` if changes were made. (See `build.zig` for details on compiling a final version.)
 
 Useful variables to customize include `CONFIG` in `src/main.ts`, `engine.wireframeOpacity`, `engine.baseSpeed`, and `zig/state/player.zig` config options.
-When building for production with Vite (using `npm run build` instead of `npm run dev`), use `zig build -Dgen-enums -Dwasm-opt` (with WASM optimizations from Binaryen).
 
-For a final version, edit `SHADER_SOURCE` in `engineMaker.ts` to `"./shader.wgsl"` temporarily (without the `?raw` property) to actually compress `shader.wgsl`.
+When building for production with Vite (using `npm run build` instead of `npm run dev`), use `zig build -Dgen-enums -Dwasm-opt` (with WASM optimizations from Binaryen).
+Alternatively, use and modify `.githooks/pre-commit`.
 
 Currently, Depthwell does not utilize web worker technology, so custom headers are not necessary (and this means it's fairly easily to save the entire game as a local asset folder or file, _after building_).
 
@@ -48,7 +48,7 @@ chmod +x .githooks/pre-commit
 
 ### Architecture details
 
-Game is created using Zig and WebGPU, and meant to be web-first. A final product that uses Mach Engine for native building is planned, but _web will always be free and recieve updates_. The internal viewport is 480x270 (but it automatically scales with the DPI/base resolution). Functions are exported from `root.zig`.
+Game is created using Zig and WebGPU, and meant to be web-first. A final product that uses Mach Engine for native building is planned, but _web will always be free and receive updates_. The internal viewport is 480x270 (but it automatically scales with the DPI/base resolution). Functions are exported from `root.zig`.
 
 By using `ChaCha12` and `Blake3` and a seed with 1-100 `a-z` characters, the game can generate over `10^140` possible maps, with each map containing a very large depth limit that allows for near-infinite exploration. Performance-sensitive areas are generated using `FastHash`, which uses 128-bit seed vectors at a time.
 
@@ -59,9 +59,9 @@ Here are the basic terms (note that there are, for example, 16 possible subpixel
 - 1 Pixel = 16 Subpixels
 - 1 Block = 16 Pixels
 - 1 Chunk = 16 Blocks = 256 Pixels = 4,096 Subpixels
-- **Depth**: How "deep" the player is. Depth starts at $2$. Each time you enter a portal, the world zooms in by $4\text{x}$, making everything look 4 times larger, and the depth increases by 1.
+- **Depth**: How "deep" the player is. Depth starts at $4$ (see `STARTING_ZOOM_TIMES`). Each time you enter a portal, the world zooms in by $4\text{x}$, making everything look 4 times larger, and the depth increases by 1.
 - **$D$**: Shorthand for the current depth. You can think of depth $D-1$ as the coordinate space you occupied right _before_ entering a portal.
-- **The Event Horizon ($H$)**: Shorthand for $D-32$. When you are deep in the fractal ($D \ge 34$), the game stops tracking individual blocks shallower than 32 levels above you, replacing them with a simplified 4x4 background grid. (This is not necessarily related to game mechanics but instead internal.)
+- **The Event Horizon ($H$)**: Shorthand for $D-32$. When you are deep in the fractal ($D \ge 32 + 4$), the game stops tracking individual blocks shallower than 32 levels above you, replacing them with a simplified 4x4 background grid. (This is not necessarily related to game mechanics but instead internal.)
 
 The player starts off at `STARTING_ZOOM_TIMES`, which defaults to 4. So, $D$ starts off as 4 and $D-1$ doesn't exist until $D$ increases further.
 
@@ -131,34 +131,53 @@ But wait, what is a block? Here is `zig/memory.zig`:
 
 ```zig
 /// Contains a `Sprite` id and various packed properties; ready to be sent to the GPU or stored in caches.
-pub const Block = packed struct(u64) {
+/// Field order keeps every field inside one aligned 32-bit word so the shader (`unpack_tile()` in src/shader.wgsl) extracts each with a single per-word `extractBits()`:
+/// - word0: `id` | `edge_flags` | `light`
+/// - word1: `hp` | `seed` (the shader reads the whole word as seed0, so `hp` is folded into the seed for free)
+/// - word2: `base_id` | `id_edge_flags` | `lighting_color`
+/// - word3: `waterlogged` | `_pad`
+pub const Block = packed struct(u128) {
     /// A block with an `id` of `none`.
     pub const empty: Block = .makeBasicBlock(.none, 0);
 
-    /// Internal sprite ID.
+    /// Maximum value for `hp`. `hp` is a `u4` (sharing word1's low bits with `seed`) and MUST stay 0-15:
+    /// the atlas has exactly 16 HP masks and the water volume simulation assumes 0-15.
+    pub const MAX_HP: u4 = 15;
+
+    /// The primary sprite: the overlay/block itself (such as the ore rather than the block beneath).
     id: Sprite,
-    /// Edge flags: which neighbors are air (for edge-darkening and culling).
+    /// Edge flags: explains details for neighbors (for both shader and procedural generation).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
     /// See types/types.zig for more details on correspondence.
     ///
-    /// A 1 bit for a solid block ordinarily indicates an edge with an adjacent solid block.
-    /// A 1 bit for a liquid block means that there is either solid or liquid adjacent.
-    /// Edge flags are reset to 255 for decorations (non-blocks or liquids) after a decorations pass.
+    /// - A 1 bit for a solid block ordinarily indicates an edge with an adjacent solid block.
+    /// - A 1 bit for a liquid block means that there is either solid or liquid adjacent.
+    /// Edge flags must be reset to 255 for decorations (non-blocks or liquids) after a final decoration pass.
     edge_flags: u8,
     /// The brightness of the tile.
     light: u8,
 
-    /// Per-block seed for procedural variation in the shader.
-    /// Any seed value here should be considered poor and insecure.
-    seed: u20,
-    /// Dual-purpose field depending on block type:
+    /// Dual-purpose field depending on block type (range 0-15, see `MAX_HP`):
     /// - For solid blocks: how "mined" the block is (0 means unmined, 15 is most mined).
     /// - For liquid (water) and decoration blocks: the water volume level from 0 to 15.
     hp: u4,
+    /// Per-block seed for procedural variation in the shader.
+    /// Any seed value here should be considered poor and insecure.
+    seed: u28,
 
-    /// Padding to align fields.
-    padding: u3 = 0,
-    /// Dual-purpose directional waterlogging field:
+    /// The underlying background tile behind an overlay sprite (e.g. the stone an ore/gem grew inside).
+    /// `.none` means "no underlay"; the shader then renders `id` alone (the common case for non-ore/gem blocks).
+    base_id: Sprite = .none,
+    /// Same-sprite edge flags (same bit order as `edge_flags`): a bit is set when the neighbor's `id` equals this block's `id`.
+    /// Drives the ore overlay mask so a vein reads as connected only to itself.
+    /// Follows the same 0xFF reset rule as `edge_flags` for decorations/air.
+    id_edge_flags: u8 = 0,
+    /// Type of color lighting should use.
+    /// - 0: default white
+    /// - 1: warm orange glow
+    lighting_color: u8 = 0,
+
+    /// Dual-purpose directional waterlogging field (bits 0-4 used):
     /// - For liquid blocks: represents adjacent water heights/volumes.
     /// - For non-liquid blocks: bits represent surrounding waterlogged cardinal directions.
     ///   - bit 0: top (liquid block directly above)
@@ -166,7 +185,9 @@ pub const Block = packed struct(u64) {
     ///   - bit 2: whether ripple occurs from the top (top ripple cutoff)
     ///   - bit 3: left (liquid block directly to the left)
     ///   - bit 4: right (liquid block directly to the right)
-    waterlogged: u5 = 0,
+    waterlogged: u8 = 0,
+    /// Unused portion of block data.
+    _pad: u24 = 0,
     ...
 }
 ```
@@ -175,7 +196,7 @@ Well, now you know what a block contains.
 
 The most complex part of Depthwell's architecture, though, is ensuring that a hole mined at Depth 0 results in an empty 4-by-4 region at Depth 1, 16-by-16 at Depth 2, and so on. This is handled through a neat little **lineage check** during chunk generation.
 
-When the generator builds a chunk at Depth $D$, it iteratively traverses backward through the prefix stack from $D-1$ down to $D-32$. ($D$ is larger the "more zoomed in" the game is, and starts at $2$. It represents how many `u2`s need to represent where a chunk is, to put it another way.)
+When the generator builds a chunk at Depth $D$, it iteratively traverses backward through the prefix stack from $D-1$ down to $D-32$. ($D$ is larger the "more zoomed in" the game is, and starts at $4$. It represents how many `u2`s need to represent where a chunk is, to put it another way.)
 
 For each ancestor level, it traces upward and queries `ModificationStore` or evaluates `AncestorCache`: _"Was the parent block at this specific path modified?"_ At $D-32$ (the event horizon limit), chunk-level details are replaced by checking the global `QuadCache` 4x4 material grid. Any properties inherited directly from parents influence chunk structures appropriately.
 
@@ -193,7 +214,7 @@ Generating a world that is statistically infinite yet perfectly consistent acros
 
 In the earlier sections, I mentioned `ChaCha12` for its cryptographic strength. However, calling a full ChaCha block 256 times for every single chunk is (who knew) incredibly slow. For the heavy lifting of 2D noise, Depthwell uses a custom **stateless multiply-unrolled-multiply mixer** called `FastHash` that uses some magic numbers from Wyhash.
 
-By using `Vec2f` vectors and bit-folding, `FastHash.hash_2d` provides enough variance for smooth terrain while being significantly faster than a standard PRNG.
+By using `Vec2f` vectors and bit-folding, `FastHash.hash2d()` provides enough variance for smooth terrain while being significantly faster than a standard PRNG.
 
 #### Terrain and biomes
 
@@ -215,7 +236,7 @@ Based on the moisture and density values, a specific block type is chosen such a
 
 Once the stone is placed, the generator makes a second pass to seed ores. This pass only triggers for "foundation" blocks (stone variations). We run another Worley pass with much smaller cells to create "veins."
 
-Using the `select_sprite` helper, we branch the logic:
+Using the `selectSprite()` helper, we branch the logic:
 
 - First, copper, iron, silver, and gold are dispersed based on the density of the specific Worley cell.
 - The amethyst, sapphire, emerald, and ruby gems use a third `FastHash` pass to check against `base_gem_odds`. If the odds hit, a specific gem is selected based on a third Worley value.
@@ -443,7 +464,7 @@ Entering a portal shifts a bunch of data around, particularly the cache and all 
 - The active suffix/quadrant ID are reset (or "rebased"), in a way that allows for the _maximum_ amount of coverable distance before a crash. If the player ever travels to a coordinate or the game accesses a chunk that cannot be represented with either of the four quadrants, the **game will crash**. Specifically, the logic explaining the coordinate system mentioned the concepts of "below average" and "above average", and the idea is basically to zoom in in such a way that the quad-cache maximizes the amount of distance you'd have to travel in any quadrant before you're out-of-bounds. In practice, this is in the _quintillions of chunks_ precisely because of this rebasing implementation.
 - The `SimBuffer` is purged, and the world re-generates at Depth $D+1$ using the inherited properties of the portal block.
 
-See the big chunk of comments in `push_layer` for specific details on zoom logic. Since the game has hard bounds, instead of looping, there's quite a bit of extra logic here than you might expect.
+See the big chunk of comments in `pushLayer()` for specific details on zoom logic. Since the game has hard bounds, instead of looping, there's quite a bit of extra logic here than you might expect.
 
 #### More rebasing explanation
 
@@ -486,6 +507,27 @@ This system prevents frame spikes (as you may normally have to generate a whole 
 
 Chunks that get accessed from the `SimBuffer` do not update the `ChunkCache`, although chunks generated for the purpose of being placed into `SimBuffer` _do_ get placed into the cache.
 
+#### Light system
+
+Lighting is computed on the CPU every frame in `zig/render/lighting.zig`, right after the visible block buffer is assembled and before it is handed to the GPU. Every block receives a `light` value from 0 to 255, and the WGSL shader multiplies that block's OKLAB lightness by `light / 255` (so 0 is pitch black and 255 is full brightness). A companion field, `lighting_color`, records whether the "winning" (strongest) light is warm/orange (fire) or neutral white.
+
+Instead of an additive light map or a naive FIFO queue, Depthwell uses **Dial's algorithm (bucketed Dijkstra)** to propagate light. The system maintains a "gravity shelf" of bucket lists, one for each possible brightness level from the maximum source strength (320) down to ambient (0).
+By processing these buckets in strictly descending order (brightest to dimmest), the flood guarantees that each cell is finalized at its brightest possible value on its first visit.
+
+How much light is lost per step (the "falloff") depends on what it passes through:
+
+- **Air** loses the least (`AIR_FALLOFF = 10`), so light carries far through open space.
+- **Solid** blocks lose the most (`SOLID_FALLOFF = 26`), but the cost scales with how mined the block is (its `hp`): a nearly-broken block lets through almost as much light as air.
+- **Liquid** sits in between (`LIQUID_FALLOFF = 18`), and a waterlogged block is capped so it never blocks light more than water would.
+
+A diagonal step costs `sqrt(2)` times the orthogonal falloff (approximated with integer math), turning the square 8-neighbor grid into a mostly circular-looking falloff.
+
+Light sources include the player (a bright, moving source seeded from their continuous sub-pixel position across the 2x2 blocks they overlap), campfires and furnaces (warm/orange), and glowing plates.
+
+Because a source just off-screen can still spill onto visible blocks, the block buffer is padded by `CHUNK_MARGIN` (calculated at compile-time) so that the BFS flood is exactly wide enough to catch the furthest reachable bleed.
+
+Internally, the flood tracks warm and neutral light as two channels packed into one `u32`, so an orange campfire glow and a white plate glow can coexist and mix correctly; the final `lighting_color` is simply whichever channel wins at that block.
+
 #### Memory transfer
 
 The interface between the TypeScript engine and the Zig core is managed via a pre-planned memory layout:
@@ -505,14 +547,9 @@ Compared to using something like the native JS canvas manipulation, the use of G
 
 While Zig handles the logic, the visual fidelity of Depthwell is achieved through high-precision WGSL shaders. To maintain high performance on integrated GPUs while allowing for infinite variety, the shader employs several "expensive-looking" tricks that are actually quite cheap.
 
-#### Bit-packed tiles
+#### Seeding logic
 
-To minimize the data sent to the GPU, each tile is packed into two 32-bit unsigned integers (`word0` and `word1`). The shader uses `extractBits` to reconstruct the `UnpackedTile` struct on the fly:
-
-- `word0`: Contains the sprite ID/type (16 bits), edge flags (8 bits), and light value (8 bits).
-- `word1`: Contains the HP/mined state (4 bits) and a 20-bit procedural seed, as well as water data (8 bits).
-
-This 20-bit seed provides a lot of variation. It is passed through a `murmurmix32` function initially (and mixed with `hp`), then two more times to generate `seed2` and `seed3`, providing three independent streams of entropy for every single block on screen (with the other two seeds being used in erosion and edge flags).
+There are 28 bits from the seed that are used combined with 4 bits from the `hp` of the block. It is passed through a `murmurmix32` function initially (and mixed with `hp`), then three more times to generate `seed1`-`seed3`, providing four independent streams of entropy for every single block on screen (with the last two seeds being used in erosion and edge flags).
 
 #### OKLAB
 
@@ -552,7 +589,7 @@ You can imagine the specific position as effectively being `(chunk ID + sub-chun
 
 For the water, there's similar complicated modulo wrapping logic; however, this is based on the chunk's and subpixel position and is easier to reason about. (For water, it's modulo 256 instead of 512.)
 
-(There are a lot more details within `zig/state/chunk.zig` as to how this is exported. For the water, see `zig/state/water.zig` for update calculations.)
+(There are a lot more details within `zig/render/chunk.zig` as to how this is exported. For the water, see `zig/state/water.zig` for update calculations.)
 
 ### Copyright
 

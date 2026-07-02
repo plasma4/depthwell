@@ -408,9 +408,9 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
                     block.id = .rock;
                 } else if (val <= oddsNum(0.13)) {
                     block.id = .mushroom;
-                } else if (val <= oddsNum(0.14)) {
+                } else if (val <= oddsNum(0.134)) {
                     block.id = .forest_furnace;
-                } else if (val <= oddsNum(0.15)) {
+                } else if (val <= oddsNum(0.138)) {
                     block.id = .lava_furnace;
                 }
             }

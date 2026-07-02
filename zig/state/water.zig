@@ -11,6 +11,7 @@ const Sprite = dw.Sprite;
 const Block = memory.Block;
 const Chunk = memory.Chunk;
 
+const MAX_HP = memory.Block.MAX_HP;
 const CHUNK_SIZE = dw.CHUNK_SIZE;
 const CHUNK_SIZE_LOG2 = dw.CHUNK_SIZE_LOG2;
 const SIM_BUFFER_SIZE = dw.world.SIM_BUFFER_SIZE;
@@ -64,19 +65,20 @@ pub fn queueWaterFlags(cx: world.SimIndexType, cy: world.SimIndexType) void {
 }
 
 /// Helper to get the volume of a block (0 to 15 for water/waterlogged blocks, 0 otherwise).
+/// (Integer casting automatically enforces HP being within `u4` range.)
 pub inline fn getVolume(ptr: Block) u4 {
     if (ptr.id == .water) {
-        return ptr.hp;
+        return @intCast(ptr.hp);
     }
     if (ptr.isDecor()) {
-        return ptr.hp;
+        return @intCast(ptr.hp);
     }
     return 0;
 }
 
 /// Helper to set the volume (`hp`) of a block, modifying other properties as needed.
 pub inline fn setVolume(ptr: *Block, vol: u32) void {
-    const capped: u4 = @intCast(@min(vol, 15));
+    const capped: u4 = @intCast(@min(vol, MAX_HP));
     if (vol == 0) {
         if (ptr.isDecor()) {
             ptr.hp = 0;
@@ -84,6 +86,7 @@ pub inline fn setVolume(ptr: *Block, vol: u32) void {
             ptr.id = .none;
             ptr.hp = 0;
             ptr.edge_flags = 0xFF;
+            ptr.id_edge_flags = 0xFF;
             ptr.waterlogged = 0;
         }
     } else {
@@ -112,7 +115,7 @@ inline fn getPressureCached(
 pub const WaterloggedState = struct {
     /// Directional waterlogged flags:
     /// - bit 0: top (liquid block directly above)
-    /// - bit 1: bottom (full liquid block directly below at HP=15)
+    /// - bit 1: bottom (full liquid block directly below at HP = 15)
     /// - bit 2: whether ripple occurs from the top (top ripple cutoff)
     /// - bit 3: left (liquid block directly to the left)
     /// - bit 4: right (liquid block directly to the right)
@@ -141,9 +144,9 @@ pub inline fn getWaterFlags(
     }
 
     if (bottom_nb) |bottom| {
-        if (bottom.isLiquid() and getVolume(bottom) == 15) {
+        if (bottom.isLiquid() and getVolume(bottom) == MAX_HP) {
             flags |= 2; // Bottom
-            volume = 15;
+            volume = MAX_HP;
         }
     }
 
@@ -184,22 +187,22 @@ pub inline fn getWaterloggedStateSprites(
 
     if (top_nb.isLiquid()) {
         flags |= 1; // Top
-        volume = 15; // default full water block height
+        volume = MAX_HP; // default full water block height
     }
     if (bottom_nb.isLiquid()) {
         flags |= 2; // Bottom (in procedural gen, water blocks default to full HP/volume)
-        volume = 15;
+        volume = MAX_HP;
     }
     if (left_nb.isLiquid()) {
         flags |= 8; // Left
-        volume = 15;
+        volume = MAX_HP;
         if (!above_left_nb.isSolid() and !above_left_nb.isLiquid()) {
             flags |= 4; // Apply top ripple cutoff
         }
     }
     if (right_nb.isLiquid()) {
         flags |= 16; // Right
-        volume = 15;
+        volume = MAX_HP;
         if (!above_right_nb.isSolid() and !above_right_nb.isLiquid()) {
             flags |= 4; // Apply top ripple cutoff
         }
@@ -514,10 +517,10 @@ pub fn tickWater() void {
                     if (down_ptr) |dp| {
                         if (dp.isFlowable()) {
                             const dest_vol = getVolume(dp.*);
-                            if (dest_vol < 15) {
-                                const available = 15 - dest_vol;
+                            if (dest_vol < MAX_HP) {
+                                const available = MAX_HP - dest_vol;
                                 const is_free_fall = dp.id == .none;
-                                const cap: u32 = if (is_free_fall) 15 else 4;
+                                const cap: u32 = if (is_free_fall) MAX_HP else 4;
                                 const amt = @min(@min(src_vol, available), cap);
 
                                 setVolume(block_ptr, src_vol - amt);
@@ -534,7 +537,7 @@ pub fn tickWater() void {
                         }
                     }
 
-                    const down_blocked = if (down_ptr) |dp| (!dp.isFlowable() or getVolume(dp.*) >= 15) else true;
+                    const down_blocked = if (down_ptr) |dp| (!dp.isFlowable() or getVolume(dp.*) >= MAX_HP) else true;
                     if (!down_blocked) continue;
                     if (lateral_received.isSet(idx)) continue;
 
@@ -595,11 +598,11 @@ pub fn tickWater() void {
                         }
 
                         if (left_ok) {
-                            const dest_avail = 15 - left_vol;
+                            const dest_avail = MAX_HP - left_vol;
                             flow_left = @min(flow_left, dest_avail);
                         }
                         if (right_ok) {
-                            const dest_avail = 15 - right_vol;
+                            const dest_avail = MAX_HP - right_vol;
                             flow_right = @min(flow_right, dest_avail);
                         }
 

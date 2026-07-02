@@ -10,14 +10,15 @@ const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 
 /// Current interpolation fraction (updated within `updateVisibleChunks()` every render frame).
 ///
-/// This value is in the range -1..0 (NOT 0..1). -1 is the start of the current logic frame, 0 is the end.
-/// The world is rendered at `camera_pos + cam_vel * current_dt`, which (since `cam_vel = camera_pos - last_camera_pos`)
-/// resolves to `last_camera_pos + cam_vel * (current_dt + 1)`; interpolating from last to current.
+/// This value is in the range -1..0 (NOT 0..1): -1 is the start of the current logic frame, 0 is the end.
+/// The world renders position at `camera_pos + cam_vel * current_dt`, which (since `cam_vel = camera_pos - last_camera_pos`) equals `last_camera_pos + cam_vel * (current_dt + 1)`; interpolating from last to current.
 ///
-/// Other renderers (indicators, dropped items) shift this to 0..1 with `current_dt + 1.0`.
-/// Those MUST base the camera on `last_camera_pos`, or else they render one full frame of camera velocity ahead of the world
-///
-/// (See `render/indicators.zig`.)
+/// Any other renderer must follow the SAME two curves so it stays locked to the world; the split matters because position and zoom base on different reference values:
+/// - Position: base on the previous-frame value (`last_camera_pos`, item's last subpixel, etc.) and use the shifted fraction `current_dt + 1.0` (range 0..1).
+///   Basing on the current value with the shifted fraction renders one full frame of velocity ahead of the world.
+/// - Zoom: use `camera_scale * pow(camera_scale_change, current_dt)` with the RAW fraction.
+///   `camera_scale` is already the current scale and `camera_scale_change = camera_scale / old_scale`, so the negative exponent walks it back toward `old_scale` at -1.
+///   Equivalently `old_scale * pow(change, current_dt + 1)`, but the raw form avoids recovering `old_scale`.
 pub var current_dt: f64 = 0.0;
 
 /// Grid-aligned player position in logical viewport pixels (480x270, center of the sprite), recomputed every render frame
@@ -56,9 +57,8 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     const half_h_sp = (@as(f64, dw.SCREEN_HEIGHT_HALF) / interpolated_zoom) * CHUNK_SIZE;
 
     // calculate the interpolated camera loc.
-    // NOTE: this uses the raw -1..0 `dt`, so `camera_pos + vel * dt` is correct here (it equals
-    // `last_camera_pos + vel * (dt + 1)`). Renderers that use the shifted 0..1 dt must instead
-    // base on `last_camera_pos`. See the `current_dt` doc comment above.
+    // NOTE: this uses the raw -1..0 `dt`, so `camera_pos + vel * dt` is correct here (it equals `last_camera_pos + vel * (dt + 1)`).
+    // Renderers that use the shifted 0..1 dt must instead base on `last_camera_pos`. See the `current_dt` doc comment above.
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
 
@@ -123,6 +123,7 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
                         if (!block.isFoundation() and !block.isLiquid()) {
                             // since decor aren't foundation/liquid blocks, they don't get edge flags
                             block.edge_flags = 0xFF;
+                            block.id_edge_flags = 0xFF;
                         }
                         // Sprite variation (2x2 stone, liquid surfaces, seed picks, campfire animation)
                         // is applied AFTER lighting; see `applyVariation` below. Lighting queries sprite
@@ -164,6 +165,11 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
 inline fn applyVariation(out: []memory.Block, wb: u32, frame: u32) void {
     for (out, 0..) |*block, i| {
         block.id = dw.variation.resolveVariant(block.*, i % wb, i / wb, frame);
+        // Underlay sprites (ore/gem backgrounds) get the same variation treatment so e.g. plain
+        // stone behind a vein keeps its seamless 2x2 tiling.
+        if (block.base_id != .none) {
+            block.base_id = dw.variation.resolveSpriteVariant(block.base_id, block.seed, block.edge_flags, i % wb, i / wb, frame);
+        }
     }
 }
 

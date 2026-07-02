@@ -100,23 +100,27 @@ pub fn generate(
                 const inner_dist_sq = (dx * dx * inner_ry * inner_ry) + (dy * dy * inner_rx * inner_rx);
                 const inner_bound = inner_rx * inner_rx * inner_ry * inner_ry;
 
+                const floor_y = center_y + inner_ry - 1;
+                const chest_range = inner_rx;
+                const chest_offset = (-inner_rx >> 1) + state.getLimit(i32, chest_range);
+                const chest_x = center_x + chest_offset;
+
+                // prioritize chest placement
+                if (struct_x == chest_x) {
+                    if (struct_y == floor_y) {
+                        return .chest;
+                    }
+                    if (struct_y == floor_y + 1) {
+                        // guarantee something for the chest to stay on with unwarped coords
+                        return .white_plate;
+                    }
+                }
+
                 if (inner_dist_sq > inner_bound) {
                     const erosion_factor = (wx ^ wy) % 7;
                     if (erosion_factor == 0) return .none;
                     return .sulfuric_stone;
                 } else {
-                    const floor_y = center_y + inner_ry - 1;
-                    const chest_range = inner_rx;
-                    const chest_offset = (-inner_rx >> 1) + state.getLimit(i32, chest_range);
-                    const chest_x = center_x + chest_offset;
-
-                    // guarantee something for the chest to stay on
-                    if (struct_y == floor_y + 1 and struct_x == chest_x) {
-                        return .white_plate;
-                    }
-                    if (struct_y == floor_y and struct_x == chest_x) {
-                        return .chest;
-                    }
                     return .none;
                 }
             }

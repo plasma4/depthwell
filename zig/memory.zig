@@ -141,7 +141,9 @@ pub const GameState = extern struct {
         }
         self.player_pos = new_position;
         self.last_player_pos = new_position;
+        // Snap BOTH current and previous camera to the destination (preventing interpolation funnies).
         self.camera_pos = new_position;
+        self.last_camera_pos = new_position;
         world.clearCaches(false);
     }
 
@@ -218,11 +220,20 @@ pub const MemorySizes = struct {
 };
 
 /// Contains a `Sprite` id and various packed properties; ready to be sent to the GPU or stored in caches.
-pub const Block = packed struct(u64) {
+/// Field order keeps every field inside one aligned 32-bit word so the shader (`unpack_tile()` in src/shader.wgsl) extracts each with a single per-word `extractBits()`:
+/// - word0: `id` | `edge_flags` | `light`
+/// - word1: `hp` | `seed` (the shader reads the whole word as seed0, so `hp` is folded into the seed for free)
+/// - word2: `base_id` | `id_edge_flags` | `lighting_color`
+/// - word3: `waterlogged` | `_pad`
+pub const Block = packed struct(u128) {
     /// A block with an `id` of `none`.
     pub const empty: Block = .makeBasicBlock(.none, 0);
 
-    /// Internal sprite ID.
+    /// Maximum value for `hp`. `hp` is a `u4` (sharing word1's low bits with `seed`) and MUST stay 0-15:
+    /// the atlas has exactly 16 HP masks and the water volume simulation assumes 0-15.
+    pub const MAX_HP: u4 = 15;
+
+    /// The primary sprite: the overlay/block itself (such as the ore rather than the block beneath).
     id: Sprite,
     /// Edge flags: explains details for neighbors (for both shader and procedural generation).
     /// Starts from top left, then middle left, and ending at bottom right (skipping itself).
@@ -235,21 +246,27 @@ pub const Block = packed struct(u64) {
     /// The brightness of the tile.
     light: u8,
 
-    /// Per-block seed for procedural variation in the shader.
-    /// Any seed value here should be considered poor and insecure.
-    seed: u20,
-    /// Dual-purpose field depending on block type:
+    /// Dual-purpose field depending on block type (range 0-15, see `MAX_HP`):
     /// - For solid blocks: how "mined" the block is (0 means unmined, 15 is most mined).
     /// - For liquid (water) and decoration blocks: the water volume level from 0 to 15.
     hp: u4,
+    /// Per-block seed for procedural variation in the shader.
+    /// Any seed value here should be considered poor and insecure.
+    seed: u28,
 
+    /// The underlying background tile behind an overlay sprite (e.g. the stone an ore/gem grew inside).
+    /// `.none` means "no underlay"; the shader then renders `id` alone (the common case for non-ore/gem blocks).
+    base_id: Sprite = .none,
+    /// Same-sprite edge flags (same bit order as `edge_flags`): a bit is set when the neighbor's `id` equals this block's `id`.
+    /// Drives the ore overlay mask so a vein reads as connected only to itself.
+    /// Follows the same 0xFF reset rule as `edge_flags` for decorations/air.
+    id_edge_flags: u8 = 0,
     /// Type of color lighting should use.
     /// - 0: default white
     /// - 1: warm orange glow
-    /// TODO: implement color lighting logic within lighting.zig
-    lighting_color: u3 = 0,
+    lighting_color: u8 = 0,
 
-    /// Dual-purpose directional waterlogging field:
+    /// Dual-purpose directional waterlogging field (bits 0-4 used):
     /// - For liquid blocks: represents adjacent water heights/volumes.
     /// - For non-liquid blocks: bits represent surrounding waterlogged cardinal directions.
     ///   - bit 0: top (liquid block directly above)
@@ -257,14 +274,16 @@ pub const Block = packed struct(u64) {
     ///   - bit 2: whether ripple occurs from the top (top ripple cutoff)
     ///   - bit 3: left (liquid block directly to the left)
     ///   - bit 4: right (liquid block directly to the right)
-    waterlogged: u5 = 0,
+    waterlogged: u8 = 0,
+    /// Unused portion of block data.
+    _pad: u24 = 0,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
-    /// Uses the BOTTOM 20 bits from `seed_bits` to place into `seed`.
+    /// Uses the BOTTOM 32 bits from `seed_bits` to place into `seed`.
     pub inline fn makeBasicBlock(sprite_type: Sprite, seed_bits: u64) Block {
         return .{
             .id = sprite_type,
-            .hp = if (sprite_type == .water) 15 else 0,
+            .hp = if (sprite_type == .water) MAX_HP else 0,
             .edge_flags = 0,
             .light = 255,
             .seed = @truncate(seed_bits),
@@ -336,7 +355,24 @@ pub const Block = packed struct(u64) {
     }
 };
 
-/// 16x16 fixed grid of blocks. Each chunk is 2KiB in size.
+/// Chunk/procedural generation information that can be converted to `Block` via `compile()`.
+/// Deliberately excludes render/simulation state (light, edge flags, waterlogging), which later passes own.
+pub const BlockSpec = struct {
+    id: Sprite = .none,
+    /// Underlying tile for overlay sprites (ores/gems); `.none` means no underlay.
+    base_id: Sprite = .none,
+    /// Uses the BOTTOM 32 bits when compiled into `Block.seed`.
+    seed: u64 = 0,
+
+    /// Compiles the spec into a packed `Block` (max light, no edge flags or mine level, matching `makeBasicBlock()`).
+    pub inline fn compile(self: @This()) Block {
+        var block: Block = .makeBasicBlock(self.id, self.seed);
+        block.base_id = self.base_id;
+        return block;
+    }
+};
+
+/// 16x16 fixed grid of blocks. Each chunk is 4KiB in size.
 pub const Chunk = struct {
     blocks: [CHUNK_SIZE_SQ]Block align(MAIN_ALIGN_BYTES),
 
@@ -669,8 +705,8 @@ comptime {
     if (MAIN_ALIGN_BYTES < 16 or (MAIN_ALIGN_BYTES % 16 > 0)) {
         @compileError("MAIN_ALIGN_BYTES should be a positive multiple of 16 for SIMD alignment.");
     }
-    if (@sizeOf(Block) != 8) {
-        @compileError("Memory size for each block should be 8 bytes.");
+    if (@sizeOf(Block) != 16) {
+        @compileError("Memory size for each block should be 16 bytes.");
     }
     if (@sizeOf(WGSLEntity) != 48) {
         @compileError("WGSL entity must be 48 bytes!");
