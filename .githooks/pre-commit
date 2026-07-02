@@ -1,6 +1,6 @@
 #!/bin/bash
 npm run build
-zig build -Doptimize=ReleaseSafe
+zig build -Doptimize=ReleaseSafe -Dgen-enums # set to ReleaseFast for prod
 RESULT=$?
 if [ $RESULT -ne 0 ]; then
     echo "Error: Build for NPM failed; commit stopped."
