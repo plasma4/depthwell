@@ -1,10 +1,20 @@
 #!/bin/bash
-npm run build
+
+# start by building Zig code...
 zig build -Doptimize=ReleaseSafe -Dgen-enums # set to ReleaseFast for prod
-RESULT=$?
-if [ $RESULT -ne 0 ]; then
-    echo "Error: Build for NPM failed; commit stopped."
+if [ $? -ne 0 ]; then
+    echo "Error: Zig build failed; commit stopped."
     exit 1
 fi
+
+# now build NPM public/ files...
+npm run build
+if [ $? -ne 0 ]; then
+    echo "Error: NPM build failed; commit stopped."
+    exit 1
+fi
+
+# finally, stage these changes
 git add dist/
+git add public/main.wasm
 exit 0
