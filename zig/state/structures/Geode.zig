@@ -45,7 +45,7 @@ pub fn generate(
     bounds: Rect,
     state: *HashState,
     struct_seed: Vec2u,
-) ?Sprite {
+) ?structures.StructureResult {
     _ = starting_sprite;
     _ = bounds;
     const i_area = @as(i32, @intCast(spawn_area));
@@ -86,20 +86,26 @@ pub fn generate(
             var block_state = structures.makeBlockHash(struct_seed, wx, wy, 3);
             const core_rand = block_state.getLimit(u32, 50);
             const which_stone = state.getLimit(u32, 3);
-            return switch (core_rand) {
-                0, 1, 2, 3, 4 => .amethyst,
-                5, 6, 7, 8 => .sapphire,
-                9, 10 => .emerald,
-                11 => .ruby,
 
-                // Gems weren't selected: determine a default stone type that's consistent across all blocks in the core
-                else => if (dist_sq >= (core_radius - 1) * (core_radius - 1))
-                    if (shell == .redder_stone) .stone else ([_]Sprite{ .stone, .alt_blue_stone, .purple_stone })[which_stone]
-                else
-                    .stone,
+            // The plain stone this core block would be if it weren't a gem.
+            // Gems overlay this so their base_id reflects the geode (not the natural terrain the structure replaced).
+            // The inner rim gets a consistent stone accent; everything deeper is a stone variant.
+            const core_stone: Sprite = if (dist_sq >= (core_radius - 1) * (core_radius - 1))
+                (if (shell == .redder_stone) .stone else ([_]Sprite{ .stone, .alt_blue_stone, .purple_stone })[which_stone])
+            else
+                .stone;
+
+            const gem: Sprite = switch (core_rand) {
+                0, 1, 2, 3, 4 => .quartz,
+                5, 6, 7, 8 => .amethyst,
+                9, 10, 11 => .sapphire,
+                12, 13 => .emerald,
+                14, 15 => .ruby,
+                else => return .{ .id = core_stone }, // gems weren't selected: plain core stone
             };
+            return .{ .id = gem, .base = core_stone };
         } else if (dist_sq <= radius * radius) {
-            return shell;
+            return .{ .id = shell };
         }
     }
 

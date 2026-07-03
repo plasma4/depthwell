@@ -24,7 +24,7 @@ const Vec4u = dw.utils.Vec4u;
 
 // Lots of values controllable by debug sliders here!
 pub const dual_value_scale = TuningFloat(16.0);
-pub const base_gem_odds = TuningFloat(0.1);
+pub const base_gem_odds = TuningFloat(0.25);
 pub const procedural_cell_size = TuningFloat(1.0);
 pub const fbm_scale = TuningFloat(1.0);
 pub const density_min = TuningFloat(0.36);
@@ -141,9 +141,7 @@ pub fn addStructures(
     wx: u32,
     wy: u32,
     struct_seed: Vec2u,
-    density_seed: Vec2u,
-) Sprite {
-    _ = density_seed;
+) dw.structures.StructureResult {
     return dw.structures.addStructures(starting_sprite, wx, wy, struct_seed);
 }
 
@@ -201,6 +199,7 @@ pub fn addOres(
     seed_vector_2: Vec2u,
     seed_vector_3: Vec2u,
     seed_vector_4: Vec2u,
+    seed_vector_5: Vec2u,
     x: u32,
     y: u32,
 ) Sprite {
@@ -213,7 +212,7 @@ pub fn addOres(
         y,
         .{
             .cell_size = 20.0,
-            .fbm_shift_size = 30.0,
+            .fbm_shift_size = 8.0,
             .horizontally_wide = false,
             .use_f2_f1 = true,
         },
@@ -249,29 +248,43 @@ pub fn addOres(
 
         sprite = selectSprite(
             .{ sprite, .iron },
-            true,
+            base_data.sprite != .blue_strange_stone,
             .{ v1, 0.55, 0.565 },
         );
-        if (sprite == .iron and base_data.sprite != .blue_strange_stone) return sprite;
+        if (sprite == .iron) return sprite;
 
         sprite = selectSprite(
             .{ sprite, .silver },
             base_data.density <= 0.48,
-            .{ v1, 0.2, 0.21 },
+            .{ v1, 0.2, 0.23 },
         );
         sprite = selectSprite(
             .{ sprite, .silver },
             base_data.sprite == .blue_strange_stone,
             .{ v1, 0.18, 0.2 },
         );
-        if (sprite == .iron or sprite == .silver) return sprite;
+        if (sprite == .silver) return sprite;
 
         sprite = selectSprite(
             .{ sprite, .gold },
             base_data.density >= 0.63 or (base_data.density >= 0.59 and base_data.sprite == .lava_stone),
-            .{ v2, 0.3, 0.4 },
+            .{ v2, 0.3, 0.36 },
         );
         if (sprite == .gold) return sprite;
+
+        sprite = selectSprite(
+            .{ sprite, .nickel },
+            true,
+            .{ v2, 0.58, 0.605 },
+        );
+        if (sprite == .nickel) return sprite;
+
+        sprite = selectSprite(
+            .{ sprite, .cobalt },
+            v2 > 0.7,
+            .{ v1, 0.94, 0.98 },
+        );
+        if (sprite == .cobalt) return sprite;
     } else {
         // Logic for generating gems
         const gem_v2_bound: f32 = if (sprite == .purple_strange_stone) 0.4 else 0.3;
@@ -290,10 +303,28 @@ pub fn addOres(
                         .use_f2_f1 = false,
                     },
                 );
+                const v4 = getFbmValue(
+                    seed_vector_5,
+                    y,
+                    x,
+                    .{
+                        .cell_size = 45.0,
+                        .fbm_shift_size = 18.0,
+                        .horizontally_wide = false,
+                        .use_f2_f1 = false,
+                    },
+                );
+
+                sprite = selectSprite(
+                    .{ sprite, .quartz },
+                    v4 <= 0.24 and random_value <= 0.34 * base_gem_odds.value,
+                    null,
+                );
+                if (sprite == .quartz) return sprite;
 
                 sprite = selectSprite(
                     .{ sprite, .amethyst },
-                    v3 <= 0.4 and random_value <= 0.4 * base_gem_odds.value,
+                    v3 <= 0.4 and random_value <= 0.7 * base_gem_odds.value,
                     null,
                 );
                 if (sprite == .amethyst) return sprite;
@@ -307,14 +338,14 @@ pub fn addOres(
 
                 sprite = selectSprite(
                     .{ sprite, .emerald },
-                    v3 >= 0.45 and v3 <= 0.65 and random_value <= 0.86 * base_gem_odds.value,
+                    v4 >= 0.45 and v4 <= 0.48 and random_value <= 0.86 * base_gem_odds.value,
                     null,
                 );
                 if (sprite == .emerald) return sprite;
 
                 sprite = selectSprite(
                     .{ sprite, .ruby },
-                    v3 >= 0.22 and v3 <= 0.3,
+                    v3 >= 0.22 and v3 <= 0.24,
                     null,
                 );
                 if (sprite == .ruby) return sprite;
@@ -348,6 +379,7 @@ pub inline fn selectSprite(sprites: SpritePair, condition: bool, range: ?ValueRa
         const v = val[0];
         const min = val[1];
         const max = val[2];
+        std.debug.assert(min <= max);
         return if (condition and v >= min and v <= max) new_sprite else old_sprite;
     } else {
         return if (condition) new_sprite else old_sprite;
@@ -402,15 +434,17 @@ pub fn addDecorations(target_chunk: *memory.Chunk, rng_decor: *seeding.ChaCha12)
                     }
                 }
 
-                if (val <= oddsNum(0.03)) {
+                if (val <= oddsNum(0.030)) {
                     block.id = .bush;
-                } else if (val <= oddsNum(0.1)) {
+                } else if (val <= oddsNum(0.060)) {
                     block.id = .rock;
-                } else if (val <= oddsNum(0.13)) {
+                } else if (val <= oddsNum(0.090)) {
                     block.id = .mushroom;
-                } else if (val <= oddsNum(0.134)) {
+                } else if (val <= oddsNum(0.100)) {
+                    block.id = .campfire;
+                } else if (val <= oddsNum(0.104)) {
                     block.id = .forest_furnace;
-                } else if (val <= oddsNum(0.138)) {
+                } else if (val <= oddsNum(0.108)) {
                     block.id = .lava_furnace;
                 }
             }

@@ -16,7 +16,7 @@ const HORIZON_DEPTH = dw.HORIZON_DEPTH;
 const STARTING_ZOOM_TIMES = dw.startup.STARTING_ZOOM_TIMES;
 
 /// Returns whether the specified depth is far enough from the current player depth that discrete coordinates are no longer tracked.
-/// At this boundary, chunk-level detail is replaced by the global `QuadCache` 4x4 background grid.
+/// At this boundary, chunk-level detail is replaced by the global `quad_cache` 4x4 background grid.
 pub inline fn isHorizonDepth(depth: u64) bool {
     // The floor is NEVER a horizon depth.
     if (depth <= STARTING_ZOOM_TIMES) return false;
@@ -28,69 +28,139 @@ pub inline fn isHorizonDepth(depth: u64) bool {
     return (depth + horizon_limit) == memory.game.depth;
 }
 
-/// Optimized per-depth tier cache for ancestors of chunks. Fully cleared on depth increase.
+/// Set-associative chunk cache for chunk ancestors, indexed by distance from the current depth.
+/// Fully cleared whenever the game depth changes (see `world.clearCaches()`).
+///
+/// Tiers are RELATIVE: tier 0 is the current depth (D), tier 1 its parent, down to the horizon (H) at tier `NUM_TIERS - 1`.
+/// Relative indexing lets the hottest tiers sit at fixed slots so they can be sized larger.
+/// - The two tiers nearest the player (`HOT_TIERS`) are often queried:
+///   you can think to a 4x4 chunk "group" collapsing into one seed with D-1 and 16x16 chunk "groups" with D-2.
+/// - Deeper tiers converge geometrically (each ~4x smaller footprint) and only need a small 8-slot buffer.
+///   Really, you only need 4 to prevent quadrant boundary issues, but this provides a decent buffer.
+///
+/// This keeps the cache under ~2 MiB (vs 8 MiB uniform), fitting comfortably in L2/L3.
 pub const AncestorCache = struct {
-    /// Amount of chunks per depth/tier.
-    pub const TIER_SIZE = 64;
-    /// Number of associative slots per tier set.
-    /// Should be a power of two.
-    pub const TIER_WAYS = 4;
-    /// Number of sets per tier.
-    pub const TIER_SETS = TIER_SIZE / TIER_WAYS;
-    /// The number of tiers of depths to cache. Modulo is used to map depths into tiers safely.
-    pub const NUM_TIERS = HORIZON_DEPTH;
+    /// Total relative tiers tracked: one per live depth from the current depth down to the horizon.
+    /// The `+1` covers the single transition frame at `depth == HORIZON_DEPTH + STARTING_ZOOM_TIMES`
+    /// (e.g. D=36), where the horizon would fall on the base depth but `isHorizonDepth()` excludes the
+    /// base, leaving base..current = 33 depths live at once (one more than `HORIZON_DEPTH`).
+    pub const NUM_TIERS = HORIZON_DEPTH + 1;
+    /// Associativity shared by every tier. Power of two so the CLOCK hand wraps mod `WAYS` for free.
+    pub const WAYS = 8;
 
-    keys: [NUM_TIERS][TIER_SETS][TIER_WAYS]DepthCoordinate = @splat(@splat(@splat(DepthCoordinate.invalid))),
-    chunks: [NUM_TIERS][TIER_SIZE]Chunk = undefined,
-    clock: [NUM_TIERS][TIER_SETS]u4 = @splat(@splat(0)),
-    hand: [NUM_TIERS][TIER_SETS]u2 = @splat(@splat(0)),
+    /// Tiers nearest the current depth that receive the wide, high-capacity layout.
+    pub const HOT_TIERS = 2;
+    /// Sets per hot tier. `HOT_SETS * WAYS` = 128 slots covers the ~50-chunk worst-case parent
+    /// working set at minimum zoom without overflowing any single 8-way set.
+    pub const HOT_SETS = 16;
+    /// Chunks stored per hot tier.
+    pub const HOT_SIZE = HOT_SETS * WAYS;
 
-    /// Retrieves a chunk by `DepthCoordinate`; searches the specific depth tier.
-    /// Returns a mutable pointer.
-    pub fn get(self: *@This(), key: DepthCoordinate) ?*Chunk {
-        std.debug.assert(!isHorizonDepth(key.depth));
+    /// Remaining tiers past the hot ones; sized for the converged (deep) footprint only.
+    pub const COLD_TIERS = NUM_TIERS - HOT_TIERS;
+    /// A single set per cold tier; 8 slots is plenty for the converged footprint plus a
+    /// quadrant-crossing buffer.
+    pub const COLD_SETS = 1;
+    /// Chunks stored per cold tier.
+    pub const COLD_SIZE = COLD_SETS * WAYS;
 
-        const d: usize = @intCast(key.depth % NUM_TIERS);
-        const h = key.hash();
-        const set_idx: usize = @intCast(h % TIER_SETS);
+    /// One CLOCK reference bit per way.
+    const RefBits = std.meta.Int(.unsigned, WAYS);
+    /// Index of a way within a set; doubles as the CLOCK hand (wraps mod `WAYS`).
+    const WayIndex = std.math.Log2Int(RefBits);
 
-        inline for (0..TIER_WAYS) |way| {
-            const cache_key = self.keys[d][set_idx][way];
-            if (cache_key.depth != 0) {
-                if (cache_key.eql(key)) {
-                    self.clock[d][set_idx] |= (@as(u4, 1) << way);
-                    return &self.chunks[d][set_idx * TIER_WAYS + way];
+    // Hot tiers (relative index 0..HOT_TIERS): wide and high-capacity.
+    hot_keys: [HOT_TIERS][HOT_SETS][WAYS]DepthCoordinate = @splat(@splat(@splat(DepthCoordinate.invalid))),
+    hot_chunks: [HOT_TIERS][HOT_SIZE]Chunk = undefined,
+    hot_clock: [HOT_TIERS][HOT_SETS]RefBits = @splat(@splat(0)),
+    hot_hand: [HOT_TIERS][HOT_SETS]WayIndex = @splat(@splat(0)),
+
+    // Cold tiers: small single-set buffers.
+    cold_keys: [COLD_TIERS][COLD_SETS][WAYS]DepthCoordinate = @splat(@splat(@splat(DepthCoordinate.invalid))),
+    cold_chunks: [COLD_TIERS][COLD_SIZE]Chunk = undefined,
+    cold_clock: [COLD_TIERS][COLD_SETS]RefBits = @splat(@splat(0)),
+    cold_hand: [COLD_TIERS][COLD_SETS]WayIndex = @splat(@splat(0)),
+
+    /// A single tier's storage as slices, so the associative logic is written once for hot and cold.
+    const TierView = struct {
+        keys: [][WAYS]DepthCoordinate,
+        chunks: []Chunk,
+        clock: []RefBits,
+        hand: []WayIndex,
+
+        /// Set-associative lookup; sets the CLOCK reference bit on a hit.
+        fn get(self: TierView, key: DepthCoordinate, h: u64) ?*Chunk {
+            const set_idx: usize = @intCast(h % self.keys.len);
+            inline for (0..WAYS) |way| {
+                const cache_key = self.keys[set_idx][way];
+                if (cache_key.depth != 0 and cache_key.eql(key)) {
+                    self.clock[set_idx] |= (@as(RefBits, 1) << way);
+                    return &self.chunks[set_idx * WAYS + way];
+                }
+            }
+            return null;
+        }
+
+        /// CLOCK second-chance eviction; installs `key` and returns its (to-be-written) slot.
+        fn allocate(self: TierView, key: DepthCoordinate, h: u64) *Chunk {
+            const set_idx: usize = @intCast(h % self.keys.len);
+            var hand_val = self.hand[set_idx];
+            while (true) {
+                const way = hand_val;
+                hand_val +%= 1; // wraps mod WAYS (power of two)
+
+                const mask = @as(RefBits, 1) << way;
+                if ((self.clock[set_idx] & mask) != 0) {
+                    // Give second chance and clear reference bit.
+                    self.clock[set_idx] &= ~mask;
+                } else {
+                    // Found eviction candidate.
+                    self.keys[set_idx][way] = key;
+                    self.clock[set_idx] |= mask;
+                    self.hand[set_idx] = hand_val;
+                    return &self.chunks[set_idx * WAYS + way];
                 }
             }
         }
-        return null;
+    };
+
+    /// Maps a cache key to its tier distance from the current depth (0 = current depth).
+    /// Callers guarantee the key sits above the horizon, so the distance is always < `NUM_TIERS`.
+    inline fn relativeTier(depth: u64) usize {
+        const rel = memory.game.depth - depth;
+        std.debug.assert(rel < NUM_TIERS);
+        return @intCast(rel);
+    }
+
+    /// Resolves the `TierView` for a relative tier, dispatching between hot and cold storage.
+    fn tierView(self: *@This(), rel: usize) TierView {
+        if (rel < HOT_TIERS) return .{
+            .keys = &self.hot_keys[rel],
+            .chunks = &self.hot_chunks[rel],
+            .clock = &self.hot_clock[rel],
+            .hand = &self.hot_hand[rel],
+        };
+        const c = rel - HOT_TIERS;
+        return .{
+            .keys = &self.cold_keys[c],
+            .chunks = &self.cold_chunks[c],
+            .clock = &self.cold_clock[c],
+            .hand = &self.cold_hand[c],
+        };
+    }
+
+    /// Retrieves a chunk by `DepthCoordinate`; searches the tier for that depth.
+    /// Returns a mutable pointer.
+    pub fn get(self: *@This(), key: DepthCoordinate) ?*Chunk {
+        std.debug.assert(!isHorizonDepth(key.depth));
+        return self.tierView(relativeTier(key.depth)).get(key, key.hash());
     }
 
     /// Allocates a slot in the appropriate tier based on depth and returns a mutable pointer.
     /// This allows `generateChunk()` to write directly into the cache memory.
     pub fn allocateSlot(self: *@This(), key: DepthCoordinate) *Chunk {
         std.debug.assert(!isHorizonDepth(key.depth));
-        const d: usize = @intCast(key.depth % NUM_TIERS);
-        const h = key.hash();
-        const set_idx: usize = @intCast(h % TIER_SETS);
-
-        var hand_val = self.hand[d][set_idx];
-        while (true) {
-            const way = hand_val;
-            hand_val +%= 1; // % TIER_WAYS not needed, power of 2
-
-            const mask = @as(u4, 1) << way;
-            if ((self.clock[d][set_idx] & mask) != 0) {
-                // Give second chance and clear reference bit.
-                self.clock[d][set_idx] &= ~mask;
-            } else {
-                // Found eviction candidate.
-                self.keys[d][set_idx][way] = key;
-                self.clock[d][set_idx] |= mask;
-                self.hand[d][set_idx] = hand_val;
-                return &self.chunks[d][set_idx * TIER_WAYS + way];
-            }
-        }
+        return self.tierView(relativeTier(key.depth)).allocate(key, key.hash());
     }
 
     /// Allocates a slot and inserts a chunk directly.
@@ -101,12 +171,30 @@ pub const AncestorCache = struct {
     }
 
     /// Clears the `AncestorCache` and resets clock data.
+    /// Resets per tier (small aggregate assignments) rather than one whole-array `@splat` to avoid
+    /// building a huge temporary on the 512 KiB shadow stack. Chunk payloads are left as-is; they are
+    /// overwritten on allocate.
     pub fn clear(self: *@This()) void {
-        for (0..NUM_TIERS) |i| {
-            @memset(&self.keys[i], @splat(DepthCoordinate.invalid));
-            @memset(&self.clock[i], 0);
-            @memset(&self.hand[i], 0);
+        for (0..HOT_TIERS) |i| {
+            self.hot_keys[i] = @splat(@splat(DepthCoordinate.invalid));
+            self.hot_clock[i] = @splat(0);
+            self.hot_hand[i] = @splat(0);
         }
+        for (0..COLD_TIERS) |i| {
+            self.cold_keys[i] = @splat(@splat(DepthCoordinate.invalid));
+            self.cold_clock[i] = @splat(0);
+            self.cold_hand[i] = @splat(0);
+        }
+    }
+
+    comptime {
+        if (!std.math.isPowerOfTwo(WAYS)) @compileError("WAYS must be a power of two so the CLOCK hand wraps mod WAYS.");
+        if (!std.math.isPowerOfTwo(HOT_SETS) or !std.math.isPowerOfTwo(COLD_SETS)) @compileError("Set counts must be powers of two for the hash modulo to distribute evenly.");
+        if (HOT_TIERS + COLD_TIERS != NUM_TIERS) @compileError("Hot and cold tiers must partition NUM_TIERS.");
+        // The whole point of the hot/cold split is to stay small; catch accidental blowups.
+        // Currently HOT (2 x 128) + COLD (31 x 8) = ~1.97 MiB of chunk payload.
+        const chunk_bytes = (HOT_TIERS * HOT_SIZE + COLD_TIERS * COLD_SIZE) * memory.CHUNK_BYTES;
+        if (chunk_bytes > 2 * memory.MemorySizes.MiB) @compileError("AncestorCache chunk storage exceeds its 2 MiB budget.");
     }
 };
 
@@ -302,7 +390,7 @@ pub fn applyAncestorLogic(
     }
 
     // Ores/gems keep the parent's underlay so veins stay visually consistent across zooms (plain stone fallback).
-    const base_id: Sprite = if (evolved_sprite.isOre() or evolved_sprite.isGem())
+    const base_id: Sprite = if (evolved_sprite.isOverlay())
         (if (inherited_base != .none) inherited_base else .stone)
     else
         .none;

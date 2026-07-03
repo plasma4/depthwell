@@ -51,9 +51,9 @@ pub fn main(init: std.process.Init) !void {
     , .{
         8, // TILES_PER_ROW: atlas is 8 sprites wide (mirrors root.getTilesPerRow)
         sprite.max_sprite_value / 8 + 1, // TILES_PER_COLUMN (mirrors root.getTilesPerColumn)
-        @intFromEnum(Sprite.stone),
-        @intFromEnum(Sprite.copper),
-        @intFromEnum(Sprite.amethyst),
+        sprite.STONE_START,
+        sprite.ORE_START,
+        sprite.GEM_START,
         sprite.MASK_START,
         @intFromEnum(Sprite.water),
     });

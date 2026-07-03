@@ -125,9 +125,8 @@ pub extern "env" fn jsSetMouseType(mouse_type: mouse.CursorType) void;
 pub extern "env" fn jsPlaySound(soundId: u32, volume: f64, pitch: f64) void;
 
 pub fn main() callconv(.c) void {
-    world.flag_worklist = std.ArrayList(world.UpdateItem).initCapacity(world.alloc, 1024) catch unreachable;
+    world.flag_worklist = std.ArrayList(world.UpdateItem).initCapacity(world.alloc, 256) catch unreachable;
     world.mod_store.init(world.alloc);
-    lighting.setup(); // note that this is ALSO called in init() resetting
 }
 
 comptime {

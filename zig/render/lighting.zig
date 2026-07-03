@@ -3,6 +3,7 @@
 //!
 //! Uses Dial's algorithm (bucketed Dijkstra): each reachable cell is finalized exactly once at its brightest value,
 //! so overlapping light sources cost no extra relaxation (makes performance linear with some acceptable memory cost).
+//! Worst-case memory cost is reduced by using a dedicated arena that resets every time `applyLighting()` is called.
 //!
 //! Light spreads to all 8 neighbors with a sqrt(2) diagonal cost for an approximated circular falloff.
 //! Based on the block type (air, solid, or liquid) and HP, the decay rate changes/interpolates as needed.
@@ -22,7 +23,7 @@ pub const MAX_LIGHT: u8 = 255;
 /// Min baseline brightness for unlit cells.
 pub const AMBIENT_LIGHT: u8 = 0;
 /// Debug ambient light brightness if the debug boolean is enabled.
-pub const AMBIENT_LIGHT_DEBUG: u8 = 160;
+pub const AMBIENT_LIGHT_DEBUG: u8 = 255;
 
 pub var DEBUG_LIGHT = false;
 
@@ -49,32 +50,21 @@ comptime {
     std.debug.assert(SOLID_FALLOFF <= 255 and LIQUID_FALLOFF <= 255 and AIR_FALLOFF <= 255);
 }
 
+/// `ArenaAllocator` instance used for lighting logic.
+var arena = memory.makeArena();
+/// `Allocator` from `arena`.
+var alloc = arena.allocator();
+
 /// Sets up lighting algorithm `ArrayList`s. Discards all invalidated pointers to prevent use-after-free corruption.
-pub fn setup() void {
+/// Called whenever `applyLighting()` is called to reset allocator.
+fn resetArena() void {
+    if (!arena.reset(.retain_capacity)) memory.oom();
     buckets_orange = @splat(.empty);
     buckets_white = @splat(.empty);
 
-    cost_buffer = .empty;
-    orange_buffer = .empty;
-    white_buffer = .empty;
-
-    // Do some pre-allocations, mostly based on vibes!
-    const flat_capacity = 65536;
-    cost_buffer.ensureTotalCapacity(world.alloc, flat_capacity) catch {};
-    orange_buffer.ensureTotalCapacity(world.alloc, flat_capacity) catch {};
-    white_buffer.ensureTotalCapacity(world.alloc, flat_capacity) catch {};
-
-    // Pre-allocate the dial buckets now...
-    var b: usize = 10;
-    while (b <= 220) : (b += 1) {
-        buckets_white[b].ensureTotalCapacity(world.alloc, 64) catch {};
-    }
-
-    // Orange channel outer perimeters (10 to 160)
-    b = 10;
-    while (b <= 160) : (b += 1) {
-        buckets_orange[b].ensureTotalCapacity(world.alloc, 64) catch {};
-    }
+    cost_buffer = std.array_list.Aligned(u8, .@"16").initCapacity(alloc, 2048) catch memory.oom();
+    orange_buffer = std.array_list.Aligned(u16, .@"16").initCapacity(alloc, 2048) catch memory.oom();
+    white_buffer = std.array_list.Aligned(u16, .@"16").initCapacity(alloc, 2048) catch memory.oom();
 }
 
 inline fn blockEmission(id: Sprite) u16 {
@@ -86,8 +76,7 @@ inline fn blockEmission(id: Sprite) u16 {
     };
 }
 
-/// Returns true if the block is a warm light source,
-/// which creates an orange light glow in the shader.
+/// Returns true if the block is a warm light source, which creates an orange light glow in the shader.
 inline fn isOrangeSource(id: Sprite) bool {
     return switch (id) {
         .campfire => true,
@@ -139,7 +128,7 @@ fn maxAirReachBlocks() comptime_int {
 pub const CHUNK_MARGIN: u32 = @max(1, std.math.divCeil(u32, maxAirReachBlocks(), dw.CHUNK_SIZE) catch unreachable);
 
 /// Precomputed orthogonal step cost per cell (u8 keeps the flood's neighbor reads cache-friendly).
-var cost_buffer: std.ArrayList(u8) = undefined;
+var cost_buffer: std.array_list.Aligned(u8, .@"16") = undefined;
 /// High-precision per-cell light, orange (warm) channel.
 var orange_buffer: std.array_list.Aligned(u16, .@"16") = undefined;
 /// High-precision per-cell light, white (player/plate) channel.
@@ -166,7 +155,7 @@ inline fn unpackY(p: u32) u16 {
 inline fn seed(light: []u16, buckets: *[NUM_BUCKETS]std.array_list.Aligned(u32, .@"16"), i: usize, x: u16, y: u16, val: u16, ambient: u16) void {
     if (val > light[i] and val > ambient) {
         light[i] = val;
-        buckets[@as(usize, val)].append(world.alloc, packCoords(x, y)) catch memory.oom();
+        buckets[@as(usize, val)].append(alloc, packCoords(x, y)) catch memory.oom();
     }
 }
 
@@ -230,7 +219,7 @@ fn floodChannel(cost: []const u8, light: []u16, buckets: *[NUM_BUCKETS]std.array
                         const nl = b - c;
                         if (nl > light[ni]) {
                             light[ni] = nl;
-                            buckets[@as(usize, nl)].append(world.alloc, packCoords(@intCast(nx), @intCast(ny))) catch memory.oom();
+                            buckets[@as(usize, nl)].append(alloc, packCoords(@intCast(nx), @intCast(ny))) catch memory.oom();
                         }
                     }
                 }
@@ -242,6 +231,7 @@ fn floodChannel(cost: []const u8, light: []u16, buckets: *[NUM_BUCKETS]std.array
 /// Executes a bucketed Dijkstra light flood over the visible buffer and writes the final
 /// per-block `light` (0..255) and `lighting_color` (orange flag) using continuous player coords.
 pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: f32) void {
+    resetArena();
     const w: i32 = @intCast(wb);
     const h: i32 = @intCast(hb);
     const wbw: u16 = @intCast(wb);
@@ -249,9 +239,9 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
     // Recycle scratch: retain capacity, reset contents below.
     for (&buckets_orange) |*bk| bk.clearRetainingCapacity();
     for (&buckets_white) |*bk| bk.clearRetainingCapacity();
-    cost_buffer.resize(world.alloc, out.len) catch memory.oom();
-    orange_buffer.resize(world.alloc, out.len) catch memory.oom();
-    white_buffer.resize(world.alloc, out.len) catch memory.oom();
+    cost_buffer.resize(alloc, out.len) catch memory.oom();
+    orange_buffer.resize(alloc, out.len) catch memory.oom();
+    white_buffer.resize(alloc, out.len) catch memory.oom();
 
     const cost_slice = cost_buffer.items;
     const light_orange = orange_buffer.items;
@@ -296,8 +286,11 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
         const max_light = @max(orange, white);
         block.light = @intCast(@min(max_light, @as(u16, MAX_LIGHT)));
 
+        // this fixes an issue where orange light overtakes normal white light if ambient light is at max
+        if (AMBIENT_LIGHT == 255 or (dw.is_debug and DEBUG_LIGHT and AMBIENT_LIGHT_DEBUG == 255)) continue;
+
         // Block is orange if it receives more orange light than white, or is in the core radius (>= 255).
-        const is_orange = (orange >= white) or (orange >= 255);
+        const is_orange = orange >= white or orange >= 255;
         block.lighting_color = @intFromBool(is_orange and max_light > ambient);
     }
 }

@@ -86,7 +86,6 @@ fn murmurmix32(number: u32) u32 {
 /// Picks a weighted variant offset from a block seed (see `seed_pick`).
 fn seedPick(seed: u32, count: u8) u16 {
     const bits_needed = std.math.log2_int_ceil(u8, count);
-    // Mirror the shader: `seeds[1]` is a double-mixed seed; the variant reads its bits 16+.
     const mixed = murmurmix32(murmurmix32(seed));
     const mask = (@as(u32, 1) << @intCast(bits_needed)) - 1;
     const raw = (mixed >> 16) & mask;

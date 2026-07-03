@@ -5,7 +5,7 @@ const memory = dw.memory;
 const KeyBits = dw.KeyBits;
 
 /// Sets if the Z key should increase the depth recursively until D=32 is reached.
-var debug_recursively_increase_depth = false;
+var DEBUG_RECURSIVELY_INCREASE_DEPTH = false;
 const MAX_AUTO_DEPTH = 32;
 
 pub fn handleTick(logic_speed: f64, iterations: u32) void {
@@ -45,7 +45,7 @@ pub fn handleTick(logic_speed: f64, iterations: u32) void {
     }
 
     // TODO: in prod, add is_debug here!
-    if (debug_recursively_increase_depth and memory.game.depth < MAX_AUTO_DEPTH) {
+    if (DEBUG_RECURSIVELY_INCREASE_DEPTH and memory.game.depth < MAX_AUTO_DEPTH) {
         dw.world.pushLayer(
             .none,
             memory.game.getPlayerCoord(),
@@ -54,7 +54,7 @@ pub fn handleTick(logic_speed: f64, iterations: u32) void {
         );
         if (memory.game.depth == MAX_AUTO_DEPTH) {
             dw.logger.quick(.{ "{h}Position", memory.game.getPlayerCoord().asDepthCoordinate(memory.game.depth) });
-            debug_recursively_increase_depth = false;
+            DEBUG_RECURSIVELY_INCREASE_DEPTH = false;
         }
     }
 

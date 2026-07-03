@@ -44,6 +44,8 @@ pub const SeedType = enum {
     ores3,
     /// Used for ore generation at base depth.
     ores4,
+    /// Used for ore generation at base depth.
+    ores5,
 };
 
 /// Non-pointer data (short known length) representing part of the game state.
@@ -70,9 +72,9 @@ pub const GameState = extern struct {
     /// Represents how many layers deep the player is. Automatically setup in startup.zig.
     depth: u64 = 0,
 
-    /// Represents which quadrant (0-3) of the `QuadCache` the player is in (starts at 0 when depth is <= 16).
+    /// Represents which quadrant (0-3) of the `quad_cache` the player is in (starts at 0 when depth is <= 16).
     /// (0: NW, 1: NE, 2: SW, 3: SE)
-    player_quadrant: u8 = 0,
+    player_quadrant: u8 = 0, // (is u8 for extern only)
 
     /// Current frame ID. 32-bit; expect wrap-arounds and access with powers-of-2 checks.
     frame: u32 align(4) = 0,
@@ -106,12 +108,13 @@ pub const GameState = extern struct {
     seed: seeding.Seed = .{},
 
     /// Second seed based on the original `seed` value: derived from `ChaCha12` for use in `FastHash`.
-    seed2: [16]u64 align(16) = @splat(0),
+    /// Derived from the base `seed` automatically, regardless of array length.
+    seed2: [32]u64 align(16) = @splat(0),
 
     /// Returns a `hash2d()` seed vector for procedural generation.
     /// See `SeedType` definition for the possible categories and their purposes.
     pub inline fn getHashSeed(self: *const @This(), comptime category: SeedType) @Vector(2, u64) {
-        const index_start: usize = @intFromEnum(category) * 2;
+        const index_start: usize = @as(usize, @intFromEnum(category)) * 2;
         return self.seed2[index_start .. index_start + 2].*;
     }
 
@@ -184,15 +187,26 @@ pub const page_allocator = if (builtin.is_test) std.testing.allocator else std.h
 const main_allocator = if (builtin.is_test) std.testing.allocator else if (builtin.single_threaded) std.heap.brk_allocator else std.heap.smp_allocator; // use .allocator() for instance
 
 /// Creates an `ArenaAllocator` around the `page_allocator`.
-/// It is usually preferable to utilize the scratch buffer for temporary calculations through a callee, store `len` from the caller, and re-access `scratch_ptr`.
+/// It is usually preferable when possible to utilize the scratch buffer for temporary calculations through a callee,
+/// store `len` from the caller, and re-access `scratch_ptr`.
 ///
-/// Example:
+///
+/// Example temporary usage:
 /// ```zig
 /// var arena = memory.makeArena();
 /// const allocator = arena.allocator();
 /// defer arena.deinit();
 /// var list: std.ArrayList(u64) = .empty;
 /// list.append(allocator, 12345) catch {};
+/// ```
+///
+/// Alternative for repeated scratchpad use:
+/// ```zig
+/// var arena = memory.makeArena();
+/// var alloc = arena.allocator();
+/// fn resetArena() void {
+///     if (!arena.reset(.retain_capacity)) memory.oom();
+/// }
 /// ```
 pub fn makeArena() std.heap.ArenaAllocator {
     return std.heap.ArenaAllocator.init(page_allocator);
@@ -381,6 +395,10 @@ pub const Chunk = struct {
         return self.blocks[(@as(usize, y) << CHUNK_SIZE_LOG2) | @as(usize, x)];
     }
 };
+
+/// Bytes of block data in one `Chunk` (`CHUNK_SIZE_SQ` * 16 = 4096).
+/// Chunk-cache layouts (e.g. `AncestorCache`) budget their footprint in multiples of this.
+pub const CHUNK_BYTES = CHUNK_SIZE_SQ * @sizeOf(Block);
 
 /// Data for a single particle (converted to `WGSLEntity` before sending to WGSL).
 pub const Particle = struct {
@@ -707,6 +725,9 @@ comptime {
     }
     if (@sizeOf(Block) != 16) {
         @compileError("Memory size for each block should be 16 bytes.");
+    }
+    if (@sizeOf(Chunk) != CHUNK_BYTES) {
+        @compileError("Chunk must be exactly CHUNK_BYTES with no trailing padding.");
     }
     if (@sizeOf(WGSLEntity) != 48) {
         @compileError("WGSL entity must be 48 bytes!");

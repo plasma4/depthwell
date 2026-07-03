@@ -45,7 +45,7 @@ pub fn generate(
     bounds: Rect,
     state: *HashState,
     struct_seed: Vec2u,
-) ?Sprite {
+) ?structures.StructureResult {
     _ = bounds;
     _ = struct_seed;
     const i_area = @as(i32, @intCast(spawn_area));
@@ -67,15 +67,15 @@ pub fn generate(
     if (struct_x >= 0 and struct_y >= 0 and struct_x < size_x and struct_y < size_y) {
         // Rect outer boundary
         if (struct_x == 0 or struct_y == 0 or struct_x == size_x - 1 or struct_y == size_y - 1) {
-            return .seagreen_stone;
+            return .{ .id = .seagreen_stone };
         }
 
         // Add chest in the bottom row!
         if (struct_y == size_y - 2 and struct_x == chest_x) {
-            return .chest;
+            return .{ .id = .chest };
         }
 
-        return if (starting_sprite.isLiquid()) starting_sprite else .none;
+        return .{ .id = if (starting_sprite.isLiquid()) starting_sprite else .none };
     }
     return null;
 }

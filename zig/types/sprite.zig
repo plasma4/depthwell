@@ -12,7 +12,7 @@ const DropConfig = dw.drops.DropConfig;
 const DropHandlers = dw.drops.DropHandlers;
 
 /// Index where stone-like sprites begin.
-const STONE_START = 6;
+pub const STONE_START = 6;
 /// Index where stone-like sprites end.
 const STONE_END = STONE_START + 14;
 
@@ -20,13 +20,13 @@ const STONE_END = STONE_START + 14;
 const BAR_START = STONE_END + 4;
 
 /// Index where ore sprites begin.
-const ORE_START = BAR_START + 4;
+pub const ORE_START = BAR_START + 6;
 
 /// Index where gem sprites begin.
-pub const GEM_START = ORE_START + 4;
+pub const GEM_START = ORE_START + 6;
 
-/// Number of gem sprites.
-pub const GEM_COUNT = 4;
+/// Number of gem types.
+pub const GEM_COUNT = 5;
 
 /// Index where gem masks (not gem sprites) begin.
 pub const MASK_START = GEM_START + GEM_COUNT * 2;
@@ -39,7 +39,7 @@ const FRUIT_COUNT = 10;
 const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = GEAR_ID + 22;
+pub const INVENTORY_START = GEAR_ID + 21;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 4;
 
@@ -79,16 +79,20 @@ pub const Sprite = enum(u16) {
     iron_bar,
     silver_bar,
     gold_bar,
+    nickel_bar,
+    cobalt_bar,
 
     // ores!
-    copper = ORE_START,
+    copper = ORE_START, // notice how these constants help with fixing gaps/misplacements
     iron,
     silver,
-    // no gap between ores and gems: use the = GEM_START part to check we didn't skip ID indices
-    gold = GEM_START - 1,
+    gold,
+    nickel,
+    cobalt,
 
     // gems!
-    amethyst = GEM_START,
+    quartz = GEM_START,
+    amethyst,
     sapphire,
     emerald,
     ruby,
@@ -124,8 +128,7 @@ pub const Sprite = enum(u16) {
     lava_furnace,
     campfire, // 4 variations
     chest = GEAR_ID + 15 + 4,
-    portal,
-    fire = INVENTORY_START - 1,
+    portal = INVENTORY_START - 1,
 
     /// Unselected inventory sprite.
     inventory = INVENTORY_START,
@@ -231,6 +234,14 @@ pub const Sprite = enum(u16) {
         return self.props().gem;
     }
 
+    /// True for ore/gem overlay sprites since those composited over a `base_id` stone underlay.
+    /// Ores and gems form one contiguous id range, so this is a single bounds test rather than two `props()` lookups
+    /// (`isOre() or isGem()`); a comptime check tries to keep the ranges in sync.
+    pub inline fn isOverlay(self: @This()) bool {
+        const id = @intFromEnum(self);
+        return id >= ORE_START and id < GEM_START + GEM_COUNT;
+    }
+
     /// Returns the cascade anchoring rules for this sprite.
     pub inline fn anchor(self: @This()) AnchorKind {
         return self.props().anchor;
@@ -307,34 +318,8 @@ const rules = [_]SpriteRule{
     },
     // Smelted bars (inventory items only; not placeable in the world)
     .{
-        .{ .range = .{ .copper_bar, .gold_bar } },
+        .{ .range = .{ .copper_bar, .cobalt_bar } },
         .{ .item = true, .category = .bar },
-    },
-    // Ores
-    .{
-        .{ .range = .{ .copper, .gold } },
-        .{
-            .in_world = true,
-            .item = true,
-            .solid = true,
-            .foundation = true,
-            .ore = true,
-            .category = .ore,
-            .strength = 30,
-        },
-    },
-    // Gems
-    .{
-        .{ .range = .{ .amethyst, .ruby } },
-        .{
-            .in_world = true,
-            .item = true,
-            .solid = true,
-            .foundation = true,
-            .gem = true,
-            .category = .gem,
-            .strength = 15,
-        },
     },
     // Edge stone
     .{
@@ -397,6 +382,33 @@ const rules = [_]SpriteRule{
         },
     },
 
+    // Ores
+    .{
+        .{ .range = .{ .copper, .cobalt } },
+        .{
+            .in_world = true,
+            .item = true,
+            .solid = true,
+            .foundation = true,
+            .ore = true,
+            .category = .ore,
+            .strength = 30,
+        },
+    },
+    // Gems
+    .{
+        .{ .range = .{ .quartz, .ruby } },
+        .{
+            .in_world = true,
+            .item = true,
+            .solid = true,
+            .foundation = true,
+            .gem = true,
+            .category = .gem,
+            .strength = 15,
+        },
+    },
+
     // Ore/gem strengths
     .{
         .{ .single = .iron },
@@ -409,6 +421,14 @@ const rules = [_]SpriteRule{
     .{
         .{ .single = .gold },
         .{ .strength = 60 },
+    },
+    .{
+        .{ .single = .nickel },
+        .{ .strength = 70 },
+    },
+    .{
+        .{ .single = .cobalt },
+        .{ .strength = 90 },
     },
     .{
         .{ .single = .amethyst },
@@ -762,9 +782,16 @@ comptime {
 
     // `oreToBar()` relies on the bar range sitting directly before the ore range with the same
     // length, so the mapping is a single constant offset. Enforce that here.
-    if (@intFromEnum(Sprite.copper) - @intFromEnum(Sprite.copper_bar) !=
-        @intFromEnum(Sprite.gold) - @intFromEnum(Sprite.gold_bar))
+    if (ORE_START - BAR_START != GEM_START - ORE_START)
         @compileError("Bar range is not parallel to the ore range; oreToBar() would be wrong.");
+
+    // isOverlay() bounds-tests one contiguous ore+gem range; verify it matches the props table exactly.
+    var o: u16 = 0;
+    while (o < MAX_SPRITE_ID) : (o += 1) {
+        const s: Sprite = @enumFromInt(o);
+        if (s.isOverlay() != (s.isOre() or s.isGem()))
+            @compileError("isOverlay() range drifted from ore/gem props; fix ORE_START/GEM_START/GEM_COUNT.");
+    }
 
     var i: u16 = 0;
     var wentToHeatmap = false;

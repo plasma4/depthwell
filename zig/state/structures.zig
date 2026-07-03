@@ -27,6 +27,10 @@ pub const Rect = struct {
     y_end: i32,
 };
 
+/// A structure's placed block: the sprite `id`, plus (for ore/gem overlays) the stone `base` the
+/// structure wants beneath it. `base == .none` means "fall back to the natural terrain it replaced".
+pub const StructureResult = struct { id: Sprite, base: Sprite = .none };
+
 /// Comptime helper to find a structure's priority index directly from its type.
 pub inline fn getStructureIndex(comptime T: type) usize {
     inline for (structures, 0..) |S, i| {
@@ -169,7 +173,7 @@ inline fn generateStructureForKind(
     wx: u32,
     wy: u32,
     struct_seed: Vec2u,
-) ?Sprite {
+) ?StructureResult {
     const S = structures[kind];
     const area = S.spawn_area;
     const i_area = @as(i32, @intCast(area));
@@ -208,11 +212,11 @@ pub fn addStructures(
     wx: u32,
     wy: u32,
     struct_seed: Vec2u,
-) Sprite {
+) StructureResult {
     inline for (0..structures.len) |kind| {
-        if (generateStructureForKind(kind, starting_sprite, wx, wy, struct_seed)) |sprite| {
-            return sprite;
+        if (generateStructureForKind(kind, starting_sprite, wx, wy, struct_seed)) |result| {
+            return result;
         }
     }
-    return starting_sprite;
+    return .{ .id = starting_sprite };
 }

@@ -47,7 +47,7 @@ pub fn generate(
     bounds: Rect,
     state: *HashState,
     struct_seed: Vec2u,
-) ?Sprite {
+) ?structures.StructureResult {
     _ = starting_sprite;
     _ = bounds;
     _ = struct_seed;
@@ -70,7 +70,7 @@ pub fn generate(
     if (struct_x >= 0 and struct_y >= 0 and struct_x < size_x and struct_y < size_y) {
         // Plate frame
         if (struct_x == 0 or struct_y == 0 or struct_x == size_x - 1 or struct_y == size_y - 1) {
-            return .white_plate;
+            return .{ .id = .white_plate };
         }
 
         // Columns are placed every 5 blocks on the x-axis, centered vertically
@@ -82,7 +82,7 @@ pub fn generate(
             // Don't block the very center where the tomb altar sits
             const is_near_center = (struct_x >= size_x / 2 - 3 and struct_x <= size_x / 2 + 2);
             if (!is_near_center) {
-                return .mossy_stone;
+                return .{ .id = .mossy_stone };
             }
         }
 
@@ -90,17 +90,17 @@ pub fn generate(
         const altar_x = size_x / 2;
         const altar_y = size_y - 3;
         if (struct_y == altar_y and struct_x == altar_x) {
-            return .chest;
+            return .{ .id = .chest };
         }
         if (struct_y == altar_y + 1 and (struct_x >= altar_x - 1 and struct_x <= altar_x + 1)) {
-            return .seagreen_stone;
+            return .{ .id = .seagreen_stone };
         }
 
         if (struct_y == size_y - 2 or (struct_y == size_y - 3 and water_bit)) {
-            return .water;
+            return .{ .id = .water };
         }
 
-        return .none;
+        return .{ .id = .none };
     }
     return null;
 }

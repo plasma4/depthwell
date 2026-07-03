@@ -10,12 +10,12 @@
 // Auto-generated from zig/types/sprite.zig by zig/generate_shader.zig (runs during `zig build`).
 // Do NOT edit values between the markers by hand; edit the Sprite enum instead.
 const TILES_PER_ROW: f32 = 8.0;
-const TILES_PER_COLUMN: f32 = 18.0;
-const STONE_START: u32 = 20u;
-const ORE_START: u32 = 28u;
-const GEM_START: u32 = 32u;
-const GEM_MASK_START: u32 = 40u;
-const WATER_START: u32 = 140u;
+const TILES_PER_COLUMN: f32 = 19.0;
+const STONE_START: u32 = 6u;
+const ORE_START: u32 = 30u;
+const GEM_START: u32 = 36u;
+const GEM_MASK_START: u32 = 46u;
+const WATER_START: u32 = 145u;
 // #endregion generated-constants
 
 const PI = radians(180.0);
@@ -175,10 +175,6 @@ fn vs_tile(
     // );
     // update: this messes with water visually
     const vertical_offset = 0;
-
-    // Sprite variation/animation (2x2 stone, checkerboard edge stone, seed-picked bushes/mushrooms,
-    // liquid surfaces, campfire animation) is now resolved in Zig; see zig/types/variation.zig.
-    // `id` here is already the final atlas frame, so no per-sprite shifting happens in the shader.
 
     // apply to screen_pos.y before converting to normalized device coordinates
     // subtract from Y because in screen space, lower values are "higher" up
@@ -397,8 +393,8 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
     var base_brightening: f32 = 0.0;
 
     if is_ore && base_id != 0u {
-        // Evaluate shrunk erosion (passing 1u) which handles the 1px shrinkage of edges and corners symmetrically
-        var ore_mask = erosion(in.local_uv, id_edge_flags, in.seeds[2], in.seeds[3], 1u);
+        // Pass in increased shrink to shrink the edges/corners and increase border radius!
+        var ore_mask = erosion(in.local_uv, id_edge_flags, in.seeds[2], in.seeds[3], 2u);
 
         if ore_mask == 0u {
             // Rebuild tex_color from the base tile directly before OKLCH conversion
@@ -412,9 +408,9 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
             let ore_edge_proximity = calculate_edge_darkening(in.local_uv, id_edge_flags, in.seeds[2], width_bonus, 0.1);
             base_brightening = ore_edge_proximity * 0.15; // subtle rim-light highlight on the base sprite near the ore boundary
         } else {
-            // Confine darkening to a thin band near unconnected edges so the interior stays bright.
+            // Also add edge darkening effect (fairly weak)
             let width_bonus = -0.22 + f32(extractBits(in.seeds[3], 24u, 3u)) / 128.0;
-            ore_darkening = calculate_edge_darkening(in.local_uv, id_edge_flags, in.seeds[2], width_bonus, 0.1);
+            ore_darkening = calculate_edge_darkening(in.local_uv, id_edge_flags, in.seeds[2], width_bonus, 0.12);
             ore_light_mult = (1.0 - ore_darkening) * select(1.0, 0.7, ore_mask == 2u) * 1.1; // 1.1: brighter interior by default
             ore_chroma_mult = (1.0 + ore_darkening * 0.15) * select(1.0, 1.1, ore_mask == 2u);
         }
@@ -547,10 +543,10 @@ fn erosion(local_uv: vec2f, edge_flags: u32, seed2: u32, seed3: u32, shrink: u32
     let has_br = (edge_flags & EDGE_BOTTOM_RIGHT) != 0u;
 
     // Precompute outer corner radii from sc (used by both corner arcs and straight-edge safe zones)
-    let r_tl = select(4u, 7u, shrink == 1u) + extractBits(seed3, 0u, 2u);
-    let r_tr = select(4u, 7u, shrink == 1u) + extractBits(seed3, 2u, 2u);
-    let r_bl = select(4u, 7u, shrink == 1u) + extractBits(seed3, 4u, 2u);
-    let r_br = select(4u, 7u, shrink == 1u) + extractBits(seed3, 6u, 2u);
+    let r_tl = select(4u, 6u, shrink == 2u) + extractBits(seed3, 0u, 2u);
+    let r_tr = select(4u, 6u, shrink == 2u) + extractBits(seed3, 2u, 2u);
+    let r_bl = select(4u, 6u, shrink == 2u) + extractBits(seed3, 4u, 2u);
+    let r_br = select(4u, 6u, shrink == 2u) + extractBits(seed3, 6u, 2u);
 
     // The "center" of the circle is at the corner! Do some pixel-perfect circle edge logic.
 

@@ -44,15 +44,29 @@ inline fn resolveBaseFoundation(cx: u64, cy: u64, bx: u4, by: u4) BaseFoundation
     const on_edge_y = (cy == 0 and by < 2) or (cy == max_suffix and by >= (CHUNK_SIZE - 2));
     if (on_edge_x or on_edge_y) return .{ .id = .edge_stone, .base = .none };
 
-    const seeds = memory.game.seed2;
+    const game = &memory.game;
     const base_data = procedural.getBaseSpriteType(@intCast(cx), @intCast(cy), bx, by);
     const wx: u32 = @intCast(cx * CHUNK_SIZE + bx);
     const wy: u32 = @intCast(cy * CHUNK_SIZE + by);
 
     var sprite = base_data.sprite;
-    if (sprite.isStone()) sprite = procedural.addOres(base_data, seeds[4..6].*, seeds[6..8].*, seeds[8..10].*, seeds[10..12].*, wx, wy);
-    sprite = procedural.addStructures(sprite, wx, wy, seeds[12..14].*, seeds[2..4].*);
-    return .{ .id = sprite, .base = base_data.sprite };
+    if (sprite.isStone()) sprite = procedural.addOres(
+        base_data,
+        game.getHashSeed(.ores1),
+        game.getHashSeed(.ores2),
+        game.getHashSeed(.ores3),
+        game.getHashSeed(.ores4),
+        game.getHashSeed(.ores5),
+        wx,
+        wy,
+    );
+    const structured = procedural.addStructures(sprite, wx, wy, game.getHashSeed(.structures));
+    // A structure that places an overlay (e.g. a Geode gem) carries its own stone underlay;
+    // fall back to the natural terrain only when it doesn't (.none).
+    return .{
+        .id = structured.id,
+        .base = if (structured.base != .none) structured.base else base_data.sprite,
+    };
 }
 
 /// Generates a starting chunk at depth `STARTING_ZOOM_TIMES`.
@@ -76,7 +90,7 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
             const spec: memory.BlockSpec = .{
                 .id = bf.id,
                 // Overlay sprites remember the stone they replaced so the shader can composite them over it.
-                .base_id = if (bf.id.isOre() or bf.id.isGem()) bf.base else .none,
+                .base_id = if (bf.id.isOverlay()) bf.base else .none,
                 .seed = rng_seed.next(),
             };
             chunk.blocks[idx] = spec.compile();
@@ -141,7 +155,7 @@ pub var mod_store: ModificationStore = undefined;
 pub const Coordinate = struct {
     /// Active suffix (stored as a vector).
     /// You can think of the active suffix like 32 u2s packed together for the X and Y coordinate.
-    /// This can be merged with a correct `QuadCache` quadrant to produce a "complete" path (see `README.md` for more details).
+    /// This can be merged with a correct `quad_cache` quadrant to produce a "complete" path (see `README.md` for more details).
     suffix: Vec2u,
     /// Quadrant ID (00: NW, 1: NE, 2: SW, 3: SE).
     quadrant: u2,
@@ -240,6 +254,9 @@ pub const Coordinate = struct {
 };
 
 /// Stores what location a modification with an active suffix and quadrant, as well as its depth, to easily identify it.
+///
+/// This is useful for accessing ancestor history, like D->D-1->D-2->...->H.
+/// (See `README.md` for more details on what D/H mean.)
 pub const DepthCoordinate = struct {
     /// Represents an invalid `DepthCoordinate`, which has `depth` equal to 0.
     /// Semantically equivalent to null.
@@ -250,10 +267,8 @@ pub const DepthCoordinate = struct {
     };
 
     /// Active suffix (stored as a vector). Should not be set manually; must call `getParent()` to decrease the depth for depths beyond `HORIZON_DEPTH`.
-    /// Most likely, a "path" of accessing D->D-1->D-2->...->H will occur.
     /// You can think of the active suffix like 32 `u2` values packed together for the X and Y coordinate.
-    /// This coordinate can then be merged with the correct `QuadCache` quadrant to go all the way to H.
-    /// See `README.md` for more details on what D/H mean.
+    /// This coordinate can then be merged with the correct `quad_cache` quadrant to go all the way to H.
     suffix: Vec2u,
     /// The depth of the modification.
     depth: u64,
@@ -450,7 +465,7 @@ pub const SimBuffer = struct {
 
     /// Resets the `SimBuffer` completely, clearing tracking, ring buffer offsets, and background scanners.
     pub fn reset() void {
-        @memset(&keys, null);
+        keys = @splat(null);
         has_water = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
         water_settled = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
         origin = null;
@@ -483,7 +498,7 @@ pub const SimBuffer = struct {
 
     /// Clears the whole `SimBuffer`, invalidating previous data.
     pub inline fn clear() void {
-        @memset(&keys, null);
+        keys = @splat(null);
         has_water = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
         water_settled = std.StaticBitSet(SIM_BUFFER_SIZE).initEmpty();
         origin = null;
@@ -677,7 +692,7 @@ pub const SimBuffer = struct {
                 const id = (cy << SIM_WIDTH_LOG2) | cx;
                 if (new_origin.move(.{ @intCast(cx), @intCast(cy) })) |cell_coord| {
                     keys[id] = cell_coord;
-                    writeChunkSkip(&sim_buffer_ptr[id], cell_coord);
+                    writeChunkSimless(&sim_buffer_ptr[id], cell_coord);
                     has_water.setValue(id, chunkHasWater(&sim_buffer_ptr[id]));
                     water_settled.unset(id); // a freshly loaded chunk must settle at least once
                 } else {
@@ -717,7 +732,7 @@ pub const SimBuffer = struct {
                     const id = getIndex(@intCast(cx_log), @intCast(cy_log));
                     if (new_origin.move(.{ @intCast(cx_log), @intCast(cy_log) })) |cell_coord| {
                         keys[id] = cell_coord;
-                        writeChunkSkip(&sim_buffer_ptr[id], cell_coord);
+                        writeChunkSimless(&sim_buffer_ptr[id], cell_coord);
                         has_water.setValue(id, chunkHasWater(&sim_buffer_ptr[id]));
                         water_settled.unset(id); // a freshly loaded chunk must settle at least once
                     } else {
@@ -739,7 +754,7 @@ pub const SimBuffer = struct {
                     const id = getIndex(@intCast(cx_log), @intCast(cy_log));
                     if (new_origin.move(.{ @intCast(cx_log), @intCast(cy_log) })) |cell_coord| {
                         keys[id] = cell_coord;
-                        writeChunkSkip(&sim_buffer_ptr[id], cell_coord);
+                        writeChunkSimless(&sim_buffer_ptr[id], cell_coord);
                         has_water.setValue(id, chunkHasWater(&sim_buffer_ptr[id]));
                         water_settled.unset(id); // a freshly loaded chunk must settle at least once
                     } else {
@@ -752,7 +767,7 @@ pub const SimBuffer = struct {
     }
 
     /// Background caching heuristic: scans the boundary immediately outside the 16x16 chunk in the
-    /// direction of movement and creates it in `ChunkCache` before the player reaches it.
+    /// direction of movement and creates it in `chunk_cache` before the player reaches it.
     ///
     /// Generates `default_amount` chunks when called (suggested value of 1-2).
     /// It is recommended to set a higher `max_amount` (suggested value of ~4, so more budget is available in high-velocity falling situations).
@@ -866,6 +881,9 @@ const CHUNK_CACHE_SETS = CHUNK_CACHE_SIZE / CHUNK_CACHE_WAYS;
 /// A static cache that caches chunks when a generation is attempted.
 pub const ChunkCache = struct {
     /// Keys storing `Coordinate` values structured as a 4-way set-associative cache.
+    ///
+    /// CODE NOTE: We use `@splat()` rather than `@memset()` because Zig might currently compile @memset() naively with many zeroes, even in ReleaseSmall
+    /// Simply perfoming assignment rather than `@memset(&myData, @splat(0))` is also a tad easier and will be optimized; it just requires that in Debug, the stack isn't fully taken up.
     keys: [CHUNK_CACHE_SETS][CHUNK_CACHE_WAYS]?Coordinate = @splat(@splat(null)),
     /// Chunks referenced by `keys` at the current depth.
     chunks: *[CHUNK_CACHE_SIZE]Chunk = chunk_pool[0..CHUNK_CACHE_SIZE],
@@ -920,9 +938,9 @@ pub const ChunkCache = struct {
 
     /// Clears the whole `ChunkCache`, invalidating previous data.
     pub inline fn clear(self: *@This()) void {
-        @memset(&self.keys, @splat(null));
-        @memset(&self.clock_bits, 0);
-        @memset(&self.hands, 0);
+        self.keys = @splat(@splat(null));
+        self.clock_bits = @splat(0);
+        self.hands = @splat(0);
     }
 };
 
@@ -938,7 +956,7 @@ const QuadrantEdgeDetails = struct {
 /// A static 2x2 grid of seeds only updated when depth increases or game startup.
 pub const QuadCache = struct {
     pub const PATH_PREALLOC_SIZE = 256;
-    pub const SEED_CACHE_SIZE = 128;
+    pub const SEED_CACHE_SIZE = 256; // TODO: evaluate why making this large causes a crash
     pub const SEED_CACHE_WAYS = 4;
     pub const SEED_CACHE_SETS = SEED_CACHE_SIZE / SEED_CACHE_WAYS;
 
@@ -1096,10 +1114,9 @@ pub inline fn getMaxSuffixAtDepth(depth: u64) u64 {
 
 /// `ArenaAllocator` instance used for the world.
 pub var arena = memory.makeArena();
-/// Allocator used for the world.
+/// `Allocator` from `arena`.
 pub var alloc = arena.allocator();
 
-/// TODO: convert this mess of functions to use a comptime-based flags system.
 /// Creates a new instance of a `Chunk` where specified, given a coordinate. Copies over from cache if possible.
 pub fn writeChunk(chunk: *Chunk, coord: Coordinate) void {
     if (SimBuffer.get(coord)) |cached_ptr| {
@@ -1126,7 +1143,7 @@ pub fn writeChunk(chunk: *Chunk, coord: Coordinate) void {
 }
 
 /// Same as `writeChunk()`, but avoids checking `SimBuffer` first.
-pub fn writeChunkSkip(chunk: *Chunk, coord: Coordinate) void {
+pub fn writeChunkSimless(chunk: *Chunk, coord: Coordinate) void {
     if (chunk_cache.findIndex(coord)) |i| {
         chunk.* = chunk_cache.chunks[i];
         return;
@@ -1432,7 +1449,7 @@ inline fn isBothLiquid(sprite_a: Sprite, sprite_b: Sprite) bool {
 }
 
 /// Applies a block modification, changing the `Sprite` type and resetting `hp`.
-/// Mutates `ModificationStore` and caches in-place.
+/// Mutates `mod_store` and caches in-place.
 /// Returns whether `update_local_edge_flags` instantly removed the current block due to being in an invalid position.
 ///
 /// `prev_block` is the block that occupied this cell BEFORE this action began. The caller must pass the original block (e.g. mining reads it before deleting).
@@ -1459,7 +1476,7 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite, pr
     // with gold keeps showing blue_stone behind the ore mask. Priority: inherit a previous overlay's
     // underlay, else grow inside the previous solid block, else fall back to plain stone.
     // Non-ore/gem placements carry no underlay.
-    const new_base: Sprite = if (new_sprite.isOre() or new_sprite.isGem())
+    const new_base: Sprite = if (new_sprite.isOverlay())
         (if (prev_block.base_id != .none) prev_block.base_id else if (prev_block.id.isFoundation()) prev_block.id else .stone)
     else
         .none;
@@ -1504,7 +1521,7 @@ pub const UpdateItem = struct { coord: Coordinate, bx: u4, by: u4 };
 
 /// Max amount of edge flags to check before exiting. If 0, never exits.
 const CHECK_LIMIT = 0;
-/// Dedicated worklist for local edge flag updating.
+/// Dedicated worklist for local edge flag updating. (Not optimized; expects correct adjacent edge flags for reasonable performance.)
 pub var flag_worklist: std.ArrayList(UpdateItem) = undefined;
 
 /// Recalculates edge flags for a specific block its 8 neighbors.
@@ -1856,13 +1873,13 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     memory.game.depth += 1;
     const depth = memory.game.depth;
 
-    const scale_vec: Vec2i = .{ ZOOM_FACTOR, ZOOM_FACTOR };
+    const scale_vec: Vec2i = .{ ZOOM_FACTOR, ZOOM_FACTOR }; // per-axis zoom multiplier for player subpixels
     // Magic vertical pivot compensation (384 for factor 4 and block size 256)
     const pivot_y: i64 = (ZOOM_FACTOR - 1) * dw.CHUNK_SIZE_SQ / 2;
 
-    // Mask the last 12 bits (0-4095)
+    // new_pos: zoomed player position wrapped into one chunk (low bits kept; mask the last 12 bits, 0-4095)
     var new_pos: Vec2i = @mod(memory.game.player_pos * scale_vec, @as(Vec2i, @splat(dw.SUBPIXELS_IN_CHUNK))) + Vec2i{ 0, pivot_y };
-    var chunk_offset: Vec2i = .{ 0, 0 };
+    var chunk_offset: Vec2i = .{ 0, 0 }; // extra whole-chunk shift when the pivot pushes past a chunk edge
 
     // Safely shift the chunk downwards if the vertical pivot overflowed the chunk bounds!
     if (new_pos[1] >= dw.SUBPIXELS_IN_CHUNK) {
@@ -1872,8 +1889,8 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     memory.game.teleport(null, new_pos); // make sure to teleport!
 
     if (depth <= HORIZON_DEPTH) {
-        // Zooming by 4x means the suffix shifts by 2 bits.
-        // Pull the most significant bits from the block offset (bx, by) to fill the new suffix bits.
+        // target_coord: child chunk the player lands in. Zooming by 4x shifts the suffix left 2 bits,
+        // and the top bits of the block offset (bx, by) fill the freed low suffix bits.
         var target_coord: Coordinate = .{
             .suffix = .{
                 (coord.suffix[0] *% ZOOM_FACTOR) | (bx >> (CHUNK_SIZE_LOG2 - dw.ZOOM_LOG2)),
@@ -1894,21 +1911,21 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     }
 
     // Rebase case logic (depth > HORIZON_DEPTH)
-    const shift = 64 - dw.ZOOM_LOG2;
-    const top_x = coord.suffix[0] >> shift;
-    const top_y = coord.suffix[1] >> shift;
-    const midpoint: u64 = 1 << (shift - 1);
-    const is_more_left = (coord.suffix[0] & ((@as(u64, 1) << shift) - 1)) < midpoint;
-    const is_more_top = (coord.suffix[1] & ((@as(u64, 1) << shift) - 1)) < midpoint;
+    const shift = 64 - dw.ZOOM_LOG2; // bit position of the suffix's top (post-zoom) cell index
+    const top_x = coord.suffix[0] >> shift; // which of the ZOOM_FACTOR columns the target sits in
+    const top_y = coord.suffix[1] >> shift; // which of the ZOOM_FACTOR rows the target sits in
+    const midpoint: u64 = 1 << (shift - 1); // half a cell, used to decide which side of it we lean to
+    const is_more_left = (coord.suffix[0] & ((@as(u64, 1) << shift) - 1)) < midpoint; // in the left half of its cell
+    const is_more_top = (coord.suffix[1] & ((@as(u64, 1) << shift) - 1)) < midpoint; // in the top half of its cell
 
-    const parent_quadrant_x = utils.intFromBool(u64, (memory.game.player_quadrant % 2) != 0);
-    const parent_quadrant_y = utils.intFromBool(u64, (memory.game.player_quadrant / 2) != 0);
-    const naive_cell_x = (parent_quadrant_x * ZOOM_FACTOR) | top_x;
-    const naive_cell_y = (parent_quadrant_y * ZOOM_FACTOR) | top_y;
+    const parent_quadrant_x = utils.intFromBool(u64, (memory.game.player_quadrant % 2) != 0); // parent quadrant's x bit
+    const parent_quadrant_y = utils.intFromBool(u64, (memory.game.player_quadrant / 2) != 0); // parent quadrant's y bit
+    const naive_cell_x = (parent_quadrant_x * ZOOM_FACTOR) | top_x; // target column in the 2x-wide parent grid
+    const naive_cell_y = (parent_quadrant_y * ZOOM_FACTOR) | top_y; // target row in the 2x-wide parent grid
 
-    const highest_possible_top_left_cell = (ZOOM_FACTOR - 1) * 2;
-    var left_cell_x: u64 = naive_cell_x -| utils.intFromBool(u64, is_more_left);
-    var top_cell_y: u64 = naive_cell_y -| utils.intFromBool(u64, is_more_top);
+    const highest_possible_top_left_cell = (ZOOM_FACTOR - 1) * 2; // clamp so the 2x2 window stays in bounds
+    var left_cell_x: u64 = naive_cell_x -| utils.intFromBool(u64, is_more_left); // left column of the recentered 2x2 window
+    var top_cell_y: u64 = naive_cell_y -| utils.intFromBool(u64, is_more_top); // top row of the recentered 2x2 window
     left_cell_x = @min(left_cell_x, highest_possible_top_left_cell);
     top_cell_y = @min(top_cell_y, highest_possible_top_left_cell);
 
@@ -1917,12 +1934,13 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     quad_cache.most_top = quad_cache.most_top and top_cell_y == 0;
     quad_cache.most_bottom = quad_cache.most_bottom and top_cell_y == highest_possible_top_left_cell;
 
+    // seeds of the four parent quadrants to reseed from (world seed on the first rebase depth)
     const old_hashes: ChunkSeeds = if (depth == HORIZON_DEPTH + 1) .{ .value = @splat(memory.game.seed) } else quad_cache.path_hashes;
 
     inline for (0..4) |q_id| {
-        const cell_x = left_cell_x + utils.intFromBool(u64, q_id % 2 == 1);
-        const cell_y = top_cell_y + utils.intFromBool(u64, q_id >= 2);
-        const old_q_id = utils.intFromBool(usize, cell_x >= ZOOM_FACTOR) + utils.intFromBool(usize, cell_y >= ZOOM_FACTOR) * 2;
+        const cell_x = left_cell_x + utils.intFromBool(u64, q_id % 2 == 1); // this new quadrant's absolute column
+        const cell_y = top_cell_y + utils.intFromBool(u64, q_id >= 2); // this new quadrant's absolute row
+        const old_q_id = utils.intFromBool(usize, cell_x >= ZOOM_FACTOR) + utils.intFromBool(usize, cell_y >= ZOOM_FACTOR) * 2; // parent quadrant it descends from
         quad_cache.path_hashes.value[q_id] = seeding.mixCoordinateSeed(
             old_hashes.value[old_q_id],
             @intCast(cell_x % ZOOM_FACTOR),
@@ -1931,11 +1949,11 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
         );
     }
 
-    const path_start_depth = dw.HORIZON_DEPTH + 1;
+    const path_start_depth = dw.HORIZON_DEPTH + 1; // first depth that records a rebase path entry
     if (depth >= path_start_depth) {
-        const path_idx = depth - path_start_depth;
-        const slot: usize = @intCast(path_idx / 21);
-        const bit_shift: u6 = @intCast((path_idx % 21) * 3);
+        const path_idx = depth - path_start_depth; // 0-based index of this depth in the path history
+        const slot: usize = @intCast(path_idx / 21); // packed-array slot (21 3-bit cells per u64)
+        const bit_shift: u6 = @intCast((path_idx % 21) * 3); // bit offset of this cell within its slot
         if (bit_shift == 0) {
             quad_cache.left_path.append(alloc, left_cell_x) catch memory.oom();
             quad_cache.top_path.append(alloc, top_cell_y) catch memory.oom();
@@ -1950,8 +1968,8 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
     }
 
     // finalize player state
-    const quadrant_x = naive_cell_x - left_cell_x;
-    const quadrant_y = naive_cell_y - top_cell_y;
+    const quadrant_x = naive_cell_x - left_cell_x; // target's x position (0/1) inside the recentered window
+    const quadrant_y = naive_cell_y - top_cell_y; // target's y position (0/1) inside the recentered window
     var target_coord: Coordinate = .{
         .suffix = .{
             (coord.suffix[0] *% ZOOM_FACTOR) | (bx >> (CHUNK_SIZE_LOG2 - dw.ZOOM_LOG2)),
@@ -1984,9 +2002,8 @@ pub fn pushLayer(parent_id: Sprite, coord: Coordinate, bx: u4, by: u4) void {
             t_by = p.by;
         }
 
-        // Temporarily restore the old depth so parent coordinate lookups at depth D-33 (which are below
-        // the new horizon but were the active horizon at depth D-1) to correctly resolve quadrant IDs
-        // relative to the old threshold D-33, aligning perfectly with quad_cache.ancestor_materials.
+        // Temporarily restore the old depth so parent coordinate lookups at depth D-33 (which are below the new horizon but were the active horizon at depth D-1)
+        // to correctly resolve quadrant IDs relative to the old threshold D-33, aligning perfectly with quad_cache.ancestor_materials.
         memory.game.depth = depth - 1;
         defer memory.game.depth = depth;
 

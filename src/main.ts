@@ -256,8 +256,12 @@ engine.renderLoop = function (_t: number) {
         const debugElem = document.getElementById(
             "renderText",
         ) as HTMLDivElement;
-        debugElem.textContent = `Time since last render/prepare_visible_data time: ${delta.toFixed(1)}ms, ${engine.prepare_visible_data_time.toFixed(1)}ms
-Worst (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixed(1)}ms`;
+        debugElem.textContent =
+            ((document.getElementById("debugContainer") as HTMLDivElement).style
+                .display !== "none"
+                ? `Time since last render/prepare_visible_data call: ${delta.toFixed(1)}ms, ${engine.prepare_visible_data_time.toFixed(1)}ms\n`
+                : "") +
+            `Worst render times (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixed(1)}ms`;
 
         debugElem.style.fontWeight = (
             slowestRender > 40 ? (slowestRender > 55 ? 700 : 600) : 500
@@ -300,7 +304,12 @@ engine.logicLoop = function (ticks: number) {
         const debugElem = document.getElementById(
             "logicText",
         ) as HTMLDivElement;
-        debugElem.textContent = `Logic diff: ${delta.toFixed(1)}ms for ${ticks} tick${ticks == 1 ? "" : "s"}\nWorst (past 60 frames): ${slowestLogicLoop.toFixed(1)}ms\n`;
+        debugElem.textContent =
+            ((document.getElementById("debugContainer") as HTMLDivElement).style
+                .display !== "none"
+                ? `WASM memory buffer: ${(engine.memory.buffer.byteLength / 1000000).toFixed(2)}MB\nLogic diff: ${delta.toFixed(1)}ms for ${ticks} tick${ticks == 1 ? "" : "s"}\n`
+                : "") +
+            `Worst logic tick (past 60 frames): ${slowestLogicLoop.toFixed(1)}ms\n`;
         // new-line in string for copy and paste
 
         debugElem.style.fontWeight = (

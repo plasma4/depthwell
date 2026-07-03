@@ -23,7 +23,7 @@ const SIM_BUFFER_SIZE = dw.world.SIM_BUFFER_SIZE;
 /// Only logs if an invalid state occurs.
 pub const VERIFY_WATER_MASS = false;
 
-/// Sums the water volume of every loaded SimBuffer chunk. Debug helper for `VERIFY_WATER_MASS`.
+/// Sums the water volume of every loaded `SimBuffer` chunk. Debug helper for `VERIFY_WATER_MASS`.
 fn totalSimWater() u64 {
     var total: u64 = 0;
     for (&SimBuffer.keys, 0..) |key, sim_idx| {

@@ -209,7 +209,7 @@ pub fn build(b: *std.Build) void {
         // Bake sprite-layout constants into src/shader.wgsl. Not behind -Dgen-enums: these must always
         // match the current Sprite enum, and it is guarded by its own content hash so the host tool is
         // only rebuilt when the source values (sprite.zig / mining.zig) actually change.
-        generateShaderConstants(b, &[_][]const u8{ "zig/types/sprite.zig", "zig/input/mining.zig" });
+        generateShaderConstants(b, &[_][]const u8{"zig/types/sprite.zig"});
 
         if (aseprite_path) |path| {
             const export_main = addAsepriteStep(b, path, "aseprite/main.aseprite", "main", "main.png");

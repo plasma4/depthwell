@@ -49,7 +49,7 @@ pub fn generate(
     bounds: Rect,
     state: *HashState,
     struct_seed: Vec2u,
-) ?Sprite {
+) ?structures.StructureResult {
     _ = starting_sprite;
     _ = bounds;
     _ = struct_seed;
@@ -108,20 +108,20 @@ pub fn generate(
                 // prioritize chest placement
                 if (struct_x == chest_x) {
                     if (struct_y == floor_y) {
-                        return .chest;
+                        return .{ .id = .chest };
                     }
                     if (struct_y == floor_y + 1) {
                         // guarantee something for the chest to stay on with unwarped coords
-                        return .white_plate;
+                        return .{ .id = .white_plate };
                     }
                 }
 
                 if (inner_dist_sq > inner_bound) {
                     const erosion_factor = (wx ^ wy) % 7;
-                    if (erosion_factor == 0) return .none;
-                    return .sulfuric_stone;
+                    if (erosion_factor == 0) return .{ .id = .none };
+                    return .{ .id = .sulfuric_stone };
                 } else {
-                    return .none;
+                    return .{ .id = .none };
                 }
             }
         }
