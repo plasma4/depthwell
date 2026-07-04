@@ -2,8 +2,8 @@
 //!
 //! Opening is toggled by clicking a core's indicator, which flips `dw.indicators.menus.corecraft`.
 //! This menu is INDEPENDENT of the furnace menu: both can be open at once (see render/indicators.zig).
-//! Real crafting is TODO; for now this only renders a static panel. Which cores are nearby is already
-//! tracked in `dw.indicators.nearby_cores` for future recipe/tier logic.
+//! Real crafting is TODO; for now this only renders a static panel.
+//! (Which cores are nearby is already tracked in `dw.indicators.nearby_cores` for future recipe/tier logic.)
 const dw = @import("../root.zig");
 
 const Vec2f = dw.utils.Vec2f;

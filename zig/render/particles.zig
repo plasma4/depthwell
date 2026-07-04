@@ -1,10 +1,10 @@
 //! Fixed-capacity particle system rendered with the square `.particle` sprite.
 //!
-//! Colors come from `particle_colors.zig`, generated at build time from the sprite atlases by
-//! `zig/generate_particles.zig`, so each sprite tile exposes its unique texel colors as OKLCH tints.
-//! Particles live in a circular buffer: memory use is constant and spawning past capacity simply
-//! overwrites the oldest particle. Spawn from elsewhere via `addParticle()` or `spawnBurst()`
-//! (e.g. mining will call `spawnSpriteBurst()` with the mined block's sprite).
+//! Colors come from `particle_colors.zig`, generated at build time from the sprite atlases by `zig/generate_particles.zig`,
+//! so each sprite tile exposes its unique texel colors as OKLCH tints.
+//! Particles live in a simple circular buffer that overrides the oldest particle.
+//!
+//! Spawn from elsewhere via `addParticle()` or `spawnBurst()` (e.g. mining will call `spawnSpriteBurst()` with the mined block's sprite).
 const std = @import("std");
 const dw = @import("../root.zig");
 const palette = @import("particle_colors.zig");

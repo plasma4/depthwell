@@ -55,7 +55,7 @@ export default defineConfig(({ command }) => {
             {
                 name: "watch-wasm",
                 configureServer(server) {
-                    server.watcher.add("public/main.wasm");
+                    server.watcher.add("main.wasm");
 
                     // Trigger a full page reload when a watched wasm file changes
                     server.watcher.on("change", (file) => {

@@ -3,7 +3,7 @@ import * as Seeding from "./seeding";
 import { MAX_DRAW_CALLS, GameEngine } from "./engine";
 
 /** The URL for the WebAssembly code (compiled from zig build). */
-import WASM_URL from "/public/main.wasm?url";
+import WASM_URL from "/main.wasm?url";
 /**
  * The URL for the WebGPU shader code.
  */

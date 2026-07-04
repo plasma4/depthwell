@@ -153,14 +153,19 @@ pub fn build(b: *std.Build) void {
 
         const install_wasm = b.addInstallFileWithDir(
             exe.getEmittedBin(),
-            .{ .custom = "public/" },
+            .{ .custom = "" },
             "main.wasm",
         );
         b.getInstallStep().dependOn(&install_wasm.step);
 
         if (wasm_opt) {
-            // ... original wasm_opt configuration ...
-            const optimize_wasm = b.addSystemCommand(&.{ "wasm-opt", "public/main.wasm", "-o", "public/main.wasm", "-O4" });
+            const optimize_wasm = b.addSystemCommand(&.{
+                "wasm-opt",
+                "main.wasm",
+                "-o",
+                "main.wasm",
+                "-O4",
+            });
             optimize_wasm.addArgs(&.{
                 "--strip-debug",
                 "--strip-dwarf",
