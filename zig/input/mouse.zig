@@ -139,9 +139,10 @@ pub fn processDownCaptures() void {
         switch (@as(ClickFocus, @enumFromInt(field.value))) {
             // not interactive layers: .none is idle, .canvas is the fallback owner set on pointerdown
             .none, .canvas => {},
-            .indicator => _ = tryCaptureDown(.indicator, dw.indicators.isHoveringFurnaceIndicator()),
+            .indicator => _ = tryCaptureDown(.indicator, dw.indicators.isHoveringIndicator()),
             .inventory => _ = tryCaptureDown(.inventory, inventory.getHoveredInventorySprite() != null),
-            .crafting => _ = tryCaptureDown(.crafting, @import("../menus/furnace.zig").isHoveringOnMenu()),
+            .crafting => _ = tryCaptureDown(.crafting, @import("../menus/furnace.zig").isHoveringOnMenu() or
+                @import("../menus/corecraft.zig").isHoveringOnMenu()),
             // intentionally non-exhaustive to catch errors
         }
     }
@@ -220,6 +221,25 @@ pub fn updateMouseLocation() void {
         mouse_subpixel = null;
         block_position_changed = true; // prevent funny edge cases
     }
+}
+
+/// Screen-space center of the block the mouse is over, in viewport pixels.
+/// Offsets the mouse's own screen position by its subpixel distance to the block center,
+/// so only `camera_scale` is needed (no camera interpolation).
+/// Assumes `updateMouseLocation()` has been called; null when the mouse is outside the world.
+pub fn getMouseBlockCenterPx() ?dw.utils.Vec2f32 {
+    const sub = mouse_subpixel orelse return null;
+
+    // block center within the chunk, in subpixels
+    const center_x: f64 = @floatFromInt(@as(u32, mouse_block_x) * CHUNK_SIZE_SQ + CHUNK_SIZE_SQ / 2);
+    const center_y: f64 = @floatFromInt(@as(u32, mouse_block_y) * CHUNK_SIZE_SQ + CHUNK_SIZE_SQ / 2);
+
+    // 1 screen pixel = CHUNK_SIZE subpixels at camera_scale 1 (see updateMouseLocation())
+    const px_per_subpixel = memory.game.camera_scale / CHUNK_SIZE;
+    return .{
+        @floatCast(uv_position[0] * SCREEN_WIDTH + (center_x - @as(f64, @floatFromInt(sub[0]))) * px_per_subpixel),
+        @floatCast(uv_position[1] * SCREEN_HEIGHT + (center_y - @as(f64, @floatFromInt(sub[1]))) * px_per_subpixel),
+    };
 }
 
 /// Gets what block the mouse is over (assuming `updateMouseLocation()` has been called).

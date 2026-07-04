@@ -12,7 +12,7 @@ const DropConfig = dw.drops.DropConfig;
 const DropHandlers = dw.drops.DropHandlers;
 
 /// Index where stone-like sprites begin.
-pub const STONE_START = 6;
+pub const STONE_START = 8;
 /// Index where stone-like sprites end.
 const STONE_END = STONE_START + 14;
 
@@ -35,11 +35,11 @@ const DECOR_START = MASK_START + 24;
 
 /// Number of fruit sprites.
 const FRUIT_COUNT = 10;
-/// ID for `Sprite.gear`, which is after a list of fruit drops.
+/// ID for `Sprite.gear`, which is after furances.
 const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = GEAR_ID + 21;
+pub const INVENTORY_START = GEAR_ID + 30;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 4;
 
@@ -54,7 +54,9 @@ pub const Sprite = enum(u16) {
     edge_stone = 2,
 
     wood = 4,
+    black_plate,
     white_plate,
+    leaves,
 
     // stone types!
     blue_strange_stone = STONE_START,
@@ -126,8 +128,13 @@ pub const Sprite = enum(u16) {
     big_mushroom = GEAR_ID + 10, // 3 variations
     forest_furnace = GEAR_ID + 13,
     lava_furnace,
-    campfire, // 4 variations
-    chest = GEAR_ID + 15 + 4,
+    core_off = GEAR_ID + 15,
+    core1 = GEAR_ID + 16,
+    core2 = GEAR_ID + 18,
+    core3 = GEAR_ID + 20,
+    core4 = GEAR_ID + 22,
+    campfire = GEAR_ID + 24, // 4 variations
+    chest = GEAR_ID + 24 + 4,
     portal = INVENTORY_START - 1,
 
     /// Unselected inventory sprite.
@@ -183,10 +190,9 @@ pub const Sprite = enum(u16) {
     }
 
     /// Determines if the sprite's type is a valid block that could exist in any chunk.
-    /// Separate from `isItem()`.
-    /// Includes the empty block, and excludes entities.
+    /// Separate from `isItem()`. Includes the empty block, and excludes entities.
     ///
-    /// If this code is wrong, invalid (or unnamed) enums may appear and wreak havoc.
+    /// If properties are wrong here, invalid (or unnamed) enums may appear and wreak havoc.
     pub inline fn isInWorld(self: @This()) bool {
         return self.props().in_world;
     }
@@ -294,7 +300,11 @@ pub const Sprite = enum(u16) {
 const rules = [_]SpriteRule{
     // Non-stone solid blocks
     .{
-        .{ .list = &[_]Sprite{ .wood, .white_plate } },
+        .{ .list = &[_]Sprite{
+            .wood,
+            .black_plate,
+            .white_plate,
+        } },
         .{
             .in_world = true,
             .item = true,
@@ -303,6 +313,18 @@ const rules = [_]SpriteRule{
             .strength = 40,
         },
     },
+    // Non-stone solid blocks
+    .{
+        .{ .single = .leaves },
+        .{
+            .in_world = true,
+            .item = true,
+            .solid = true,
+            .foundation = true,
+            .instant_mine = true,
+        },
+    },
+
     // Stone blocks
     .{
         .{ .range = .{ .blue_strange_stone, .stone } },
@@ -325,29 +347,6 @@ const rules = [_]SpriteRule{
     .{
         .{ .single = .edge_stone },
         .{ .in_world = true, .solid = true },
-    },
-    // Normal decor
-    .{
-        .{ .list = &[_]Sprite{
-            .rock,           .bush,     .small_tree,   .spiral_plant,
-            .ceiling_flower, .mushroom, .big_mushroom, .forest_furnace,
-            .lava_furnace,   .campfire, .chest,        .portal,
-        } },
-        .{
-            .in_world = true,
-            .item = true,
-            .category = .decor,
-        },
-    },
-    // Non-item decor (corresponds to small_tree)
-    .{
-        .{ .list = &[_]Sprite{
-            .big_tree1_left,
-            .big_tree1_right,
-            .big_tree2_left,
-            .big_tree2_right,
-        } },
-        .{ .in_world = true, .category = .decor },
     },
     // Liquids
     .{
@@ -494,19 +493,56 @@ const rules = [_]SpriteRule{
             .bush,
             .mushroom,
             .big_mushroom,
-            .chest,
             .small_tree,
+
+            .chest,
+            .portal,
+            .forest_furnace,
+            .lava_furnace,
+            .core_off,
+            .core1,
+            .core2,
+            .core3,
+            .core4,
+            .campfire,
+        } },
+        .{
+            .anchor = .floor,
+            .in_world = true,
+        },
+    },
+    // Normal decor
+    .{
+        .{ .list = &[_]Sprite{
+            .rock,
+            .bush,
+            .small_tree,
+            .spiral_plant,
+            .ceiling_flower,
+            .mushroom,
+            .big_mushroom,
+        } },
+        .{
+            .in_world = true,
+            .item = true,
+            .category = .decor,
+        },
+    },
+    // Non-item decor (corresponds to small_tree)
+    .{
+        .{ .list = &[_]Sprite{
             .big_tree1_left,
             .big_tree1_right,
             .big_tree2_left,
             .big_tree2_right,
-            .portal,
-            .lava_furnace,
-            .forest_furnace,
-            .campfire,
         } },
-        .{ .anchor = .floor },
+        .{
+            .anchor = .floor,
+            .in_world = true,
+            .category = .decor,
+        },
     },
+
     // Ceiling-anchored decorations
     .{
         .{ .single = .ceiling_flower },
@@ -557,24 +593,44 @@ pub const Category = enum(u3) {
 
 /// Consolidated properties of each sprite.
 pub const SpriteProps = struct {
+    /// Backs `Sprite.isInWorld()`: whether this sprite is a valid block that could exist in any chunk.
     in_world: bool = false,
-    // This can be defaulted to true for debugging and potentially testing sprite misalignment.
+    /// Backs `Sprite.isItem()`: whether this sprite could be in the player's inventory.
     item: bool = false,
+    /// Backs `Sprite.isSolid()`: whether this sprite interacts with physics, the player, and edge flags.
     solid: bool = false,
+    /// Backs `Sprite.isLiquid()`: whether this sprite is a liquid (such as water).
     liquid: bool = false,
+    /// Backs `Sprite.isFoundation()`: whether this sprite interacts with edge flags and procedural generation.
     foundation: bool = false,
+    /// Backs `Sprite.isStone()`: whether this sprite is a stone variation. Excludes edge stone.
     stone: bool = false,
+    /// Backs `Sprite.isOre()`: whether this sprite is an ore.
     ore: bool = false,
+    /// Backs `Sprite.isGem()`: whether this sprite is a gem.
     gem: bool = false,
+    /// Backs `Sprite.category()`; see `Category` for what each variant means.
     category: Category = .none,
+    /// How much `mining_progress` (see mining.zig) must accumulate before mining hits this block's `hp` once.
+    /// 0 means "unset" during rule merging (see `mergeProps()`);
+    /// a solid/foundation block left at 0 is treated as unmineable unless `instant_mine` is set.
     strength: u64 = 0,
+    /// Pseudo-decor: mined instantly like a `.decor` sprite despite being `solid`/`foundation`.
+    /// Only consulted by `mining.getSpriteStrength()`; lives outside `SpriteFlags` since it's off the hot path.
+    instant_mine: bool = false,
+    /// Backs the entity renderer's hitbox shape lookup; see `HitboxKind`.
     hitbox: HitboxKind = .full,
+    /// Backs `Sprite.anchor()`: where this sprite can appear; see `AnchorKind`.
     anchor: AnchorKind = .none,
+    /// What item(s) this sprite drops when mined; see `DropConfig`.
     drops: DropConfig = .{ .strategy = .self },
+    /// If set, the sprite this evolves into at increased depth. See `Sprite.evolvesTo()`.
     evolves_to: ?Sprite = null,
 };
 
 /// Tightly packed 16-bit struct for high-performance, cache-friendly lookups.
+/// Mirrors the boolean/enum fields of `SpriteProps` (see those doc comments), minus
+/// `strength`, `instant_mine`, `drops`, and `evolves_to`, which are only needed off the hot path.
 pub const SpriteFlags = packed struct(u16) {
     in_world: bool = false,
     item: bool = false,
@@ -633,6 +689,7 @@ fn mergeProps(dest: *SpriteProps, src: SpriteProps) void {
     if (src.gem) dest.gem = src.gem;
     if (src.category != .none) dest.category = src.category;
     if (src.strength != 0) dest.strength = src.strength;
+    if (src.instant_mine) dest.instant_mine = src.instant_mine;
     if (src.hitbox != .full) dest.hitbox = src.hitbox;
     if (src.anchor != .none) dest.anchor = src.anchor;
     if (src.drops.strategy != .self or src.drops.static_items.len != 0 or src.drops.dynamic_fn != null) {
@@ -751,13 +808,14 @@ pub const item_sprite_count: usize = blk: {
     @setEvalBranchQuota(1e6);
     var count: usize = 0;
     for (0..MAX_SPRITE_ID) |i| {
-        if (dense_flags_table[i].item) count += 1;
+        if (dense_flags_table[i].in_world or dense_flags_table[i].item) count += 1;
     }
     if (unselected_flags.item) count += 1;
     break :blk count;
 };
 
 /// An array of all `Sprite` values that could be items using lookups.
+/// Returns a list of sprites that are either `in_world` or `item` tagged.
 pub const possible_item_sprites = blk: {
     @setEvalBranchQuota(1e6);
     const fields = @typeInfo(Sprite).@"enum".fields;
@@ -766,7 +824,7 @@ pub const possible_item_sprites = blk: {
 
     for (fields) |field| {
         const sprite: Sprite = @enumFromInt(field.value);
-        if (sprite.isItem()) {
+        if (sprite.isInWorld() or sprite.isItem()) {
             result[index] = sprite;
             index += 1;
         }

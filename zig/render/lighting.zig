@@ -28,7 +28,7 @@ pub const AMBIENT_LIGHT_DEBUG: u8 = 255;
 pub var DEBUG_LIGHT = false;
 
 // Light strength values for various sources:
-pub const PLAYER_LIGHT: u16 = 320;
+pub const PLAYER_LIGHT: u16 = 300;
 // ---
 pub const CAMPFIRE_LIGHT: u16 = 240;
 pub const FURNACE_LIGHT: u16 = 80;

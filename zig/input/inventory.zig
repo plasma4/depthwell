@@ -22,7 +22,7 @@ pub const SHOW_ALL_INVENTORY_ITEMS = false;
 pub const INVENTORY_WIDTH = 10;
 
 /// How many frames (logical) before an item enters the player's inventory.
-fn getMaxItemDropLifespan() u16 {
+inline fn getMaxItemDropLifespan() u16 {
     return if (isInCreative()) 20 else 100;
 }
 
@@ -448,9 +448,14 @@ pub fn drawInventory(time_diff: f64) void {
         addEntity(.{
             .sprite = if (menus.furnace and active_sprite.isOre())
                 .inventory_selected_red
+                // make greener if it's in the world, but not an item
             else if (is_selected) .inventory_selected else .inventory,
             .position = bg_pos,
             .size = bg_size,
+            .lcha = if (shouldShowAllItems() and !rendered_sprite.isItem())
+                .{ 1.0, -0.03, -1.3, 1.0 }
+            else
+                memory.DEFAULT_ENTITY_LCHA,
         });
 
         const pos = inventory_pos - Vec2f32{ current_size / 4.0, current_size / 4.0 } - Vec2f32{ 1.0, 1.0 };

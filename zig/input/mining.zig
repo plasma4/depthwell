@@ -78,10 +78,29 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                 mining_speed
             else
                 @as(u64, @intFromFloat(@as(f64, @floatFromInt(mining_speed)) * logic_speed));
-            // strength function is inline, so this is fine
+            const in_creative = inventory.isInCreative();
+
             const strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
 
-            if (inventory.isInCreative() or (strength != std.math.maxInt(u64) and mining_progress >= strength) and
+            // Chip particles while actively mining; better pickaxes chip more often and in bigger "clusters".
+            if (!block.isEmpty() and strength > 0) {
+                if (mouse.getMouseBlockCenterPx()) |center| {
+                    const power: f32 = @floatFromInt(@intFromEnum(pickaxe_type));
+                    dw.particles.maybeSpawnSpriteBurst(
+                        0.15 + 0.06 * power,
+                        block.id,
+                        center,
+                        .{
+                            .count = if (!in_creative and strength == std.math.maxInt(u64))
+                                1
+                            else
+                                5 + @as(usize, @intFromEnum(pickaxe_type)) * 2,
+                        },
+                    );
+                }
+            }
+
+            if (in_creative or (strength != std.math.maxInt(u64) and mining_progress >= strength) and
                 (!block.isLiquid() or block.hp == memory.Block.MAX_HP))
             {
                 mining_progress = 0;
@@ -92,14 +111,14 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                     mouse.mouse_block_y,
                     block,
                     // instantly mine (0 value special-case in modifyBlockHp) if block type has no strength
-                    if (!inventory.isInCreative() and strength > 0) mining_strength else 0,
+                    if (!in_creative and strength > 0) mining_strength else 0,
                 );
 
                 {
                     // Sound effects time!
                     if (block.isFoundation()) {
                         @setFloatMode(.optimized);
-                        const FRAMES_PER_SOUND = if (inventory.isInCreative())
+                        const FRAMES_PER_SOUND = if (in_creative)
                             3
                         else
                             std.math.clamp(240 / (mining_speed - 1) + 1, 3, 12);
@@ -108,7 +127,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                         if (mining_frame % FRAMES_PER_SOUND == 0)
                             dw.sound.playSound(
                                 @intCast((mining_frame / FRAMES_PER_SOUND) % 3 + 1),
-                                if (inventory.isInCreative()) 1 else (0.4 + 0.6 * @as(f32, @floatFromInt(mining_strength))),
+                                if (in_creative) 1 else (0.4 + 0.6 * @as(f32, @floatFromInt(mining_strength))),
                                 0.2,
                                 if (block.isGem()) 0.7 else if (block.isOre()) 0.55 else 0.45,
                             );
@@ -127,6 +146,14 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 
                 if (was_deleted) {
                     if (!block.isEmpty()) {
+                        // The block broke: burst of its own colors, larger with better pickaxes.
+                        if (mouse.getMouseBlockCenterPx()) |center| {
+                            dw.particles.spawnSpriteBurst(block.id, center, .{
+                                .count = 20,
+                                .speed_max = 2.4,
+                            });
+                        }
+
                         if (block.isFoundation()) memory.game.blocks_mined +%= 1;
                         inventory.dropItem(
                             block.id,
@@ -216,7 +243,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 inline fn getSpriteStrength(s: Sprite) ?u64 {
     const props = sprite.getSpriteProps(s);
     if (!props.in_world) return null;
-    if (!props.solid) return 0;
+    if (!props.solid or props.instant_mine) return 0;
     if (props.strength == 0) return null;
     return props.strength;
 }
@@ -224,12 +251,13 @@ inline fn getSpriteStrength(s: Sprite) ?u64 {
 comptime {
     for (@typeInfo(Sprite).@"enum".fields) |field| {
         const field_sprite: Sprite = @enumFromInt(field.value);
-        if (std.mem.eql(u8, field.name, "_") or std.mem.eql(u8, field.name, "unselected")) continue;
+        if (std.mem.eql(u8, field.name, "_") or
+            std.mem.eql(u8, field.name, "unselected")) continue;
 
         // If it's a valid, solid block, it MUST have a defined mining strength.
         if (field_sprite.isInWorld() and field_sprite.isFoundation()) {
             if (getSpriteStrength(field_sprite) == null) {
-                @compileError("Sprite is valid and solid but missing a strength value in get_sprite_strength: " ++ field.name);
+                @compileError("Sprite is valid and foundation but has strength value of 0 in get_sprite_strength: " ++ field.name);
             }
         }
     }

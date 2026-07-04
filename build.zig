@@ -143,9 +143,9 @@ pub fn build(b: *std.Build) void {
             exe.root_module.strip = false;
             exe.lto = .none;
             exe.export_table = true;
-        } else if (optimize == .ReleaseFast) {
+        } else {
             exe.root_module.single_threaded = true;
-            exe.root_module.stack_check = false;
+            // exe.root_module.stack_check = false;
             exe.lto = .full;
         }
         exe.rdynamic = true;
@@ -211,6 +211,14 @@ pub fn build(b: *std.Build) void {
         // only rebuilt when the source values (sprite.zig / mining.zig) actually change.
         generateShaderConstants(b, &[_][]const u8{"zig/types/sprite.zig"});
 
+        // Bake per-tile atlas colors into zig/render/particle_colors.zig; hash-guarded like the
+        // shader constants. The WASM compile depends on the run so the imported file is fresh.
+        const particle_gen = generateParticleColors(b, &[_][]const u8{
+            "public/assets/main.png",
+            "public/assets/mainMasked.png",
+        });
+        if (particle_gen) |gen_step| exe.step.dependOn(gen_step);
+
         if (aseprite_path) |path| {
             const export_main = addAsepriteStep(b, path, "aseprite/main.aseprite", "main", "main.png");
             const export_masked = addAsepriteStep(b, path, "aseprite/main.aseprite", "masks", "mainMasked.png");
@@ -218,6 +226,13 @@ pub fn build(b: *std.Build) void {
             const install_masked = b.addInstallFile(export_masked, "public/assets/mainMasked.png");
             exe.step.dependOn(&install_main.step);
             exe.step.dependOn(&install_masked.step);
+
+            // Extract colors only after the fresh atlases land in public/assets. The hash was taken
+            // from the pre-export files, so an atlas change converges over two watcher builds.
+            if (particle_gen) |gen_step| {
+                gen_step.dependOn(&install_main.step);
+                gen_step.dependOn(&install_masked.step);
+            }
         } else {
             std.debug.print("Aseprite executable not found; skipping step. Either add to your system PATH or use -Daseprite.", .{});
         }
@@ -380,4 +395,49 @@ fn generateShaderConstants(b: *std.Build, paths: []const []const u8) void {
     run_gen.has_side_effects = true;
     run_gen.addArgs(&.{ cache_root, cache_path, current_hash_hex });
     b.getInstallStep().dependOn(&run_gen.step);
+}
+
+/// Regenerates `zig/render/particle_colors.zig` from the exported sprite atlas PNGs.
+/// Mirrors `generateShaderConstants()`: hashes `paths`, skips entirely when unchanged, otherwise
+/// builds and runs `zig/generate_particles.zig` (which rewrites the data file in place and updates
+/// the cache). Returns the run step (for sequencing against the atlas export), or null when skipped.
+fn generateParticleColors(b: *std.Build, paths: []const []const u8) ?*std.Build.Step {
+    const cache_root = b.cache_root.path orelse ".";
+    const cache_path = b.pathJoin(&.{ cache_root, "particle_color_hashes.txt" });
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+
+    for (paths) |path| {
+        const content = b.build_root.handle.readFileAlloc(b.graph.io, path, b.allocator, .unlimited) catch |err| {
+            std.debug.panic("Skipping particle-color generation; could not read {s}: {any}\n", .{ path, err });
+        };
+        defer b.allocator.free(content);
+        hasher.update(content);
+    }
+
+    var current_hash_binary: [32]u8 = undefined;
+    hasher.final(&current_hash_binary);
+    const current_hash_hex: []const u8 = &std.fmt.bytesToHex(current_hash_binary, .lower);
+
+    const old_hash_hex = b.build_root.handle.readFileAlloc(b.graph.io, cache_path, b.allocator, .limited(1024)) catch |err| blk: {
+        if (err != error.FileNotFound) std.debug.panic("Could not read particle-color cache: {any}\n", .{err});
+        break :blk b.allocator.alloc(u8, 0) catch "";
+    };
+    defer if (old_hash_hex.len > 0) b.allocator.free(old_hash_hex);
+
+    if (std.mem.eql(u8, current_hash_hex, old_hash_hex)) return null;
+
+    const gen_tool = b.addExecutable(.{
+        .name = "generate_particles",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig/generate_particles.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+
+    const run_gen = b.addRunArtifact(gen_tool);
+    run_gen.has_side_effects = true;
+    run_gen.addArgs(&.{ cache_root, cache_path, current_hash_hex });
+    b.getInstallStep().dependOn(&run_gen.step);
+    return &run_gen.step;
 }

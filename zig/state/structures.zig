@@ -10,6 +10,7 @@ pub const BasicRect = @import("structures/BasicRect.zig");
 pub const Ancient = @import("structures/Ancient.zig");
 pub const Pillar = @import("structures/Pillar.zig");
 pub const Geode = @import("structures/Geode.zig");
+pub const Tree = @import("structures/Tree.zig");
 
 /// A struct list of all structures ordered by spawning priority.
 pub const structures = .{
@@ -17,6 +18,7 @@ pub const structures = .{
     Ancient,
     Pillar,
     Geode,
+    Tree,
 };
 
 /// A simple axis-aligned bounding box.
@@ -84,8 +86,48 @@ pub const adjusted_chances = blk: {
     break :blk raw;
 };
 
-/// Generic bounds retriever utilizing dynamic dispatch over the comptime structures tuple.
+/// One memoized structure grid cell: its bounds and (lazily) whether it is blocked by a higher priority.
+/// Keyed by (`cx`, `cy`, `seed`); `blocked` is null until first computed for that cell.
+const StructCacheEntry = struct {
+    cx: i32 = 0,
+    cy: i32 = 0,
+    seed: Vec2u = .{ 0, 0 },
+    bounds: ?Rect = null,
+    blocked: ?bool = null,
+    occupied: bool = false,
+};
+
+/// Direct-mapped bounds/blocked cache, one bank per structure kind (slots must be a power of two).
+/// A structure's bounds and blocked verdict are identical for every footprint cell and are also re-derived by lower kinds' priority scans, so memoizing per grid cell collapses that repeated hashing to O(1).
+/// Pure function of (cell, seed): the per-entry seed check self-invalidates on reseed, so no explicit clear.
+const STRUCT_CACHE_SLOTS = 32;
+var struct_cache: [structures.len][STRUCT_CACHE_SLOTS]StructCacheEntry = @splat(@splat(.{}));
+
+/// Returns the (populated) cache entry for structure `kind` at grid cell (`cx`, `cy`), computing bounds on miss.
+inline fn structCacheSlot(comptime kind: usize, cx: i32, cy: i32, struct_seed: Vec2u) *StructCacheEntry {
+    const ux: u64 = @bitCast(@as(i64, cx));
+    const uy: u64 = @bitCast(@as(i64, cy));
+    const h = (ux *% 0x9E3779B97F4A7C15) ^ (uy *% 0x85EBCA77C2B2AE63);
+    const e = &struct_cache[kind][@as(usize, @intCast((h >> 32) & (STRUCT_CACHE_SLOTS - 1)))];
+    if (!(e.occupied and e.cx == cx and e.cy == cy and @reduce(.And, e.seed == struct_seed))) {
+        e.* = .{
+            .cx = cx,
+            .cy = cy,
+            .seed = struct_seed,
+            .bounds = computeStructureBounds(kind, cx, cy, struct_seed),
+            .occupied = true,
+        };
+    }
+    return e;
+}
+
+/// Generic bounds retriever utilizing dynamic dispatch over the comptime structures tuple (memoized).
 pub inline fn getStructureBounds(comptime kind: usize, cx: i32, cy: i32, struct_seed: Vec2u) ?Rect {
+    return structCacheSlot(kind, cx, cy, struct_seed).bounds;
+}
+
+/// Uncached bounds computation backing the cache. Call `getStructureBounds()` instead elsewhere.
+inline fn computeStructureBounds(comptime kind: usize, cx: i32, cy: i32, struct_seed: Vec2u) ?Rect {
     const S = structures[kind];
     const area = S.spawn_area;
     const i_area = @as(i32, @intCast(area));
@@ -182,9 +224,16 @@ inline fn generateStructureForKind(
     const cx = @divFloor(i_wx, i_area);
     const cy = @divFloor(i_wy, i_area);
 
-    if (getStructureBounds(kind, cx, cy, struct_seed)) |bounds| {
+    const entry = structCacheSlot(kind, cx, cy, struct_seed);
+    if (entry.bounds) |bounds| {
         if (comptime kind > 0) {
-            if (isBlockedByHigherPriority(kind, bounds, struct_seed)) return null;
+            // blocked is identical for the whole footprint; compute once per grid cell and cache it
+            const blocked = entry.blocked orelse blk: {
+                const v = isBlockedByHigherPriority(kind, bounds, struct_seed);
+                entry.blocked = v;
+                break :blk v;
+            };
+            if (blocked) return null;
         }
 
         if (i_wx >= bounds.x_start and i_wx < bounds.x_end and i_wy >= bounds.y_start and i_wy < bounds.y_end) {

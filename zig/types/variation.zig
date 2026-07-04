@@ -52,8 +52,14 @@ const rules = [_]struct { Sprite, VariantRule }{
     .{ .big_mushroom, .{ .kind = .seed_pick, .count = 3 } },
     // Liquid top surface (formerly special-cased inline in chunk.zig).
     .{ .water, .{ .kind = .water_top, .count = 2 } },
+
     // Campfire animation has 4 contiguous frames, advancing every 6 render frames.
     .{ .campfire, .{ .kind = .animate, .count = 4, .period_frames = 6 } },
+
+    .{ .core1, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
+    .{ .core2, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
+    .{ .core3, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
+    .{ .core4, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
 };
 
 /// Sparse-to-dense lookup: sprite ID -> its rule, or null. One indexed load at runtime.

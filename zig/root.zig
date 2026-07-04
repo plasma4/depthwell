@@ -76,6 +76,7 @@ pub const lighting = @import("render/lighting.zig");
 pub const entity = @import("render/entity.zig");
 pub const progress = @import("render/progress.zig");
 pub const indicators = @import("render/indicators.zig");
+pub const particles = @import("render/particles.zig");
 
 pub const types = @import("types/types.zig");
 pub const KeyBits = types.KeyBits;
@@ -235,11 +236,11 @@ comptime {
             memory.runScratchAllocTests();
         }
 
-        pub export fn testEdgeFlags() void {
-            if (world.SimBuffer.checkEdgeFlags())
-                logger.log(@src(), "Edge flag validity check passed for all resident SimBuffer chunks.", .{})
+        pub export fn validateSimBuffer() void {
+            if (world.SimBuffer.validateSimBuffer())
+                logger.log(@src(), "Edge flag and sprite validity check passed for all resident SimBuffer chunks.", .{})
             else
-                logger.err(@src(), "Edge flag validity check FAILED (see logged mismatches above).", .{});
+                logger.err(@src(), "Edge flag and sprite validity check FAILED (see logged mismatches above).", .{});
         }
 
         pub export fn logInventory() void {

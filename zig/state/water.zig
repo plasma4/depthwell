@@ -112,19 +112,35 @@ inline fn getPressureCached(
     return vol + col_above;
 }
 
+/// Bit width of the packed `Block.waterlogged` field; only bits 0-10 carry data.
+/// Keep in sync with `unpack_tile()` in src/shader.wgsl (reads bits 0-11 of word3).
+pub const WaterloggedFlags = u12;
+
+/// bit 0: water directly above (liquid or a waterlogged decor, at any depth); fully submerges the block.
+const FLAG_TOP: WaterloggedFlags = 1 << 0;
+/// bit 1: full liquid block directly below (at HP = 15).
+const FLAG_BOTTOM: WaterloggedFlags = 1 << 1;
+/// bit 2: top ripple cutoff; the adjacent water surface is exposed to air.
+const FLAG_RIPPLE: WaterloggedFlags = 1 << 2;
+/// bits 3-6: 4-bit left adjacent liquid volume.
+const LEFT_VOL_SHIFT = 3;
+/// bits 7-10: 4-bit right adjacent liquid volume.
+const RIGHT_VOL_SHIFT = 7;
+
 pub const WaterloggedState = struct {
-    /// Directional waterlogged flags:
-    /// - bit 0: top (liquid block directly above)
+    /// Packed directional waterlogging data written verbatim to `Block.waterlogged`:
+    /// - bit 0: top (water of any depth directly above; fully submerges/fills the block)
     /// - bit 1: bottom (full liquid block directly below at HP = 15)
-    /// - bit 2: whether ripple occurs from the top (top ripple cutoff)
-    /// - bit 3: left (liquid block directly to the left)
-    /// - bit 4: right (liquid block directly to the right)
-    flags: u5,
-    /// Volume of water to copy (0 to 15).
-    volume: u4,
+    /// - bit 2: top ripple cutoff (adjacent water surface is exposed to air)
+    /// - bits 3-6: left adjacent liquid volume (0-15; 0 means no liquid to the left)
+    /// - bits 7-10: right adjacent liquid volume (0-15; 0 means no liquid to the right)
+    ///
+    /// Left/right presence is implied by a nonzero volume, so no separate presence bit exists.
+    /// The shader interpolates the water surface height across the block between these two volumes.
+    flags: WaterloggedFlags,
 };
 
-/// Computes the directional waterlogged flags and adjacent water volume for a Block.
+/// Computes the directional waterlogged flags and adjacent water volumes for a Block.
 pub inline fn getWaterFlags(
     top_nb: ?Block,
     bottom_nb: ?Block,
@@ -133,47 +149,40 @@ pub inline fn getWaterFlags(
     above_left_nb: ?Block,
     above_right_nb: ?Block,
 ) WaterloggedState {
-    var flags: u5 = 0;
-    var volume: u4 = 0;
+    var flags: WaterloggedFlags = 0;
 
     if (top_nb) |top| {
-        if (top.isLiquid()) {
-            flags |= 1; // Top
-            volume = @max(volume, getVolume(top));
-        }
+        // Any water above (liquid or a waterlogged decor, at any depth) fully submerges the block.
+        if (getVolume(top) > 0) flags |= FLAG_TOP;
     }
 
     if (bottom_nb) |bottom| {
-        if (bottom.isLiquid() and getVolume(bottom) == MAX_HP) {
-            flags |= 2; // Bottom
-            volume = MAX_HP;
-        }
+        if (bottom.isLiquid() and getVolume(bottom) == MAX_HP) flags |= FLAG_BOTTOM;
     }
 
     if (left_nb) |left| {
         if (left.isLiquid()) {
-            flags |= 8; // Left
-            volume = @max(volume, getVolume(left));
+            flags |= @as(WaterloggedFlags, getVolume(left)) << LEFT_VOL_SHIFT;
             if (above_left_nb == null or (!above_left_nb.?.isSolid() and !above_left_nb.?.isLiquid())) {
-                flags |= 4; // Apply top ripple cutoff
+                flags |= FLAG_RIPPLE;
             }
         }
     }
 
     if (right_nb) |right| {
         if (right.isLiquid()) {
-            flags |= 16; // Right
-            volume = @max(volume, getVolume(right));
+            flags |= @as(WaterloggedFlags, getVolume(right)) << RIGHT_VOL_SHIFT;
             if (above_right_nb == null or (!above_right_nb.?.isSolid() and !above_right_nb.?.isLiquid())) {
-                flags |= 4; // Apply top ripple cutoff
+                flags |= FLAG_RIPPLE;
             }
         }
     }
 
-    return .{ .flags = flags, .volume = volume };
+    return .{ .flags = flags };
 }
 
 /// Sibling helper to compute waterlogged state for halo Sprites during base chunk generation.
+/// Procedural water blocks default to full HP, so adjacent volumes are stored as `MAX_HP`.
 pub inline fn getWaterloggedStateSprites(
     top_nb: Sprite,
     bottom_nb: Sprite,
@@ -182,33 +191,20 @@ pub inline fn getWaterloggedStateSprites(
     above_left_nb: Sprite,
     above_right_nb: Sprite,
 ) WaterloggedState {
-    var flags: u5 = 0;
-    var volume: u4 = 0;
+    var flags: WaterloggedFlags = 0;
 
-    if (top_nb.isLiquid()) {
-        flags |= 1; // Top
-        volume = MAX_HP; // default full water block height
-    }
-    if (bottom_nb.isLiquid()) {
-        flags |= 2; // Bottom (in procedural gen, water blocks default to full HP/volume)
-        volume = MAX_HP;
-    }
+    if (top_nb.isLiquid()) flags |= FLAG_TOP;
+    if (bottom_nb.isLiquid()) flags |= FLAG_BOTTOM;
     if (left_nb.isLiquid()) {
-        flags |= 8; // Left
-        volume = MAX_HP;
-        if (!above_left_nb.isSolid() and !above_left_nb.isLiquid()) {
-            flags |= 4; // Apply top ripple cutoff
-        }
+        flags |= @as(WaterloggedFlags, MAX_HP) << LEFT_VOL_SHIFT;
+        if (!above_left_nb.isSolid() and !above_left_nb.isLiquid()) flags |= FLAG_RIPPLE;
     }
     if (right_nb.isLiquid()) {
-        flags |= 16; // Right
-        volume = MAX_HP;
-        if (!above_right_nb.isSolid() and !above_right_nb.isLiquid()) {
-            flags |= 4; // Apply top ripple cutoff
-        }
+        flags |= @as(WaterloggedFlags, MAX_HP) << RIGHT_VOL_SHIFT;
+        if (!above_right_nb.isSolid() and !above_right_nb.isLiquid()) flags |= FLAG_RIPPLE;
     }
 
-    return .{ .flags = flags, .volume = volume };
+    return .{ .flags = flags };
 }
 
 /// Computes the water volume for a cell dynamically.
@@ -294,7 +290,7 @@ pub fn updateWaterEdgeFlags(x: i32, y: i32) void {
     if (getVolume(ptr.*) == 0 and !world.shouldHaveEdgeFlags(ptr.id)) return;
 
     var flags: u8 = 0;
-    var waterlogged: u5 = 0;
+    var waterlogged: WaterloggedFlags = 0;
 
     const left_ptr = getLocalBlockPtr(curr, left, right, top, bottom, bx - 1, by);
     const right_ptr = getLocalBlockPtr(curr, left, right, top, bottom, bx + 1, by);
@@ -358,7 +354,7 @@ fn updateChunkWaterFlags(
             if (getVolume(ptr.*) == 0 and !world.shouldHaveEdgeFlags(ptr.id)) continue;
 
             var flags: u8 = 0;
-            var waterlogged: u5 = 0;
+            var waterlogged: WaterloggedFlags = 0;
 
             const left_ptr = getLocalBlockPtr(curr, left, right, top, bottom, bx - 1, by);
             const right_ptr = getLocalBlockPtr(curr, left, right, top, bottom, bx + 1, by);

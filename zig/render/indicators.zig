@@ -1,13 +1,19 @@
-//! Draws visual indicators above certain block types.
+//! Draws visual indicators above certain block types and routes indicator clicks to their menus.
+//!
+//! A single block window scan (see scanIndicators()) feeds both the per-frame drawing pass and the
+//! hover test used for click down-capture, so the drawn icon and its clickable hitbox can never drift apart.
 const std = @import("std");
 const dw = @import("../root.zig");
 
 const mouse = dw.mouse;
 const memory = dw.memory;
+const Sprite = dw.Sprite;
+const Vec2f = dw.utils.Vec2f;
 
 /// Contains booleans for all possible menus and whether they are open or not.
 const MenusList = struct {
     furnace: bool = false,
+    corecraft: bool = false,
 
     /// Returns true if any menu is enabled and false otherwise.
     pub fn isAnyEnabled(self: @This()) bool {
@@ -18,6 +24,8 @@ const MenusList = struct {
                 if (@field(self, field_info.name)) {
                     return true;
                 }
+            } else {
+                @compileError("Unsupported type in menu list!");
             }
         }
         return false;
@@ -27,11 +35,78 @@ const MenusList = struct {
 /// List of menus that could be opened.
 pub var menus: MenusList = .{};
 
-/// Iterates active chunks looking for icons to put above blocks and overlays contextual UI indicators.
-pub fn drawIndicators() void {
-    @setFloatMode(.optimized);
+/// Which core tiers sit within indicator range of the player this frame; refreshed by drawIndicators().
+/// Consumed by future corecraft crafting logic to know which cores (if any) back the menu.
+pub const NearbyCores = packed struct {
+    off: bool = false,
+    core1: bool = false,
+    core2: bool = false,
+    core3: bool = false,
+    core4: bool = false,
+
+    /// True if any powered core (core1-core4) is nearby, as opposed to only .core_off (or nothing).
+    pub fn anyPowered(self: @This()) bool {
+        return self.core1 or self.core2 or self.core3 or self.core4;
+    }
+};
+
+/// Core tiers near the player, valid for the current frame only. See NearbyCores.
+pub var nearby_cores: NearbyCores = .{};
+
+/// Which menu an in-world block's indicator opens. Extend by adding a variant plus its rows below.
+const IndicatorKind = enum {
+    furnace,
+    corecraft,
+
+    /// Classifies a stored block id into the indicator it displays, or null for non-indicator blocks.
+    /// Block ids are stored as the base sprite (variation is render-only), so exact matching is valid here.
+    fn fromBlock(id: Sprite) ?IndicatorKind {
+        return switch (id) {
+            .forest_furnace, .lava_furnace => .furnace,
+            .core_off, .core1, .core2, .core3, .core4 => .corecraft,
+            else => null,
+        };
+    }
+
+    /// Sprite drawn inside the indicator slot as a preview of what the block does.
+    fn previewSprite(self: IndicatorKind) Sprite {
+        return switch (self) {
+            .furnace => .gold_bar,
+            .corecraft => .campfire,
+        };
+    }
+
+    /// Pointer to this indicator's open/close flag in `menus`.
+    /// The MenusList field name must match the tag name; the inline switch enforces that at comptime.
+    fn menuFlag(self: IndicatorKind) *bool {
+        switch (self) {
+            inline else => |k| return &@field(menus, @tagName(k)),
+        }
+    }
+};
+
+/// Per-frame camera interpolation shared by every indicator, matching the world's position/zoom curves.
+const CameraView = struct {
+    zoom: f64,
+    cam_x: f64,
+    cam_y: f64,
+    mouse_px: Vec2f,
+};
+
+/// On-screen placement and mouse-hit data for one indicator icon, all in viewport pixels.
+const IndicatorGeom = struct {
+    screen_x: f32,
+    screen_y: f32,
+    slot_size: f32,
+    opacity: f32,
+    dx_mouse: f32,
+    dy_mouse: f32,
+    hitbox: dw.geometry.Shape,
+};
+
+/// Computes the shared camera interpolation for this frame.
+fn cameraView() CameraView {
     const game = &memory.game;
-    const player_coord = game.getPlayerCoord();
 
     // Zoom uses the raw fraction; position uses the +1.0-shifted fraction. See dw.chunks.current_dt.
     const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dw.chunks.current_dt);
@@ -41,16 +116,60 @@ pub fn drawIndicators() void {
     const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
     const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
 
-    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * cam_dt);
-    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * cam_dt);
+    return .{
+        .zoom = interpolated_zoom,
+        .cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * cam_dt),
+        .cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * cam_dt),
+        .mouse_px = mouse.uv_position * Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT },
+    };
+}
 
-    const mouse_pixel_pos = mouse.uv_position * dw.utils.Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+/// Computes an indicator's on-screen geometry for a block at the given chunk-relative cell.
+/// Returns null when the block is too far away (>= 5 blocks) to display an icon.
+fn indicatorGeom(view: CameraView, chunk_dx: i32, chunk_dy: i32, local_bx: u4, local_by: u4) ?IndicatorGeom {
+    const game = &memory.game;
 
-    var closest_dist = std.math.inf(f64);
+    // Center subpixels relative to player coordinates
+    const block_sub_x = chunk_dx * 4096 + @as(i64, local_bx) * 256 + 128;
+    const block_sub_y = chunk_dy * 4096 + @as(i64, local_by) * 256 + 128;
+
+    const dx_sub = block_sub_x - game.player_pos[0];
+    const dy_sub = block_sub_y - game.player_pos[1];
+    const dist_sq = dx_sub * dx_sub + dy_sub * dy_sub;
+    const distance = @sqrt(@as(f64, @floatFromInt(dist_sq)));
+
+    const max_dist = 5.0 * 256.0; // start showing 5 blocks away
+    const min_dist = 1.5 * 256.0; // fully scaled at 1.5 blocks
+    if (distance >= max_dist) return null;
+
+    const t: f32 = @floatCast(if (distance <= min_dist) 1.0 else (max_dist - distance) / (max_dist - min_dist));
+    const slot_size: f32 = @floatCast((10.0 + 5.0 * t) * game.camera_scale);
+
+    // Position slightly above the physical block (-200 subpixels)
+    const delta_x_sp = @as(f64, @floatFromInt(block_sub_x)) - view.cam_x;
+    const delta_y_sp = @as(f64, @floatFromInt(block_sub_y - 200)) - view.cam_y;
+    const screen_x: f32 = @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (view.zoom / 16.0));
+    const screen_y: f32 = @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + delta_y_sp * (view.zoom / 16.0));
+
+    return .{
+        .screen_x = screen_x,
+        .screen_y = screen_y,
+        .slot_size = slot_size,
+        .opacity = t * 0.9 + 0.1,
+        .dx_mouse = @as(f32, @floatCast(view.mouse_px[0])) - screen_x,
+        .dy_mouse = @as(f32, @floatCast(view.mouse_px[1])) - screen_y,
+        .hitbox = dw.geometry.Shape.roundSquare(.{ -slot_size / 2.0, -slot_size / 2.0 }, slot_size, 0.2),
+    };
+}
+
+/// Scans a local 33x33 block window centered on the player and visits every in-range indicator.
+/// `visitor.visit(id, kind, geom)` runs once per displayed indicator; returning true stops the scan early.
+fn scanIndicators(view: CameraView, visitor: anytype) void {
+    const game = &memory.game;
+    const player_coord = game.getPlayerCoord();
     const player_bx = game.getBlockXInChunk();
     const player_by = game.getBlockYInChunk();
 
-    // Scan a local 33x33 block window centered around the player
     var dy: i32 = -16;
     while (dy <= 16) : (dy += 1) {
         var dx: i32 = -16;
@@ -67,172 +186,114 @@ pub fn drawIndicators() void {
             const chunk = dw.world.SimBuffer.get(target_coord) orelse continue;
             const block = chunk.getBlock(local_bx, local_by);
 
-            if (block.id == .forest_furnace or block.id == .lava_furnace) {
-                // Calculate furnace center subpixels relative to player coordinates
-                const block_sub_x = chunk_dx * 4096 + @as(i64, local_bx) * 256 + 128;
-                const block_sub_y = chunk_dy * 4096 + @as(i64, local_by) * 256 + 128;
-
-                const dx_sub = block_sub_x - game.player_pos[0];
-                const dy_sub = block_sub_y - game.player_pos[1];
-                const dist_sq = dx_sub * dx_sub + dy_sub * dy_sub;
-                const distance = @sqrt(@as(f64, @floatFromInt(dist_sq)));
-
-                if (distance < closest_dist) {
-                    closest_dist = distance;
-                }
-
-                const max_dist = 5.0 * 256.0; // Show icon starting 4 blocks away
-                const min_dist = 1.5 * 256.0; // Fully scaled at 1.5 blocks
-
-                if (distance < max_dist) {
-                    const t: f32 = @floatCast(if (distance <= min_dist) 1.0 else (max_dist - distance) / (max_dist - min_dist));
-
-                    // Opacity and scaling metrics
-                    const opacity: f32 = t * 0.9 + 0.1;
-                    const slot_size: f32 = @floatCast((10.0 + 5.0 * t) * memory.game.camera_scale);
-
-                    // Position slightly above the physical block (-200 subpixels)
-                    const delta_x_sp = @as(f64, @floatFromInt(block_sub_x)) - interp_cam_x;
-                    const delta_y_sp = @as(f64, @floatFromInt(block_sub_y - 200)) - interp_cam_y;
-
-                    const screen_x: f32 = @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0));
-                    const screen_y: f32 = @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0));
-
-                    // Handle hovering and cursor pointer transformations
-                    const dx_mouse = @as(f32, @floatCast(mouse_pixel_pos[0])) - screen_x;
-                    const dy_mouse = @as(f32, @floatCast(mouse_pixel_pos[1])) - screen_y;
-                    const hitbox: dw.geometry.Shape = .roundSquare(
-                        .{ -slot_size / 2.0, -slot_size / 2.0 },
-                        slot_size,
-                        0.2,
-                    );
-
-                    var active_sprite: dw.Sprite = .inventory;
-                    const is_hovering = hitbox.contains(.{ dx_mouse, dy_mouse });
-
-                    if (is_hovering) {
-                        // Down-capture for .indicator is claimed centrally in mouse.processDownCaptures()
-                        // (via isHoveringFurnaceIndicator), so this frame's click_focus is already settled.
-
-                        // Only change mouse appearance if current focus permits UI actions
-                        if (mouse.click_focus.permits(.indicator)) {
-                            mouse.requestCursorType(.pointer);
-                        }
-
-                        // Perform toggle logic safely when click sequence starts and ends on indicator
-                        if (mouse.isClicked(.indicator, true)) {
-                            menus.furnace = !menus.furnace;
-                        }
-
-                        active_sprite = .inventory_selected;
-                    }
-
-                    // Background inventory slot
-                    dw.entity.addEntity(.{
-                        // sprite override if in menu already
-                        .sprite = .wood_icon,
-                        .position = .{ screen_x, screen_y },
-                        .size = slot_size,
-                        // undo camera scale mult here
-                        .lcha = if (menus.furnace)
-                            .{ 1.0, 0.05 + slot_size / @as(f32, @floatCast(memory.game.camera_scale)) * 0.008, 0.0, opacity }
-                        else
-                            .{ 0.8, -0.1 + slot_size / @as(f32, @floatCast(memory.game.camera_scale)) * 0.005, 0.0, opacity },
-                    });
-
-                    // Mini furnace preview centered inside the container slot
-                    dw.entity.addEntity(.{
-                        .sprite = if (block.id == .forest_furnace) .forest_furnace else .lava_furnace,
-                        .position = .{ screen_x, screen_y },
-                        .size = slot_size * 0.6,
-                        .lcha = .{ 1.0, 0.0, 0.0, opacity },
-                    });
-                }
-            }
+            const kind = IndicatorKind.fromBlock(block.id) orelse continue;
+            const geom = indicatorGeom(view, chunk_dx, chunk_dy, local_bx, local_by) orelse continue;
+            if (visitor.visit(block.id, kind, geom)) return;
         }
-    }
-
-    // Player moved away >5 blocks, so autoclose this menu
-    if (menus.furnace and closest_dist > 5.0 * 256.0) {
-        menus.furnace = false;
     }
 }
 
-/// Checks if the mouse is currently hovering over any active furnace indicator.
-pub fn isHoveringFurnaceIndicator() bool {
-    @setFloatMode(.optimized);
-    const game = &memory.game;
-    const player_coord = game.getPlayerCoord();
+/// Records that the given core block sits within indicator range this frame.
+fn markNearbyCore(id: Sprite) void {
+    switch (id) {
+        .core_off => nearby_cores.off = true,
+        .core1 => nearby_cores.core1 = true,
+        .core2 => nearby_cores.core2 = true,
+        .core3 => nearby_cores.core3 = true,
+        .core4 => nearby_cores.core4 = true,
+        else => {},
+    }
+}
 
-    // Zoom uses the raw fraction; position uses the +1.0-shifted fraction. See dw.chunks.current_dt.
-    const interpolated_zoom = game.camera_scale * std.math.pow(f64, game.camera_scale_change, dw.chunks.current_dt);
-    const cam_dt = dw.chunks.current_dt + 1.0;
+/// Draws each indicator, routes indicator clicks to menu toggles, and records which menus/cores are live.
+const DrawVisitor = struct {
+    /// Indicator kinds seen in range this frame; menus without a live indicator autoclose.
+    seen: std.EnumSet(IndicatorKind) = std.EnumSet(IndicatorKind).initEmpty(),
+    /// Guards against a single click toggling two overlapping indicators at once.
+    click_used: bool = false,
 
-    // Interpolate last_camera_pos toward camera_pos, matching the world's position curve
-    const cam_vel_x = game.camera_pos[0] - game.last_camera_pos[0];
-    const cam_vel_y = game.camera_pos[1] - game.last_camera_pos[1];
+    fn visit(self: *DrawVisitor, id: Sprite, kind: IndicatorKind, geom: IndicatorGeom) bool {
+        self.seen.insert(kind);
+        if (kind == .corecraft) markNearbyCore(id);
 
-    const interp_cam_x = @as(f64, @floatFromInt(game.last_camera_pos[0])) + (@as(f64, @floatFromInt(cam_vel_x)) * cam_dt);
-    const interp_cam_y = @as(f64, @floatFromInt(game.last_camera_pos[1])) + (@as(f64, @floatFromInt(cam_vel_y)) * cam_dt);
+        const flag = kind.menuFlag();
+        // undo camera scale mult (slot_size is scale-relative)
+        const rel_size: f32 = @floatCast(geom.slot_size / @as(f32, @floatCast(memory.game.camera_scale)));
 
-    const mouse_pixel_pos = mouse.uv_position * dw.utils.Vec2f{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+        if (geom.hitbox.contains(.{ geom.dx_mouse, geom.dy_mouse })) {
+            // Down-capture for .indicator is claimed centrally in mouse.processDownCaptures()
+            // (via isHoveringIndicator), so this frame's click_focus is already settled.
 
-    const player_bx = game.getBlockXInChunk();
-    const player_by = game.getBlockYInChunk();
+            // Only change mouse appearance if current focus permits UI actions
+            if (mouse.click_focus.permits(.indicator)) mouse.requestCursorType(.pointer);
 
-    // Scan a local 33x33 block window centered around the player
-    var dy: i32 = -16;
-    while (dy <= 16) : (dy += 1) {
-        var dx: i32 = -16;
-        while (dx <= 16) : (dx += 1) {
-            const target_bx = @as(i32, player_bx) + dx;
-            const target_by = @as(i32, player_by) + dy;
-
-            const chunk_dx = @divFloor(target_bx, 16);
-            const chunk_dy = @divFloor(target_by, 16);
-            const local_bx: u4 = @intCast(@mod(target_bx, 16));
-            const local_by: u4 = @intCast(@mod(target_by, 16));
-
-            const target_coord = player_coord.move(.{ chunk_dx, chunk_dy }) orelse continue;
-            const chunk = dw.world.SimBuffer.get(target_coord) orelse continue;
-            const block = chunk.getBlock(local_bx, local_by);
-
-            if (block.id == .forest_furnace or block.id == .lava_furnace) {
-                const block_sub_x = chunk_dx * 4096 + @as(i64, local_bx) * 256 + 128;
-                const block_sub_y = chunk_dy * 4096 + @as(i64, local_by) * 256 + 128;
-
-                const dx_sub = block_sub_x - game.player_pos[0];
-                const dy_sub = block_sub_y - game.player_pos[1];
-                const dist_sq = dx_sub * dx_sub + dy_sub * dy_sub;
-                const distance = @sqrt(@as(f64, @floatFromInt(dist_sq)));
-
-                const max_dist = 5.0 * 5.0 * 256.0;
-                const min_dist = 1.5 * 1.5 * 256.0;
-
-                if (distance < max_dist) {
-                    const t = if (distance <= min_dist) 1.0 else (max_dist - distance) / (max_dist - min_dist);
-                    const slot_size: f32 = @floatCast((10.0 + 5.0 * t) * memory.game.camera_scale);
-
-                    const delta_x_sp = @as(f64, @floatFromInt(block_sub_x)) - interp_cam_x;
-                    const delta_y_sp = @as(f64, @floatFromInt(block_sub_y - 200)) - interp_cam_y;
-
-                    const screen_x = @as(f32, @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0)));
-                    const screen_y = @as(f32, @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0)));
-
-                    const dx_mouse = @as(f32, @floatCast(mouse_pixel_pos[0])) - screen_x;
-                    const dy_mouse = @as(f32, @floatCast(mouse_pixel_pos[1])) - screen_y;
-                    const hitbox: dw.geometry.Shape = .roundSquare(
-                        .{ -slot_size / 2.0, -slot_size / 2.0 },
-                        slot_size,
-                        0.2,
-                    );
-
-                    if (hitbox.contains(.{ dx_mouse, dy_mouse })) {
-                        return true;
-                    }
-                }
+            // Toggle safely when a click both starts and ends on this indicator
+            if (!self.click_used and mouse.isClicked(.indicator, true)) {
+                flag.* = !flag.*;
+                self.click_used = true;
             }
         }
+
+        // Background inventory slot (color shifts while its menu is open)
+        dw.entity.addEntity(.{
+            .sprite = .wood_icon,
+            .position = .{ geom.screen_x, geom.screen_y },
+            .size = geom.slot_size,
+            .lcha = if (flag.*)
+                .{ 1.0, 0.05 + rel_size * 0.008, 0.0, geom.opacity }
+            else
+                .{ 0.8, -0.1 + rel_size * 0.005, 0.0, geom.opacity },
+        });
+
+        // Mini preview centered inside the container slot
+        dw.entity.addEntity(.{
+            .sprite = kind.previewSprite(),
+            .position = .{ geom.screen_x, geom.screen_y },
+            .size = geom.slot_size * 0.6,
+            .lcha = .{ 1.0, 0.0, 0.0, geom.opacity },
+        });
+
+        return false; // keep scanning; multiple indicators can be on screen
     }
-    return false;
+};
+
+/// Iterates active chunks looking for icons to put above blocks and overlays contextual UI indicators.
+pub fn drawIndicators() void {
+    @setFloatMode(.optimized);
+    const view = cameraView();
+
+    nearby_cores = .{};
+    var drawer: DrawVisitor = .{};
+    scanIndicators(view, &drawer);
+
+    // A menu whose indicator drifted out of range (or vanished) autocloses.
+    inline for (@typeInfo(IndicatorKind).@"enum".fields) |field| {
+        const kind: IndicatorKind = @enumFromInt(field.value);
+        const flag = kind.menuFlag();
+        if (flag.* and !drawer.seen.contains(kind)) flag.* = false;
+    }
+}
+
+/// Accumulates whether the cursor is over any active indicator icon.
+const HoverVisitor = struct {
+    found: bool = false,
+
+    fn visit(self: *HoverVisitor, id: Sprite, kind: IndicatorKind, geom: IndicatorGeom) bool {
+        _ = id;
+        _ = kind;
+        if (geom.hitbox.contains(.{ geom.dx_mouse, geom.dy_mouse })) {
+            self.found = true;
+            return true; // stop scanning at the first hit
+        }
+        return false;
+    }
+};
+
+/// Checks if the mouse is currently hovering over any active in-world indicator (furnace, core, etc.).
+/// Used by mouse.processDownCaptures() to claim the .indicator click focus.
+pub fn isHoveringIndicator() bool {
+    @setFloatMode(.optimized);
+    var hover: HoverVisitor = .{};
+    scanIndicators(cameraView(), &hover);
+    return hover.found;
 }

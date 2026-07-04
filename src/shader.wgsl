@@ -10,12 +10,12 @@
 // Auto-generated from zig/types/sprite.zig by zig/generate_shader.zig (runs during `zig build`).
 // Do NOT edit values between the markers by hand; edit the Sprite enum instead.
 const TILES_PER_ROW: f32 = 8.0;
-const TILES_PER_COLUMN: f32 = 19.0;
-const STONE_START: u32 = 6u;
-const ORE_START: u32 = 30u;
-const GEM_START: u32 = 36u;
-const GEM_MASK_START: u32 = 46u;
-const WATER_START: u32 = 145u;
+const TILES_PER_COLUMN: f32 = 20.0;
+const STONE_START: u32 = 8u;
+const ORE_START: u32 = 32u;
+const GEM_START: u32 = 38u;
+const GEM_MASK_START: u32 = 48u;
+const WATER_START: u32 = 156u;
 // #endregion generated-constants
 
 const PI = radians(180.0);
@@ -137,8 +137,8 @@ fn unpack_tile(data: TileData) -> UnpackedTile {
     out.id_edge_flags = extractBits(data.word2, 16u, 8u);
     out.lighting_color = extractBits(data.word2, 24u, 8u);
 
-    out.waterlogged = extractBits(data.word3, 0u, 8u);
-    // remaining 24 bits unused
+    out.waterlogged = extractBits(data.word3, 0u, 12u);
+    // remaining 20 bits unused
     return out;
 }
 
@@ -221,8 +221,18 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
             let t = scene.time;
             let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
+            // Smooth the surface across neighbors (adjacent volumes in bits 3-6 / 7-10). Each tile
+            // edge sits at the midpoint between this cell and its neighbor, so adjacent tiles agree
+            // on the shared edge height and the surface reads as continuous instead of stepped.
+            // A dry side keeps the block's own level so the surface doesn't dip at the water's edge.
+            let left_vol = extractBits(in.waterlogged, 3u, 4u);
+            let right_vol = extractBits(in.waterlogged, 7u, 4u);
+            let self_h = f32(in.hp);
+            let left_edge_h = select(self_h, 0.5 * (self_h + f32(left_vol)), left_vol > 0u);
+            let right_edge_h = select(self_h, 0.5 * (self_h + f32(right_vol)), right_vol > 0u);
+
             // Sine-wave ripple effect at the surface (frequency is periodic over 65536.0 pixels)
-            let base_height = f32(in.hp) * 0.06 + 0.10;
+            let base_height = mix(left_edge_h, right_edge_h, in.local_uv.x) * 0.06 + 0.10;
             let ripple_freq = 4172.0 * TAU / 65536.0;
             let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.05;
             var current_height = base_height + ripple;
@@ -274,31 +284,41 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
                 let is_water_top = (in.waterlogged & 1u) != 0u;
                 let is_water_bottom = (in.waterlogged & 2u) != 0u;
                 let apply_ripple = (in.waterlogged & 4u) != 0u;
-                let is_water_left = (in.waterlogged & 8u) != 0u;
-                let is_water_right = (in.waterlogged & 16u) != 0u;
+                // Left/right presence is implied by a nonzero adjacent volume (bits 3-6 / 7-10).
+                let left_vol = extractBits(in.waterlogged, 3u, 4u);
+                let right_vol = extractBits(in.waterlogged, 7u, 4u);
+                let is_water_left = left_vol > 0u;
+                let is_water_right = right_vol > 0u;
 
                 var is_water_pixel = false;
-                if is_water_top && in.local_uv.y < 0.5 {
+                if is_water_top {
+                    // Water of any depth above fully submerges the block: fill it entirely,
+                    // with no exposed surface to carve.
                     is_water_pixel = true;
-                }
-                if is_water_bottom && in.local_uv.y >= 0.5 {
-                    is_water_pixel = true;
-                }
-                if is_water_left && in.local_uv.x < 0.5 {
-                    is_water_pixel = true;
-                }
-                if is_water_right && in.local_uv.x >= 0.5 {
-                    is_water_pixel = true;
-                }
+                } else {
+                    if is_water_bottom && in.local_uv.y >= 0.5 {
+                        is_water_pixel = true;
+                    }
+                    if is_water_left && in.local_uv.x < 0.5 {
+                        is_water_pixel = true;
+                    }
+                    if is_water_right && in.local_uv.x >= 0.5 {
+                        is_water_pixel = true;
+                    }
 
-                if is_water_pixel {
-                    if apply_ripple {
+                    if is_water_pixel && apply_ripple {
                         let t = scene.time;
                         let world_pos = wrap_water_coords((vec2f(in.tile_coords) + scene.grid_origin.xy) * TILE_SIZE + in.local_uv * TILE_SIZE);
 
-                        // Synchronized ripple effect utilizing the adjacent water's actual volume
-                        // TODO
-                        let base_height = f32(15) * 0.06 + 0.10;
+                        // Surface height follows the adjacent water's actual volume rather than a
+                        // fixed full block, smoothly interpolated across the tile from the left
+                        // neighbor's level to the right neighbor's level. A side with no water
+                        // borrows the other side's level so the surface stays flat instead of
+                        // sloping down to zero.
+                        let hl = select(f32(right_vol), f32(left_vol), is_water_left);
+                        let hr = select(f32(left_vol), f32(right_vol), is_water_right);
+                        let vol_at_x = mix(hl, hr, in.local_uv.x);
+                        let base_height = vol_at_x * 0.06 + 0.10;
                         let ripple_freq = 4172.0 * TAU / 65536.0;
                         let ripple = sin(world_pos.x * ripple_freq + t * 5.0) * 0.05;
                         let current_height = base_height + ripple;

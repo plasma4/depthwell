@@ -36,6 +36,10 @@ pub const SeedType = enum {
     structures,
     /// Seed type that should EXCLUSIVELY be used for PRNG that does not affect gameplay/terrain generation.
     visual,
+    /// Position-keyed hash for decorations that must stay consistent across chunk borders (e.g. hanging vines).
+    decorations1,
+    /// Position-keyed hash for decorations that must stay consistent across chunk borders (e.g. hanging vines).
+    decorations2,
     /// Used for ore generation at base depth.
     ores1,
     /// Used for ore generation at base depth.
@@ -280,17 +284,17 @@ pub const Block = packed struct(u128) {
     /// - 1: warm orange glow
     lighting_color: u8 = 0,
 
-    /// Dual-purpose directional waterlogging field (bits 0-4 used):
-    /// - For liquid blocks: represents adjacent water heights/volumes.
-    /// - For non-liquid blocks: bits represent surrounding waterlogged cardinal directions.
-    ///   - bit 0: top (liquid block directly above)
+    /// Packed directional waterlogging field (bits 0-10 used; see `WaterloggedState` in zig/state/water.zig).
+    /// - For liquid blocks: only bit 0 is read (liquid directly above).
+    /// - For non-liquid blocks: encodes the surrounding water for the shader's surface fill and interpolation.
+    ///   - bit 0: top (water of any depth directly above; fully submerges/fills the block)
     ///   - bit 1: bottom (full liquid block directly below at HP=15)
-    ///   - bit 2: whether ripple occurs from the top (top ripple cutoff)
-    ///   - bit 3: left (liquid block directly to the left)
-    ///   - bit 4: right (liquid block directly to the right)
-    waterlogged: u8 = 0,
+    ///   - bit 2: top ripple cutoff (adjacent water surface is exposed to air)
+    ///   - bits 3-6: left adjacent liquid volume (0-15; 0 means no liquid to the left)
+    ///   - bits 7-10: right adjacent liquid volume (0-15; 0 means no liquid to the right)
+    waterlogged: u12 = 0,
     /// Unused portion of block data.
-    _pad: u24 = 0,
+    _pad: u20 = 0,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
     /// Uses the BOTTOM 32 bits from `seed_bits` to place into `seed`.
@@ -305,12 +309,22 @@ pub const Block = packed struct(u128) {
         };
     }
 
-    /// Determines if the block's type is one that should interact with the edge flags and procedural generation. This returns false for edge stone, unlike `isSolid()`.
+    /// Determines if the sprite's type is one that should interact with the edge flags and procedural generation.
+    /// This returns false for edge stone, unlike `isSolid()`. Assumes invalid block types are impossible.
     pub inline fn isFoundation(self: @This()) bool {
         return self.id.isFoundation();
     }
 
-    /// Determines if the block's type is considered solid, and should interact with the physics, player, and edge flags. This returns true for edge stone, unlike `isSolid()`.
+    /// Determines if the sprite's type is a valid block that could exist in any chunk.
+    /// Separate from `isItem()`. Includes the empty block, and excludes entities.
+    ///
+    /// If properties are wrong here, invalid (or unnamed) enums may appear and wreak havoc.
+    pub inline fn isInWorld(self: @This()) bool {
+        return self.id.isInWorld();
+    }
+
+    /// Determines if the block's type is considered solid, and should interact with the physics, player, and edge flags.
+    /// This returns true for edge stone, unlike `isSolid()`.
     pub inline fn isSolid(self: @This()) bool {
         return self.id.isSolid();
     }

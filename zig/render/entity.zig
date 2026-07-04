@@ -47,9 +47,13 @@ pub fn updateEntities(time_diff: f64) void {
     // The player is a world-space entity (see render/chunk.zig for its grid-aligned position).
     dw.player.drawPlayerEntity();
 
+    // advance and draw particles (under all UI overlays)
+    dw.particles.draw();
+
     // draw indicators (icons above certain sprites)
     dw.indicators.drawIndicators();
     @import("../menus/furnace.zig").draw();
+    @import("../menus/corecraft.zig").draw();
 
     // draw the inventory items/all items if in creative
     inventory.drawInventory(time_diff);

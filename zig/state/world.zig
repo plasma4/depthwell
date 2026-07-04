@@ -6,7 +6,6 @@ const Sprite = dw.Sprite;
 const utils = dw.utils;
 const types = dw.types;
 const memory = dw.memory;
-const logger = dw.logger;
 const seeding = dw.seeding;
 const procedural = dw.procedural;
 const player = dw.player;
@@ -52,11 +51,6 @@ inline fn resolveBaseFoundation(cx: u64, cy: u64, bx: u4, by: u4) BaseFoundation
     var sprite = base_data.sprite;
     if (sprite.isStone()) sprite = procedural.addOres(
         base_data,
-        game.getHashSeed(.ores1),
-        game.getHashSeed(.ores2),
-        game.getHashSeed(.ores3),
-        game.getHashSeed(.ores4),
-        game.getHashSeed(.ores5),
         wx,
         wy,
     );
@@ -67,6 +61,47 @@ inline fn resolveBaseFoundation(cx: u64, cy: u64, bx: u4, by: u4) BaseFoundation
         .id = structured.id,
         .base = if (structured.base != .none) structured.base else base_data.sprite,
     };
+}
+
+/// Solid-only variant of `resolveBaseFoundation()` used by the vine ceiling scan.
+/// Returns whether the cell is a foundation (a vine anchor/ceiling), skipping work that cannot change that.
+///
+/// No ore pass since they don't modify solidity/foundation property.
+inline fn resolveFoundationSolid(cx: u64, cy: u64, bx: u4, by: u4) bool {
+    const max_suffix = getMaxSuffixAtDepth(STARTING_ZOOM_TIMES);
+    const on_edge_x = (cx == 0 and bx < 2) or (cx == max_suffix and bx >= (CHUNK_SIZE - 2));
+    const on_edge_y = (cy == 0 and by < 2) or (cy == max_suffix and by >= (CHUNK_SIZE - 2));
+    // edge_stone is solid but NOT a foundation, so a world border never anchors a vine
+    if (on_edge_x or on_edge_y) return false;
+
+    const base_data = procedural.getBaseSpriteType(@intCast(cx), @intCast(cy), bx, by);
+    const wx: u32 = @intCast(cx * CHUNK_SIZE + bx);
+    const wy: u32 = @intCast(cy * CHUNK_SIZE + by);
+    const structured = procedural.addStructures(base_data.sprite, wx, wy, memory.game.getHashSeed(.structures));
+    return structured.id.isFoundation();
+}
+
+/// Resolves the world cell `r` rows past this chunk in a column feature's growth direction:
+/// - `.down`: `r` rows ABOVE row 0 (the ceiling scan for hanging features).
+/// - `.up`: `r` rows BELOW the bottom row (the floor scan for rising features).
+///
+/// `valid` is false when that cell lies past the world edge, where nothing can anchor a feature.
+const ColumnCellBeyond = struct { suffix: Vec2u = .{ 0, 0 }, by: u4 = 0, valid: bool = false };
+inline fn columnCellBeyond(coord: Coordinate, r: u32, depth: u64, comptime dir: procedural.GrowDir) ColumnCellBeyond {
+    switch (dir) {
+        .down => {
+            const chunks_up: i32 = @intCast((r + CHUNK_SIZE - 1) / CHUNK_SIZE);
+            const by: u4 = @intCast(@as(u32, @intCast(chunks_up)) * CHUNK_SIZE - r);
+            const c = coord.moveAtDepth(.{ 0, -chunks_up }, depth) orelse return .{};
+            return .{ .suffix = c.suffix, .by = by, .valid = true };
+        },
+        .up => {
+            const chunks_down: i32 = @intCast((r - 1) / CHUNK_SIZE + 1);
+            const by: u4 = @intCast((r - 1) % CHUNK_SIZE);
+            const c = coord.moveAtDepth(.{ 0, chunks_down }, depth) orelse return .{};
+            return .{ .suffix = c.suffix, .by = by, .valid = true };
+        },
+    }
 }
 
 /// Generates a starting chunk at depth `STARTING_ZOOM_TIMES`.
@@ -98,8 +133,10 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     }
 
     addEdgeFlags(chunk, coord, depth);
-    // Decorate the base chunk here so that child depths inherit the results
-    procedural.addDecorations(chunk, &rng_decor);
+    // Decorate the base chunk here so that child depths inherit the results.
+    // Hanging vines need the vine state entering each column from the chunk(s) above so they cross the border.
+    const vine_seeds = computeVineSeeds(coord, depth);
+    procedural.addDecorations(chunk, &rng_decor, cx, cy, &vine_seeds);
 
     // Reset edge flags to 0xFF for empty blocks after decorations are completed!
     for (0..CHUNK_SIZE_SQ) |idx| {
@@ -109,6 +146,74 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
             block.id_edge_flags = 0xFF;
         }
     }
+}
+
+/// Computes the hanging-vine (spiral plant) state entering the top of each of this chunk's columns, by
+/// deterministically tracing terrain in the chunk(s) directly above. A vine cell can sit at most
+/// `MAX_VINE_LENGTH` blocks below its ceiling, so scanning that many rows up captures every ceiling that
+/// could feed a vine into row 0. Terrain above is recomputed solidity-only via `resolveFoundationSolid()`
+/// (matching how the neighbor chunk generated itself), keeping vines seamless across the border without caching neighbors.
+fn computeVineSeeds(coord: Coordinate, depth: u64) [CHUNK_SIZE]procedural.ColumnState {
+    return computeColumnSeeds(procedural.vine_feature, coord, depth);
+}
+
+// Compile-time proof that the upward-growth paths (`columnCellBeyond(.up)` + `computeColumnSeeds`) type-check.
+// No upward feature is live yet: to add one, declare a `.dir = .up` ColumnFeature, compute its seeds here with
+// `computeColumnSeeds(my_feature, coord, depth)`, and stamp them via `procedural.applyColumnFeature` in
+// `addDecorations` (place the call AFTER floor decorations so trunks yield to bushes/rocks the way vines do).
+comptime {
+    const up_probe: procedural.ColumnFeature = .{
+        .sprite = .spiral_plant,
+        .dir = .up,
+        .max_length = 12,
+        .anchor_odds = 0.05,
+        .grow_odds = 0.6,
+        .salt = 0x9E3779B97F4A7C15,
+    };
+    _ = &struct {
+        fn probe(coord: Coordinate, depth: u64) [CHUNK_SIZE]procedural.ColumnState {
+            return computeColumnSeeds(up_probe, coord, depth);
+        }
+    }.probe;
+}
+
+/// Generic sibling of `computeVineSeeds()`: computes the per-column `ColumnState` entering this chunk for any
+/// `ColumnFeature`, tracing terrain in the neighbor chunk(s) in the feature's growth direction.
+/// Downward features scan the ceiling above row 0; upward features scan the floor below the bottom row.
+fn computeColumnSeeds(comptime f: procedural.ColumnFeature, coord: Coordinate, depth: u64) [CHUNK_SIZE]procedural.ColumnState {
+    comptime procedural.assertColumnFeature(f);
+    var seeds: [CHUNK_SIZE]procedural.ColumnState = @splat(.{});
+    const wx_col_base: u64 = coord.suffix[0] * CHUNK_SIZE; // moving only in Y never changes suffix[0]
+    for (0..CHUNK_SIZE) |bx| {
+        // `stepColumn()` resets on every foundation, so the entering state depends ONLY on the NEAREST anchor
+        // surface within reach and the empty cells past it; anything beyond that surface is overwritten. Scan
+        // outward from the chunk edge and stop at the first foundation instead of always walking the full
+        // max_length window (dense terrain resolves in a row or two). Terrain is recomputed solidity-only
+        // (no ores), so this stays identical across the border without caching neighbors.
+        var anchor_r: u32 = 0; // 0 = no anchoring surface found within reach
+        var r: u32 = 1;
+        while (r <= f.max_length + 1) : (r += 1) {
+            const cell = columnCellBeyond(coord, r, depth, f.dir);
+            if (cell.valid and resolveFoundationSolid(cell.suffix[0], cell.suffix[1], @intCast(bx), cell.by)) {
+                anchor_r = r;
+                break;
+            }
+        }
+        if (anchor_r == 0) continue; // open column: nothing to anchor the feature, state stays default
+
+        // Replay the bounded walk from the anchor toward this chunk's edge. Only `anchor_r` is a foundation
+        // (it is the nearest one); every cell past it is empty, so the growth rolls advance.
+        var state: procedural.ColumnState = .{};
+        var rr: u32 = anchor_r;
+        while (rr >= 1) : (rr -= 1) {
+            const cell = columnCellBeyond(coord, rr, depth, f.dir);
+            const wx = wx_col_base + bx;
+            const wy: u64 = cell.suffix[1] * CHUNK_SIZE + cell.by;
+            _ = procedural.stepColumn(f, &state, wx, wy, rr == anchor_r);
+        }
+        seeds[bx] = state;
+    }
+    return seeds;
 }
 
 /// Stores and handles modifications of chunks. Functions across depths.
@@ -176,7 +281,8 @@ pub const Coordinate = struct {
         v *%= Vec2u{ secret_0, secret_1 };
         v ^= v >> @as(Vec2u, @splat(32));
 
-        // Combine vector lanes with the quadrant metadata
+        // Combine vector lanes with quadrant metadata
+        // (a single bit flip is good enough for quality!)
         const combined = v[0] ^ v[1] ^ @as(u64, self.quadrant);
 
         // MurmurHash3 final mix
@@ -550,20 +656,21 @@ pub const SimBuffer = struct {
         return nchunk.blocks[(ly << CHUNK_SIZE_LOG2) | lx];
     }
 
-    /// Debug integrity check: scans every loaded chunk and verifies each block's `edge_flags` is a
-    /// possible state given its neighborhood. Returns true when all checked blocks are consistent.
+    /// For testing: Scans every loaded chunk and verifies:
+    /// - each block's `edge_flags` is a possible state given its neighborhood.
+    /// - all sprites pass `isInWorld()`.
+    /// Returns true when all checked blocks are consistent.
     ///
-    /// Rules enforced (see `updateVisibleChunks`/`recalcEdgeFlags` for the authoritative computation):
-    /// - Air is unconstrained (the renderer ignores its edge flags) and is skipped.
-    /// - A block that is neither a foundation nor a liquid (decoration, edge stone) must carry the
-    ///   reset sentinel `0xFF`.
-    /// - A foundation/liquid block's flags must equal the recomputed value: a bit is set toward a
-    ///   neighbor that is a foundation (for solids) or solid-or-liquid (for liquids).
+    /// Rules enforced for edge flags (see `updateVisibleChunks()`/`recalcEdgeFlags()`):
+    /// - A block that is neither a foundation nor a liquid (decoration, edge stone) must carry the reset sentinel `0xFF`.
+    /// - A foundation/liquid block's flags must equal the recomputed value:
+    ///   a bit is set toward a neighbor that is a foundation (for solids) or solid-or-liquid (for liquids).
+    /// - Air is ignored.
     ///
     /// Blocks whose 8 neighbors are not all resident in the loaded window are skipped, since their
     /// flags were derived from cache/procedural data this side-effect-free scan cannot reproduce.
     /// O(loaded_chunks * 256 * 8); performs no allocation. Intended for debug assertions/tests.
-    pub fn checkEdgeFlags() bool {
+    pub fn validateSimBuffer() bool {
         var all_valid = true;
         for (keys, 0..) |maybe_key, slot| {
             const coord = maybe_key orelse continue;
@@ -571,6 +678,10 @@ pub const SimBuffer = struct {
             for (0..CHUNK_SIZE) |by| {
                 for (0..CHUNK_SIZE) |bx| {
                     const block = chunk.blocks[(by << CHUNK_SIZE_LOG2) | bx];
+                    if (block.isInWorld()) {
+                        dw.logger.err(@src(), "Not-in-world sprite type found: {s}", .{@tagName(block.id)});
+                        all_valid = false;
+                    }
                     if (block.isEmpty()) continue;
 
                     const participates = block.isFoundation() or block.isLiquid();
@@ -610,7 +721,7 @@ pub const SimBuffer = struct {
     /// Logs a single edge-flag mismatch found by `checkEdgeFlags()` (debug builds only).
     fn reportInvalidEdge(coord: Coordinate, bx: u4, by: u4, got: u8, expected: u8) void {
         if (!dw.is_debug) return;
-        logger.err(@src(), "Invalid edge flags at chunk {any} block ({d}, {d}): got 0b{b:0>8}, expected 0b{b:0>8}", .{ coord, bx, by, got, expected });
+        dw.logger.err(@src(), "Invalid edge flags at chunk {any} block ({d}, {d}): got 0b{b:0>8}, expected 0b{b:0>8}", .{ coord, bx, by, got, expected });
     }
 
     /// Marks the loaded slot holding `coord` (if any) as containing water, so `tickWater()` keeps it
@@ -1660,7 +1771,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 // Recalculate flags for foundation blocks
                 var flags: u8 = 0;
                 var id_flags: u8 = 0;
-                var waterlogged: u5 = 0;
+                var waterlogged: water.WaterloggedFlags = 0;
 
                 const left_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx) - 1, @as(i32, lby), memory.game.depth);
                 const right_nb = getBlockLocalOrNeighbor(target_coord, @as(i32, lbx) + 1, @as(i32, lby), memory.game.depth);
@@ -1852,7 +1963,7 @@ pub fn getBlockAt(coord: Coordinate, lx: u4, ly: u4, depth: u64) Block {
     );
 }
 
-/// Clears all caches.
+/// Clears various data-structure caches that can easily be regenerated.
 pub fn clearCaches(comptime clear_ancestors: bool) void {
     SimBuffer.clear();
     chunk_cache.clear();

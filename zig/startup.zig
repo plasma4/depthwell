@@ -42,6 +42,8 @@ pub fn init() void {
         if (!world.arena.reset(.retain_capacity)) memory.oom();
 
         @import("menus/furnace.zig").reset();
+        @import("menus/corecraft.zig").reset();
+        dw.particles.reset();
         world.SimBuffer.reset();
         world.mod_store.clear();
         dw.water.reset();
@@ -58,6 +60,7 @@ pub fn init() void {
     // Start off by determining where the player starts off exactly with layer pushing
     var rng = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 2));
     dw.sound.seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 3));
+    dw.particles.seed = seeding.ChaCha12.init(&seeding.mixBaseSeed(memory.game.seed, 4));
     for (0..STARTING_ZOOM_TIMES) |_| {
         // Set the player position to somewhere random in the current chunk
         if (SET_PLAYER_SPAWN_RANDOMLY) memory.game.setPlayerPosDumb(.{

@@ -220,36 +220,38 @@ pub const ColorRgba = extern union {
         return std.math.pow(f32, (c + 0.055) / 1.055, 2.4);
     }
 
+    /// Converts this color to OKLCH (L, C, H in radians, A normalized to 0-1).
+    /// Matches the conversion chain in `fs_entity()` in `src/shader.wgsl`, so the result can be used
+    /// directly as an entity `lcha` tint over a white sprite. Works at both comptime and runtime.
+    pub fn toOklch(self: ColorRgba) @Vector(4, f32) {
+        const r_lin = srgbToLinear(@as(f32, @floatFromInt(self.channels.r)) / 255.0);
+        const g_lin = srgbToLinear(@as(f32, @floatFromInt(self.channels.g)) / 255.0);
+        const b_lin = srgbToLinear(@as(f32, @floatFromInt(self.channels.b)) / 255.0);
+
+        // convert to LMS
+        const l_ = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin;
+        const m_ = 0.2119034982 * r_lin + 0.6806995451 * g_lin + 0.1073969566 * b_lin;
+        const s_ = 0.0883024619 * r_lin + 0.2817188376 * g_lin + 0.6299787005 * b_lin;
+
+        const l = std.math.cbrt(l_);
+        const m = std.math.cbrt(m_);
+        const s = std.math.cbrt(s_);
+
+        // Now, change to OKLAB
+        const lab_l = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+        const lab_a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+        const lab_b = 0.0259040371 * l + 0.7827717662 * m - 0.8086758031 * s;
+
+        // Convert to OKLCH
+        const oklch_chroma = @sqrt(lab_a * lab_a + lab_b * lab_b);
+        const oklch_hue = std.math.atan2(lab_b, lab_a);
+
+        return .{ lab_l, oklch_chroma, oklch_hue, @as(f32, @floatFromInt(self.channels.a)) / 255.0 };
+    }
+
     /// Converts a hex code directly into OKLCH. Use like `comptime ColorRgba.hexToOklch("#ffffff")`.
-    /// TODO: see if we can make comptime a fully required part of evaluation
     pub fn hexToOklch(comptime html_hex: []const u8) @Vector(4, f32) {
-        comptime {
-            const rgba = ColorRgba.fromHex(html_hex);
-
-            const r_lin = srgbToLinear(@as(f32, @floatFromInt(rgba.channels.r)) / 255.0);
-            const g_lin = srgbToLinear(@as(f32, @floatFromInt(rgba.channels.g)) / 255.0);
-            const b_lin = srgbToLinear(@as(f32, @floatFromInt(rgba.channels.b)) / 255.0);
-
-            // convert to LMS
-            const l_ = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin;
-            const m_ = 0.2119034982 * r_lin + 0.6806995451 * g_lin + 0.1073969566 * b_lin;
-            const s_ = 0.0883024619 * r_lin + 0.2817188376 * g_lin + 0.6299787005 * b_lin;
-
-            const l = std.math.cbrt(l_);
-            const m = std.math.cbrt(m_);
-            const s = std.math.cbrt(s_);
-
-            // Now, change to OKLAB
-            const lab_l = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
-            const lab_a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
-            const lab_b = 0.0259040371 * l + 0.7827717662 * m - 0.8086758031 * s;
-
-            // Convert to OKLCH
-            const oklch_chroma = @sqrt(lab_a * lab_a + lab_b * lab_b);
-            const oklch_hue = std.math.atan2(lab_b, lab_a);
-
-            return .{ lab_l, oklch_chroma, oklch_hue, @as(f32, @floatFromInt(rgba.channels.a)) / 255.0 };
-        }
+        comptime return ColorRgba.fromHex(html_hex).toOklch();
     }
 };
 
