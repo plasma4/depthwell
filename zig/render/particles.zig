@@ -17,7 +17,7 @@ const Vec4f32 = dw.utils.Vec4f32;
 pub var seed: dw.seeding.ChaCha12 = undefined;
 
 /// Circular buffer capacity. Must be a power of two so the write index wraps with a mask.
-pub const MAX_PARTICLES = 4096;
+pub const MAX_PARTICLES = 8192;
 /// Maximum opacity of any particle (lerped based on lifetime).
 const MAX_OPACITY = 0.8;
 

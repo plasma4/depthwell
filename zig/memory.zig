@@ -381,6 +381,12 @@ pub const Block = packed struct(u128) {
     pub inline fn isDecor(self: @This()) bool {
         return self.id.isDecor();
     }
+
+    /// Returns whether a block is mined instantly like decor despite being solid (e.g. leaves).
+    /// Precondition: the block's sprite type is valid.
+    pub inline fn isInstantMine(self: @This()) bool {
+        return self.id.isInstantMine();
+    }
 };
 
 /// Chunk/procedural generation information that can be converted to `Block` via `compile()`.

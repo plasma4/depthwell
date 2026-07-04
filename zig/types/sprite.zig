@@ -288,6 +288,13 @@ pub const Sprite = enum(u16) {
         return self.props().category == .decor;
     }
 
+    /// Returns whether a sprite is mined instantly like decor despite being solid (e.g. leaves).
+    /// Reads the off-hot-path `SpriteProps` since `instant_mine` is absent from `SpriteFlags`.
+    /// Precondition: the sprite is valid.
+    pub inline fn isInstantMine(self: @This()) bool {
+        return getSpriteProps(self).instant_mine;
+    }
+
     /// Converts a sprite into an entity ID, handling atlas ID remaps.
     pub inline fn asEntity(self: @This()) u32 {
         const id = @intFromEnum(self);

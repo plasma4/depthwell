@@ -116,7 +116,9 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 
                 {
                     // Sound effects time!
-                    if (block.isFoundation()) {
+                    // Instant-mine blocks (e.g. leaves) collect like decor, so route them to the soft
+                    // grassy sound below instead of the repeating pickaxe mining sound despite being foundation.
+                    if (block.isFoundation() and !block.isInstantMine()) {
                         @setFloatMode(.optimized);
                         const FRAMES_PER_SOUND = if (in_creative)
                             3
@@ -132,9 +134,9 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                                 if (block.isGem()) 0.7 else if (block.isOre()) 0.55 else 0.45,
                             );
                         mining_frame +%= 1;
-                    } else if (was_deleted and !block.isEmpty() and !block.isFoundation()) {
+                    } else if (was_deleted and !block.isEmpty()) {
                         not_mining_frame = 0;
-                        // play a grassy sound
+                        // play a grassy sound (decor and instant-mine collect)
                         dw.sound.playSound(
                             4 + (memory.game.frame % 2),
                             0.3, // 30% volume

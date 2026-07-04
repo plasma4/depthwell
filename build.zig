@@ -215,7 +215,6 @@ pub fn build(b: *std.Build) void {
         // shader constants. The WASM compile depends on the run so the imported file is fresh.
         const particle_gen = generateParticleColors(b, &[_][]const u8{
             "public/assets/main.png",
-            "public/assets/mainMasked.png",
         });
         if (particle_gen) |gen_step| exe.step.dependOn(gen_step);
 
@@ -227,12 +226,9 @@ pub fn build(b: *std.Build) void {
             exe.step.dependOn(&install_main.step);
             exe.step.dependOn(&install_masked.step);
 
-            // Extract colors only after the fresh atlases land in public/assets. The hash was taken
-            // from the pre-export files, so an atlas change converges over two watcher builds.
-            if (particle_gen) |gen_step| {
-                gen_step.dependOn(&install_main.step);
-                gen_step.dependOn(&install_masked.step);
-            }
+            // Extract colors only after the fresh atlas lands in public/assets. The hash was taken
+            // from the pre-export file, so an atlas change converges over two watcher builds.
+            if (particle_gen) |gen_step| gen_step.dependOn(&install_main.step);
         } else {
             std.debug.print("Aseprite executable not found; skipping step. Either add to your system PATH or use -Daseprite.", .{});
         }
