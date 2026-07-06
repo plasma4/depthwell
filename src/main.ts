@@ -50,15 +50,7 @@ if (is_dev) {
         "Zig code is in debug mode. Use engine.exports to see its functions, variables, and memory, such as engine.exports.test_logs.",
     );
 
-    document.body.innerHTML += `<div id="textContainer">
-        <div id="text1"></div>
-        <div id="text2"></div>
-        <div id="text3"></div>
-        <div id="text4"></div>
-    </div>
-    <div id="logicText"></div>
-    <div id="renderText"></div>
-    <div id="debugContainer"></div>`;
+    document.body.innerHTML += `<div id="textContainer"><div id="text1"></div><div id="text2"></div><div id="text3"></div><div id="text4"></div></div><div id="logicText"></div><div id="renderText"></div><div id="debugContainer"></div>`;
 } else {
     // Zig is not in debug mode!
     if (CONFIG.verbose) {

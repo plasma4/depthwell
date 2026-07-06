@@ -73,8 +73,8 @@ pub fn generate(
         // Determine the shell's block type
         const shell_rand = state.getLimit(u32, 5);
         const shell: Sprite = switch (shell_rand) {
-            0, 1 => .pink_stone,
-            2, 3 => .purple_stone,
+            0...1 => .pink_stone,
+            2...3 => .purple_stone,
             4 => .redder_stone,
             else => unreachable,
         };
@@ -96,11 +96,11 @@ pub fn generate(
                 .stone;
 
             const gem: Sprite = switch (core_rand) {
-                0, 1, 2, 3, 4 => .quartz,
-                5, 6, 7, 8 => .amethyst,
-                9, 10, 11 => .sapphire,
-                12, 13 => .emerald,
-                14, 15 => .ruby,
+                0...4 => .quartz,
+                5...8 => .amethyst,
+                9...11 => .sapphire,
+                12...13 => .emerald,
+                14...15 => .ruby,
                 else => return .{ .id = core_stone }, // gems weren't selected: plain core stone
             };
             return .{ .id = gem, .base = core_stone };

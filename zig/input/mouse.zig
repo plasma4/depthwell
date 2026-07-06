@@ -26,6 +26,8 @@ pub const ClickFocus = enum(u32) {
     indicator,
     /// Click started specifically on an inventory slot.
     inventory,
+    /// Click started specifically on a smelting menu panel.
+    smelting,
     /// Click started specifically on a crafting menu panel.
     crafting,
 
@@ -131,8 +133,11 @@ pub inline fn isClicked(category: ClickFocus, is_hovered: bool) bool {
 /// Handles a fresh pointerdown across every interactive UI layer BEFORE world mining runs.
 /// Must be called once per tick, ahead of `mining.handleMiningAndPlacing()` (see `state/tick.zig`).
 ///
-/// `handleMouse()` optimistically sets `click_focus = .canvas` on pointerdown, so without this pass the first frame of a click can be problematic,
-/// Categories are visited in enum order (highest priority first); the first hovered layer claims the click, matching `ClickFocus` precedence.
+/// `handleMouse()` optimistically sets `click_focus = .canvas` on pointerdown,
+/// so without this pass the first frame of a click being valid is forced to the whimsy of whether render or logical tick applies first.
+///
+/// Categories are visited in enum order (highest priority first);
+/// the first hovered layer claims the click, matching `ClickFocus` precedence.
 pub fn processDownCaptures() void {
     if (!just_mouse_down) return;
     inline for (@typeInfo(ClickFocus).@"enum".fields) |field| {
@@ -141,8 +146,8 @@ pub fn processDownCaptures() void {
             .none, .canvas => {},
             .indicator => _ = tryCaptureDown(.indicator, dw.indicators.isHoveringIndicator()),
             .inventory => _ = tryCaptureDown(.inventory, inventory.getHoveredInventorySprite() != null),
-            .crafting => _ = tryCaptureDown(.crafting, @import("../menus/furnace.zig").isHoveringOnMenu() or
-                @import("../menus/corecraft.zig").isHoveringOnMenu()),
+            .smelting => _ = tryCaptureDown(.smelting, @import("../menus/furnace.zig").isHoveringOnMenu()),
+            .crafting => _ = tryCaptureDown(.crafting, @import("../menus/corecraft.zig").isHoveringOnMenu()),
             // intentionally non-exhaustive to catch errors
         }
     }

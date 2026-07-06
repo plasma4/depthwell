@@ -241,7 +241,7 @@ fn computeBaseSpriteType(
 /// Continues from step 4 in `getStructureBlock()`.
 ///
 /// 5. Disperses ores using Worley noise. Assumes that `isStone()` was checked before calling.
-pub fn addOres(
+pub fn addOresAndGems(
     base_data: BaseTerrainData,
     x: u32,
     y: u32,
@@ -366,19 +366,21 @@ pub fn addOres(
                 );
                 if (s == .quartz) return s;
 
-                s = selectSprite(
-                    .{ s, .amethyst },
-                    v3 <= 0.4 and random_value <= 0.7 * base_gem_odds.value,
-                    null,
-                );
-                if (s == .amethyst) return s;
+                if (s != .alt_blue_stone) { // this stone type has too much visual similarity
+                    s = selectSprite(
+                        .{ s, .amethyst },
+                        v3 <= 0.4 and random_value <= 0.7 * base_gem_odds.value,
+                        null,
+                    );
+                    if (s == .amethyst) return s;
 
-                s = selectSprite(
-                    .{ s, .sapphire },
-                    v3 >= 0.75 and random_value <= 0.65 * base_gem_odds.value,
-                    null,
-                );
-                if (s == .sapphire) return s;
+                    s = selectSprite(
+                        .{ s, .sapphire },
+                        v3 >= 0.75 and random_value <= 0.65 * base_gem_odds.value,
+                        null,
+                    );
+                    if (s == .sapphire) return s;
+                }
 
                 s = selectSprite(
                     .{ s, .emerald },
@@ -439,9 +441,9 @@ pub inline fn isWithin(v: f32, min: comptime_float, max: comptime_float) bool {
 /// Vertical growth direction of a hash-anchored column feature, selecting both its anchoring surface and
 /// the direction the world column is traversed by `world.computeColumnSeeds()`/`applyColumnFeature()`.
 pub const GrowDir = enum {
-    /// Hangs DOWN from a ceiling (foundation above), e.g. hanging vines. Columns are walked top -> bottom.
+    /// Hangs DOWN from a ceiling (foundation above), such as hanging vines. Columns are walked top -> bottom.
     down,
-    /// Rises UP from a floor (foundation below), e.g. reeds/sapling trunks. Columns are walked bottom -> top.
+    /// Rises UP from a floor (foundation below), such as reeds/sapling trunks. Columns are walked bottom -> top.
     up,
 };
 
@@ -554,17 +556,11 @@ pub fn addDecorations(
 ) void {
     // First, we handle blocks with a floor anchor kind.
     for (0..CHUNK_SIZE) |block_y| {
-        var forced_next_sprite_type: Sprite = .none; // .none means nothing is forced
         for (0..CHUNK_SIZE) |block_x| {
             const idx = block_x + block_y * CHUNK_SIZE;
             var block = &target_chunk.blocks[idx];
-            if (forced_next_sprite_type != .none) {
-                // semantically, .none makes sense, simply an alternative to optional type
-                block.id = forced_next_sprite_type;
-                forced_next_sprite_type = .none;
-                continue;
-            }
-
+            // Multi-tile assemblies stamp their extra cells directly, so a later cell reached by this
+            // scan is already non-empty and skipped below (no forced-next carryover needed).
             if (!block.isEmpty()) continue;
             // Check calculated bitmask directly to avoid isAdjacentBlockSolid logic discrepancies
             if ((block.edge_flags & types.EdgeFlags.BOTTOM) != 0) {
@@ -576,12 +572,10 @@ pub fn addDecorations(
                     const other_block = &target_chunk.blocks[other_block_x + block_y * CHUNK_SIZE];
                     if (other_block.isEmpty() and ((other_block.edge_flags & types.EdgeFlags.BOTTOM) != 0)) {
                         if (val >= oddsNum(0.98)) {
-                            block.id = .big_tree1_left;
-                            forced_next_sprite_type = .big_tree1_right;
+                            dw.assembly.stampChunk(target_chunk, block_x, block_y, .big_tree1);
                             continue;
                         } else if (val >= oddsNum(0.97)) {
-                            block.id = .big_tree2_left;
-                            forced_next_sprite_type = .big_tree2_right;
+                            dw.assembly.stampChunk(target_chunk, block_x, block_y, .big_tree2);
                             continue;
                         }
                     }

@@ -11,6 +11,11 @@ const Coordinate = dw.world.Coordinate;
 const DropConfig = dw.drops.DropConfig;
 const DropHandlers = dw.drops.DropHandlers;
 
+/// Sentinel `strength` marking a block as unmineable by a normal pickaxe (see `getSpriteStrength()`).
+/// Distinct from strength 0, which means "unset" basically (see `mining.has_structure_tool`).
+/// Chosen as the max so the existing "never reaches strength" mining path already treats it as unmineable.
+pub const UNMINEABLE_STRENGTH: u64 = std.math.maxInt(u64);
+
 /// Index where stone-like sprites begin.
 pub const STONE_START = 8;
 /// Index where stone-like sprites end.
@@ -39,7 +44,7 @@ const FRUIT_COUNT = 10;
 const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 
 /// Index where inventory slot sprites start.
-pub const INVENTORY_START = GEAR_ID + 30;
+pub const INVENTORY_START = GEAR_ID + 35;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 4;
 
@@ -105,9 +110,13 @@ pub const Sprite = enum(u16) {
 
     // Decor (THIS IS COUPLED TO WGSL CODE)
     small_tree = DECOR_START,
-    big_tree1_left,
+    /// Left/base tile of the 2x1 big-tree assembly; stored in BOTH cells and resolved to
+    /// `big_tree1` (left) / `big_tree1_right` (right) at render time via the `.group` variant.
+    big_tree1,
+    /// Render-only right frame of `big_tree1` (never stored as a block id).
     big_tree1_right,
-    big_tree2_left,
+    big_tree2,
+    /// Render-only right frame of `big_tree2` (never stored as a block id).
     big_tree2_right,
     fruit_blue_lemon = GEAR_ID - FRUIT_COUNT,
     fruit_teal_lemon,
@@ -129,12 +138,13 @@ pub const Sprite = enum(u16) {
     forest_furnace = GEAR_ID + 13,
     lava_furnace,
     core_off = GEAR_ID + 15,
-    core1 = GEAR_ID + 16,
-    core2 = GEAR_ID + 18,
-    core3 = GEAR_ID + 20,
-    core4 = GEAR_ID + 22,
-    campfire = GEAR_ID + 24, // 4 variations
-    chest = GEAR_ID + 24 + 4,
+    core1 = GEAR_ID + 17,
+    core2 = GEAR_ID + 19,
+    core3 = GEAR_ID + 21,
+    core4 = GEAR_ID + 23,
+    campfire = GEAR_ID + 25, // 4 variations + 4 water variations, 8 total
+    campfire_water = GEAR_ID + 25 + 4,
+    chest = GEAR_ID + 25 + 8,
     portal = INVENTORY_START - 1,
 
     /// Unselected inventory sprite.
@@ -165,10 +175,13 @@ pub const Sprite = enum(u16) {
     /// Right part of the progress bar.
     progress_right = NUMBER_START + 25,
 
+    /// Crafting icon.
+    craft = NUMBER_START + 30,
+
     /// Pickaxe icon.
-    pickaxe = NUMBER_START + 30,
+    pickaxe = NUMBER_START + 31,
     /// Generic water block (filled). Default internal water type; after all pickaxes.
-    water = NUMBER_START + 30 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
+    water = NUMBER_START + 31 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
     water_icon,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
@@ -276,10 +289,10 @@ pub const Sprite = enum(u16) {
         return self;
     }
 
-    /// Returns whether a block is empty (air), a liquid, or a waterloggable decoration.
+    /// Returns whether a block is empty (air), a liquid, or a waterloggable block (decor/crafter).
     /// Precondition: the sprite is valid.
     pub inline fn isFlowable(self: @This()) bool {
-        return self.isEmpty() or self.isLiquid() or self.isDecor();
+        return self.isEmpty() or self.isLiquid() or self.isWaterloggable();
     }
 
     /// Returns whether a sprite is a decoration block.
@@ -288,7 +301,15 @@ pub const Sprite = enum(u16) {
         return self.props().category == .decor;
     }
 
-    /// Returns whether a sprite is mined instantly like decor despite being solid (e.g. leaves).
+    /// Returns whether a sprite lets water flow through/around it and stores directional waterlogging
+    /// (both decor and crafter installations); non-solid placeables that never block liquid.
+    /// Precondition: the sprite is valid.
+    pub inline fn isWaterloggable(self: @This()) bool {
+        const c = self.props().category;
+        return c == .decor or c == .crafter;
+    }
+
+    /// Returns whether a sprite is mined instantly like decor despite being solid (such as leaves).
     /// Reads the off-hot-path `SpriteProps` since `instant_mine` is absent from `SpriteFlags`.
     /// Precondition: the sprite is valid.
     pub inline fn isInstantMine(self: @This()) bool {
@@ -475,12 +496,13 @@ const rules = [_]SpriteRule{
         .{ .evolves_to = .lava_stone },
     },
 
-    // For 2x1 trees, drop 1x1
+    // 2x1 big-tree assemblies drop one 1x1 small_tree. Only the base tile is ever stored
+    // (the `_right` frame is render-only), so the rule targets the base ids alone.
     .{
         .{ .list = &[_]Sprite{
-            .big_tree1_left,
+            .big_tree1,
+            .big_tree2,
             .big_tree1_right,
-            .big_tree2_left,
             .big_tree2_right,
         } },
         .{
@@ -518,6 +540,33 @@ const rules = [_]SpriteRule{
             .in_world = true,
         },
     },
+    // Campfire is a craft output (see menus/corecraft.zig), so it must be a holdable/placeable item.
+    .{
+        .{ .single = .campfire },
+        .{
+            .item = true,
+            .category = .decor,
+        },
+    },
+    // Crafters: fixed interactive installations. Unmineable by a normal pickaxe (strength sentinel)
+    // and waterloggable like decor; the floor-anchor rule above already set anchor/in_world.
+    .{
+        .{ .list = &[_]Sprite{
+            .forest_furnace,
+            .lava_furnace,
+            .core_off,
+            .core1,
+            .core2,
+            .core3,
+            .core4,
+            .chest,
+            .portal,
+        } },
+        .{
+            .category = .crafter,
+            .strength = UNMINEABLE_STRENGTH,
+        },
+    },
     // Normal decor
     .{
         .{ .list = &[_]Sprite{
@@ -535,12 +584,13 @@ const rules = [_]SpriteRule{
             .category = .decor,
         },
     },
-    // Non-item decor (corresponds to small_tree)
+    // Non-item decor (corresponds to small_tree). Only base tiles are stored; the `_right`
+    // frames stay propertyless render-only ids (like the extra grid_2x2 stone frames).
     .{
         .{ .list = &[_]Sprite{
-            .big_tree1_left,
+            .big_tree1,
+            .big_tree2,
             .big_tree1_right,
-            .big_tree2_left,
             .big_tree2_right,
         } },
         .{
@@ -595,7 +645,11 @@ pub const Category = enum(u3) {
     /// Smelted bar (inventory-only item).
     bar,
     /// World decoration (non-solid placeable: plants, furniture, interactables).
+    /// Assumed to be instantly mineable.
     decor,
+    /// Fixed interactive installation (furnace, core, chest, portal). Unmineable by normal pickaxe and waterloggable like decor;
+    /// typically the interactive tile(s) of a multi-tile assembly.
+    crafter,
 };
 
 /// Consolidated properties of each sprite.
@@ -636,8 +690,8 @@ pub const SpriteProps = struct {
 };
 
 /// Tightly packed 16-bit struct for high-performance, cache-friendly lookups.
-/// Mirrors the boolean/enum fields of `SpriteProps` (see those doc comments), minus
-/// `strength`, `instant_mine`, `drops`, and `evolves_to`, which are only needed off the hot path.
+/// Mirrors the boolean/enum fields of `SpriteProps` (see those doc comments),
+/// minus `strength`, `instant_mine`, `drops`, and `evolves_to`, which are only needed off the hot path.
 pub const SpriteFlags = packed struct(u16) {
     in_world: bool = false,
     item: bool = false,

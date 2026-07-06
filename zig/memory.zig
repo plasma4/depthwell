@@ -36,9 +36,9 @@ pub const SeedType = enum {
     structures,
     /// Seed type that should EXCLUSIVELY be used for PRNG that does not affect gameplay/terrain generation.
     visual,
-    /// Position-keyed hash for decorations that must stay consistent across chunk borders (e.g. hanging vines).
+    /// Position-keyed hash for decorations that must stay consistent across chunk borders (such as hanging vines).
     decorations1,
-    /// Position-keyed hash for decorations that must stay consistent across chunk borders (e.g. hanging vines).
+    /// Position-keyed hash for decorations that must stay consistent across chunk borders (such as hanging vines).
     decorations2,
     /// Used for ore generation at base depth.
     ores1,
@@ -242,7 +242,7 @@ pub const MemorySizes = struct {
 /// - word0: `id` | `edge_flags` | `light`
 /// - word1: `hp` | `seed` (the shader reads the whole word as seed0, so `hp` is folded into the seed for free)
 /// - word2: `base_id` | `id_edge_flags` | `lighting_color`
-/// - word3: `waterlogged` | `_pad`
+/// - word3: `waterlogged` | `group_x` | `group_y` | `_pad`
 pub const Block = packed struct(u128) {
     /// A block with an `id` of `none`.
     pub const empty: Block = .makeBasicBlock(.none, 0);
@@ -272,7 +272,7 @@ pub const Block = packed struct(u128) {
     /// Any seed value here should be considered poor and insecure.
     seed: u28,
 
-    /// The underlying background tile behind an overlay sprite (e.g. the stone an ore/gem grew inside).
+    /// The underlying background tile behind an overlay sprite (such as the stone an ore/gem grew inside).
     /// `.none` means "no underlay"; the shader then renders `id` alone (the common case for non-ore/gem blocks).
     base_id: Sprite = .none,
     /// Same-sprite edge flags (same bit order as `edge_flags`): a bit is set when the neighbor's `id` equals this block's `id`.
@@ -293,8 +293,13 @@ pub const Block = packed struct(u128) {
     ///   - bits 3-6: left adjacent liquid volume (0-15; 0 means no liquid to the left)
     ///   - bits 7-10: right adjacent liquid volume (0-15; 0 means no liquid to the right)
     waterlogged: u12 = 0,
+    /// Column of this tile within its `Assembly` footprint (0-based, 0..w-1). See zig/types/assembly.zig.
+    /// CPU-render-only: consumed by variation.resolveVariant() for `.group` sprites; never uploaded to the shader.
+    group_x: u4 = 0,
+    /// Row of this tile within its `Assembly` footprint (0-based, 0..h-1). See `group_x`.
+    group_y: u4 = 0,
     /// Unused portion of block data.
-    _pad: u20 = 0,
+    _pad: u12 = 0,
 
     /// Makes a simple block of a certain type, with max light and no edge flags and mine level.
     /// Uses the BOTTOM 32 bits from `seed_bits` to place into `seed`.
@@ -382,7 +387,13 @@ pub const Block = packed struct(u128) {
         return self.id.isDecor();
     }
 
-    /// Returns whether a block is mined instantly like decor despite being solid (e.g. leaves).
+    /// Returns whether a block lets water flow through it and stores directional waterlogging (decor/crafter).
+    /// Precondition: the block's sprite type is valid.
+    pub inline fn isWaterloggable(self: @This()) bool {
+        return self.id.isWaterloggable();
+    }
+
+    /// Returns whether a block is mined instantly like decor despite being solid (such as leaves).
     /// Precondition: the block's sprite type is valid.
     pub inline fn isInstantMine(self: @This()) bool {
         return self.id.isInstantMine();
@@ -417,7 +428,7 @@ pub const Chunk = struct {
 };
 
 /// Bytes of block data in one `Chunk` (`CHUNK_SIZE_SQ` * 16 = 4096).
-/// Chunk-cache layouts (e.g. `AncestorCache`) budget their footprint in multiples of this.
+/// Chunk-cache layouts (such as `AncestorCache`) budget their footprint in multiples of this.
 pub const CHUNK_BYTES = CHUNK_SIZE_SQ * @sizeOf(Block);
 
 /// Data for a single particle (converted to `WGSLEntity` before sending to WGSL).
@@ -639,7 +650,7 @@ fn growScratchBuffer(len: usize, new_scratch_len: usize) [*]u8 {
 /// The scratch base is 64-aligned and 48 is a multiple of 16, so every entity stays 16-byte aligned (matching `WGSLEntity`'s alignment)
 /// without any per-call alignment bookkeeping.
 ///
-/// Must be called from an aligned start (e.g. right after `scratchReset()`), as the tight packing relies on the
+/// Must be called from an aligned start (such as right after `scratchReset()`), as the tight packing relies on the
 /// running `scratch_len` being a multiple of `@sizeOf(WGSLEntity)`.
 pub inline fn scratchPushEntity() *WGSLEntity {
     const off: usize = @intCast(mem.scratch_len);

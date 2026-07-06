@@ -1,7 +1,7 @@
 //! Draws visual indicators above certain block types and routes indicator clicks to their menus.
 //!
-//! A single block window scan (see scanIndicators()) feeds both the per-frame drawing pass and the
-//! hover test used for click down-capture, so the drawn icon and its clickable hitbox can never drift apart.
+//! A single block window scan (see scanIndicators()) feeds both the per-frame drawing pass and the hover test used for click down-capture,
+//! so the drawn icon and its clickable hitbox can never drift apart.
 const std = @import("std");
 const dw = @import("../root.zig");
 
@@ -53,7 +53,7 @@ pub const NearbyCores = packed struct {
 /// Core tiers near the player, valid for the current frame only. See NearbyCores.
 pub var nearby_cores: NearbyCores = .{};
 
-/// Which menu an in-world block's indicator opens. Extend by adding a variant plus its rows below.
+/// Which menu (if any) an in-world block's indicator opens. Extend by adding a variant plus its rows below.
 const IndicatorKind = enum {
     furnace,
     corecraft,
@@ -64,6 +64,7 @@ const IndicatorKind = enum {
         return switch (id) {
             .forest_furnace, .lava_furnace => .furnace,
             .core_off, .core1, .core2, .core3, .core4 => .corecraft,
+            // .big_tree1, .big_tree2 => .tree,
             else => null,
         };
     }
@@ -72,16 +73,17 @@ const IndicatorKind = enum {
     fn previewSprite(self: IndicatorKind) Sprite {
         return switch (self) {
             .furnace => .gold_bar,
-            .corecraft => .campfire,
+            .corecraft => .craft,
         };
     }
 
-    /// Pointer to this indicator's open/close flag in `menus`.
-    /// The MenusList field name must match the tag name; the inline switch enforces that at comptime.
-    fn menuFlag(self: IndicatorKind) *bool {
-        switch (self) {
-            inline else => |k| return &@field(menus, @tagName(k)),
-        }
+    /// Pointer to this indicator's open/close flag in `menus`, or null for display-only indicators.
+    /// A menu-backed kind's `MenusList` field name must match the tag name; the inline switch enforces that at comptime.
+    fn menuFlag(self: IndicatorKind) ?*bool {
+        return switch (self) {
+            // .tree => null,
+            inline else => |k| &@field(menus, @tagName(k)),
+        };
     }
 };
 
@@ -125,13 +127,23 @@ fn cameraView() CameraView {
 }
 
 /// Computes an indicator's on-screen geometry for a block at the given chunk-relative cell.
+/// `off_sub_x`/`off_sub_y` shift the icon within the block (subpixels; 256 per tile) so a multi-tile
+/// assembly's single icon can sit over its footprint center rather than its origin cell.
 /// Returns null when the block is too far away (>= 5 blocks) to display an icon.
-fn indicatorGeom(view: CameraView, chunk_dx: i32, chunk_dy: i32, local_bx: u4, local_by: u4) ?IndicatorGeom {
+fn indicatorGeom(
+    view: CameraView,
+    chunk_dx: i32,
+    chunk_dy: i32,
+    local_bx: u4,
+    local_by: u4,
+    off_sub_x: i64,
+    off_sub_y: i64,
+) ?IndicatorGeom {
     const game = &memory.game;
 
     // Center subpixels relative to player coordinates
-    const block_sub_x = chunk_dx * 4096 + @as(i64, local_bx) * 256 + 128;
-    const block_sub_y = chunk_dy * 4096 + @as(i64, local_by) * 256 + 128;
+    const block_sub_x = chunk_dx * 4096 + @as(i64, local_bx) * 256 + 128 + off_sub_x;
+    const block_sub_y = chunk_dy * 4096 + @as(i64, local_by) * 256 + 128 + off_sub_y;
 
     const dx_sub = block_sub_x - game.player_pos[0];
     const dy_sub = block_sub_y - game.player_pos[1];
@@ -158,7 +170,11 @@ fn indicatorGeom(view: CameraView, chunk_dx: i32, chunk_dy: i32, local_bx: u4, l
         .opacity = t * 0.9 + 0.1,
         .dx_mouse = @as(f32, @floatCast(view.mouse_px[0])) - screen_x,
         .dy_mouse = @as(f32, @floatCast(view.mouse_px[1])) - screen_y,
-        .hitbox = dw.geometry.Shape.roundSquare(.{ -slot_size / 2.0, -slot_size / 2.0 }, slot_size, 0.2),
+        .hitbox = dw.geometry.Shape.roundSquare(
+            .{ -slot_size / 2.0, -slot_size / 2.0 },
+            slot_size,
+            0.2,
+        ),
     };
 }
 
@@ -187,7 +203,21 @@ fn scanIndicators(view: CameraView, visitor: anytype) void {
             const block = chunk.getBlock(local_bx, local_by);
 
             const kind = IndicatorKind.fromBlock(block.id) orelse continue;
-            const geom = indicatorGeom(view, chunk_dx, chunk_dy, local_bx, local_by) orelse continue;
+            // One indicator per assembly: only the group origin (top-left) cell shows it,
+            // and the icon is nudged to the footprint center (256 subpixels per tile, so (w-1)*128 in x).
+            if (block.group_x != 0 or block.group_y != 0) continue;
+            const footprint = dw.assembly.footprintOf(block.id);
+            const off_sub_x = @as(i64, footprint.w - 1) * 128;
+            const off_sub_y = @as(i64, footprint.h - 1) * 128;
+            const geom = indicatorGeom(
+                view,
+                chunk_dx,
+                chunk_dy,
+                local_bx,
+                local_by,
+                off_sub_x,
+                off_sub_y,
+            ) orelse continue;
             if (visitor.visit(block.id, kind, geom)) return;
         }
     }
@@ -217,10 +247,12 @@ const DrawVisitor = struct {
         if (kind == .corecraft) markNearbyCore(id);
 
         const flag = kind.menuFlag();
+        const is_open = if (flag) |f| f.* else false;
         // undo camera scale mult (slot_size is scale-relative)
         const rel_size: f32 = @floatCast(geom.slot_size / @as(f32, @floatCast(memory.game.camera_scale)));
 
-        if (geom.hitbox.contains(.{ geom.dx_mouse, geom.dy_mouse })) {
+        // Only menu-backed indicators are clickable; display-only ones (tree) just draw.
+        if (flag != null and geom.hitbox.contains(.{ geom.dx_mouse, geom.dy_mouse })) {
             // Down-capture for .indicator is claimed centrally in mouse.processDownCaptures()
             // (via isHoveringIndicator), so this frame's click_focus is already settled.
 
@@ -229,27 +261,27 @@ const DrawVisitor = struct {
 
             // Toggle safely when a click both starts and ends on this indicator
             if (!self.click_used and mouse.isClicked(.indicator, true)) {
-                flag.* = !flag.*;
+                flag.?.* = !flag.?.*;
                 self.click_used = true;
             }
         }
 
         // Background inventory slot (color shifts while its menu is open)
         dw.entity.addEntity(.{
-            .sprite = .wood_icon,
+            .sprite = if (kind == .furnace) .wood_icon else .inventory,
             .position = .{ geom.screen_x, geom.screen_y },
             .size = geom.slot_size,
-            .lcha = if (flag.*)
-                .{ 1.0, 0.05 + rel_size * 0.008, 0.0, geom.opacity }
+            .lcha = if (is_open)
+                .{ 1.0, rel_size * 0.007, 0.5, geom.opacity }
             else
-                .{ 0.8, -0.1 + rel_size * 0.005, 0.0, geom.opacity },
+                .{ 0.95, -0.1 + rel_size * 0.005, 0.0, geom.opacity },
         });
 
         // Mini preview centered inside the container slot
         dw.entity.addEntity(.{
             .sprite = kind.previewSprite(),
             .position = .{ geom.screen_x, geom.screen_y },
-            .size = geom.slot_size * 0.6,
+            .size = geom.slot_size * 0.8,
             .lcha = .{ 1.0, 0.0, 0.0, geom.opacity },
         });
 
@@ -269,8 +301,9 @@ pub fn drawIndicators() void {
     // A menu whose indicator drifted out of range (or vanished) autocloses.
     inline for (@typeInfo(IndicatorKind).@"enum".fields) |field| {
         const kind: IndicatorKind = @enumFromInt(field.value);
-        const flag = kind.menuFlag();
-        if (flag.* and !drawer.seen.contains(kind)) flag.* = false;
+        if (kind.menuFlag()) |flag| {
+            if (flag.* and !drawer.seen.contains(kind)) flag.* = false;
+        }
     }
 }
 
@@ -280,7 +313,8 @@ const HoverVisitor = struct {
 
     fn visit(self: *HoverVisitor, id: Sprite, kind: IndicatorKind, geom: IndicatorGeom) bool {
         _ = id;
-        _ = kind;
+        // Display-only indicators (no menu) are not clickable, so they never claim indicator focus.
+        if (kind.menuFlag() == null) return false;
         if (geom.hitbox.contains(.{ geom.dx_mouse, geom.dy_mouse })) {
             self.found = true;
             return true; // stop scanning at the first hit

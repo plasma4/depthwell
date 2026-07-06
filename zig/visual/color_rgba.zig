@@ -2,7 +2,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-test {
+test "correct color byte length" {
     try std.testing.expectEqual(32, @bitSizeOf(ColorRgba));
 }
 
@@ -221,14 +221,16 @@ pub const ColorRgba = extern union {
     }
 
     /// Converts this color to OKLCH (L, C, H in radians, A normalized to 0-1).
-    /// Matches the conversion chain in `fs_entity()` in `src/shader.wgsl`, so the result can be used
-    /// directly as an entity `lcha` tint over a white sprite. Works at both comptime and runtime.
+    /// Matches the conversion chain in `fs_entity()` in `src/shader.wgsl`,
+    /// so the result can be used directly as an entity `lcha` tint over a white sprite.
+    ///
+    /// Works at both comptime and runtime.
     pub fn toOklch(self: ColorRgba) @Vector(4, f32) {
         const r_lin = srgbToLinear(@as(f32, @floatFromInt(self.channels.r)) / 255.0);
         const g_lin = srgbToLinear(@as(f32, @floatFromInt(self.channels.g)) / 255.0);
         const b_lin = srgbToLinear(@as(f32, @floatFromInt(self.channels.b)) / 255.0);
 
-        // convert to LMS
+        // Convert to LMS
         const l_ = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin;
         const m_ = 0.2119034982 * r_lin + 0.6806995451 * g_lin + 0.1073969566 * b_lin;
         const s_ = 0.0883024619 * r_lin + 0.2817188376 * g_lin + 0.6299787005 * b_lin;
@@ -250,7 +252,7 @@ pub const ColorRgba = extern union {
     }
 
     /// Converts a hex code directly into OKLCH. Use like `comptime ColorRgba.hexToOklch("#ffffff")`.
-    pub fn hexToOklch(comptime html_hex: []const u8) @Vector(4, f32) {
+    pub inline fn hexToOklch(comptime html_hex: []const u8) @Vector(4, f32) {
         comptime return ColorRgba.fromHex(html_hex).toOklch();
     }
 };

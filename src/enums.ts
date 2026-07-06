@@ -34,8 +34,8 @@ export interface EngineExports extends WebAssembly.Exports {
     readonly SegmentedList: (arg0: unknown, arg1: number) => unknown;
     readonly Fifo: (arg0: unknown) => unknown;
     readonly handleTick: (arg0: number, arg1: number) => void;
-    readonly jsMessage: (arg0: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return/request a u64 instead. */, arg1: number, arg2: number) => void;
-    readonly jsWriteText: (arg0: number, arg1: PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return/request a u64 instead. */, arg2: number) => void;
+    readonly jsMessage: (arg0: number /* Pointers are questionably supported from Zig due to Memory64 export issues. You may want to return/request a u64 instead. */, arg1: number, arg2: number) => void;
+    readonly jsWriteText: (arg0: number, arg1: number /* Pointers are questionably supported from Zig due to Memory64 export issues. You may want to return/request a u64 instead. */, arg2: number) => void;
     readonly jsGetTime: () => number;
     readonly jsHandleVisibleChunks: (arg0: number, arg1: number) => void;
     readonly jsHandleVisibleEntities: () => void;

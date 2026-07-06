@@ -70,7 +70,7 @@ pub inline fn getVolume(ptr: Block) u4 {
     if (ptr.id == .water) {
         return @intCast(ptr.hp);
     }
-    if (ptr.isDecor()) {
+    if (ptr.isWaterloggable()) {
         return @intCast(ptr.hp);
     }
     return 0;
@@ -80,7 +80,7 @@ pub inline fn getVolume(ptr: Block) u4 {
 pub inline fn setVolume(ptr: *Block, vol: u32) void {
     const capped: u4 = @intCast(@min(vol, MAX_HP));
     if (vol == 0) {
-        if (ptr.isDecor()) {
+        if (ptr.isWaterloggable()) {
             ptr.hp = 0;
         } else {
             ptr.id = .none;
@@ -90,7 +90,7 @@ pub inline fn setVolume(ptr: *Block, vol: u32) void {
             ptr.waterlogged = 0;
         }
     } else {
-        if (ptr.isDecor()) {
+        if (ptr.isWaterloggable()) {
             ptr.hp = capped;
         } else {
             ptr.id = .water;

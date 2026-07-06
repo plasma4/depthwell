@@ -49,13 +49,13 @@ inline fn resolveBaseFoundation(cx: u64, cy: u64, bx: u4, by: u4) BaseFoundation
     const wy: u32 = @intCast(cy * CHUNK_SIZE + by);
 
     var sprite = base_data.sprite;
-    if (sprite.isStone()) sprite = procedural.addOres(
+    if (sprite.isStone()) sprite = procedural.addOresAndGems(
         base_data,
         wx,
         wy,
     );
     const structured = procedural.addStructures(sprite, wx, wy, game.getHashSeed(.structures));
-    // A structure that places an overlay (e.g. a Geode gem) carries its own stone underlay;
+    // A structure that places an overlay such as a Geode gem carries its own stone underlay;
     // fall back to the natural terrain only when it doesn't (.none).
     return .{
         .id = structured.id,
@@ -1563,7 +1563,8 @@ inline fn isBothLiquid(sprite_a: Sprite, sprite_b: Sprite) bool {
 /// Mutates `mod_store` and caches in-place.
 /// Returns whether `update_local_edge_flags` instantly removed the current block due to being in an invalid position.
 ///
-/// `prev_block` is the block that occupied this cell BEFORE this action began. The caller must pass the original block (e.g. mining reads it before deleting).
+/// `prev_block` is the block that occupied this cell BEFORE this action began.
+/// The caller must pass the original block (for example, mining reads it before deleting).
 pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite, prev_block: Block) bool {
     const key = DepthCoordinate.from(coord);
     const idx = @as(usize, by) * CHUNK_SIZE + bx;
@@ -1592,12 +1593,17 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite, pr
     else
         .none;
 
+    // Single-cell placement: assembly offset is always the origin (0, 0).
+    // A future multi-tile placeable will stamp the whole footprint here (see dw.assembly.stampChunk).
+    // (TODO)
     c.blocks[idx].id = new_sprite;
     c.blocks[idx].base_id = new_base;
     c.blocks[idx].hp = initial_hp;
     c.blocks[idx].edge_flags = 0xFF;
     c.blocks[idx].id_edge_flags = 0xFF;
     c.blocks[idx].waterlogged = 0;
+    c.blocks[idx].group_x = 0;
+    c.blocks[idx].group_y = 0;
 
     if (SimBuffer.get(coord)) |sim_chunk| {
         const block: *Block = &sim_chunk.blocks[idx];
@@ -1607,6 +1613,8 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite, pr
         block.edge_flags = 0xFF;
         block.id_edge_flags = 0xFF;
         block.waterlogged = 0;
+        block.group_x = 0;
+        block.group_y = 0;
     }
 
     // Placing water must register the slot so the optimized `tickWater` scan picks it up.
@@ -1622,9 +1630,85 @@ pub fn modifyBlockType(coord: Coordinate, bx: u4, by: u4, new_sprite: Sprite, pr
         block.edge_flags = 0xFF;
         block.id_edge_flags = 0xFF;
         block.waterlogged = 0;
+        block.group_x = 0;
+        block.group_y = 0;
     }
 
     return updateLocalEdgeFlags(coord, bx, by);
+}
+
+/// Resets one block's fields to the "empty cell" sentinels (id + edge/waterlog + assembly offset).
+inline fn clearBlockFields(b: *Block) void {
+    b.id = .none;
+    b.edge_flags = 0xFF;
+    b.id_edge_flags = 0xFF;
+    b.waterlogged = 0;
+    b.group_x = 0;
+    b.group_y = 0;
+}
+
+/// Clears a single cell to empty across `mod_store`, `SimBuffer`, and `chunk_cache` (no drop, no worklist).
+/// Used by the anchor cascade and multi-tile group breaking; safe to call outside the worklist loop.
+fn internalClearBlock(target_coord: Coordinate, lbx: u4, lby: u4) void {
+    const block_id = @as(usize, lby) * CHUNK_SIZE + lbx;
+    const key = DepthCoordinate.from(target_coord);
+    const mod_id = mod_store.index.get(key) orelse blk: {
+        const new_id = mod_store.history.len;
+        _ = mod_store.history.addOne(alloc) catch memory.oom();
+        writeChunkModless(mod_store.history.at(new_id), target_coord);
+        mod_store.index.put(key, new_id) catch memory.oom();
+        break :blk new_id;
+    };
+    clearBlockFields(&mod_store.history.at(mod_id).blocks[block_id]);
+    if (SimBuffer.get(target_coord)) |sc| clearBlockFields(&sc.blocks[block_id]);
+    if (chunk_cache.findIndex(target_coord)) |index| clearBlockFields(&chunk_cache.chunks[index].blocks[block_id]);
+}
+
+/// Resolves a possibly out-of-chunk cell offset (`cx`, `cy`, relative to `coord`) into a concrete chunk coordinate and local cell,
+/// or null past the world edge. Footprints are <= 15x15, so at most one chunk step in each axis is ever needed
+/// (adjacent-chunk access, as the lighting halo already does).
+const CellRef = struct { coord: Coordinate, lx: u4, ly: u4 };
+inline fn resolveCell(coord: Coordinate, cx: i32, cy: i32) ?CellRef {
+    if (cx >= 0 and cx < CHUNK_SIZE and cy >= 0 and cy < CHUNK_SIZE) {
+        return .{ .coord = coord, .lx = @intCast(cx), .ly = @intCast(cy) };
+    }
+    const ndx = @divFloor(cx, CHUNK_SIZE);
+    const ndy = @divFloor(cy, CHUNK_SIZE);
+    const nc = coord.move(.{ ndx, ndy }) orelse return null;
+    return .{ .coord = nc, .lx = @intCast(@mod(cx, CHUNK_SIZE)), .ly = @intCast(@mod(cy, CHUNK_SIZE)) };
+}
+
+/// True while `updateLocalEdgeFlags()` is draining `flag_worklist`;
+/// guards `clearAssemblyRest()` against re-entering that drain (which would clear the worklist mid-iteration).
+var in_edge_flag_update = false;
+
+/// Clears every cell of `block`'s multi-tile assembly EXCEPT (`bx`, `by`). Does not drop items (the caller drops once).
+/// Since the caller already removed the cell a group breaks as one unit. No-op for single-tile blocks.
+/// `block` must be the pre-removal snapshot; its group_x/group_y locate the origin.
+///
+/// Edge-flag refresh: when called from inside the cascade drain (`in_edge_flag_update`),
+/// cleared siblings are queued onto `flag_worklist` for that same drain; otherwise each is refreshed directly.
+pub fn clearAssemblyRest(coord: Coordinate, bx: u4, by: u4, block: Block) void {
+    const f = dw.assembly.footprintOf(block.id);
+    if (f.w <= 1 and f.h <= 1) return;
+    const ox = @as(i32, bx) - block.group_x;
+    const oy = @as(i32, by) - block.group_y;
+    var dy: i32 = 0;
+    while (dy < f.h) : (dy += 1) {
+        var dx: i32 = 0;
+        while (dx < f.w) : (dx += 1) {
+            const cx = ox + dx;
+            const cy = oy + dy;
+            if (cx == @as(i32, bx) and cy == @as(i32, by)) continue; // caller cleared the origin cell
+            const cell = resolveCell(coord, cx, cy) orelse continue;
+            internalClearBlock(cell.coord, cell.lx, cell.ly);
+            if (in_edge_flag_update) {
+                flag_worklist.append(alloc, .{ .coord = cell.coord, .bx = cell.lx, .by = cell.ly }) catch memory.oom();
+            } else {
+                _ = updateLocalEdgeFlags(cell.coord, cell.lx, cell.ly);
+            }
+        }
+    }
 }
 
 /// Custom type for edge flag information that stores a `Coordinate` and block within the chunk.
@@ -1646,6 +1730,12 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
         .by = by,
     }) catch memory.oom();
     defer flag_worklist.clearRetainingCapacity();
+
+    // Mark the drain active so clearAssemblyRest() (reached from the cascade below) queues onto this worklist instead of re-entering the drain.
+    // Nested calls keep it set until the outermost returns.
+    const was_updating = in_edge_flag_update;
+    in_edge_flag_update = true;
+    defer in_edge_flag_update = was_updating;
 
     const getBlockLocalOrNeighbor = struct {
         inline fn func(c: Coordinate, bx_i: i32, by_i: i32, depth: u64) Block {
@@ -1730,33 +1820,10 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     if (item.bx == bx and item.by == by and item.coord.eql(coord)) original_block_broken = true;
                     dw.inventory.dropItem(current_sprite, target_coord, lbx, lby);
 
-                    // Internal block modification to avoid recursion
-                    const key = DepthCoordinate.from(target_coord);
-                    const mod_id = mod_store.index.get(key) orelse blk: {
-                        const new_id = mod_store.history.len;
-                        _ = mod_store.history.addOne(alloc) catch memory.oom();
-                        writeChunkModless(mod_store.history.at(new_id), target_coord);
-                        mod_store.index.put(key, new_id) catch memory.oom();
-                        break :blk new_id;
-                    };
-                    const target_chunk: *Chunk = mod_store.history.at(mod_id);
-                    target_chunk.blocks[block_id].id = .none;
-                    target_chunk.blocks[block_id].edge_flags = 0xFF;
-                    target_chunk.blocks[block_id].id_edge_flags = 0xFF;
-                    target_chunk.blocks[block_id].waterlogged = 0;
-
-                    if (SimBuffer.get(target_coord)) |sc| {
-                        sc.blocks[block_id].id = .none;
-                        sc.blocks[block_id].edge_flags = 0xFF;
-                        sc.blocks[block_id].id_edge_flags = 0xFF;
-                        sc.blocks[block_id].waterlogged = 0;
-                    }
-                    if (chunk_cache.findIndex(target_coord)) |index| {
-                        chunk_cache.chunks[index].blocks[block_id].id = .none;
-                        chunk_cache.chunks[index].blocks[block_id].edge_flags = 0xFF;
-                        chunk_cache.chunks[index].blocks[block_id].id_edge_flags = 0xFF;
-                        chunk_cache.chunks[index].blocks[block_id].waterlogged = 0;
-                    }
+                    // Internal block modification to avoid recursion.
+                    internalClearBlock(target_coord, lbx, lby);
+                    // Multi-tile assemblies break as a unit so an unsupported group never leaves halves.
+                    clearAssemblyRest(target_coord, lbx, lby, current_block);
 
                     flag_worklist.append(alloc, .{ // use append() instead of at() to prevent panics
                         .coord = target_coord,
@@ -1766,7 +1833,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                     continue;
                 }
 
-                if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid() and !current_sprite.isDecor()) continue;
+                if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid() and !current_sprite.isWaterloggable()) continue;
 
                 // Recalculate flags for foundation blocks
                 var flags: u8 = 0;
@@ -1785,7 +1852,7 @@ fn updateLocalEdgeFlags(coord: Coordinate, bx: u4, by: u4) bool {
                 if (!shouldHaveEdgeFlags(current_sprite) and !current_sprite.isLiquid()) {
                     flags = 0xFF;
                     id_flags = 0xFF;
-                    if (current_sprite.isDecor()) {
+                    if (current_sprite.isWaterloggable()) {
                         waterlogged = state.flags;
                     }
                 } else {
@@ -1860,20 +1927,27 @@ pub fn modifyBlockHp(coord: Coordinate, bx: u4, by: u4, block: Block, hp_to_add:
         if (block.isEmpty()) return true;
         mod_store.history.at(entry_id).blocks[id].id = .none;
         mod_store.history.at(entry_id).blocks[id].waterlogged = 0;
+        // Clear the mined cell's assembly footprint position so an emptied cell carries no stale offset.
+        mod_store.history.at(entry_id).blocks[id].group_x = 0;
+        mod_store.history.at(entry_id).blocks[id].group_y = 0;
 
         // Update caches so changes appear immediately
         if (SimBuffer.get(coord)) |sim_chunk| {
             sim_chunk.blocks[id].id = .none;
             sim_chunk.blocks[id].waterlogged = 0;
+            sim_chunk.blocks[id].group_x = 0;
+            sim_chunk.blocks[id].group_y = 0;
         }
         if (chunk_cache.findIndex(coord)) |index| {
             chunk_cache.chunks[index].blocks[id].id = .none;
             chunk_cache.chunks[index].blocks[id].waterlogged = 0;
+            chunk_cache.chunks[index].blocks[id].group_x = 0;
+            chunk_cache.chunks[index].blocks[id].group_y = 0;
         }
 
         _ = updateLocalEdgeFlags(coord, bx, by);
         // Removing a block opens space that sleeping (settled) water may now flow into, so wake the surrounding chunks.
-        // Without this, water above/beside a freshly mined block stays frozen until something happens.
+        // (without this, water above/beside a freshly mined block stays frozen until something happens.)
         SimBuffer.wake(coord);
         return true;
     } else {

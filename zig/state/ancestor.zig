@@ -41,17 +41,17 @@ pub inline fn isHorizonDepth(depth: u64) bool {
 /// This keeps the cache under ~2 MiB (vs 8 MiB uniform), fitting comfortably in L2/L3.
 pub const AncestorCache = struct {
     /// Total relative tiers tracked: one per live depth from the current depth down to the horizon.
-    /// The `+1` covers the single transition frame at `depth == HORIZON_DEPTH + STARTING_ZOOM_TIMES`
-    /// (e.g. D=36), where the horizon would fall on the base depth but `isHorizonDepth()` excludes the
-    /// base, leaving base..current = 33 depths live at once (one more than `HORIZON_DEPTH`).
+    /// The `+1` covers the single transition frame at `depth == HORIZON_DEPTH + STARTING_ZOOM_TIMES`,
+    /// where the horizon would fall on the base depth but `isHorizonDepth()` excludes the base,
+    /// leaving base..current = 33 depths live at once (one more than `HORIZON_DEPTH`).
     pub const NUM_TIERS = HORIZON_DEPTH + 1;
     /// Associativity shared by every tier. Power of two so the CLOCK hand wraps mod `WAYS` for free.
     pub const WAYS = 8;
 
     /// Tiers nearest the current depth that receive the wide, high-capacity layout.
     pub const HOT_TIERS = 2;
-    /// Sets per hot tier. `HOT_SETS * WAYS` = 128 slots covers the ~50-chunk worst-case parent
-    /// working set at minimum zoom without overflowing any single 8-way set.
+    /// Sets per hot tier. `HOT_SETS * WAYS` = 128 slots covers the ~50-chunk worst-case parent working set
+    /// (at minimum zoom without overflowing any single 8-way set).
     pub const HOT_SETS = 16;
     /// Chunks stored per hot tier.
     pub const HOT_SIZE = HOT_SETS * WAYS;

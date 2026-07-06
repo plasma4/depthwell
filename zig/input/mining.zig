@@ -38,6 +38,13 @@ pub const PickaxeType = enum {
 /// Type of pickaxe equipped.
 pub var pickaxe_type: PickaxeType = .stone;
 
+/// Whether the player holds a special tool that can remove otherwise-unmineable installations
+/// (crafters, strength `UNMINEABLE_STRENGTH`) and the block structures rest on.
+///
+/// TODO: I'll have to decide, do we make a pickaxe strong enough or upgrade system instead?
+pub var has_structure_tool: bool = false;
+const STRUCTURE_STRENGTH = 1000;
+
 /// Updates mining and placing blocks. Should be called from `tick()` inside root.zig.
 pub fn handleMiningAndPlacing(logic_speed: f64) void {
     mouse.updateMouseLocation(); // update to get correct mouse position data
@@ -71,6 +78,19 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
             return;
         }
 
+        // Is this a structure? do NOT let either the structure or the anchor of the structure (usually the block below) be broken
+        if (!inventory.isInCreative() and !has_structure_tool and !block.isEmpty() and
+            restsOnProtectedInstallation(
+                mouse.mouse_chunk_coord.?,
+                mouse.mouse_block_x,
+                mouse.mouse_block_y,
+            ))
+        {
+            selected_hp = 255;
+            mining_progress = 0;
+            return;
+        }
+
         // Are we breaking something, or placing into empty air?
         if (sprite_type.isEmpty() or !block.isEmpty()) {
             // mining or replacing case
@@ -80,7 +100,8 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                 @as(u64, @intFromFloat(@as(f64, @floatFromInt(mining_speed)) * logic_speed));
             const in_creative = inventory.isInCreative();
 
-            const strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
+            var strength = getSpriteStrength(block.id) orelse std.math.maxInt(u64);
+            if (has_structure_tool and isToolBreakable(block.id)) strength = STRUCTURE_STRENGTH;
 
             // Chip particles while actively mining; better pickaxes chip more often and in bigger "clusters".
             if (!block.isEmpty() and strength > 0) {
@@ -116,7 +137,7 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 
                 {
                     // Sound effects time!
-                    // Instant-mine blocks (e.g. leaves) collect like decor, so route them to the soft
+                    // Instant-mine blocks (such as leaves) collect like decor, so route them to the soft
                     // grassy sound below instead of the repeating pickaxe mining sound despite being foundation.
                     if (block.isFoundation() and !block.isInstantMine()) {
                         @setFloatMode(.optimized);
@@ -162,6 +183,15 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
                             mouse.mouse_chunk_coord.?,
                             mouse.mouse_block_x,
                             mouse.mouse_block_y,
+                        );
+
+                        // Multi-tile assemblies break as a unit: clear the sibling cells the single-cell
+                        // modifyBlockHp above didn't touch (drop already happened once, for this cell).
+                        world.clearAssemblyRest(
+                            mouse.mouse_chunk_coord.?,
+                            mouse.mouse_block_x,
+                            mouse.mouse_block_y,
+                            block,
                         );
 
                         // Only auto-replace if the block being mined is different from the held item.
@@ -245,9 +275,30 @@ pub fn handleMiningAndPlacing(logic_speed: f64) void {
 inline fn getSpriteStrength(s: Sprite) ?u64 {
     const props = sprite.getSpriteProps(s);
     if (!props.in_world) return null;
+    // Unmineable installations (crafters) are honored BEFORE the solidity check so a non-solid
+    // crafter is not misread as instant-mineable. A future tool may still remove these (see mineSite).
+    if (props.strength == sprite.UNMINEABLE_STRENGTH) return sprite.UNMINEABLE_STRENGTH;
     if (!props.solid or props.instant_mine) return 0;
     if (props.strength == 0) return null;
     return props.strength;
+}
+
+/// Whether a block is only removable with the structure tool: an installation flagged
+/// `UNMINEABLE_STRENGTH`, as opposed to a permanently unmineable block (edge stone, returns null above).
+inline fn isToolBreakable(s: Sprite) bool {
+    return sprite.getSpriteProps(s).strength == sprite.UNMINEABLE_STRENGTH;
+}
+
+/// Whether the cell at (bx, by) is the support directly beneath a protected installation an unmineable,
+/// floor-anchored assembly resting on its bottom row. Such support cannot be dug out without the structure tool.
+fn restsOnProtectedInstallation(coord: world.Coordinate, bx: u4, by: u4) bool {
+    const above = if (by > 0)
+        world.getBlockAt(coord, bx, by - 1, memory.game.depth)
+    else
+        world.getBlockAt(coord.moveY(-1) orelse return false, bx, dw.CHUNK_SIZE - 1, memory.game.depth);
+    if (above.anchor() != .floor or !isToolBreakable(above.id)) return false;
+    // Only the footprint's bottom row physically rests on the cell below it.
+    return above.group_y == dw.assembly.footprintOf(above.id).h - 1;
 }
 
 comptime {

@@ -1,7 +1,7 @@
 //! CPU lighting pass over the visible block buffer. Writes 0..255 brightness each block's `light` prop.
 //! WGSL will then multiply the OKLAB lightness by `light / 255.0`; this logic handles both orange and white light types.
 //!
-//! Uses Dial's algorithm (bucketed Dijkstra): each reachable cell is finalized exactly once at its brightest value,
+//! Uses inverted Dial's algorithm (bucketed Dijkstra): each reachable cell is finalized exactly once at its brightest value,
 //! so overlapping light sources cost no extra relaxation (makes performance linear with some acceptable memory cost).
 //! Worst-case memory cost is reduced by using a dedicated arena that resets every time `applyLighting()` is called.
 //!
@@ -161,7 +161,16 @@ inline fn seed(light: []u16, buckets: *[NUM_BUCKETS]std.array_list.Aligned(u32, 
 
 /// Seeds the 2x2 cells surrounding the player using their continuous sub-pixel position.
 /// Light drops off similar to Euclidean distance through the cell's own medium cost.
-inline fn seedPlayerLight(cost: []const u8, light_white: []u16, buckets: *[NUM_BUCKETS]std.array_list.Aligned(u32, .@"16"), w: i32, h: i32, ambient: u16, px: f32, py: f32) void {
+inline fn seedPlayerLight(
+    cost: []const u8,
+    light_white: []u16,
+    buckets: *[NUM_BUCKETS]std.array_list.Aligned(u32, .@"16"),
+    w: i32,
+    h: i32,
+    ambient: u16,
+    px: f32,
+    py: f32,
+) void {
     const cx0: i32 = @intFromFloat(@floor(px - 0.5));
     const cy0: i32 = @intFromFloat(@floor(py - 0.5));
 
@@ -188,7 +197,14 @@ inline fn seedPlayerLight(cost: []const u8, light_white: []u16, buckets: *[NUM_B
 /// One single-channel Dial flood: process buckets brightest -> dimmest, relaxing 8 neighbors.
 /// Because we descend and edge costs are strictly positive, appends only ever target strictly-lower
 /// buckets, so each cell is finalized exactly once at its brightest value regardless of source count.
-fn floodChannel(cost: []const u8, light: []u16, buckets: *[NUM_BUCKETS]std.array_list.Aligned(u32, .@"16"), w: i32, h: i32, ambient: u16) void {
+fn floodChannel(
+    cost: []const u8,
+    light: []u16,
+    buckets: *[NUM_BUCKETS]std.array_list.Aligned(u32, .@"16"),
+    w: i32,
+    h: i32,
+    ambient: u16,
+) void {
     var b: u16 = MAX_SOURCE;
     while (b > ambient) : (b -= 1) {
         // Nothing appends to buckets[b] once we reach level b (relaxation only writes lower levels),
@@ -219,7 +235,10 @@ fn floodChannel(cost: []const u8, light: []u16, buckets: *[NUM_BUCKETS]std.array
                         const nl = b - c;
                         if (nl > light[ni]) {
                             light[ni] = nl;
-                            buckets[@as(usize, nl)].append(alloc, packCoords(@intCast(nx), @intCast(ny))) catch memory.oom();
+                            buckets[@as(usize, nl)].append(alloc, packCoords(
+                                @intCast(nx),
+                                @intCast(ny),
+                            )) catch memory.oom();
                         }
                     }
                 }
@@ -249,8 +268,8 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
 
     const ambient: u16 = if (dw.is_debug and DEBUG_LIGHT) AMBIENT_LIGHT_DEBUG else AMBIENT_LIGHT;
 
-    // Single reset pass: precompute per-cell cost, initialize both channels to ambient, and seed
-    // static emissive blocks into their channel's buckets.
+    // Single reset pass: precompute per-cell cost, initialize both channels to ambient
+    // then, "seed" (add) light-emitting blocks into their channel's appropriate buckets.
     var sy: u16 = 0;
     var sx: u16 = 0;
     for (out, 0..) |block, i| {
@@ -277,7 +296,7 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
     // Seed the continuous player source into the white channel.
     seedPlayerLight(cost_slice, light_white, &buckets_white, w, h, ambient, player_bx, player_by);
 
-    // Two independent floods over the shared cost grid.
+    // Two independent floods over the shared cost grid for each color!
     floodChannel(cost_slice, light_orange, &buckets_orange, w, h, ambient);
     floodChannel(cost_slice, light_white, &buckets_white, w, h, ambient);
 
@@ -289,7 +308,7 @@ pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: 
         // this fixes an issue where orange light overtakes normal white light if ambient light is at max
         if (AMBIENT_LIGHT == 255 or (dw.is_debug and DEBUG_LIGHT and AMBIENT_LIGHT_DEBUG == 255)) continue;
 
-        // Block is orange if it receives more orange light than white, or is in the core radius (>= 255).
+        // block is orange if it receives more orange light than white, or is in the core radius (>= 255).
         const is_orange = orange >= white or orange >= 255;
         block.lighting_color = @intFromBool(is_orange and max_light > ambient);
     }

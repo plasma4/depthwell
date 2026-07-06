@@ -494,20 +494,20 @@ pub fn drawInventory(time_diff: f64) void {
         }
     }
 
-    if (mouse.click_focus == .inventory and menus.isAnyEnabled()) {
+    // Only the furnace uses ore dragging, so the drag cursor is furnace-only (crafting has no drag).
+    if (mouse.click_focus == .inventory and menus.furnace) {
         mouse.requestCursorType(.grabbing);
     }
     if (hovered_inventory_sprite) |s| {
-        // .inventory down-capture is already claimed centrally in mouse.processDownCaptures(); this
-        // re-capture is idempotent for the focus but still carries the slot-selection side effect.
+        // .inventory down-capture is already claimed centrally in mouse.processDownCaptures();
+        // this is mainly for slot focus detection
         if (mouse.tryCaptureDown(.inventory, true)) {
             selected_sprite = s;
             selected_row = getSelectedIndex() / 10;
         }
 
-        // Only show pointer hover indicators if we are permitted
         if (mouse.click_focus.permits(.inventory)) {
-            mouse.requestCursorType(if (menus.isAnyEnabled()) .grab else .pointer);
+            mouse.requestCursorType(if (menus.furnace) .grab else .pointer);
         }
     }
 

@@ -63,7 +63,7 @@ pub fn init(
     dw.init();
 
     const window = try core.windows.new(.{
-        .title = "Depthwell Native (Mach)",
+        .title = "Depthwell",
         .on_render = app_mod.id.render,
     });
 

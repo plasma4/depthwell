@@ -10,12 +10,12 @@
 // Auto-generated from zig/types/sprite.zig by zig/generate_shader.zig (runs during `zig build`).
 // Do NOT edit values between the markers by hand; edit the Sprite enum instead.
 const TILES_PER_ROW: f32 = 8.0;
-const TILES_PER_COLUMN: f32 = 20.0;
+const TILES_PER_COLUMN: f32 = 21.0;
 const STONE_START: u32 = 8u;
 const ORE_START: u32 = 32u;
 const GEM_START: u32 = 38u;
 const GEM_MASK_START: u32 = 48u;
-const WATER_START: u32 = 156u;
+const WATER_START: u32 = 162u;
 // #endregion generated-constants
 
 const PI = radians(180.0);
@@ -377,8 +377,8 @@ fn fs_tile(in: TileOutput) -> @location(0) vec4f {
         let flip = vec2f(vec2u(extractBits(in.seeds[0], 7u, 1u), extractBits(in.seeds[0], 8u, 1u)));
 
         let flipped_uv = mix(in.local_uv, 1.0 - in.local_uv, flip);
-        // Background is the block's real underlay (variation-resolved in Zig); fall back to the old
-        // 2x2 plain-stone parity for gems with no base_id (e.g. player-placed ones).
+        // Background is the block's real underlay so fall back to the old 2x2 plain-stone parity for gems with no base_id.
+        // TODO: do we force a base ID?
         let bg_id = select(STONE_START + (((in.tile_coords.y & 1u) << 1u) | (in.tile_coords.x & 1u)), base_id, base_id != 0u);
 
         // Calculate UVs for the background stone

@@ -4,7 +4,7 @@
 //! so each sprite tile exposes its unique texel colors as OKLCH tints.
 //! Particles live in a simple circular buffer that overrides the oldest particle.
 //!
-//! Spawn from elsewhere via `addParticle()` or `spawnBurst()` (e.g. mining will call `spawnSpriteBurst()` with the mined block's sprite).
+//! Spawn from elsewhere via `addParticle()` or `spawnBurst()`/`spawnSpriteBurst()`/`maybeSpawnSpriteBurst()`.
 const std = @import("std");
 const dw = @import("../root.zig");
 const palette = @import("particle_colors.zig");
@@ -13,7 +13,7 @@ const Sprite = dw.Sprite;
 const Vec2f32 = dw.utils.Vec2f32;
 const Vec4f32 = dw.utils.Vec4f32;
 
-/// Random seed used for particle spawning. Seeded in `startup.init()` (mirrors `dw.sound.seed`).
+/// Random seed used for particle spawning. Seeded in `startup.init()`.
 pub var seed: dw.seeding.ChaCha12 = undefined;
 
 /// Circular buffer capacity. Must be a power of two so the write index wraps with a mask.

@@ -156,19 +156,19 @@ pub fn updateVisibleChunks(dt: f64, canvas_w: f64, canvas_h: f64) void {
     updateRenderProperties(game, interp_cam_x, interp_cam_y, wb, hb, min_cx, min_cy, dt, effective_zoom, interpolated_zoom);
 }
 
-/// Applies sprite variation/animation to the final visible buffer, in place, just before it is sent
-/// to the GPU. Runs AFTER lighting so the lighting pass sees base (unvaried) sprite IDs.
+/// Applies sprite variation/animation to the final visible buffer, in place, just before it is sent to the GPU.
+/// Runs AFTER lighting so the lighting pass sees base (unvaried) sprite IDs.
 ///
-/// Uses grid-relative tile coordinates (`i % wb`, `i / wb`); because the grid origin is chunk-aligned
-/// (an even tile offset), their parity matches absolute tile parity, so positional variants
-/// (2x2 stone, checkerboard edge stone) are seamless across the world exactly as the old shader was.
+/// Uses grid-relative tile coordinates (`i % wb`, `i / wb`); because the grid origin is chunk-aligned (an even tile offset),
+/// their parity matches absolute tile parity, so positional variants (2x2 stone, checkerboard edge stone)
+/// are seamless across the world exactly as the old shader was.
 inline fn applyVariation(out: []memory.Block, wb: u32, frame: u32) void {
     for (out, 0..) |*block, i| {
         block.id = dw.variation.resolveVariant(block.*, i % wb, i / wb, frame);
-        // Underlay sprites (ore/gem backgrounds) get the same variation treatment so e.g. plain
-        // stone behind a vein keeps its seamless 2x2 tiling.
+        // Underlay sprites (ore/gem backgrounds) get the same variation treatment, so plain stone tiles for example.
         if (block.base_id != .none) {
-            block.base_id = dw.variation.resolveSpriteVariant(block.base_id, block.seed, block.edge_flags, i % wb, i / wb, frame);
+            // Underlays are never assembly tiles, so their group offset is always (0, 0).
+            block.base_id = dw.variation.resolveSpriteVariant(block.base_id, block.seed, block.edge_flags, 0, 0, i % wb, i / wb, frame);
         }
     }
 }

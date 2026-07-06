@@ -13,9 +13,9 @@ fn zigTypeToTs(comptime T: type) []const u8 {
         .void => return "void",
         .bool => return "boolean",
         .int, .float, .comptime_int, .comptime_float => return "number",
-        .pointer => return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return/request a u64 instead. */",
+        .pointer => return "number /* Pointers are questionably supported from Zig due to Memory64 export issues. You may want to return/request a u64 instead. */",
         .optional => |opt| {
-            if (@typeInfo(opt.child) == .pointer) return "PointerInvalid /* Pointers are not supported from Zig due to Memory64 export issues. You should return/request a u64 instead. */";
+            if (@typeInfo(opt.child) == .pointer) return "number /* Pointers are questionably supported from Zig due to Memory64 export issues. You may want to return/request a u64 instead. */";
             return zigTypeToTs(opt.child); // Simplified for this example
         },
 

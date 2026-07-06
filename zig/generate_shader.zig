@@ -49,8 +49,8 @@ pub fn main(init: std.process.Init) !void {
         \\const WATER_START: u32 = {d}u;
         \\
     , .{
-        8, // TILES_PER_ROW: atlas is 8 sprites wide (mirrors root.getTilesPerRow)
-        sprite.max_sprite_value / 8 + 1, // TILES_PER_COLUMN (mirrors root.getTilesPerColumn)
+        8,
+        sprite.max_sprite_value / 8 + 1,
         sprite.STONE_START,
         sprite.ORE_START,
         sprite.GEM_START,

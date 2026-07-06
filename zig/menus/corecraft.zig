@@ -1,23 +1,71 @@
-//! Placeholder crafting menu opened by in-world core indicators (.core_off / .core1-.core4).
+//! Crafting menu opened by in-world core indicators (.core_off / .core1-.core4).
 //!
 //! Opening is toggled by clicking a core's indicator, which flips `dw.indicators.menus.corecraft`.
 //! This menu is INDEPENDENT of the furnace menu: both can be open at once (see render/indicators.zig).
-//! Real crafting is TODO; for now this only renders a static panel.
-//! (Which cores are nearby is already tracked in `dw.indicators.nearby_cores` for future recipe/tier logic.)
+//!
+//! Recipes are a plain comptime table (`recipes`): add a row to add a craft.
+//! Hovering over a slot reveals its inputs (what you need to craft), and clicking a craftable slot produces a new item!
+const std = @import("std");
 const dw = @import("../root.zig");
 
+const Sprite = dw.Sprite;
 const Vec2f = dw.utils.Vec2f;
 const Vec2f32 = dw.utils.Vec2f32;
 const addEntity = dw.entity.addEntity;
 const addEntitySized = dw.entity.addEntitySized;
-const toSize = dw.entity.toSizeUv;
+const drawNumber = dw.entity.drawNumber;
 const mouse = dw.mouse;
+const inventory = dw.inventory;
 
-/// Menu panel size and placement in UV space (top-left aligned).
-/// Placed at the bottom-right so it never overlaps the bottom-left furnace panel (both can be open at once).
-/// Single-sourced so `draw()` and the `isHoveringOnMenu()` hit test can never drift apart.
-const MENU_SIZE: Vec2f32 = toSize(0.3) * Vec2f32{ 1.0, 0.5 };
-const MENU_POS: Vec2f32 = .{ 0.98 - MENU_SIZE[0], 0.75 };
+/// A single input requirement (or the output) of a recipe.
+const Ingredient = struct { item: Sprite, count: u32 };
+
+/// One craft: a list of input items+quantities producing a single output item+quantity.
+const Recipe = struct { inputs: []const Ingredient, output: Ingredient };
+
+/// The recipe database. The grid layout and panel size automatically resize based on the length of this.
+const recipes = [_]Recipe{
+    .{
+        .inputs = &.{
+            .{ .item = .wood, .count = 3 },
+            .{ .item = .leaves, .count = 2 },
+        },
+        .output = .{ .item = .campfire, .count = 1 },
+    },
+};
+
+// Grid layout (viewport pixels). The panel sizes itself to hold `recipes.len` slots wrapped at `COLS`.
+const COLS: usize = 5;
+const SLOT: f64 = 18.0;
+const GAP: f64 = 7.0;
+const PAD_X: f64 = 10.0;
+const TOP_PAD: f64 = 18.0; // room for the title icon above the grid
+const BOT_PAD: f64 = 8.0;
+
+const ROWS: usize = (recipes.len + COLS - 1) / COLS;
+const grid_cols: usize = @min(COLS, recipes.len);
+const content_w: f64 = @as(f64, @floatFromInt(grid_cols)) * SLOT +
+    @as(f64, @floatFromInt(grid_cols -| 1)) * GAP;
+const content_h: f64 = @as(f64, @floatFromInt(ROWS)) * SLOT +
+    @as(f64, @floatFromInt(ROWS -| 1)) * GAP;
+const PANEL_W_PX: f64 = content_w + 2 * PAD_X;
+const PANEL_H_PX: f64 = content_h + TOP_PAD + BOT_PAD;
+
+/// Menu panel size/placement in UV space (top-left aligned), anchored to the bottom-right so it never overlaps the bottom-left furnace panel.
+/// Single-sourced so drawing and hit-testing can't drift apart.
+const MENU_SIZE: Vec2f32 = .{
+    @floatCast(PANEL_W_PX / dw.SCREEN_WIDTH),
+    @floatCast(PANEL_H_PX / dw.SCREEN_HEIGHT),
+};
+const MENU_POS: Vec2f32 = .{
+    @floatCast(0.98 - PANEL_W_PX / dw.SCREEN_WIDTH),
+    @floatCast(0.96 - PANEL_H_PX / dw.SCREEN_HEIGHT),
+};
+
+/// Number color for a satisfied requirement / the output count.
+const NUM_OK: dw.utils.Vec4f32 = .{ 0.78, 0.19, 1.2, 1.0 };
+/// Number color for an unmet input requirement (red).
+const NUM_RED: dw.utils.Vec4f32 = .{ 0.62, 0.35, 0.5, 1.0 };
 
 /// Round-rect hitbox covering the whole menu panel, in viewport pixels.
 fn menuHitbox() dw.geometry.Shape {
@@ -39,16 +87,103 @@ pub fn isHoveringOnMenu() bool {
 /// Resets the state of the corecraft menu.
 pub fn reset() void {}
 
+/// How many of `item` the player has available (infinite in creative).
+inline fn availableCount(item: Sprite) u64 {
+    if (inventory.isInCreative()) return std.math.maxInt(u64);
+    return inventory.inventory_counts[@intFromEnum(item)];
+}
+
+/// Whether every input of `recipe` is currently satisfied by the inventory.
+fn canCraft(recipe: Recipe) bool {
+    for (recipe.inputs) |in| {
+        if (availableCount(in.item) < in.count) return false;
+    }
+    return true;
+}
+
+/// Consumes a craftable recipe's inputs and grants its output. Assumes `canCraft(recipe)`.
+fn doCraft(recipe: Recipe) void {
+    if (!inventory.isInCreative()) {
+        for (recipe.inputs) |in| {
+            inventory.inventory_counts[@intFromEnum(in.item)] -= in.count;
+        }
+    }
+    inventory.addToInventory(recipe.output.item, recipe.output.count);
+    dw.sound.playSound(7, 1.0, 0.3, 0.1);
+}
+
+/// Builds a centered round-square hitbox in viewport pixels.
+fn slotHitbox(center_px: Vec2f, size: f64) dw.geometry.Shape {
+    return .roundSquare(center_px - @as(Vec2f, @splat(size / 2.0)), size, 0.2);
+}
+
+/// Draws a count with the shared lower-lightness drop shadow, in the given color/alpha.
+fn drawCount(count: u64, center_px: Vec2f, color: dw.utils.Vec4f32, alpha: f32) void {
+    const pos: Vec2f32 = .{ @floatCast(center_px[0]), @floatCast(center_px[1]) };
+    // Shadow: same digits, darker, nudged down-right; then the colored copy on top.
+    drawNumber(count, pos + Vec2f32{ 0.6, 0.6 }, .{
+        .font_size = 6.0,
+        .lcha = .{ 0.16, 0.1, color[2], 0.75 * alpha },
+    });
+    drawNumber(count, pos, .{
+        .font_size = 6.0,
+        .lcha = .{ color[0], color[1], color[2], color[3] * alpha },
+    });
+}
+
+/// The pixel center of recipe slot `i` within the grid.
+fn slotCenterPx(i: usize) Vec2f {
+    const px_scale: Vec2f = .{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+    const panel_left = @as(f64, MENU_POS[0]) * px_scale[0];
+    const panel_top = @as(f64, MENU_POS[1]) * px_scale[1];
+    const col: f64 = @floatFromInt(i % COLS);
+    const row: f64 = @floatFromInt(i / COLS);
+    return .{
+        panel_left + PAD_X + SLOT / 2.0 + col * (SLOT + GAP),
+        panel_top + TOP_PAD + SLOT / 2.0 + row * (SLOT + GAP),
+    };
+}
+
+/// Draws the input requirements of the hovered recipe as a row just above the panel.
+fn drawRequirements(recipe: Recipe) void {
+    const px_scale: Vec2f = .{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
+    const panel_center_x = (@as(f64, MENU_POS[0]) + @as(f64, MENU_SIZE[0]) / 2.0) * px_scale[0];
+    const row_y = @as(f64, MENU_POS[1]) * px_scale[1] - 12.0;
+
+    const k: f64 = @floatFromInt(recipe.inputs.len);
+    const CELL: f64 = 26.0;
+    const start_x = panel_center_x - (k - 1.0) * CELL / 2.0;
+
+    for (recipe.inputs, 0..) |in, idx| {
+        const cx = start_x + @as(f64, @floatFromInt(idx)) * CELL;
+
+        // Low-opacity selected-inventory frame centered below the inputs (not the wood variant).
+        addEntity(.{
+            .sprite = .inventory_selected,
+            .position = .{ @floatCast(cx), @floatCast(row_y) },
+            .size = 22.0,
+            .lcha = .{ 1.0, 0.0, 0.0, 0.7 },
+        });
+        addEntity(.{
+            .sprite = in.item,
+            .position = .{ @floatCast(cx), @floatCast(row_y) },
+            .size = 14.0,
+        });
+        const have = availableCount(in.item);
+        const color = if (have < in.count) NUM_RED else NUM_OK;
+        drawCount(in.count, .{ cx + 3.0, row_y + 4.5 }, color, 1.0);
+    }
+}
+
 pub fn draw() void {
     @setFloatMode(.optimized);
     // The menu is only visible/interactive while opened via a core indicator.
     if (!dw.indicators.menus.corecraft) return;
 
     const px_scale: Vec2f = .{ dw.SCREEN_WIDTH, dw.SCREEN_HEIGHT };
-    const menu_center: Vec2f32 = MENU_POS + MENU_SIZE / Vec2f32{ 2.0, 2.0 };
-    const center_px: Vec2f = .{ @as(f64, menu_center[0]) * px_scale[0], @as(f64, menu_center[1]) * px_scale[1] };
+    const mouse_px: Vec2f = mouse.uv_position * px_scale;
 
-    // background panel
+    // Background panel.
     addEntitySized(.{
         .sprite = .rectangle,
         .position = MENU_POS,
@@ -56,22 +191,55 @@ pub fn draw() void {
         .lcha = .{ 0.22, 0.16, 5.0, 1.0 },
     });
 
-    // campfire preview near the top of the panel; brighter once a powered core is nearby
+    // Title icon centered near the top; brighter once a powered core is nearby.
+    const title_px: Vec2f = .{
+        (@as(f64, MENU_POS[0]) + @as(f64, MENU_SIZE[0]) / 2.0) * px_scale[0],
+        @as(f64, MENU_POS[1]) * px_scale[1] + 9.0,
+    };
     addEntity(.{
-        .sprite = .campfire,
-        .position = .{ @floatCast(center_px[0]), @floatCast(center_px[1] - 14.0) },
-        .size = 16.0,
+        .sprite = .craft,
+        .position = .{ @floatCast(title_px[0]), @floatCast(title_px[1]) },
+        .size = 12.0,
         .lcha = if (dw.indicators.nearby_cores.anyPowered()) .{ 1.0, 0.0, 0.0, 1.0 } else .{ 0.55, 0.0, 0.0, 1.0 },
     });
 
-    // placeholder crafting slots (non-interactive for now)
-    const SLOT_SIZE: f32 = 18.0;
-    inline for (.{ -12.0, 12.0 }) |off_x| {
+    var hovered: ?Recipe = null;
+    for (recipes, 0..) |recipe, i| {
+        const center = slotCenterPx(i);
+        const craftable = canCraft(recipe);
+        const over = slotHitbox(center, SLOT).contains(mouse_px);
+        if (over) {
+            hovered = recipe;
+            // Pointer on any hovered slot (it is interactive and shows a tooltip); the craft only
+            // actually fires when the recipe is affordable.
+            if (mouse.click_focus.permits(.crafting)) mouse.requestCursorType(.pointer);
+            if (craftable and mouse.isClicked(.crafting, true)) doCraft(recipe);
+        }
+
+        // Whole slot dims to half opacity when the recipe can't currently be made.
+        const alpha: f32 = if (craftable) 1.0 else 0.5;
+
+        // Slot background: hue-shifted inventory sprite so craft slots read distinctly from the panel.
+        // Hovered craftable slots brighten slightly for feedback.
         addEntity(.{
             .sprite = .wood_icon,
-            .position = .{ @floatCast(center_px[0] + off_x), @floatCast(center_px[1] + 6.0) },
-            .size = SLOT_SIZE,
-            .lcha = .{ 0.6, -0.08, 0.0, 1.0 },
+            .position = .{ @floatCast(center[0]), @floatCast(center[1]) },
+            .size = @floatCast(SLOT),
+            .lcha = .{ if (over and craftable) 0.78 else 0.62, 0.09, 4.0, alpha },
         });
+        // Output item, centered in the slot.
+        addEntity(.{
+            .sprite = recipe.output.item,
+            .position = .{ @floatCast(center[0]), @floatCast(center[1]) },
+            .size = @floatCast(SLOT - 4.0),
+            .lcha = .{ 1.0, 0.0, 0.0, alpha },
+        });
+        // Output quantity (only shown when it makes more than one).
+        if (recipe.output.count > 1) {
+            drawCount(recipe.output.count, .{ center[0] + 3.0, center[1] + 5.0 }, NUM_OK, alpha);
+        }
     }
+
+    // Requirements tooltip for the hovered recipe, drawn last so it sits above the slots.
+    if (hovered) |recipe| drawRequirements(recipe);
 }

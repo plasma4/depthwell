@@ -167,7 +167,9 @@ pub fn build(b: *std.Build) void {
                 "-O4",
             });
             optimize_wasm.addArgs(&.{
-                "--strip-debug",
+                // "--strip-debug",
+                "--debuginfo",
+
                 "--strip-dwarf",
                 "--strip-producers",
                 "--optimize-instructions",
@@ -356,8 +358,8 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
 }
 
 /// Regenerates the `// #region generated-constants` block in `src/shader.wgsl` from the Sprite enum.
-/// Mirrors `generateEnums`: hashes `paths`, skips entirely when unchanged, otherwise builds and runs
-/// `zig/generate_shader.zig` (which rewrites the shader in place and updates the cache).
+/// Similar to `generateEnums()`: hashes `paths`, skips entirely when unchanged,
+/// otherwise builds and runs `zig/generate_shader.zig` (which rewrites the shader in place and updates the cache).
 fn generateShaderConstants(b: *std.Build, paths: []const []const u8) void {
     const cache_root = b.cache_root.path orelse ".";
     const cache_path = b.pathJoin(&.{ cache_root, "shader_const_hashes.txt" });
@@ -399,9 +401,9 @@ fn generateShaderConstants(b: *std.Build, paths: []const []const u8) void {
 }
 
 /// Regenerates `zig/render/particle_colors.zig` from the exported sprite atlas PNGs.
-/// Mirrors `generateShaderConstants()`: hashes `paths`, skips entirely when unchanged, otherwise
-/// builds and runs `zig/generate_particles.zig` (which rewrites the data file in place and updates
-/// the cache). Returns the run step (for sequencing against the atlas export), or null when skipped.
+/// Similar to `generateEnums()`: hashes `paths`, skips entirely when unchanged,
+/// otherwise builds and runs `zig/generate_particles.zig` (which rewrites the data file in place and updates cache).
+/// Returns the run step (for sequencing against the atlas export), or null when skipped.
 fn generateParticleColors(b: *std.Build, paths: []const []const u8) ?*std.Build.Step {
     const cache_root = b.cache_root.path orelse ".";
     const cache_path = b.pathJoin(&.{ cache_root, "particle_color_hashes.txt" });

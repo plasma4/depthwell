@@ -5,6 +5,8 @@
 //!
 //! To add a variant: append one row to `rules`. Variant frames must be CONTIGUOUS atlas IDs
 //! starting at the base sprite (base+0 .. base+count-1); the comptime check below enforces range.
+//!
+//! TODO: migrate this to be calculated on-GPU once SPIR-V support drops.
 const std = @import("std");
 const dw = @import("../root.zig");
 
@@ -27,6 +29,9 @@ pub const VariantKind = enum {
     animate,
     /// Liquid surface: offset 1 (top sprite) when no solid/liquid fully covers the block above.
     water_top,
+    /// Multi-tile assembly (see zig/types/assembly.zig): offset `group_y * group_w + group_x`,
+    /// read from the block's stored footprint position. Needs `count == group_w * group_h`.
+    group,
 };
 
 /// One variation rule, applied to the sprite named in the `rules` table below.
@@ -36,6 +41,8 @@ pub const VariantRule = struct {
     count: u8 = 2,
     /// `animate` only: render frames per displayed frame (must be >= 1).
     period_frames: u8 = 1,
+    /// `group` only: footprint width in tiles, used to flatten (group_x, group_y) into a frame offset.
+    group_w: u8 = 1,
 };
 
 /// The full variation database. Order does not matter; each sprite maps to at most one rule.
@@ -53,13 +60,20 @@ const rules = [_]struct { Sprite, VariantRule }{
     // Liquid top surface (formerly special-cased inline in chunk.zig).
     .{ .water, .{ .kind = .water_top, .count = 2 } },
 
+    // 2x1 big-tree assemblies: base tile stored in both cells, resolved to left (offset 0) or right (offset 1)
+    // at render from the stored group_x. See zig/types/assembly.zig.
+    .{ .big_tree1, .{ .kind = .group, .count = 2, .group_w = 2 } },
+    .{ .big_tree2, .{ .kind = .group, .count = 2, .group_w = 2 } },
+
     // Campfire animation has 4 contiguous frames, advancing every 6 render frames.
+    // There's a HARDCODED custom resolution to use the underwater variant if waterlogged.
     .{ .campfire, .{ .kind = .animate, .count = 4, .period_frames = 6 } },
 
+    .{ .core_off, .{ .kind = .animate, .count = 2, .period_frames = 17 } },
     .{ .core1, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
-    .{ .core2, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
-    .{ .core3, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
-    .{ .core4, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
+    .{ .core2, .{ .kind = .animate, .count = 2, .period_frames = 7 } },
+    .{ .core3, .{ .kind = .animate, .count = 2, .period_frames = 6 } },
+    .{ .core4, .{ .kind = .animate, .count = 2, .period_frames = 5 } },
 };
 
 /// Sparse-to-dense lookup: sprite ID -> its rule, or null. One indexed load at runtime.
@@ -71,12 +85,22 @@ const variant_table: [dw.sprite.MAX_SPRITE_ID]?VariantRule = blk: {
         const rule = entry[1];
         if (rule.count < 2) @compileError("VariantRule.count must be >= 2");
         if (rule.kind == .animate and rule.period_frames < 1) @compileError("animate period_frames must be >= 1");
+        if (rule.kind == .group and (rule.group_w < 1 or rule.count % rule.group_w != 0))
+            @compileError("group VariantRule needs group_w >= 1 and count divisible by group_w (count == group_w * group_h)");
         if (base + rule.count - 1 > dw.sprite.max_sprite_value)
             @compileError("Variant frames extend past the last sprite ID");
         table[base] = rule;
     }
     break :blk table;
 };
+
+/// Returns the variation rule for a sprite, or null if it has none.
+/// Used by zig/types/assembly.zig to comptime-verify that a `.group` footprint (w x h) matches its frame layout.
+pub fn ruleFor(sprite: Sprite) ?VariantRule {
+    const id = @intFromEnum(sprite);
+    if (id >= dw.sprite.MAX_SPRITE_ID) return null;
+    return variant_table[id];
+}
 
 /// Bijective 32-bit mixer, identical to `murmurmix32` in `src/shader.wgsl`.
 fn murmurmix32(number: u32) u32 {
@@ -102,10 +126,34 @@ fn seedPick(seed: u32, count: u8) u16 {
 /// (animation) variation. `tx`/`ty` are ABSOLUTE tile coordinates; `frame` is the current render frame.
 /// Returns `block.id` unchanged when the sprite has no variation rule.
 pub fn resolveVariant(block: Block, tx: u64, ty: u64, frame: u32) Sprite {
-    return resolveSpriteVariant(block.id, block.seed, block.edge_flags, tx, ty, frame);
+    var id = block.id;
+    // special hardcode for campfire:
+    if (id == .campfire and dw.water.getVolume(block) > 0) {
+        id = .campfire_water;
+    }
+
+    return resolveSpriteVariant(
+        id,
+        block.seed,
+        block.edge_flags,
+        block.group_x,
+        block.group_y,
+        tx,
+        ty,
+        frame,
+    );
 }
 
-pub fn resolveSpriteVariant(sprite: Sprite, seed: u32, edge_flags: u8, tx: u64, ty: u64, frame: u32) Sprite {
+pub fn resolveSpriteVariant(
+    sprite: Sprite,
+    seed: u32,
+    edge_flags: u8,
+    group_x: u4,
+    group_y: u4,
+    tx: u64,
+    ty: u64,
+    frame: u32,
+) Sprite {
     const id = @intFromEnum(sprite);
     if (id >= dw.sprite.MAX_SPRITE_ID) return sprite;
     const rule = variant_table[id] orelse return sprite;
@@ -116,6 +164,7 @@ pub fn resolveSpriteVariant(sprite: Sprite, seed: u32, edge_flags: u8, tx: u64, 
         .seed_pick => seedPick(seed, rule.count),
         .animate => @intCast((frame / rule.period_frames) % rule.count),
         .water_top => if ((edge_flags & ABOVE_BIT) == 0) 1 else 0,
+        .group => @as(u16, group_y) * rule.group_w + group_x,
     };
 
     return @enumFromInt(id + offset);

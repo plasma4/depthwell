@@ -232,7 +232,7 @@ pub fn draw() void {
     const input_hitbox = slotHitbox(input_px, SLOT_SIZE);
     const output_hitbox = slotHitbox(output_px, SLOT_SIZE);
 
-    // .crafting down-capture is claimed centrally in mouse.processDownCaptures() (via isHoveringMenu),
+    // .smelting down-capture is claimed centrally in mouse.processDownCaptures() (via isHoveringMenu),
     // so by here click_focus already reflects whether this click started on the menu panel.
     const over_input = input_hitbox.contains(mouse_px);
     const over_output = output_hitbox.contains(mouse_px);
@@ -244,12 +244,12 @@ pub fn draw() void {
 
     // Menu-internal clicks: take ore back out, or collect finished bars.
     if (over_input and loaded_ore != .none) {
-        if (mouse.click_focus.permits(.crafting)) mouse.requestCursorType(.pointer);
-        if (mouse.isClicked(.crafting, true)) returnLoadedOre();
+        if (mouse.click_focus.permits(.smelting)) mouse.requestCursorType(.pointer);
+        if (mouse.isClicked(.smelting, true)) returnLoadedOre();
     }
     if (over_output and output_bar != .none) {
-        if (mouse.click_focus.permits(.crafting)) mouse.requestCursorType(.pointer);
-        if (mouse.isClicked(.crafting, true)) collectOutput();
+        if (mouse.click_focus.permits(.smelting)) mouse.requestCursorType(.pointer);
+        if (mouse.isClicked(.smelting, true)) collectOutput();
     }
 
     addEntitySized(.{ // menu background panel (top-left aligned, UV space)
@@ -278,11 +278,17 @@ pub fn draw() void {
         });
 
         // draw amount and shadow
-        drawNumber(loaded_count, .{ @floatCast(input_px[0] + 2.4), @floatCast(input_px[1] + 4.4) }, .{
+        drawNumber(loaded_count, .{
+            @floatCast(input_px[0] + 2.4),
+            @floatCast(input_px[1] + 4.4),
+        }, .{
             .font_size = 6.0,
             .lcha = .{ 0.30, 0.22, 1.0, 0.8 },
         });
-        drawNumber(loaded_count, .{ @floatCast(input_px[0] + 3.0), @floatCast(input_px[1] + 5.0) }, .{
+        drawNumber(loaded_count, .{
+            @floatCast(input_px[0] + 3.0),
+            @floatCast(input_px[1] + 5.0),
+        }, .{
             .font_size = 6.0,
             .lcha = .{ 0.85, 0.30, 1.2, 1.0 },
         });

@@ -2,8 +2,8 @@
 //!
 //! For every 16x16 atlas tile, collects the UNIQUE fully-opaque texel colors from main.png,
 //! converts each to OKLCH, and emits them as raw Zig arrays indexed CSR-style per tile.
-//! Translucent-only tiles (e.g. leaves, which top out below full alpha) have no fully-opaque
-//! texel, so those fall back to sampling the tile's most-opaque texels forced to full alpha.
+//! Translucent-only tiles (such as leaves, which top out below full alpha) have no fully-opaque texel,
+//! so those fall back to sampling the tile's most-opaque texels forced to full alpha.
 //!
 //! Guarded by a content hash of the PNG so this host tool is not rebuilt/rerun on unrelated changes.
 const std = @import("std");
@@ -54,8 +54,8 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        // Translucent-only tile (e.g. leaves): no fully-opaque texel exists, so sample the
-        // most-opaque texels instead and force them opaque so the particles read as solid chips.
+        // Translucent-only tile (such as leaves): no fully-opaque texel exists,
+        // so sample the most-opaque texels instead and force them opaque so the particles read as solid chips.
         if (unique_len == 0) {
             var max_alpha: u8 = 0;
             for (0..TILE_SIZE) |py| {
