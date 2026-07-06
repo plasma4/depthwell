@@ -6,7 +6,7 @@ const builtin = @import("builtin");
 
 /// Whether to force `is_debug` to true regardless of build mode.
 /// Goes without saying: this should be false in prod!
-pub const FORCE_DEBUG = builtin.mode == .ReleaseFast;
+pub const FORCE_DEBUG = builtin.mode != .ReleaseFast;
 
 /// Set to true if the CPU architecture is set to `wasm32` or `wasm64`.
 pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arch == .wasm64;

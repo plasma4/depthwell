@@ -250,9 +250,9 @@ engine.renderLoop = function (_t: number) {
         ) as HTMLDivElement;
         debugElem.textContent =
             ((document.getElementById("debugContainer") as HTMLDivElement).style
-                .display !== "none"
-                ? `Time since last render/prepare_visible_data call: ${delta.toFixed(1)}ms, ${engine.prepare_visible_data_time.toFixed(1)}ms\n`
-                : "") +
+                .display === "none"
+                ? ""
+                : `Time since last render/prepare_visible_data call: ${delta.toFixed(1)}ms, ${engine.prepare_visible_data_time.toFixed(1)}ms\n`) +
             `Worst render times (past 60 frames): ${slowestRender.toFixed(1)}ms, ${slowestZigRender.toFixed(1)}ms`;
 
         debugElem.style.fontWeight = (
@@ -269,7 +269,8 @@ engine.renderLoop = function (_t: number) {
 };
 
 engine.logicLoop = function (ticks: number) {
-    // Interestingly enough, as ticks becomes large enough, the "imprecision" of the camera (16 possible subpixel positions) results in the player panning being all weird! This only happens past 1000 logical FPS though so it's fine.
+    // Interestingly enough, as ticks becomes large enough, the "imprecision" of the camera (16 possible subpixel positions) results in the player panning being all weird!
+    // This only happens past 1000 logical FPS though so it's fine.
     const startTime = performance.now();
 
     // tickSpeed is the logical tick speed (shouldn't change based on frame rate)
@@ -298,9 +299,9 @@ engine.logicLoop = function (ticks: number) {
         ) as HTMLDivElement;
         debugElem.textContent =
             ((document.getElementById("debugContainer") as HTMLDivElement).style
-                .display !== "none"
-                ? `WASM memory buffer: ${(engine.memory.buffer.byteLength / 1000000).toFixed(2)}MB\nLogic diff: ${delta.toFixed(1)}ms for ${ticks} tick${ticks == 1 ? "" : "s"}\n`
-                : "") +
+                .display === "none"
+                ? ""
+                : `WASM memory buffer: ${(engine.memory.buffer.byteLength / 1000000).toFixed(2)}MB\nLogic diff: ${delta.toFixed(1)}ms for ${ticks} tick${ticks == 1 ? "" : "s"}\n`) +
             `Worst logic tick (past 60 frames): ${slowestLogicLoop.toFixed(1)}ms\n`;
         // new-line in string for copy and paste
 

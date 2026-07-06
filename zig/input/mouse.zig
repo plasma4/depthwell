@@ -264,7 +264,7 @@ pub fn getMouseBlock() ?memory.Block {
         if (hitbox == .large_bottom_decor and loc[1] <= 5) {
             // same as mushroom but greater valid area, such as for bushes
             return null;
-        } else if (hitbox == .small_bottom_decor and loc[1] <= 10) {
+        } else if (hitbox == .small_bottom_decor and loc[1] <= 9) {
             // If your mouse is over the TOP PART of the mushroom block then that's not part of its "hitbox"
             return null;
         } else if (hitbox == .ceiling_decor and loc[1] >= 9) {
@@ -272,7 +272,7 @@ pub fn getMouseBlock() ?memory.Block {
             return null;
         } else if (hitbox == .thin_strip and (loc[0] < 4 or loc[0] >= 12)) {
             // plant is fully vertical
-            // x=0,1,2,3 or 12,13,14,15
+            // allow x=0,1,2,3 or 12,13,14,15
             return null;
         }
 

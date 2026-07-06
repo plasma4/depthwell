@@ -302,8 +302,16 @@ pub fn applyAncestorLogic(
 
     if (parent_sprite.isEmpty()) return .{};
     const seeds = world.quad_cache.getChunkSeeds(key);
-    var noise_hash_1 = seeding.FastHash.hash2d(.{ seeds.value[0].value[0], seeds.value[0].value[1] }, bx, by);
-    const noise_hash_2 = seeding.FastHash.hash2d(.{ seeds.value[0].value[2], seeds.value[0].value[3] }, bx, by);
+    var noise_hash_1 = seeding.FastHash.hash2d(
+        .{ seeds.value[0].value[0], seeds.value[0].value[1] },
+        bx,
+        by,
+    );
+    const noise_hash_2 = seeding.FastHash.hash2d(
+        .{ seeds.value[0].value[2], seeds.value[0].value[3] },
+        bx,
+        by,
+    );
     if (parent_sprite == .edge_stone)
         return .{ .id = parent_sprite, .seed = noise_hash_2 };
 
@@ -440,7 +448,10 @@ pub fn getInheritedMaterial(key: DepthCoordinate, bx: u4, by: u4) Block {
             const chunk_off_x = @divFloor(lx, dw.CHUNK_SIZE);
             const chunk_off_y = @divFloor(ly, dw.CHUNK_SIZE);
 
-            const target_nc = p.coord.moveAtDepth(.{ chunk_off_x, chunk_off_y }, target_depth - 1) orelse {
+            const target_nc = p.coord.moveAtDepth(
+                .{ chunk_off_x, chunk_off_y },
+                target_depth - 1,
+            ) orelse {
                 // neighbors[n_idx] = if (target_depth - 1 == STARTING_ZOOM_TIMES) .edge_stone else .none;
                 neighbors[n_idx] = .empty;
                 n_idx += 1;

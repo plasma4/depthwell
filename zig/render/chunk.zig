@@ -11,13 +11,17 @@ const CHUNK_SIZE_FLOAT = dw.CHUNK_SIZE_FLOAT;
 /// Current interpolation fraction (updated within `updateVisibleChunks()` every render frame).
 ///
 /// This value is in the range -1..0 (NOT 0..1): -1 is the start of the current logic frame, 0 is the end.
-/// The world renders position at `camera_pos + cam_vel * current_dt`, which (since `cam_vel = camera_pos - last_camera_pos`) equals `last_camera_pos + cam_vel * (current_dt + 1)`; interpolating from last to current.
+/// The world renders position at `camera_pos + cam_vel * current_dt`,
+/// which (since `cam_vel = camera_pos - last_camera_pos`) equals `last_camera_pos + cam_vel * (current_dt + 1)`; interpolating from last to current.
 ///
-/// Any other renderer must follow the SAME two curves so it stays locked to the world; the split matters because position and zoom base on different reference values:
-/// - Position: base on the previous-frame value (`last_camera_pos`, item's last subpixel, etc.) and use the shifted fraction `current_dt + 1.0` (range 0..1).
+/// Any other renderer must follow the SAME two curves so it stays locked to the world;
+/// the split matters because position and zoom base on different reference values:
+/// - Position: base on the previous-frame value (`last_camera_pos`, item's last subpixel, etc.)
+///   and use the shifted fraction `current_dt + 1.0` (range 0..1).
 ///   Basing on the current value with the shifted fraction renders one full frame of velocity ahead of the world.
 /// - Zoom: use `camera_scale * pow(camera_scale_change, current_dt)` with the RAW fraction.
-///   `camera_scale` is already the current scale and `camera_scale_change = camera_scale / old_scale`, so the negative exponent walks it back toward `old_scale` at -1.
+///   `camera_scale` is already the current scale and `camera_scale_change = camera_scale / old_scale`,
+///   so the negative exponent walks it back toward `old_scale` at -1.
 ///   Equivalently `old_scale * pow(change, current_dt + 1)`, but the raw form avoids recovering `old_scale`.
 pub var current_dt: f64 = 0.0;
 

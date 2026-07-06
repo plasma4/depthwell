@@ -98,7 +98,8 @@ const StructCacheEntry = struct {
 };
 
 /// Direct-mapped bounds/blocked cache, one bank per structure kind (slots must be a power of two).
-/// A structure's bounds and blocked verdict are identical for every footprint cell and are also re-derived by lower kinds' priority scans, so memoizing per grid cell collapses that repeated hashing to O(1).
+/// A structure's bounds and blocked verdict are identical for every footprint cell and are also re-derived by lower kinds' priority scans,
+/// so memoizing per grid cell collapses that repeated hashing to O(1).
 /// Pure function of (cell, seed): the per-entry seed check self-invalidates on reseed, so no explicit clear.
 const STRUCT_CACHE_SLOTS = 256;
 var struct_cache: [structures.len][STRUCT_CACHE_SLOTS]StructCacheEntry = @splat(@splat(.{}));

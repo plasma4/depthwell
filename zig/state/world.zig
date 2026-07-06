@@ -177,36 +177,43 @@ comptime {
     }.probe;
 }
 
-/// Generic sibling of `computeVineSeeds()`: computes the per-column `ColumnState` entering this chunk for any
-/// `ColumnFeature`, tracing terrain in the neighbor chunk(s) in the feature's growth direction.
-/// Downward features scan the ceiling above row 0; upward features scan the floor below the bottom row.
+/// Sibling of `computeVineSeeds()`: computes entering `ColumnState` per column for a `ColumnFeature`
+/// by tracing terrain in neighbor chunks along the growth direction.
 fn computeColumnSeeds(comptime f: procedural.ColumnFeature, coord: Coordinate, depth: u64) [CHUNK_SIZE]procedural.ColumnState {
     comptime procedural.assertColumnFeature(f);
     var seeds: [CHUNK_SIZE]procedural.ColumnState = @splat(.{});
-    const wx_col_base: u64 = coord.suffix[0] * CHUNK_SIZE; // moving only in Y never changes suffix[0]
-    for (0..CHUNK_SIZE) |bx| {
-        // `stepColumn()` resets on every foundation, so the entering state depends ONLY on the NEAREST anchor
-        // surface within reach and the empty cells past it; anything beyond that surface is overwritten. Scan
-        // outward from the chunk edge and stop at the first foundation instead of always walking the full
-        // max_length window (dense terrain resolves in a row or two). Terrain is recomputed solidity-only
-        // (no ores), so this stays identical across the border without caching neighbors.
-        var anchor_r: u32 = 0; // 0 = no anchoring surface found within reach
-        var r: u32 = 1;
-        while (r <= f.max_length + 1) : (r += 1) {
-            const cell = columnCellBeyond(coord, r, depth, f.dir);
-            if (cell.valid and resolveFoundationSolid(cell.suffix[0], cell.suffix[1], @intCast(bx), cell.by)) {
-                anchor_r = r;
-                break;
+    const wx_col_base: u64 = coord.suffix[0] * CHUNK_SIZE;
+
+    // Cache neighboring cells for each reach distance once to pull coordinate math out of the scan loop.
+    // (cells[r - 1] corresponds to reach r)
+    var cells: [f.max_length + 1]ColumnCellBeyond = undefined;
+    inline for (&cells, 1..) |*cell, r| cell.* = columnCellBeyond(coord, r, depth, f.dir);
+
+    // Scan pass (reach-outer) to find the nearest anchoring surface for each column.
+    // Bails early once all columns anchor or reach limits are hit.
+    var anchors: [CHUNK_SIZE]u32 = @splat(0); // 0 = unanchored
+    var open: u32 = CHUNK_SIZE;
+    for (&cells, 1..) |cell, r| {
+        if (open == 0) break;
+        if (!cell.valid) continue; // Skip out-of-bounds world edges
+        for (0..CHUNK_SIZE) |bx| {
+            if (anchors[bx] != 0) continue;
+            if (resolveFoundationSolid(cell.suffix[0], cell.suffix[1], @intCast(bx), cell.by)) {
+                anchors[bx] = @intCast(r);
+                open -= 1;
             }
         }
-        if (anchor_r == 0) continue; // open column: nothing to anchor the feature, state stays default
+    }
 
-        // Replay the bounded walk from the anchor toward this chunk's edge. Only `anchor_r` is a foundation
-        // (it is the nearest one); every cell past it is empty, so the growth rolls advance.
+    // Replay the growth walk from the nearest anchor back toward this chunk's edge.
+    for (0..CHUNK_SIZE) |bx| {
+        const anchor_r = anchors[bx];
+        if (anchor_r == 0) continue;
+
         var state: procedural.ColumnState = .{};
         var rr: u32 = anchor_r;
         while (rr >= 1) : (rr -= 1) {
-            const cell = columnCellBeyond(coord, rr, depth, f.dir);
+            const cell = cells[rr - 1];
             const wx = wx_col_base + bx;
             const wy: u64 = cell.suffix[1] * CHUNK_SIZE + cell.by;
             _ = procedural.stepColumn(f, &state, wx, wy, rr == anchor_r);
