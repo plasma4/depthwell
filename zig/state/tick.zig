@@ -82,11 +82,14 @@ pub fn handleTick(logic_speed: f64, iterations: u32) void {
         dw.mouse.mouse_chunk_coord = null;
     }
 
-    // Iterations may be > 1 if FPS is low.
+    // Iterations may be > 1 if FPS is low as a correction factor.
     for (0..iterations) |_| {
         // Smelting only advances while the furnace menu is open (paused otherwise).
         if (dw.indicators.menus.furnace) @import("../menus/furnace.zig").updateSmelting();
-        if (!just_increased_depth) dw.mining.handleMiningAndPlacing(logic_speed); // mouse block and mining/placing logic all updated in this function
+
+        // mouse block and mining/placing logic all updated in this function
+        if (!just_increased_depth) dw.mining.handleMiningAndPlacing(logic_speed);
+
         dw.player.move(logic_speed); // logic that moves the player/camera based on keys
         dw.player.tickAnimation(); // advance player sprite animation + facing on the logic tick
         dw.water.tickWater(); // fluid sim

@@ -774,7 +774,7 @@ pub inline fn staffordMix13(value: u64) u64 {
 pub fn seedFromBase26(noalias input: []const u8, noalias out_seed: *Seed) void {
     // Initialize out_seed to 0
     // @memset(out_seed, 0);
-    out_seed.*.value = @splat(0); // awkward performance thing: @memset is slower
+    out_seed.*.value = @splat(0); // NOTE: performance thing: @memset is slower
 
     for (input) |char| {
         const char_val = @as(u64, char - 'a') + 1;

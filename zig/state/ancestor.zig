@@ -356,7 +356,8 @@ pub fn applyAncestorLogic(
 
     // var seed = parent_block.seed;
     var inherited_base = parent_block.base_id;
-    if (parent_sprite.isFoundation()) { // we don't want non-solid blocks to become solid, since the player could be in them
+    if (parent_sprite.isFoundation()) {
+        // we don't want non-solid blocks to become solid, since the player could be in them
         const edges_list = comptime get4x4List(
             \\1111
             \\1001

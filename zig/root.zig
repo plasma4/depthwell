@@ -13,7 +13,7 @@ pub const is_wasm = builtin.target.cpu.arch == .wasm32 or builtin.target.cpu.arc
 /// Set to true if either test mode or `Debug` mode is used.
 pub const is_debug = FORCE_DEBUG or builtin.is_test or builtin.mode == .Debug;
 
-// Note: changing these constants below will probably have disasterous consequences.
+// Note: changing these constants below will probably have disastrous consequences.
 // A lot of logic is hard-coded, such as `[6][6]Sprite` use, and a lot of logic is bound to break if these constants are modified.
 
 /// Represents log2(CHUNK_SIZE).

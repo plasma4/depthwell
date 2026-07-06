@@ -1000,7 +1000,7 @@ const CHUNK_CACHE_SETS = CHUNK_CACHE_SIZE / CHUNK_CACHE_WAYS;
 pub const ChunkCache = struct {
     /// Keys storing `Coordinate` values structured as a 4-way set-associative cache.
     ///
-    /// CODE NOTE: We use `@splat()` rather than `@memset()` because Zig might currently compile @memset() naively with many zeroes, even in ReleaseSmall
+    /// NOTE: We use `@splat()` rather than `@memset()` because Zig might currently compile @memset() naively with many zeroes, even in ReleaseSmall
     /// Simply perfoming assignment rather than `@memset(&myData, @splat(0))` is also a tad easier and will be optimized; it just requires that in Debug, the stack isn't fully taken up.
     keys: [CHUNK_CACHE_SETS][CHUNK_CACHE_WAYS]?Coordinate = @splat(@splat(null)),
     /// Chunks referenced by `keys` at the current depth.

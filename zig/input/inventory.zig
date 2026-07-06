@@ -62,7 +62,7 @@ pub inline fn shouldShowAllItems() bool {
 /// Used for finding which active slot should be used and navigated through Q and E keys.
 pub var selected_row: u16 = 0;
 
-/// Slice array tyoe for possible slots.
+/// Slice array type for possible slots.
 pub const SlotBuffer = [sprite.item_sprite_count + 1]Sprite;
 
 /// Current sprite selected to place.
