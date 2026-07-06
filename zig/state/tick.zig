@@ -8,6 +8,7 @@ const KeyBits = dw.KeyBits;
 var DEBUG_RECURSIVELY_INCREASE_DEPTH = false;
 const MAX_AUTO_DEPTH = 32;
 
+/// The root of ALL actions that need to be handled every logical tick.
 pub fn handleTick(logic_speed: f64, iterations: u32) void {
     var buffer: inventory.SlotBuffer = undefined;
     const active_slots = inventory.getSpritesInInventory(&buffer);

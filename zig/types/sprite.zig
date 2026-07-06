@@ -47,6 +47,8 @@ const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 pub const INVENTORY_START = GEAR_ID + 35;
 /// Index where numbers (0-9) start.
 pub const NUMBER_START = INVENTORY_START + 4;
+/// ID for `Sprite.particle`, which is after a bunch of character glyphs.
+pub const PARTICLE_START = NUMBER_START + 10 + 123;
 
 /// Sprite IDs with numbers based on their location in the sprite sheet.
 pub const Sprite = enum(u16) {
@@ -160,30 +162,30 @@ pub const Sprite = enum(u16) {
     text_0 = NUMBER_START, // sprite with text 0
 
     /// Sprite for a particle; a full white rectangle but with corner pixels cut off.
-    particle = NUMBER_START + 10,
+    particle = PARTICLE_START,
     /// Full rectangle sprite; no corner pixels cut off.
     rectangle,
     /// Simple up-arrow icon.
     arrow,
 
     /// Quarter portion of a center part of the progress bar that is unfilled.
-    progress_small_unfilled = NUMBER_START + 13,
+    progress_small_unfilled = PARTICLE_START + 3,
     /// Quarter portion of a center part of the progress bar that is unfilled.
     progress_small_filled,
     /// Leftmost part of the progress bar.
-    progress_left = NUMBER_START + 15,
+    progress_left = PARTICLE_START + 5,
     /// Center part of the progress bar.
-    progress_center = NUMBER_START + 20,
+    progress_center = PARTICLE_START + 10,
     /// Right part of the progress bar.
-    progress_right = NUMBER_START + 25,
+    progress_right = PARTICLE_START + 15,
 
     /// Crafting icon.
-    craft = NUMBER_START + 30,
+    craft = PARTICLE_START + 20,
 
     /// Pickaxe icon.
-    pickaxe = NUMBER_START + 31,
+    pickaxe = PARTICLE_START + 21,
     /// Generic water block (filled). Default internal water type; after all pickaxes.
-    water = NUMBER_START + 31 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
+    water = PARTICLE_START + 21 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
     water_icon,
 
     /// A special type used for inventory purposes. Doesn't exist as an actual sprite.

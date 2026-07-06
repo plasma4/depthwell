@@ -12,13 +12,16 @@ const Entity = memory.Entity;
 const WGSLEntity = memory.WGSLEntity;
 const Vec2f32 = dw.utils.Vec2f32;
 
+const NUMBER_START = sprite.NUMBER_START;
+const CHARACTER_START = NUMBER_START + 10;
+
 /// Scale of tiles in the small chunk preview.
 pub var preview_tile_size: f64 = 0.0;
 
 /// Extra spacing between number characters.
 const spacing = 0.25;
 /// Pre-calculated widths of every number sprite from 0 to 9.
-const number_widths: [10]f32 = .{
+const NUMBER_WIDTHS: [10]f32 = .{
     0.5625 + spacing,
     0.375 + spacing,
     0.5625 + spacing,
@@ -30,6 +33,9 @@ const number_widths: [10]f32 = .{
     0.5625 + spacing,
     0.5625 + spacing,
 };
+
+/// List of monospace characters starting from
+const MONOSPACE_CHARS = "!\"%$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz(|)~";
 
 /// Current number of entities (reset every frame).
 pub var entity_count: u64 = 0;
@@ -68,15 +74,32 @@ pub fn updateEntities(time_diff: f64) void {
         dw.chunk_preview.drawChunkPreview();
     }
 
+    const width = 40;
+    const blocks_mined = memory.game.blocks_mined;
     // draw progress bar of mined block count
     dw.progress.drawBar(
-        40,
-        @min(memory.game.blocks_mined, 40),
+        width,
+        @min(blocks_mined, 40),
         .{ 0.04, 0.01 },
         0.4,
         .top_left_uv,
         .{ 1.0, 0.1, -1.3, 1.0 }, // high chroma, starts from pink/red
     );
+
+    // also draw string showing progress
+    var buf: [64]u8 = undefined;
+    const msg = if (blocks_mined >= width)
+        std.fmt.bufPrint(&buf, "{d} blocks mined", .{blocks_mined}) catch unreachable
+    else
+        std.fmt.bufPrint(&buf, "Progress: {d}/{d} blocks", .{ blocks_mined, width }) catch unreachable;
+    dw.entity.drawString(msg, .{ 19.5, 4.5 }, .{
+        .font_size = 8.0,
+        .lcha = .{ 0.45, 0.22, 1.8, 1.0 },
+    });
+    dw.entity.drawString(msg, .{ 20.0, 5.0 }, .{
+        .font_size = 8.0,
+        .lcha = .{ 0.85, 0.24, 1.8, 1.0 },
+    });
 
     memory.setScratchProp(0, entity_count);
     // entity rendering is dispatched to JS right after this function completes
@@ -115,7 +138,7 @@ pub fn drawNumber(
 
     if (number == 0) {
         addEntity(.{
-            .sprite = @enumFromInt(sprite.NUMBER_START),
+            .sprite = @enumFromInt(NUMBER_START),
             .lcha = lcha,
             .position = position,
             .size = font_size,
@@ -142,19 +165,19 @@ pub fn drawNumber(
 
     if (ltr) {
         // Initial shift for LTR logic
-        rel_x -= number_widths[@intCast(digits[count - 1])] * font_size;
+        rel_x -= NUMBER_WIDTHS[@intCast(digits[count - 1])] * font_size;
 
         var i: usize = count;
         while (i > 0) {
             i -= 1;
             const digit = digits[i];
-            rel_x += number_widths[@intCast(digit)] * font_size;
+            rel_x += NUMBER_WIDTHS[@intCast(digit)] * font_size;
 
             // Rotate the relative offset vector (rel_x, 0)
             const rotated_offset: Vec2f32 = .{ rel_x * cos_r, rel_x * sin_r };
 
             addEntity(.{
-                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
+                .sprite = @enumFromInt(NUMBER_START + digit),
                 .lcha = lcha,
                 .position = position + rotated_offset,
                 .size = font_size,
@@ -166,13 +189,13 @@ pub fn drawNumber(
             const rotated_offset: Vec2f32 = .{ rel_x * cos_r, rel_x * sin_r };
 
             addEntity(.{
-                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
+                .sprite = @enumFromInt(NUMBER_START + digit),
                 .lcha = lcha,
                 .position = position + rotated_offset,
                 .size = font_size,
                 .rotation = rotation,
             });
-            rel_x -= number_widths[@intCast(digit)] * font_size;
+            rel_x -= NUMBER_WIDTHS[@intCast(digit)] * font_size;
         }
     }
 }
@@ -186,7 +209,7 @@ fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
 
     if (number == 0) {
         addEntity(.{
-            .sprite = @enumFromInt(sprite.NUMBER_START),
+            .sprite = @enumFromInt(NUMBER_START),
             .lcha = lcha,
             .position = position,
             .size = font_size,
@@ -206,15 +229,15 @@ fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
     var current_pos = position;
 
     if (ltr) {
-        current_pos[0] -= number_widths[@intCast(digits[count - 1])] * font_size;
+        current_pos[0] -= NUMBER_WIDTHS[@intCast(digits[count - 1])] * font_size;
         var i: usize = count;
         while (i > 0) {
             i -= 1;
             const digit = digits[i];
-            current_pos[0] += number_widths[@intCast(digit)] * font_size;
+            current_pos[0] += NUMBER_WIDTHS[@intCast(digit)] * font_size;
 
             addEntity(.{
-                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
+                .sprite = @enumFromInt(NUMBER_START + digit),
                 .lcha = lcha,
                 .position = current_pos,
                 .size = font_size,
@@ -223,13 +246,206 @@ fn drawNumberFast(number: u64, position: Vec2f32, options: TextConfig) void {
     } else {
         for (digits[0..count]) |digit| {
             addEntity(.{
-                .sprite = @enumFromInt(sprite.NUMBER_START + digit),
+                .sprite = @enumFromInt(NUMBER_START + digit),
                 .lcha = lcha,
                 .position = current_pos,
                 .size = font_size,
             });
-            current_pos[0] -= number_widths[@intCast(digit)] * font_size;
+            current_pos[0] -= NUMBER_WIDTHS[@intCast(digit)] * font_size;
         }
+    }
+}
+
+/// A compile-time lookup table mapping ASCII characters to their index in MONOSPACE_CHARS.
+/// `-1` represents an invalid character.
+/// `-2` represents a space character (valid but skipped during rendering).
+const CHAR_MAP: [256]i16 = blk: {
+    @setEvalBranchQuota(2000);
+    var map = [_]i16{-1} ** 256;
+    map[' '] = -2;
+    for (MONOSPACE_CHARS, 0..) |char, index| {
+        map[char] = @intCast(index);
+    }
+    break :blk map;
+};
+
+/// Width of each character relative to the font size (6/16).
+const CHARACTER_WIDTH_FRACTION: f32 = 6.0 / 16.0;
+
+/// Draws a single monospace character.
+pub fn drawCharacter(
+    char: u8,
+    position: Vec2f32,
+    options: TextConfig,
+) void {
+    const char_index = CHAR_MAP[char];
+    std.debug.assert(char_index != -1);
+
+    if (char_index == -2) {
+        return;
+    }
+
+    const sprite_id: u32 = CHARACTER_START + @as(u32, @intCast(char_index));
+    addEntity(.{
+        .sprite = @enumFromInt(sprite_id),
+        .lcha = options.lcha,
+        .position = position,
+        .size = options.font_size,
+        .rotation = options.rotation,
+    });
+}
+
+/// Draws a single-line monospace string with rotation and LTR/RTL support.
+/// Fast-paths to `drawStringFast()` if there is no rotation.
+pub fn drawString(
+    string: []const u8,
+    position: Vec2f32,
+    options: TextConfig,
+) void {
+    if (string.len == 0) return;
+
+    if (options.rotation == 0.0) {
+        drawStringFast(string, position, options);
+        return;
+    }
+
+    const font_size = options.font_size;
+    const rotation = options.rotation;
+    const ltr = options.ltr;
+    const char_advance = CHARACTER_WIDTH_FRACTION * font_size;
+
+    const cos_r = @cos(rotation);
+    const sin_r = @sin(rotation);
+
+    var rel_x: f32 = 0.0;
+
+    if (ltr) {
+        for (string) |char| {
+            const char_index = CHAR_MAP[char];
+            std.debug.assert(char_index != -1);
+
+            if (char_index != -2) {
+                const rotated_offset: Vec2f32 = .{ rel_x * cos_r, rel_x * sin_r };
+                const sprite_id: u32 = CHARACTER_START + @as(u32, @intCast(char_index));
+                addEntity(.{
+                    .sprite = @enumFromInt(sprite_id),
+                    .lcha = options.lcha,
+                    .position = position + rotated_offset,
+                    .size = font_size,
+                    .rotation = rotation,
+                });
+            }
+            rel_x += char_advance;
+        }
+    } else {
+        var i: usize = string.len;
+        while (i > 0) {
+            i -= 1;
+            const char = string[i];
+            const char_index = CHAR_MAP[char];
+            std.debug.assert(char_index != -1);
+
+            if (char_index != -2) {
+                const rotated_offset: Vec2f32 = .{ rel_x * cos_r, rel_x * sin_r };
+                const sprite_id: u32 = CHARACTER_START + @as(u32, @intCast(char_index));
+                addEntity(.{
+                    .sprite = @enumFromInt(sprite_id),
+                    .lcha = options.lcha,
+                    .position = position + rotated_offset,
+                    .size = font_size,
+                    .rotation = rotation,
+                });
+            }
+            rel_x -= char_advance;
+        }
+    }
+}
+
+/// Optimized drawer for single-line strings when rotation is exactly 0.
+fn drawStringFast(
+    string: []const u8,
+    position: Vec2f32,
+    options: TextConfig,
+) void {
+    std.debug.assert(options.rotation == 0.0);
+    const font_size = options.font_size;
+    const ltr = options.ltr;
+    const char_advance = CHARACTER_WIDTH_FRACTION * font_size;
+
+    var current_pos = position;
+
+    if (ltr) {
+        for (string) |char| {
+            const char_index = CHAR_MAP[char];
+            std.debug.assert(char_index != -1);
+
+            if (char_index != -2) {
+                const sprite_id: u32 = CHARACTER_START + @as(u32, @intCast(char_index));
+                addEntity(.{
+                    .sprite = @enumFromInt(sprite_id),
+                    .lcha = options.lcha,
+                    .position = current_pos,
+                    .size = font_size,
+                });
+            }
+            current_pos[0] += char_advance;
+        }
+    } else {
+        var i: usize = string.len;
+        while (i > 0) {
+            i -= 1;
+            const char = string[i];
+            const char_index = CHAR_MAP[char];
+            std.debug.assert(char_index != -1);
+
+            if (char_index != -2) {
+                const sprite_id: u32 = CHARACTER_START + @as(u32, @intCast(char_index));
+                addEntity(.{
+                    .sprite = @enumFromInt(sprite_id),
+                    .lcha = options.lcha,
+                    .position = current_pos,
+                    .size = font_size,
+                });
+            }
+            current_pos[0] -= char_advance;
+        }
+    }
+}
+
+/// Draws a multi-line string. Each newline character offsets downwards by `line_height_factor * font_size`.
+/// Supports rotation by rotating the vertical line offset vector.
+pub fn drawMultiline(
+    string: []const u8,
+    position: Vec2f32,
+    line_height_factor: f32,
+    options: TextConfig,
+) void {
+    if (string.len == 0) return;
+
+    const font_size = options.font_size;
+    const rotation = options.rotation;
+
+    var lines = std.mem.splitScalar(u8, string, '\n');
+    var line_idx: usize = 0;
+
+    const cos_r = @cos(rotation);
+    const sin_r = @sin(rotation);
+
+    while (lines.next()) |raw_line| {
+        // Handle carriage returns from CRLF endings
+        const line = if (raw_line.len > 0 and raw_line[raw_line.len - 1] == '\r')
+            raw_line[0 .. raw_line.len - 1]
+        else
+            raw_line;
+
+        const rel_y = @as(f32, @floatFromInt(line_idx)) * line_height_factor * font_size;
+
+        // Rotate the vertical layout vector [0, rel_y]
+        const line_offset = Vec2f32{ -rel_y * sin_r, rel_y * cos_r };
+        const line_position = position + line_offset;
+
+        drawString(line, line_position, options);
+        line_idx += 1;
     }
 }
 
