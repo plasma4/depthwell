@@ -64,7 +64,7 @@ const IndicatorKind = enum {
         return switch (id) {
             .forest_furnace, .lava_furnace => .furnace,
             .core_off, .core1, .core2, .core3, .core4 => .corecraft,
-            // .big_tree1, .big_tree2 => .tree,
+            // .moss_shrub1, .moss_shrub2 => .tree,
             else => null,
         };
     }
@@ -268,13 +268,22 @@ const DrawVisitor = struct {
 
         // Background inventory slot (color shifts while its menu is open)
         dw.entity.addEntity(.{
-            .sprite = if (kind == .furnace) .wood_icon else .inventory,
+            // this creates an interesting style, just go with it
+            .sprite = if (kind == .furnace) .wood_icon else .wood,
             .position = .{ geom.screen_x, geom.screen_y },
             .size = geom.slot_size,
-            .lcha = if (is_open)
-                .{ 1.0, rel_size * 0.007, 0.5, geom.opacity }
+            .lcha = if (kind == .furnace)
+                // wood style if furnace
+                if (is_open)
+                    .{ 1.0, rel_size * 0.007, 0.3, geom.opacity }
+                else
+                    .{ 0.8, -0.1 + rel_size * 0.005, 0.0, geom.opacity }
             else
-                .{ 0.95, -0.1 + rel_size * 0.005, 0.0, geom.opacity },
+            // red/pink-ish vibe color instead
+            if (is_open)
+                .{ 1.0, 0.03 + rel_size * 0.01, -0.9, geom.opacity }
+            else
+                .{ 0.7, -0.014 + rel_size * 0.005, -0.78, geom.opacity },
         });
 
         // Mini preview centered inside the container slot
@@ -282,7 +291,7 @@ const DrawVisitor = struct {
             .sprite = kind.previewSprite(),
             .position = .{ geom.screen_x, geom.screen_y },
             .size = geom.slot_size * 0.8,
-            .lcha = .{ 1.0, 0.0, 0.0, geom.opacity },
+            .lcha = .{ if (is_open) 1.0 else 0.8, 0.0, 0.0, geom.opacity },
         });
 
         return false; // keep scanning; multiple indicators can be on screen

@@ -14,8 +14,8 @@ const TILES_PER_COLUMN: f32 = 21.0;
 const STONE_START: u32 = 8u;
 const ORE_START: u32 = 32u;
 const GEM_START: u32 = 38u;
-const GEM_MASK_START: u32 = 48u;
-const WATER_START: u32 = 162u;
+const GEM_MASK_START: u32 = 52u;
+const WATER_START: u32 = 166u;
 // #endregion generated-constants
 
 const PI = radians(180.0);

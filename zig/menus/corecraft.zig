@@ -32,9 +32,14 @@ const recipes = [_]Recipe{
         },
         .output = .{ .item = .campfire, .count = 1 },
     },
+    .{
+        .inputs = &.{},
+        .output = .{ .item = .pickaxe, .count = 0 },
+    },
 };
 
-// Grid layout (viewport pixels). The panel sizes itself to hold `recipes.len` slots wrapped at `COLS`.
+// Grid layout (viewport pixels). The panel sizes itself to hold recipies.len slots,
+// with each recipe wrapping at COLS.
 const COLS: usize = 5;
 const SLOT: f64 = 18.0;
 const GAP: f64 = 7.0;
@@ -117,7 +122,7 @@ fn slotHitbox(center_px: Vec2f, size: f64) dw.geometry.Shape {
     return .roundSquare(center_px - @as(Vec2f, @splat(size / 2.0)), size, 0.2);
 }
 
-/// Draws a count with the shared lower-lightness drop shadow, in the given color/alpha.
+/// Draws a number with a shadow!
 fn drawCount(count: u64, center_px: Vec2f, color: dw.utils.Vec4f32, alpha: f32) void {
     const pos: Vec2f32 = .{ @floatCast(center_px[0]), @floatCast(center_px[1]) };
     // Shadow: same digits, darker, nudged down-right; then the colored copy on top.
@@ -188,7 +193,8 @@ pub fn draw() void {
         .sprite = .rectangle,
         .position = MENU_POS,
         .size = MENU_SIZE,
-        .lcha = .{ 0.22, 0.16, 5.0, 1.0 },
+        // blue!
+        .lcha = .{ 0.52, 0.22, 3.8, 1.0 },
     });
 
     // Title icon centered near the top; brighter once a powered core is nearby.
@@ -200,7 +206,7 @@ pub fn draw() void {
         .sprite = .craft,
         .position = .{ @floatCast(title_px[0]), @floatCast(title_px[1]) },
         .size = 12.0,
-        .lcha = if (dw.indicators.nearby_cores.anyPowered()) .{ 1.0, 0.0, 0.0, 1.0 } else .{ 0.55, 0.0, 0.0, 1.0 },
+        // .lcha = if (dw.indicators.nearby_cores.anyPowered()) .{ 1.0, 0.0, 0.0, 1.0 } else .{ 0.55, 0.0, 0.0, 1.0 },
     });
 
     var hovered: ?Recipe = null;
@@ -210,8 +216,8 @@ pub fn draw() void {
         const over = slotHitbox(center, SLOT).contains(mouse_px);
         if (over) {
             hovered = recipe;
-            // Pointer on any hovered slot (it is interactive and shows a tooltip); the craft only
-            // actually fires when the recipe is affordable.
+            // Pointer on any hovered slot (it is interactive and shows a tooltip);
+            // craft only actually fires when the recipe is affordable.
             if (mouse.click_focus.permits(.crafting)) mouse.requestCursorType(.pointer);
             if (craftable and mouse.isClicked(.crafting, true)) doCraft(recipe);
         }
@@ -220,13 +226,21 @@ pub fn draw() void {
         const alpha: f32 = if (craftable) 1.0 else 0.5;
 
         // Slot background: hue-shifted inventory sprite so craft slots read distinctly from the panel.
-        // Hovered craftable slots brighten slightly for feedback.
+        addEntity(.{
+            .sprite = .wood_icon,
+            .position = .{ @floatCast(center[0] - 0.4), @floatCast(center[1] - 0.4) },
+            .size = @floatCast(SLOT),
+            // looks blue!
+            .lcha = .{ if (over and craftable) 0.94 else 0.75, 0.15, 3.0, alpha },
+        });
         addEntity(.{
             .sprite = .wood_icon,
             .position = .{ @floatCast(center[0]), @floatCast(center[1]) },
             .size = @floatCast(SLOT),
-            .lcha = .{ if (over and craftable) 0.78 else 0.62, 0.09, 4.0, alpha },
+            // looks blue!
+            .lcha = .{ if (over and craftable) 0.94 else 0.75, 0.15, 3.0, alpha },
         });
+
         // Output item, centered in the slot.
         addEntity(.{
             .sprite = recipe.output.item,

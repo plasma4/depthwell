@@ -133,8 +133,8 @@ pub inline fn isClicked(category: ClickFocus, is_hovered: bool) bool {
 /// Handles a fresh pointerdown across every interactive UI layer BEFORE world mining runs.
 /// Must be called once per tick, ahead of `mining.handleMiningAndPlacing()` (see `state/tick.zig`).
 ///
-/// `handleMouse()` optimistically sets `click_focus = .canvas` on pointerdown,
-/// so without this pass the first frame of a click being valid is forced to the whimsy of whether render or logical tick applies first.
+/// Since `handleMouse()` optimistically sets `click_focus = .canvas` on pointerdown,
+/// without this the accuracy of first-frame click is forced to the whimsy of whether render or logical tick applies first.
 ///
 /// Categories are visited in enum order (highest priority first);
 /// the first hovered layer claims the click, matching `ClickFocus` precedence.

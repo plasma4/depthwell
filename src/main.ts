@@ -372,15 +372,23 @@ if (is_dev && engine.isDebug) {
     if (CONFIG.verbose)
         console.log("Auto-generated buttons and slider data:", meta);
 
-    const container = document.getElementById(
+    const container: HTMLDivElement = document.getElementById(
         "debugContainer",
-    ) as HTMLDivElement;
+    ) as any;
+    const textContainer: HTMLDivElement = document.getElementById(
+        "textContainer",
+    ) as any;
     container.style.display = "none";
+    textContainer.style.display = "none";
     document.addEventListener("keydown", function (e) {
         if (e.code === "KeyM") {
-            if (container.style.display === "none")
+            if (container.style.display === "none") {
                 container.removeAttribute("style");
-            else container.style.display = "none";
+                textContainer.removeAttribute("style");
+            } else {
+                container.style.display = "none";
+                textContainer.style.display = "none";
+            }
         }
     });
 

@@ -31,7 +31,7 @@ pub const ORE_START = BAR_START + 6;
 pub const GEM_START = ORE_START + 6;
 
 /// Number of gem types.
-pub const GEM_COUNT = 5;
+pub const GEM_COUNT = 7;
 
 /// Index where gem masks (not gem sprites) begin.
 pub const MASK_START = GEM_START + GEM_COUNT * 2;
@@ -103,6 +103,8 @@ pub const Sprite = enum(u16) {
     sapphire,
     emerald,
     ruby,
+    aquashard,
+    electrit,
 
     // Internal assets (not valid for placement/foundation)
     gem_mask = MASK_START, // 8 masks
@@ -110,14 +112,14 @@ pub const Sprite = enum(u16) {
 
     // Decor (THIS IS COUPLED TO WGSL CODE)
     small_tree = DECOR_START,
-    /// Left/base tile of the 2x1 big-tree assembly; stored in BOTH cells and resolved to
-    /// `big_tree1` (left) / `big_tree1_right` (right) at render time via the `.group` variant.
-    big_tree1,
-    /// Render-only right frame of `big_tree1` (never stored as a block id).
-    big_tree1_right,
-    big_tree2,
-    /// Render-only right frame of `big_tree2` (never stored as a block id).
-    big_tree2_right,
+    /// Left/base tile of the 2x1 big-tree assembly; stored in BOTH cells,
+    /// and resolved to `moss_shrub1` (left) / `moss_shrub1_right` (right) at render time via the `.group` variant.
+    moss_shrub1,
+    /// Render-only right frame of `moss_shrub1` (never stored as a block id).
+    moss_shrub1_right,
+    moss_shrub2,
+    /// Render-only right frame of `moss_shrub2` (never stored as a block id).
+    moss_shrub2_right,
     fruit_blue_lemon = GEAR_ID - FRUIT_COUNT,
     fruit_teal_lemon,
     fruit_splitty,
@@ -424,7 +426,7 @@ const rules = [_]SpriteRule{
     },
     // Gems
     .{
-        .{ .range = .{ .quartz, .ruby } },
+        .{ .range = .{ .quartz, .electrit } },
         .{
             .in_world = true,
             .item = true,
@@ -473,6 +475,14 @@ const rules = [_]SpriteRule{
         .{ .single = .ruby },
         .{ .strength = 100 },
     },
+    .{
+        .{ .single = .aquashard },
+        .{ .strength = 120 },
+    },
+    .{
+        .{ .single = .electrit },
+        .{ .strength = 130 },
+    },
 
     // Evolution rules on depth increase
     .{
@@ -500,10 +510,10 @@ const rules = [_]SpriteRule{
     // (the `_right` frame is render-only), so the rule targets the base ids alone.
     .{
         .{ .list = &[_]Sprite{
-            .big_tree1,
-            .big_tree2,
-            .big_tree1_right,
-            .big_tree2_right,
+            .moss_shrub1,
+            .moss_shrub2,
+            .moss_shrub1_right,
+            .moss_shrub2_right,
         } },
         .{
             .in_world = true,
@@ -588,10 +598,10 @@ const rules = [_]SpriteRule{
     // frames stay propertyless render-only ids (like the extra grid_2x2 stone frames).
     .{
         .{ .list = &[_]Sprite{
-            .big_tree1,
-            .big_tree2,
-            .big_tree1_right,
-            .big_tree2_right,
+            .moss_shrub1,
+            .moss_shrub2,
+            .moss_shrub1_right,
+            .moss_shrub2_right,
         } },
         .{
             .anchor = .floor,
@@ -713,7 +723,7 @@ const Target = union(enum) {
     list: []const Sprite,
 };
 
-/// Contains targets describing what to select and what SpriteProps to apply to them.
+/// Contains targets describing what to select and what `SpriteProps` to apply to them.
 const SpriteRule = struct {
     Target, // unnamed tuples are cool
     SpriteProps,

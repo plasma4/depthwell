@@ -62,8 +62,8 @@ const rules = [_]struct { Sprite, VariantRule }{
 
     // 2x1 big-tree assemblies: base tile stored in both cells, resolved to left (offset 0) or right (offset 1)
     // at render from the stored group_x. See zig/types/assembly.zig.
-    .{ .big_tree1, .{ .kind = .group, .count = 2, .group_w = 2 } },
-    .{ .big_tree2, .{ .kind = .group, .count = 2, .group_w = 2 } },
+    .{ .moss_shrub1, .{ .kind = .group, .count = 2, .group_w = 2 } },
+    .{ .moss_shrub2, .{ .kind = .group, .count = 2, .group_w = 2 } },
 
     // Campfire animation has 4 contiguous frames, advancing every 6 render frames.
     // There's a HARDCODED custom resolution to use the underwater variant if waterlogged.

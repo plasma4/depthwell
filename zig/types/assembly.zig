@@ -29,8 +29,8 @@ const AssemblyRule = struct { Sprite, Footprint };
 /// All registered multi-tile assemblies. Add a row here plus a matching `.group` variation rule.
 const rules = [_]AssemblyRule{
     // 2x1 big trees: left/right frames resolved at render (group_w = 2 in variation.zig).
-    // .{ .big_tree1, .{ .w = 2, .h = 1 } },
-    // .{ .big_tree2, .{ .w = 2, .h = 1 } },
+    // .{ .moss_shrub1, .{ .w = 2, .h = 1 } },
+    // .{ .moss_shrub2, .{ .w = 2, .h = 1 } },
 };
 
 /// Dense sprite -> footprint LUT; unregistered ids default to a 1x1 (single-tile) footprint.

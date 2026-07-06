@@ -395,6 +395,13 @@ pub fn addOresAndGems(
                     null,
                 );
                 if (s == .ruby) return s;
+
+                s = selectSprite(
+                    .{ s, .electrit },
+                    v3 >= 0.84 and v3 <= 0.85,
+                    null,
+                );
+                if (s == .ruby) return s;
             }
         }
     }
@@ -556,11 +563,17 @@ pub fn addDecorations(
 ) void {
     // First, we handle blocks with a floor anchor kind.
     for (0..CHUNK_SIZE) |block_y| {
+        var forced_next_sprite_type: Sprite = .none; // .none means nothing is forced
         for (0..CHUNK_SIZE) |block_x| {
             const idx = block_x + block_y * CHUNK_SIZE;
             var block = &target_chunk.blocks[idx];
-            // Multi-tile assemblies stamp their extra cells directly, so a later cell reached by this
-            // scan is already non-empty and skipped below (no forced-next carryover needed).
+            if (forced_next_sprite_type != .none) {
+                // semantically, .none makes sense, simply an alternative to optional type
+                block.id = forced_next_sprite_type;
+                forced_next_sprite_type = .none;
+                continue;
+            }
+
             if (!block.isEmpty()) continue;
             // Check calculated bitmask directly to avoid isAdjacentBlockSolid logic discrepancies
             if ((block.edge_flags & types.EdgeFlags.BOTTOM) != 0) {
@@ -572,10 +585,12 @@ pub fn addDecorations(
                     const other_block = &target_chunk.blocks[other_block_x + block_y * CHUNK_SIZE];
                     if (other_block.isEmpty() and ((other_block.edge_flags & types.EdgeFlags.BOTTOM) != 0)) {
                         if (val >= oddsNum(0.98)) {
-                            dw.assembly.stampChunk(target_chunk, block_x, block_y, .big_tree1);
+                            block.id = .moss_shrub1;
+                            forced_next_sprite_type = .moss_shrub1_right;
                             continue;
                         } else if (val >= oddsNum(0.97)) {
-                            dw.assembly.stampChunk(target_chunk, block_x, block_y, .big_tree2);
+                            block.id = .moss_shrub2;
+                            forced_next_sprite_type = .moss_shrub2_right;
                             continue;
                         }
                     }
