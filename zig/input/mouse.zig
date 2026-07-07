@@ -22,10 +22,10 @@ pub const ClickFocus = enum(u32) {
     /// Click started on the world canvas (such as by mining a block).
     /// This has precedence over all UI categories to prevent active dragging from interacting with menus.
     canvas,
-    /// Click started specifically on an in-world indicator overlay like a furnace.
-    indicator,
     /// Click started specifically on an inventory slot.
     inventory,
+    /// Click started specifically on an in-world indicator overlay such as above furances/cores.
+    indicator,
     /// Click started specifically on a smelting menu panel.
     smelting,
     /// Click started specifically on a crafting menu panel.

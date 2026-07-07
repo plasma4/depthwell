@@ -77,6 +77,13 @@ pub var inventory_anim_progress: [sprite.max_sprite_value + 1]f32 = @splat(0.0);
 /// Animation progress for the wobble effect of text. Always between -1 and 1; 0 if idle.
 pub var inventory_wobble_progress: [sprite.max_sprite_value + 1]f32 = @splat(0.0);
 
+/// Selected sprite as of the previous frame, used to retrigger the name banner's ripple on change.
+var last_named_sprite: Sprite = .unselected;
+/// Ripple strength of the selected-item name banner. 1 on selection change, decaying to 0 (idle).
+var name_wave: f32 = 0.0;
+/// Free-running phase (radians) driving the name banner's traveling wave.
+var name_phase: f32 = 0.0;
+
 /// Logs data on what is inside the inventory.
 pub fn logInventory() void {
     // .quick and {h} work best here as you don't have to do a bunch of work figuring out formatting
@@ -576,6 +583,57 @@ pub fn drawInventory(time_diff: f64) void {
             );
         }
     }
+
+    drawSelectedName(time_diff);
+}
+
+/// Draws the selected item's name in a banner above the inventory, tinted by the sprite's dominant atlas color with a darker drop shadow.
+/// Text has a vertical ripple effect that retriggers whenever the selection changes, plus an OKLCH brightening gradient.
+fn drawSelectedName(time_diff: f64) void {
+    const named = selected_sprite;
+    if (named != last_named_sprite) {
+        last_named_sprite = named;
+        name_wave = 1.0;
+    }
+
+    const dt: f32 = @floatCast(time_diff);
+    const ripple_length_ms: f32 = 1200.0; // how long the selection ripple takes to settle
+    const phase_speed: f32 = 0.008; // radians of traveling-wave phase per ms
+    name_wave = @max(0.0, name_wave - dt / ripple_length_ms);
+    name_phase += dt * phase_speed;
+
+    if (named == .unselected) return;
+
+    // Display name: the enum tag with underscores shown as spaces; the empty slot is the pickaxe.
+    var buf: [64]u8 = undefined;
+    const name = if (named.isEmpty()) "pickaxe" else named.getName(&buf);
+
+    // Tint from the sprite's signature color; the empty slot borrows the equipped pickaxe tile.
+    const rendered: Sprite = if (named.isEmpty())
+        @enumFromInt(@intFromEnum(Sprite.pickaxe) + @intFromEnum(dw.mining.pickaxe_type))
+    else
+        named;
+    const dominant = dw.particles.dominantColorOf(rendered);
+    // Floor lightness so dark sprites' names still read against the UI.
+    const l = @max(dominant[0], 0.6);
+
+    const font_size: f32 = 10.0;
+    const amplitude = name_wave * 1.5; // peak ripple displacement in px
+    const origin: Vec2f32 = .{ 20.0, 14.0 };
+
+    dw.entity.drawStringWave(name, origin - Vec2f32{ 0.6, 0.6 }, .{
+        .lcha = .{ l * 0.35, dominant[1] * 1.2, dominant[2] - 0.2, 0.7 },
+        .font_size = font_size,
+        .phase = name_phase,
+        .amplitude = amplitude,
+    });
+    dw.entity.drawStringWave(name, origin, .{
+        .lcha = .{ l * 0.9, dominant[1] * 1.1, dominant[2], 1.0 },
+        .font_size = font_size,
+        .phase = name_phase,
+        .amplitude = amplitude,
+        .gradient_l = 0.25,
+    });
 }
 
 /// Back easing function (time-based)

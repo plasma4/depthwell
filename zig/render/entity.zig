@@ -74,30 +74,32 @@ pub fn updateEntities(time_diff: f64) void {
         dw.chunk_preview.drawChunkPreview();
     }
 
-    const width = 40;
     const blocks_mined = memory.game.blocks_mined;
+
     // draw progress bar of mined block count
-    dw.progress.drawBar(
-        width,
-        @min(blocks_mined, 40),
-        .{ 0.04, 0.01 },
-        0.4,
-        .top_left_uv,
-        .{ 1.0, 0.1, -1.3, 1.0 }, // high chroma, starts from pink/red
-    );
+    // const width = 40;
+    // dw.progress.drawBar(
+    //     width,
+    //     @min(blocks_mined, 40),
+    //     .{ 0.04, 0.01 },
+    //     0.4,
+    //     .top_left_uv,
+    //     .{ 1.0, 0.1, -1.3, 1.0 }, // high chroma, starts from pink/red
+    // );
 
     // also draw string showing progress
     var buf: [64]u8 = undefined;
-    const msg = if (blocks_mined >= width)
-        std.fmt.bufPrint(&buf, "{d} blocks mined", .{blocks_mined}) catch unreachable
-    else
-        std.fmt.bufPrint(&buf, "Progress: {d}/{d} blocks", .{ blocks_mined, width }) catch unreachable;
-    dw.entity.drawString(msg, .{ 19.5, 4.5 }, .{
-        .font_size = 8.0,
+    const msg = std.fmt.bufPrint(
+        &buf,
+        "{d} block{s} mined",
+        .{ blocks_mined, if (blocks_mined == 1) "" else "s" },
+    ) catch unreachable;
+    dw.entity.drawString(msg, .{ 19.5, 8.5 }, .{
+        .font_size = 7.5,
         .lcha = .{ 0.45, 0.22, 1.8, 1.0 },
     });
-    dw.entity.drawString(msg, .{ 20.0, 5.0 }, .{
-        .font_size = 8.0,
+    dw.entity.drawString(msg, .{ 20.0, 9.0 }, .{
+        .font_size = 7.5,
         .lcha = .{ 0.85, 0.24, 1.8, 1.0 },
     });
 
@@ -409,6 +411,57 @@ fn drawStringFast(
             }
             current_pos[0] -= char_advance;
         }
+    }
+}
+
+/// Configuration for `drawStringWave()`: a horizontally laid-out string whose glyphs ripple
+/// vertically and brighten toward the end.
+pub const WaveConfig = struct {
+    /// Base OKLCH+alpha tint of the leftmost glyph (before the gradient adds to L).
+    lcha: dw.utils.Vec4f32 = memory.DEFAULT_ENTITY_LCHA,
+    /// The font size of the text.
+    font_size: f32 = 16.0,
+    /// Traveling-wave phase in radians; advance it over time to animate the ripple.
+    phase: f32 = 0.0,
+    /// Peak vertical displacement in viewport px (0 disables the ripple).
+    amplitude: f32 = 0.0,
+    /// Radians of phase added per glyph, setting the wavelength of the ripple.
+    wave_step: f32 = 0.6,
+    /// L added to the OKLCH tint at the final glyph, ramped linearly from 0 (an OKLCH lightness gradient).
+    gradient_l: f32 = 0.0,
+};
+
+/// Draws a left-to-right monospace string whose glyphs ride a vertical sine ripple and brighten
+/// toward the end. Used for the selected-item name; never rotates.
+pub fn drawStringWave(
+    string: []const u8,
+    position: Vec2f32,
+    config: WaveConfig,
+) void {
+    if (string.len == 0) return;
+    const char_advance = CHARACTER_WIDTH_FRACTION * config.font_size;
+    const last: f32 = @floatFromInt(@max(string.len - 1, 1));
+
+    var current_x = position[0];
+    for (string, 0..) |char, i| {
+        const char_index = CHAR_MAP[char];
+        std.debug.assert(char_index != -1);
+
+        if (char_index != -2) {
+            const frac = @as(f32, @floatFromInt(i)) / last;
+            var lcha = config.lcha;
+            lcha[0] += config.gradient_l * frac;
+            const y = position[1] + config.amplitude *
+                @sin(config.phase + config.wave_step * @as(f32, @floatFromInt(i)));
+
+            addEntity(.{
+                .sprite = @enumFromInt(CHARACTER_START + @as(u32, @intCast(char_index))),
+                .lcha = lcha,
+                .position = .{ current_x, y },
+                .size = config.font_size,
+            });
+        }
+        current_x += char_advance;
     }
 }
 

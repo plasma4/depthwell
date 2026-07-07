@@ -289,7 +289,7 @@ fn handleLocalWrap(comptime axis: u1) i64 {
             game.camera_pos[axis] -= subpixel_offset;
             return carry;
         } else {
-            // World edge hit: snap back
+            // World edge was hit! snap back
             game.player_pos[axis] = if (val < 0) 0 else dw.SUBPIXELS_IN_CHUNK - 1;
         }
     }

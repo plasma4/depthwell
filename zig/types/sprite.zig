@@ -192,6 +192,30 @@ pub const Sprite = enum(u16) {
     unselected = 65535,
     _, // non-exhaustive for debugging heatmaps
 
+    /// Gets the name of the sprite and writes it into the provided buffer.
+    /// Returns the sliced buffer containing the clean name. Buffer should be at least 64 chars wide.
+    pub inline fn getName(self: @This(), buf: []u8) []u8 {
+        const raw = @tagName(self);
+        const max_len = @min(raw.len, buf.len);
+        var out_idx: usize = 0;
+
+        for (raw[0..max_len]) |c| {
+            if (c >= '0' and c <= '9') continue;
+            // replace _ with space
+            buf[out_idx] = if (c == '_') ' ' else c;
+            out_idx += 1;
+        }
+
+        // for right variants of moss shrub
+        const suffix = " right";
+        var final_str = buf[0..out_idx];
+        if (final_str.len >= suffix.len and std.mem.eql(u8, final_str[final_str.len - suffix.len ..], suffix)) {
+            out_idx -= suffix.len;
+        }
+
+        return buf[0..out_idx];
+    }
+
     /// Retrieves the fully compile-time property data for this sprite.
     pub inline fn props(self: @This()) SpriteFlags {
         const val = @intFromEnum(self);

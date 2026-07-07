@@ -402,7 +402,7 @@ fn generateShaderConstants(b: *std.Build, paths: []const []const u8) void {
 
 /// Regenerates `zig/render/particle_colors.zig` from the exported sprite atlas PNGs.
 /// Similar to `generateEnums()`: hashes `paths`, skips entirely when unchanged,
-/// otherwise builds and runs `zig/generate_particles.zig` (which rewrites the data file in place and updates cache).
+/// otherwise builds and runs `zig/generate_pixel_data.zig` (which rewrites the data file in place and updates cache).
 /// Returns the run step (for sequencing against the atlas export), or null when skipped.
 fn generateParticleColors(b: *std.Build, paths: []const []const u8) ?*std.Build.Step {
     const cache_root = b.cache_root.path orelse ".";
@@ -430,9 +430,9 @@ fn generateParticleColors(b: *std.Build, paths: []const []const u8) ?*std.Build.
     if (std.mem.eql(u8, current_hash_hex, old_hash_hex)) return null;
 
     const gen_tool = b.addExecutable(.{
-        .name = "generate_particles",
+        .name = "generate_pixel_data",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig/generate_particles.zig"),
+            .root_source_file = b.path("zig/generate_pixel_data.zig"),
             .target = b.graph.host,
             .optimize = .Debug,
         }),

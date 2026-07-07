@@ -1,6 +1,6 @@
 //! Fixed-capacity particle system rendered with the square `.particle` sprite.
 //!
-//! Colors come from `particle_colors.zig`, generated at build time from the sprite atlases by `zig/generate_particles.zig`,
+//! Colors come from `particle_colors.zig`, generated at build time from the sprite atlases by `zig/generate_pixel_data.zig`,
 //! so each sprite tile exposes its unique texel colors as OKLCH tints.
 //! Particles live in a simple circular buffer that overrides the oldest particle.
 //!
@@ -92,6 +92,13 @@ pub fn colorsOf(s: Sprite) []const [4]f32 {
     const tile = s.asEntity();
     if (tile >= palette.TILE_COUNT) return &.{};
     return palette.colors[palette.tile_offsets[tile]..palette.tile_offsets[tile + 1]];
+}
+
+/// The single most common opaque color of a sprite's tile as an OKLCH+alpha tint (opaque white for unknown tiles).
+pub fn dominantColorOf(s: Sprite) Vec4f32 {
+    const tile = s.asEntity();
+    if (tile >= palette.TILE_COUNT) return .{ 1.0, 0.0, 0.0, 1.0 };
+    return palette.dominant[tile];
 }
 
 /// Spawns `config.count` particles radiating from `origin` (viewport pixels) in random directions.
