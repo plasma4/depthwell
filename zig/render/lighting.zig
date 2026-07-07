@@ -34,6 +34,7 @@ pub const CAMPFIRE_LIGHT: u16 = 240;
 pub const FURNACE_LIGHT: u16 = 80;
 // ---
 pub const PLATE_LIGHT: u16 = 160;
+pub const LAVA_LIGHT: u16 = 40;
 
 // Orthogonal decay rates per block type. Air should always be the lowest (decays slowest)!
 // Logic is optimized and dependent around air falloff being 10 and solid falloff being 26.
@@ -72,6 +73,7 @@ inline fn blockEmission(id: Sprite) u16 {
         .campfire => CAMPFIRE_LIGHT,
         .forest_furnace, .lava_furnace => CAMPFIRE_LIGHT,
         .white_plate => PLATE_LIGHT,
+        .lava_stone => LAVA_LIGHT,
         else => 0,
     };
 }
@@ -81,6 +83,7 @@ inline fn isOrangeSource(id: Sprite) bool {
     return switch (id) {
         .campfire => true,
         .forest_furnace, .lava_furnace => true,
+        .lava_stone => true,
         else => false,
     };
 }
@@ -207,15 +210,14 @@ fn floodChannel(
 ) void {
     var b: u16 = MAX_SOURCE;
     while (b > ambient) : (b -= 1) {
+        const bucket_id: usize = @intCast(b);
         // Nothing appends to buckets[b] once we reach level b (relaxation only writes lower levels),
         // so this backing slice is stable for the duration of the inner loop.
-        const items = buckets[@as(usize, b)].items;
-        var k: usize = 0;
-        while (k < items.len) : (k += 1) {
-            const pc = items[k];
+        const items = buckets[bucket_id].items;
+        for (items) |pc| {
             const x = @as(i32, unpackX(pc));
             const y = @as(i32, unpackY(pc));
-            const idx = @as(usize, @intCast(y * w + x));
+            const idx: usize = @intCast(y * w + x);
 
             // Skip stale entries: this cell was later relaxed to a brighter bucket and already handled.
             if (light[idx] != b) continue;
@@ -247,8 +249,8 @@ fn floodChannel(
     }
 }
 
-/// Executes a bucketed Dijkstra light flood over the visible buffer and writes the final
-/// per-block `light` (0..255) and `lighting_color` (orange flag) using continuous player coords.
+/// Executes a bucketed Dijkstra light flood over the visible lbock array.
+/// Writes the final per-block `light` (0..255) and `lighting_color` (orange flag).
 pub fn applyLighting(out: []Block, wb: u32, hb: u32, player_bx: f32, player_by: f32) void {
     resetArena();
     const w: i32 = @intCast(wb);

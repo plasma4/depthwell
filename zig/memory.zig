@@ -53,7 +53,7 @@ pub const SeedType = enum {
 };
 
 /// Non-pointer data (short known length) representing part of the game state.
-/// Data is reserved for numbers or positions that are guaranteed to take a constant amount of memory, or pointers.
+/// Data is reserved for numbers or positions that are guaranteed to take a constant memory size.
 /// Important data is meant to be placed at the start with less important data later. Data can be rearranged, but requires using the -Dgen-enums for pointer locations to be reflected in TypeScript. See game_state_offsets in types.zig for enum export details.
 pub const GameState = extern struct {
     /// Represents the player's subpixel position within the CURRENT chunk (0 to 4095), from the CENTER of the sprite.
@@ -83,7 +83,7 @@ pub const GameState = extern struct {
     /// Current frame ID. 32-bit; expect wrap-arounds and access with powers-of-2 checks.
     frame: u32 align(4) = 0,
 
-    /// The amount of blocks the player has mined.
+    /// The number of blocks the player has mined.
     blocks_mined: u64 = 0,
 
     // /// Represents if the grid needs to be recalculated/passed to WGSL.

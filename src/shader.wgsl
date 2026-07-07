@@ -947,7 +947,7 @@ fn vs_background(@builtin(vertex_index) vertex_index: u32) -> BackgroundOutput {
 
     // Center the scale pivot to the screen center (camera and player viewport center). The zoom is
     // compressed so the background scales slower than the camera (parallax depth); see BG_ZOOM_PARALLAX.
-    let bg_zoom = pow(scene.zoom, BG_ZOOM_PARALLAX);
+    let bg_zoom = pow(max(scene.zoom, 1e-8), BG_ZOOM_PARALLAX); // reasonable min zoom
     out.screen_offset = ((screen_uv - 0.5) * scene.viewport_size) / bg_zoom;
 
     // Zig-zag wrapping for colors
@@ -1269,7 +1269,8 @@ fn oklab_to_oklch(lab: vec3f) -> vec3f {
 }
 
 fn oklch_to_oklab(lch: vec3f) -> vec3f {
-    return vec3f(lch.x, lch.y * cos(lch.z), lch.y * sin(lch.z));
+    let chroma = max(lch.y, 0.0);
+    return vec3f(lch.x, chroma * cos(lch.z), chroma * sin(lch.z));
 }
 
 fn srgb_to_linear(c: vec3f) -> vec3f {
@@ -1281,11 +1282,10 @@ fn srgb_to_linear(c: vec3f) -> vec3f {
 }
 
 fn linear_to_srgb(c: vec3f) -> vec3f {
-    let safe_c = max(c, vec3f(0.0));
     return select(
-        12.92 * safe_c,
-        1.055 * pow(safe_c, vec3f(1.0 / 2.4)) - 0.055,
-        safe_c > vec3f(0.0031308)
+        12.92 * c,
+        1.055 * pow(c, vec3f(1.0 / 2.4)) - 0.055,
+        c > vec3f(0.0031308)
     );
 }
 

@@ -13,8 +13,14 @@ Depthwell is a procedural fractal mining incremental. How deep can you explore? 
 
 ### How to play
 
-Left-clicking places blocks; click on inventory slots directly to select block types and indicators above certain block types to open menus.
-Use the pickaxe icon to mine and WASD/arrow keys to move around.
+Stuck with how to begin?
+
+- Left-clicking places blocks; click on inventory slots directly to select block types and indicators above certain block types to open menus.
+- Select the pickaxe in the inventory to mine and WASD/arrow keys to move around.
+- Start by trying to find items with indicators above them: you can smelt ores into bars at a furnace, and upgrade your pickaxe at "cores" with a gray hovering orb...these act like crafting stations!
+    - These are different from campfires, which simply emit light in a certain area.
+- You can't mine everything! That means that either your pickaxe isn't good enough or that item can't be mined yet.
+
 Use the M key to open or close the debug menu options (and logs); use creative mode from within the menu to test blocks easily.
 
 For inventory hotkeys:
@@ -582,7 +588,7 @@ Ores and gems are rendered using a multi-texture "masking" trick to save atlas s
 
 The background isn't simply a static image. Instead it's created with a custom multi-octave fractal brownian motion (FBM) implementation!
 
-It uses a 2D noise function (FBM, which you can find in The Book of Shaders webpage) and this is applied multiple times. For performance reasons the amount of octaves is heavily toned down, and there's a subtle parallax effect with 8x, 32x, and 64x "slower" layers versus the camera's movement.
+It uses a 2D noise function (FBM, which you can find in The Book of Shaders webpage) and this is applied multiple times. For performance reasons the number of octaves is heavily toned down, and there's a subtle parallax effect with 8x, 32x, and 64x "slower" layers versus the camera's movement.
 (As in, for every 64 pixels the players move, the 3 layers would move 8, 2, and 1 pixels respectively. These layers also have different RGB color choices and looks!)
 
 You can imagine the specific position as effectively being `(chunk ID + sub-chunk location) modulo 512`, with a coordinate warping system, and basic trig-based lighting at the end.

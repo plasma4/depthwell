@@ -32,13 +32,14 @@ const recipes = [_]Recipe{
         },
         .output = .{ .item = .campfire, .count = 1 },
     },
+    // Comptime placeholder slot for the dynamic pickaxe upgrades
     .{
         .inputs = &.{},
-        .output = .{ .item = .pickaxe, .count = 0 },
+        .output = .{ .item = .pickaxe, .count = 1 },
     },
 };
 
-// Grid layout (viewport pixels). The panel sizes itself to hold recipies.len slots,
+// Grid layout (viewport pixels). The panel sizes itself to hold recipes.len slots,
 // with each recipe wrapping at COLS.
 const COLS: usize = 5;
 const SLOT: f64 = 18.0;
@@ -98,8 +99,53 @@ inline fn availableCount(item: Sprite) u64 {
     return inventory.inventory_counts[@intFromEnum(item)];
 }
 
+/// Dynamically returns the appropriate recipe for the next pickaxe tier.
+fn getPickaxeRecipe() Recipe {
+    const current = dw.mining.pickaxe_type;
+    return switch (current) {
+        .stone => .{
+            .inputs = &[_]Ingredient{
+                .{ .item = .copper_bar, .count = 8 },
+            },
+            .output = .{ .item = .pickaxe, .count = 1 },
+        },
+        .bronze => .{
+            .inputs = &[_]Ingredient{
+                .{ .item = .iron_bar, .count = 10 },
+            },
+            .output = .{ .item = .pickaxe, .count = 1 },
+        },
+        .iron => .{
+            .inputs = &[_]Ingredient{
+                .{ .item = .silver_bar, .count = 12 },
+            },
+            .output = .{ .item = .pickaxe, .count = 1 },
+        },
+        .silver => .{
+            .inputs = &[_]Ingredient{
+                .{ .item = .gold_bar, .count = 14 },
+            },
+            .output = .{ .item = .pickaxe, .count = 1 },
+        },
+        .gold => .{
+            .inputs = &[_]Ingredient{},
+            .output = .{ .item = .none, .count = 0 },
+        },
+    };
+}
+
+/// Resolves either static or dynamically evaluated recipes.
+fn getRecipe(idx: usize) Recipe {
+    if (idx == 0) {
+        return recipes[0];
+    } else {
+        return getPickaxeRecipe();
+    }
+}
+
 /// Whether every input of `recipe` is currently satisfied by the inventory.
 fn canCraft(recipe: Recipe) bool {
+    if (recipe.output.item == .none) return false;
     for (recipe.inputs) |in| {
         if (availableCount(in.item) < in.count) return false;
     }
@@ -113,7 +159,12 @@ fn doCraft(recipe: Recipe) void {
             inventory.inventory_counts[@intFromEnum(in.item)] -= in.count;
         }
     }
-    inventory.addToInventory(recipe.output.item, recipe.output.count);
+
+    if (recipe.output.item == .pickaxe) {
+        dw.mining.upgradePickaxe();
+    } else if (recipe.output.count > 0) {
+        inventory.addToInventory(recipe.output.item, recipe.output.count);
+    }
     dw.sound.playSound(7, 1.0, 0.3, 0.1);
 }
 
@@ -206,11 +257,13 @@ pub fn draw() void {
         .sprite = .craft,
         .position = .{ @floatCast(title_px[0]), @floatCast(title_px[1]) },
         .size = 12.0,
-        // .lcha = if (dw.indicators.nearby_cores.anyPowered()) .{ 1.0, 0.0, 0.0, 1.0 } else .{ 0.55, 0.0, 0.0, 1.0 },
     });
 
     var hovered: ?Recipe = null;
-    for (recipes, 0..) |recipe, i| {
+    for (0..recipes.len) |i| {
+        const recipe = getRecipe(i);
+        if (recipe.output.item == .none) continue;
+
         const center = slotCenterPx(i);
         const craftable = canCraft(recipe);
         const over = slotHitbox(center, SLOT).contains(mouse_px);
@@ -222,35 +275,32 @@ pub fn draw() void {
             if (craftable and mouse.isClicked(.crafting, true)) doCraft(recipe);
         }
 
-        // Whole slot dims to half opacity when the recipe can't currently be made.
-        const alpha: f32 = if (craftable) 1.0 else 0.5;
-
-        // Slot background: hue-shifted inventory sprite so craft slots read distinctly from the panel.
+        // Draw the background where the item rests in.
         addEntity(.{
             .sprite = .wood_icon,
-            .position = .{ @floatCast(center[0] - 0.4), @floatCast(center[1] - 0.4) },
-            .size = @floatCast(SLOT),
+            .position = .{ @floatCast(center[0] - 1.6), @floatCast(center[1] - 1.6) },
+            .size = @as(f32, @floatCast(SLOT)),
             // looks blue!
-            .lcha = .{ if (over and craftable) 0.94 else 0.75, 0.15, 3.0, alpha },
+            .lcha = .{ 0.3, 0.06, 3.0, 1.0 },
         });
         addEntity(.{
             .sprite = .wood_icon,
             .position = .{ @floatCast(center[0]), @floatCast(center[1]) },
-            .size = @floatCast(SLOT),
+            .size = @as(f32, @floatCast(SLOT)),
             // looks blue!
-            .lcha = .{ if (over and craftable) 0.94 else 0.75, 0.15, 3.0, alpha },
+            .lcha = .{ 0.9, 0.15, 3.0, 1.0 },
         });
 
-        // Output item, centered in the slot.
+        // Draw the actual item now...
         addEntity(.{
             .sprite = recipe.output.item,
             .position = .{ @floatCast(center[0]), @floatCast(center[1]) },
-            .size = @floatCast(SLOT - 4.0),
-            .lcha = .{ 1.0, 0.0, 0.0, alpha },
+            .size = @as(f32, @floatCast(SLOT - 4.0)),
+            .lcha = .{ 1.0, if (craftable) 0.0 else -1.0, 0.0, 1.0 },
         });
-        // Output quantity (only shown when it makes more than one).
+        // Draw quantity (only shown when it makes more than one).
         if (recipe.output.count > 1) {
-            drawCount(recipe.output.count, .{ center[0] + 3.0, center[1] + 5.0 }, NUM_OK, alpha);
+            drawCount(recipe.output.count, .{ center[0] + 3.0, center[1] + 5.0 }, NUM_OK, if (craftable) 1.0 else 0.75);
         }
     }
 

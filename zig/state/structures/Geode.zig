@@ -75,7 +75,7 @@ pub fn generate(
         const shell: Sprite = switch (shell_rand) {
             0...1 => .pink_stone,
             2...3 => .purple_stone,
-            4 => .redder_stone,
+            4 => .bright_red_stone,
             else => unreachable,
         };
 
@@ -91,7 +91,7 @@ pub fn generate(
             // Gems overlay this so their base_id reflects the geode (not the natural terrain the structure replaced).
             // The inner rim gets a consistent stone accent; everything deeper is a stone variant.
             const core_stone: Sprite = if (dist_sq >= (core_radius - 1) * (core_radius - 1))
-                (if (shell == .redder_stone) .stone else ([_]Sprite{ .stone, .alt_blue_stone, .purple_stone })[which_stone])
+                (if (shell == .bright_red_stone) .stone else ([_]Sprite{ .stone, .deep_blue_stone, .purple_stone })[which_stone])
             else
                 .stone;
 

@@ -69,7 +69,7 @@ const rules = [_]struct { Sprite, VariantRule }{
     // There's a HARDCODED custom resolution to use the underwater variant if waterlogged.
     .{ .campfire, .{ .kind = .animate, .count = 4, .period_frames = 6 } },
 
-    .{ .core_off, .{ .kind = .animate, .count = 2, .period_frames = 17 } },
+    .{ .basic_core, .{ .kind = .animate, .count = 2, .period_frames = 17 } },
     .{ .core1, .{ .kind = .animate, .count = 2, .period_frames = 8 } },
     .{ .core2, .{ .kind = .animate, .count = 2, .period_frames = 7 } },
     .{ .core3, .{ .kind = .animate, .count = 2, .period_frames = 6 } },

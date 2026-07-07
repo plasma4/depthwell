@@ -30,7 +30,7 @@ pub fn main(init: std.process.Init) !void {
 
     const tiles_x = main_bmp.width / TILE_SIZE;
     const tiles_y = main_bmp.height / TILE_SIZE;
-    const tile_count: usize = @as(usize, tiles_x) * @as(usize, tiles_y);
+    const tile_count = @as(usize, tiles_x) * @as(usize, tiles_y);
 
     // CSR layout: offsets[i]..offsets[i+1] is tile i's slice into the flat color list.
     var offsets = try allocator.alloc(u32, tile_count + 1);

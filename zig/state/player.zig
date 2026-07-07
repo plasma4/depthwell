@@ -17,7 +17,7 @@ const Vec2f = dw.utils.Vec2f;
 /// The `SimBuffer` size automatically adjusts when setting this to a very small value.
 ///
 /// Setting this to a very small value is useful for testing cache validity or overall performance, however.
-pub const CAMERA_MIN_ZOOM = 1.0 / 20.0;
+pub const CAMERA_MIN_ZOOM = if (dw.is_debug) 0.10 else 0.4;
 /// Maximum camera zoom/scale allowed. This is strategically calculated to make sure the player always remains in the viewport.
 /// Any more and it would look weird, and camera deadzone would start to no longer work.
 pub const CAMERA_MAX_ZOOM = 1.5; // 150%
@@ -176,7 +176,7 @@ pub fn move(logic_speed: f64) void {
     // Update x-velocity
     game.player_velocity[0] = game.player_velocity[0] * pow_fx;
     if (FRICTION_X < 1e-4) {
-        // maybe there's a better alternative to this? to find in the future, maybe
+        // acts like a frictionless surface
         game.player_velocity[0] +=
             move_input * x_mult;
     } else {

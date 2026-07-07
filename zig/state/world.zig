@@ -148,10 +148,10 @@ pub fn generateBaseChunk(chunk: *Chunk, coord: Coordinate) void {
     }
 }
 
-/// Computes the hanging-vine (spiral plant) state entering the top of each of this chunk's columns, by
-/// deterministically tracing terrain in the chunk(s) directly above. A vine cell can sit at most
-/// `MAX_VINE_LENGTH` blocks below its ceiling, so scanning that many rows up captures every ceiling that
-/// could feed a vine into row 0. Terrain above is recomputed solidity-only via `resolveFoundationSolid()`
+/// Computes the hanging-vine (spiral plant) state entering the top of each of this chunk's columns,
+/// by deterministically tracing terrain in the chunk(s) directly above.
+/// A vine cell can sit at most `MAX_VINE_LENGTH` blocks below its ceiling, so scanning that many rows up captures every ceiling that could feed a vine into row 0.
+/// Terrain above is recomputed solidity-only via `resolveFoundationSolid()`
 /// (matching how the neighbor chunk generated itself), keeping vines seamless across the border without caching neighbors.
 fn computeVineSeeds(coord: Coordinate, depth: u64) [CHUNK_SIZE]procedural.ColumnState {
     return computeColumnSeeds(procedural.vine_feature, coord, depth);
@@ -984,7 +984,7 @@ const CHUNK_CACHE_SIZE: usize = blk: {
     const windowed = (C_w + 2.0) * (C_h + 2.0);
     const raw_cache_size = windowed * 2.0 + 32.0;
 
-    const integer_cache_size = @as(usize, @intFromFloat(@ceil(raw_cache_size)));
+    const integer_cache_size: usize = @intFromFloat(@ceil(raw_cache_size));
     const aligned_size = ((integer_cache_size + (CHUNK_CACHE_WAYS - 1)) / CHUNK_CACHE_WAYS) * CHUNK_CACHE_WAYS;
 
     // Conservative minimum baseline (also the floor for tiny screens / high zoom).

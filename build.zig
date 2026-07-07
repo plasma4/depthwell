@@ -302,7 +302,7 @@ fn generateEnums(b: *std.Build, paths: []const []const u8) void {
         b.graph.io,
         cache_path,
         b.allocator,
-        .limited(1024), // extra buffer to be safe; exactly the right amount of bytes doesn't always work
+        .limited(1024), // extra buffer to be safe; exactly the right number of bytes fails
     ) catch |err| blk: {
         if (err != error.FileNotFound) {
             std.debug.panic("Warning: Could not read cache: {any}\n", .{err});

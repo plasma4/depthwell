@@ -528,6 +528,7 @@ export class GameEngine {
                         `assets/grass2.mp3`,
                         `assets/place.mp3`,
                         `assets/furnace.mp3`,
+                        `assets/unmineable.mp3`,
                     ][id],
                 );
 

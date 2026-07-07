@@ -63,7 +63,7 @@ const IndicatorKind = enum {
     fn fromBlock(id: Sprite) ?IndicatorKind {
         return switch (id) {
             .forest_furnace, .lava_furnace => .furnace,
-            .core_off, .core1, .core2, .core3, .core4 => .corecraft,
+            .basic_core, .core1, .core2, .core3, .core4 => .corecraft,
             // .moss_shrub1, .moss_shrub2 => .tree,
             else => null,
         };
@@ -226,7 +226,7 @@ fn scanIndicators(view: CameraView, visitor: anytype) void {
 /// Records that the given core block sits within indicator range this frame.
 fn markNearbyCore(id: Sprite) void {
     switch (id) {
-        .core_off => nearby_cores.off = true,
+        .basic_core => nearby_cores.off = true,
         .core1 => nearby_cores.core1 = true,
         .core2 => nearby_cores.core2 = true,
         .core3 => nearby_cores.core3 = true,

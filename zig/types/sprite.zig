@@ -69,11 +69,11 @@ pub const Sprite = enum(u16) {
     blue_strange_stone = STONE_START,
     purple_strange_stone,
     blue_stone,
-    alt_blue_stone,
+    deep_blue_stone,
     pink_stone,
     purple_stone,
     red_stone,
-    redder_stone,
+    bright_red_stone,
     lava_stone,
     mossy_stone,
     seagreen_stone,
@@ -122,10 +122,10 @@ pub const Sprite = enum(u16) {
     moss_shrub2,
     /// Render-only right frame of `moss_shrub2` (never stored as a block id).
     moss_shrub2_right,
-    fruit_blue_lemon = GEAR_ID - FRUIT_COUNT,
-    fruit_teal_lemon,
-    fruit_splitty,
-    fruit_ruby_candy,
+    blemon_fruit = GEAR_ID - FRUIT_COUNT,
+    teal_lemon_fruit,
+    splittyfruit,
+    ruby_candy,
     copperfruit,
     ploopus1,
     ploopus2,
@@ -141,7 +141,7 @@ pub const Sprite = enum(u16) {
     big_mushroom = GEAR_ID + 10, // 3 variations
     forest_furnace = GEAR_ID + 13,
     lava_furnace,
-    core_off = GEAR_ID + 15,
+    basic_core = GEAR_ID + 15,
     core1 = GEAR_ID + 17,
     core2 = GEAR_ID + 19,
     core3 = GEAR_ID + 21,
@@ -185,35 +185,19 @@ pub const Sprite = enum(u16) {
     /// Pickaxe icon.
     pickaxe = PARTICLE_START + 21,
     /// Generic water block (filled). Default internal water type; after all pickaxes.
-    water = PARTICLE_START + 21 + (@as(u16, @intCast(@intFromEnum(dw.mining.PickaxeType.gold))) + 1),
+    water = PARTICLE_START + 21 + (@as(u16, @intCast(@intFromEnum(dw.mining.Tools.gold))) + 1),
     water_icon,
 
-    /// A special type used for inventory purposes. Doesn't exist as an actual sprite.
+    /// A special type used for mining/inventory logic purposes. Doesn't exist as an actual sprite.
     unselected = 65535,
     _, // non-exhaustive for debugging heatmaps
 
-    /// Gets the name of the sprite and writes it into the provided buffer.
-    /// Returns the sliced buffer containing the clean name. Buffer should be at least 64 chars wide.
-    pub inline fn getName(self: @This(), buf: []u8) []u8 {
-        const raw = @tagName(self);
-        const max_len = @min(raw.len, buf.len);
-        var out_idx: usize = 0;
-
-        for (raw[0..max_len]) |c| {
-            if (c >= '0' and c <= '9') continue;
-            // replace _ with space
-            buf[out_idx] = if (c == '_') ' ' else c;
-            out_idx += 1;
-        }
-
-        // for right variants of moss shrub
-        const suffix = " right";
-        var final_str = buf[0..out_idx];
-        if (final_str.len >= suffix.len and std.mem.eql(u8, final_str[final_str.len - suffix.len ..], suffix)) {
-            out_idx -= suffix.len;
-        }
-
-        return buf[0..out_idx];
+    /// Gets the readable name of the sprite (pre-computed at compile-time).
+    pub inline fn getName(self: @This()) []const u8 {
+        const val = @intFromEnum(self);
+        if (val < MAX_SPRITE_ID) return dense_names_table[val];
+        if (self == .unselected) return unselected_name;
+        return "unknown";
     }
 
     /// Retrieves the fully compile-time property data for this sprite.
@@ -422,7 +406,7 @@ const rules = [_]SpriteRule{
     // Fruits and drop overrides
     .{
         .{
-            .range = .{ .fruit_blue_lemon, .bacon },
+            .range = .{ .blemon_fruit, .bacon },
         },
         .{ .item = true },
     },
@@ -464,50 +448,58 @@ const rules = [_]SpriteRule{
         },
     },
 
-    // Ore/gem strengths
+    // Ore/gem strengths & capability requirements
+    .{
+        .{ .single = .copper },
+        .{ .required_capabilities = .t0 },
+    },
     .{
         .{ .single = .iron },
-        .{ .strength = 35 },
+        .{ .strength = 35, .required_capabilities = .t1 },
     },
     .{
         .{ .single = .silver },
-        .{ .strength = 45 },
+        .{ .strength = 45, .required_capabilities = .t1 },
     },
     .{
         .{ .single = .gold },
-        .{ .strength = 60 },
+        .{ .strength = 60, .required_capabilities = .t2 },
     },
     .{
         .{ .single = .nickel },
-        .{ .strength = 70 },
+        .{ .strength = 70, .required_capabilities = .t2 },
     },
     .{
         .{ .single = .cobalt },
-        .{ .strength = 90 },
+        .{ .strength = 90, .required_capabilities = .t3 },
+    },
+    .{
+        .{ .single = .quartz },
+        .{ .required_capabilities = .t1 },
     },
     .{
         .{ .single = .amethyst },
-        .{ .strength = 75 },
+        .{ .strength = 75, .required_capabilities = .t2 },
     },
     .{
         .{ .single = .sapphire },
-        .{ .strength = 85 },
+        .{ .strength = 85, .required_capabilities = .t2 },
     },
     .{
         .{ .single = .emerald },
-        .{ .strength = 95 },
+        .{ .strength = 95, .required_capabilities = .t2 },
     },
     .{
         .{ .single = .ruby },
-        .{ .strength = 100 },
+        .{ .strength = 100, .required_capabilities = .t2 },
     },
     .{
         .{ .single = .aquashard },
-        .{ .strength = 120 },
+        .{ .strength = 120, .required_capabilities = .t3 },
     },
     .{
         .{ .single = .electrit },
-        .{ .strength = 130 },
+        .{ .strength = 130, .required_capabilities = .t3 },
     },
 
     // Evolution rules on depth increase
@@ -525,10 +517,10 @@ const rules = [_]SpriteRule{
     },
     .{
         .{ .single = .red_stone },
-        .{ .evolves_to = .redder_stone },
+        .{ .evolves_to = .bright_red_stone },
     },
     .{
-        .{ .single = .redder_stone },
+        .{ .single = .bright_red_stone },
         .{ .evolves_to = .lava_stone },
     },
 
@@ -564,7 +556,7 @@ const rules = [_]SpriteRule{
             .portal,
             .forest_furnace,
             .lava_furnace,
-            .core_off,
+            .basic_core,
             .core1,
             .core2,
             .core3,
@@ -590,7 +582,7 @@ const rules = [_]SpriteRule{
         .{ .list = &[_]Sprite{
             .forest_furnace,
             .lava_furnace,
-            .core_off,
+            .basic_core,
             .core1,
             .core2,
             .core3,
@@ -723,6 +715,8 @@ pub const SpriteProps = struct {
     drops: DropConfig = .{ .strategy = .self },
     /// If set, the sprite this evolves into at increased depth. See `Sprite.evolvesTo()`.
     evolves_to: ?Sprite = null,
+    /// Conditions that must be satisfied to mine this block.
+    required_capabilities: dw.mining.MiningCapabilities = .t0,
 };
 
 /// Tightly packed 16-bit struct for high-performance, cache-friendly lookups.
@@ -793,6 +787,12 @@ fn mergeProps(dest: *SpriteProps, src: SpriteProps) void {
         dest.drops = src.drops;
     }
     if (src.evolves_to != null) dest.evolves_to = src.evolves_to;
+
+    // Merge required capabilities if they deviate from the default (.t0)
+    const default_caps: dw.mining.MiningCapabilities = .t0;
+    if (!std.meta.eql(src.required_capabilities, default_caps)) {
+        dest.required_capabilities = src.required_capabilities;
+    }
 }
 
 /// Constant-time lookup of precomputed full sprite properties.
@@ -884,6 +884,53 @@ const dense_flags_table: [MAX_SPRITE_ID]SpriteFlags = blk: {
     break :blk table;
 };
 
+/// Cleans a sprite tag name into a human-readable name at compile time.
+fn cleanTagName(comptime raw: []const u8) []const u8 {
+    // 1. Calculate the final size first (skipping numbers and ' right' suffix)
+    var out_len: usize = 0;
+    for (raw) |c| {
+        if (c >= '0' and c <= '9') continue;
+        out_len += 1;
+    }
+
+    var temp_buf: [64]u8 = undefined;
+    var out_idx: usize = 0;
+    for (raw) |c| {
+        if (c >= '0' and c <= '9') continue;
+        temp_buf[out_idx] = if (c == '_') ' ' else c;
+        out_idx += 1;
+    }
+
+    const suffix = " right";
+    var final_len = out_len;
+    if (final_len >= suffix.len and std.mem.eql(u8, temp_buf[final_len - suffix.len .. final_len], suffix)) {
+        final_len -= suffix.len;
+    }
+
+    // Create the final immutable array inside a comptime block to bypass the boundary
+    comptime {
+        const final_buf: [final_len]u8 = temp_buf[0..final_len].*;
+        return &final_buf;
+    }
+}
+
+/// Precomputed clean sprite names LUT.
+const dense_names_table: [MAX_SPRITE_ID][]const u8 = blk: {
+    @setEvalBranchQuota(200000000);
+    var table: [MAX_SPRITE_ID][]const u8 = @splat("");
+
+    var i: u16 = 0;
+    while (i < MAX_SPRITE_ID) : (i += 1) {
+        if (std.enums.tagName(Sprite, @enumFromInt(i))) |str| {
+            table[i] = cleanTagName(str);
+        }
+    }
+    break :blk table;
+};
+
+/// Sparse fallback value for `.unselected` (65535)
+const unselected_name = cleanTagName(@tagName(Sprite.unselected));
+
 /// Sparse fallback values for `.unselected` (65535)
 const unselected_props = getPropsForSprite(.unselected);
 const unselected_flags: SpriteFlags = .{
@@ -936,7 +983,7 @@ comptime {
         @compileError("isInWorld() returned true for the unselected type! Ranges are wrong.");
 
     // `oreToBar()` relies on the bar range sitting directly before the ore range with the same
-    // length, so the mapping is a single constant offset. Enforce that here.
+    // length, so the mapping is a constant offset. Enforce that here.
     if (ORE_START - BAR_START != GEM_START - ORE_START)
         @compileError("Bar range is not parallel to the ore range; oreToBar() would be wrong.");
 

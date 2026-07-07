@@ -168,9 +168,9 @@ pub export fn tick(logic_speed: f64, iterations: u32) void {
     // this gets cleared every frame since writeOnce() is used
     // logger.writeOnce(3, .{
     //     "{mh}Selected sprite ID",
-    //     inventory.selected_sprite,
+    //     inventory.selected_sprite.getName(),
     //     "{mh}Hovered sprite type",
-    //     if (mouse.mouse_chunk_coord) |coord| world.getChunk(coord).getBlock(mouse.mouse_block_x, mouse.mouse_block_y).id else null,
+    //     if (mouse.mouse_chunk_coord) |coord| world.getChunk(coord).getBlock(mouse.mouse_block_x, mouse.mouse_block_y).id.getName() else null,
     //     "{mh}Mouse status",
     //     mouse.cursor_type,
     // });

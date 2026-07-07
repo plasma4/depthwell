@@ -58,7 +58,7 @@ pub fn generateBaseProceduralSprite(moisture: f64, density: f64) Sprite {
 
     if (moisture >= 0.62 and density >= 0.83) return .seagreen_stone;
     if (moisture <= 0.55 and density >= 0.60 and density <= 0.72) return .blue_stone;
-    if (density >= 0.40 and density <= 0.55) return .alt_blue_stone;
+    if (density >= 0.40 and density <= 0.55) return .deep_blue_stone;
 
     if (moisture >= 0.20 and moisture <= 0.26) return .mossy_stone;
     return .stone;
@@ -366,7 +366,7 @@ pub fn addOresAndGems(
                 );
                 if (s == .quartz) return s;
 
-                if (s != .alt_blue_stone) { // this stone type has too much visual similarity
+                if (s != .deep_blue_stone) { // this stone type has too much visual similarity
                     s = selectSprite(
                         .{ s, .amethyst },
                         v3 <= 0.4 and random_value <= 0.7 * base_gem_odds.value,
@@ -497,12 +497,12 @@ pub const ColumnState = struct {
 
 /// True if the surface at world (wx, wy) anchors feature `f` in the cell directly past it.
 inline fn columnAnchorHit(comptime f: ColumnFeature, wx: u64, wy: u64) bool {
-    return FastHash.hash2d(memory.game.getHashSeed(f.anchor_seed), wx ^ f.salt, wy) < oddsNum(f.anchor_odds);
+    return FastHash.hash2d(memory.game.getHashSeed(f.anchor_seed), wx ^ f.salt, wy) <= oddsNum(f.anchor_odds);
 }
 
 /// True if feature `f` extends into the empty cell at world (wx, wy).
 inline fn columnGrowHit(comptime f: ColumnFeature, wx: u64, wy: u64) bool {
-    return FastHash.hash2d(memory.game.getHashSeed(f.grow_seed), wx ^ f.salt, wy) < oddsNum(f.grow_odds);
+    return FastHash.hash2d(memory.game.getHashSeed(f.grow_seed), wx ^ f.salt, wy) <= oddsNum(f.grow_odds);
 }
 
 /// Advances feature `f`'s state machine by one cell while scanning a world column in its growth direction.
@@ -602,14 +602,16 @@ pub fn addDecorations(
                     block.id = .rock;
                 } else if (val <= oddsNum(0.073)) {
                     block.id = .small_tree;
-                } else if (val <= oddsNum(0.090)) {
+                } else if (val <= oddsNum(0.093)) {
                     block.id = .mushroom;
-                } else if (val <= oddsNum(0.100)) {
+                } else if (val <= oddsNum(0.098)) {
                     block.id = .campfire;
                 } else if (val <= oddsNum(0.104)) {
                     block.id = .forest_furnace;
                 } else if (val <= oddsNum(0.108)) {
                     block.id = .lava_furnace;
+                } else if (val <= oddsNum(0.120)) {
+                    block.id = .basic_core;
                 }
             }
         }
@@ -782,8 +784,8 @@ fn getFbmValue(seed_vector: Vec2u, x: u32, y: u32, comptime options: TerrainOpti
     var d2_sq = std.math.inf(f32);
 
     // Vectorized 4-tap Worley grid search
-    const ox_vec = Vec4u{ 0, 0, 1, 1 };
-    const oy_vec = Vec4u{ 0, 1, 0, 1 };
+    const ox_vec: Vec4u = .{ 0, 0, 1, 1 };
+    const oy_vec: Vec4u = .{ 0, 1, 0, 1 };
     const cur_x_vec: Vec4u = @bitCast(@as(@Vector(4, i64), @splat(cx_i)) + @as(@Vector(4, i64), @bitCast(ox_vec)));
     const cur_y_vec: Vec4u = @bitCast(@as(@Vector(4, i64), @splat(cy_i)) + @as(@Vector(4, i64), @bitCast(oy_vec)));
 

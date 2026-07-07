@@ -29,6 +29,10 @@ pub fn handleTick(logic_speed: f64, iterations: u32) void {
                 @as(u16, @intCast(slot_len / INVENTORY_WIDTH)), // zeroth row holds 10 slots, so this works out
                 inventory.selected_row,
             );
+            if (inventory.selected_row == 0 and selected_column == 0) {
+                // reset pickaxe animation
+                if (dw.inventory.name_wave == 0.0 and dw.inventory.last_named_sprite == .none) dw.inventory.last_named_sprite = .unselected;
+            }
             // get index of selected sprite by checking already selected sprite type
             var selected_id = inventory.selected_row * INVENTORY_WIDTH +
                 if (selected_column == 65535) current_column else selected_column;

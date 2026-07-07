@@ -66,6 +66,7 @@ pub var selected_row: u16 = 0;
 pub const SlotBuffer = [sprite.item_sprite_count + 1]Sprite;
 
 /// Current sprite selected to place.
+/// A value of `.none` represents the pickaxe; `.unselected` represents nothing being chosen.
 pub var selected_sprite: Sprite = .none;
 
 /// Dense storage: index is `@intFromEnum(Sprite)`, value is the number of that item in the inventory.
@@ -78,9 +79,10 @@ pub var inventory_anim_progress: [sprite.max_sprite_value + 1]f32 = @splat(0.0);
 pub var inventory_wobble_progress: [sprite.max_sprite_value + 1]f32 = @splat(0.0);
 
 /// Selected sprite as of the previous frame, used to retrigger the name banner's ripple on change.
-var last_named_sprite: Sprite = .unselected;
+/// A value of `.none` represents the pickaxe. Set to `.unselected` to force refresh.
+pub var last_named_sprite: Sprite = .unselected;
 /// Ripple strength of the selected-item name banner. 1 on selection change, decaying to 0 (idle).
-var name_wave: f32 = 0.0;
+pub var name_wave: f32 = 0.0;
 /// Free-running phase (radians) driving the name banner's traveling wave.
 var name_phase: f32 = 0.0;
 
@@ -100,7 +102,7 @@ pub fn addToInventory(id: Sprite, amount: u64) void {
     }
 }
 
-/// Amount of dropped item sprites that were created.
+/// Number of dropped item sprites that were created.
 var item_count: u64 = 0;
 
 /// Resolves drop strategies for a broken block and spawns the resulting items.
@@ -590,29 +592,53 @@ pub fn drawInventory(time_diff: f64) void {
 /// Draws the selected item's name in a banner above the inventory, tinted by the sprite's dominant atlas color with a darker drop shadow.
 /// Text has a vertical ripple effect that retriggers whenever the selection changes, plus an OKLCH brightening gradient.
 fn drawSelectedName(time_diff: f64) void {
-    const named = selected_sprite;
-    if (named != last_named_sprite) {
-        last_named_sprite = named;
+    const sprite_to_name = selected_sprite;
+    if (sprite_to_name != last_named_sprite) {
+        last_named_sprite = sprite_to_name;
         name_wave = 1.0;
     }
 
     const dt: f32 = @floatCast(time_diff);
-    const ripple_length_ms: f32 = 1200.0; // how long the selection ripple takes to settle
+    const ripple_length_ms: f32 = if (sprite_to_name.isEmpty()) 2000.0 else 1200.0; // 2 seconds for pickaxe, 1.2s otherwise
     const phase_speed: f32 = 0.008; // radians of traveling-wave phase per ms
     name_wave = @max(0.0, name_wave - dt / ripple_length_ms);
     name_phase += dt * phase_speed;
 
-    if (named == .unselected) return;
+    if (sprite_to_name == .unselected) return;
 
     // Display name: the enum tag with underscores shown as spaces; the empty slot is the pickaxe.
-    var buf: [64]u8 = undefined;
-    const name = if (named.isEmpty()) "pickaxe" else named.getName(&buf);
+    const name = if (sprite_to_name.isEmpty()) blk: {
+        var buf: [128]u8 = undefined;
+        var stats_buf: [64]u8 = undefined;
+        const stats_str = std.fmt.bufPrint(
+            &stats_buf,
+            " (speed {d}, strength {d})",
+            .{ dw.mining.mining_speed, dw.mining.mining_strength },
+        ) catch "";
+
+        // from 1.0 to 0.9: stats "progress" for pickaxe goes from 0.0 to 1.0
+        // from 0.1 to 0.0: goes from 1.0 to 0.0
+        const progress: f32 = if (name_wave > 0.9)
+            (1.0 - name_wave) / 0.1
+        else if (name_wave < 0.1)
+            name_wave / 0.1
+        else
+            1.0;
+
+        const chars_to_show: usize = @intFromFloat(@round(progress * @as(f32, @floatFromInt(stats_str.len))));
+        break :blk std.fmt.bufPrint(
+            &buf,
+            "pickaxe{s}",
+            .{stats_str[0..chars_to_show]},
+        ) catch "pickaxe";
+    } else sprite_to_name.getName();
 
     // Tint from the sprite's signature color; the empty slot borrows the equipped pickaxe tile.
-    const rendered: Sprite = if (named.isEmpty())
+    const rendered: Sprite = if (sprite_to_name.isEmpty())
         @enumFromInt(@intFromEnum(Sprite.pickaxe) + @intFromEnum(dw.mining.pickaxe_type))
     else
-        named;
+        sprite_to_name;
+
     const dominant = dw.particles.dominantColorOf(rendered);
     // Floor lightness so dark sprites' names still read against the UI.
     const l = @max(dominant[0], 0.6);
