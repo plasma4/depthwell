@@ -127,7 +127,7 @@ pub fn updateEntities(time_diff: f64) void {
             .{ blocks_mined, if (blocks_mined == 1) "" else "s" },
         ) catch unreachable;
 
-    drawStringShadowed(msg, .{ 20.0, 9.0 }, .{
+    drawStringShadowed(msg, .{ 20.0, 4.0 }, .{
         .font_size = 3.5,
         .lcha = .{ 0.85, 0.08, 1.8, 1.0 },
     }, .{ .light = 0.53, .chroma = 0.5 });

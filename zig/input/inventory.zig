@@ -23,6 +23,11 @@ pub const SHOW_ALL_INVENTORY_ITEMS = false;
 /// Determines how wide each row of the inventory is (how many slots per row).
 pub const INVENTORY_WIDTH = 10;
 
+/// Center of slot 0, in viewport pixels.
+/// The draw pass, the count pass, and the hover hit test all start here.
+/// Moving the row then cannot leave a slot behind its own hitbox.
+const SLOT_ORIGIN: Vec2f32 = .{ 32.0, 29.0 };
+
 /// Background tint for the explicit tool list.
 const TOOL_SLOT_LCHA: Vec4f32 = .{ 1.0, -0.03, -1.6, 1.0 };
 /// Background tint for in-world entries that cannot be held as inventory items.
@@ -466,7 +471,7 @@ pub fn getHoveredInventorySprite() ?Sprite {
         const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
         const row: f32 = @floatFromInt(i / INVENTORY_WIDTH);
 
-        const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
+        const inventory_pos: Vec2f32 = SLOT_ORIGIN + Vec2f32{ col * spacing, row * spacing };
 
         // Same background sizing logic as drawInventory()
         const is_empty = active_sprite.isEmpty();
@@ -532,7 +537,7 @@ pub fn drawInventory(time_diff: f64) void {
         const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
         const row: f32 = @floatFromInt(i / INVENTORY_WIDTH);
 
-        const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
+        const inventory_pos: Vec2f32 = SLOT_ORIGIN + Vec2f32{ col * spacing, row * spacing };
 
         // background sizing, using is_selected directly for instant feedback
         const bg_size: f32 = if (is_selected) base_size * 1.125 else if (acts_as_pickaxe) base_size * 0.9 else base_size;
@@ -631,7 +636,7 @@ pub fn drawInventory(time_diff: f64) void {
         const col: f32 = @floatFromInt(i % INVENTORY_WIDTH);
         const row: f32 = @floatFromInt(i / INVENTORY_WIDTH);
 
-        const inventory_pos: Vec2f32 = .{ 32 + col * spacing, 32 + row * spacing };
+        const inventory_pos: Vec2f32 = SLOT_ORIGIN + Vec2f32{ col * spacing, row * spacing };
         const pos = inventory_pos -
             size_vec / Vec2f32{ base_size / 4.0, base_size / 4.0 } -
             Vec2f32{ base_size / 16.0, base_size / 16.0 };
@@ -730,7 +735,7 @@ fn drawSelectedName(time_diff: f64) void {
 
     const font_size: f32 = 5.0;
     const amplitude = name_wave * 1.5; // peak ripple displacement in px
-    const origin: Vec2f32 = .{ 20.0, 14.0 };
+    const origin: Vec2f32 = .{ 20.0, 10.0 };
 
     const prim_hue = @rem(primary[2], std.math.tau);
     const second_hue = @rem(secondary[2], std.math.tau);
