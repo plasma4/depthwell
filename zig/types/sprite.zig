@@ -20,7 +20,7 @@ pub const UNMINEABLE_STRENGTH: u64 = std.math.maxInt(u64);
 pub const WOOD_ID = 14;
 
 /// Index where stone-like sprites begin.
-pub const STONE_START = WOOD_ID + 19;
+pub const STONE_START = WOOD_ID + 18;
 /// Index where stone-like sprites end.
 const STONE_END = STONE_START + 25;
 
@@ -49,7 +49,7 @@ const FRUIT_COUNT = 10;
 /// ID for `Sprite.gear`, which is after a list of fruit.
 const GEAR_ID = DECOR_START + 5 + FRUIT_COUNT;
 /// ID for `Sprite.bush`, which is after cornflower.
-const BUSH_ID = GEAR_ID + 23;
+const BUSH_ID = GEAR_ID + 26;
 /// ID for `Sprite.basic_core`, which is after furnaces.
 const CORE_ID = BUSH_ID + 14;
 
@@ -62,7 +62,7 @@ pub const ARROW_ID = NUMBER_START + 10 + 94;
 
 comptime {
     // modify this value manually, simple sanity check
-    if (max_sprite_value != 320) {
+    if (max_sprite_value != 322) {
         var buf: [64]u8 = undefined;
         @compileError("Max sprite value of " ++
             (std.fmt.bufPrint(&buf, "{d}", .{max_sprite_value}) catch unreachable) ++
@@ -100,9 +100,8 @@ pub const Sprite = enum(u16) {
     clay_visual,
     red_clay,
     red_clay_visual,
-    hammerstone,
-    dirt = WOOD_ID + 11, // bottom dirt, center dirt, 2 top dirt sprites
-    red_dirt = WOOD_ID + 15, // same as normal dirt
+    dirt = WOOD_ID + 10, // bottom dirt, center dirt, 2 top dirt sprites
+    red_dirt = WOOD_ID + 14, // same as normal dirt
 
     // stone types!
     blue_strange_stone = STONE_START,
@@ -198,7 +197,10 @@ pub const Sprite = enum(u16) {
     flint_visual,
     fiberstone,
     aqua_stone, // 2 variations
-    cordage = GEAR_ID + 13,
+    hammerstone = GEAR_ID + 13,
+    sticks,
+    stick,
+    cordage = GEAR_ID + 16,
     plant_haft,
     stone_haft,
     flint_hatchet_head,
@@ -206,7 +208,7 @@ pub const Sprite = enum(u16) {
     twinklemoss,
     spiralvine,
     plant_stem,
-    cornflower = GEAR_ID + 21, // 2 variations
+    cornflower = GEAR_ID + 24, // 2 variations
     bush = BUSH_ID, // 2 variations
     ceiling_flower = BUSH_ID + 2, // 4 variations
     mushroom = BUSH_ID + 6, // 3 variations
@@ -551,9 +553,21 @@ const RULE_LIST = [_]SpriteRule{
         .{ .item = true },
     },
     .{
+        .{ .single = .stick },
+        .{ .item = true },
+    },
+    .{
+        .{ .single = .sticks },
+        .{
+            .drops = .{
+                .strategy = .dynamic,
+                .dynamic_fn = &DropHandlers.stickDrop,
+            },
+        },
+    },
+    .{
         .{ .single = .bush },
         .{
-            .strength = 1,
             .drops = .{
                 .strategy = .dynamic,
                 .dynamic_fn = &DropHandlers.bushDrop,
@@ -766,6 +780,7 @@ const RULE_LIST = [_]SpriteRule{
         .{ .list = &[_]Sprite{
             .rock,
             .hammerstone,
+            .sticks,
             .purple_rock,
             .aqua_stone,
             .flint,

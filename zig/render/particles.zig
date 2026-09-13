@@ -1,6 +1,6 @@
 //! Fixed-capacity particle system rendered with the square `.particle` sprite.
 //!
-//! Colors come from `particle_colors.zig`.
+//! Colors come from `sprite_colors.zig`.
 //! `zig/generate_pixel_data.zig` writes it from the sprite atlases at build time,
 //! so each sprite tile exposes its unique texel colors as OKLCH tints.
 //! Particles live in a simple circular buffer that overrides the oldest particle.
@@ -41,7 +41,7 @@ const PULL_SOFTENING: f32 = 2.0;
 
 comptime {
     if (!std.math.isPowerOfTwo(MAX_PARTICLES))
-        @compileError("MAX_PARTICLES must be a power of two for mask-based index wrapping!");
+        @compileError("MAX_PARTICLES must be a power of two, so the wrap in addParticle() folds to a bit mask!");
 }
 
 /// One live (or dead) particle.
@@ -435,8 +435,7 @@ pub fn anchorScreenPx(world_subpixels: dw.utils.Vec2i) Vec2f32 {
 /// Camera pan between the anchor and this render frame, as a screen offset in viewport pixels.
 ///
 /// `tick()` only catches the anchor up at tick boundaries.
-/// It also runs BEFORE the ticks it is paid for, so at draw time the anchor is a whole
-/// `handleTick()` behind the camera.
+/// It also runs BEFORE the ticks it is paid for, so at draw time the anchor is a whole `handleTick()` behind the camera.
 /// Taking that gap and the sub-frame interpolation back out keeps dust glued to the ground.
 fn anchorDrift() Vec2f32 {
     const game = &dw.memory.game;

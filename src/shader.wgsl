@@ -11,11 +11,11 @@
 // Do NOT edit values between the markers by hand; edit the Sprite enum instead.
 const TILES_PER_ROW: f32 = 16.0;
 const TILES_PER_COLUMN: f32 = 21.0;
-const STONE_START: u32 = 33u;
-const ORE_START: u32 = 68u;
-const GEM_START: u32 = 74u;
-const GEM_MASK_START: u32 = 88u;
-const WATER_START: u32 = 319u;
+const STONE_START: u32 = 32u;
+const ORE_START: u32 = 67u;
+const GEM_START: u32 = 73u;
+const GEM_MASK_START: u32 = 87u;
+const WATER_START: u32 = 321u;
 
 // OKLAB chroma a fully saturated light source adds at full lightness.
 const LIGHT_CHROMA_MAX: f32 = 0.16;

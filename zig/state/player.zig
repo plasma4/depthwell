@@ -627,22 +627,35 @@ pub fn move(logic_speed: f64) void {
 /// 0 is pure white dust and 1 is the raw block color.
 /// In between the puff is that color washed toward white, which reads as pulverized, not chipped.
 /// An `f64` only so the debug slider can reach it.
-pub var DUST_TINT: f64 = 0.75;
+pub var DUST_TINT: f64 = 0.95;
 /// Odds a puff takes the block's SECOND most common color instead of its primary.
 /// Both come from `sprite_colors.zig`, which counts texels per atlas tile.
 pub var DUST_SECONDARY_ODDS: f32 = 0.35;
-/// Lightness jitter, as a multiplier on the tinted lightness.
-/// This is what keeps a burst off one flat tone.
-pub var DUST_LIGHTNESS_MIN: f32 = 0.78;
-pub var DUST_LIGHTNESS_MAX: f32 = 1.18;
-/// Chroma jitter, as a multiplier on the tinted chroma.
+/// Odds a puff takes the color of the decor it hit instead of the solid block behind it.
+///
+/// These are the odds for a puff that FOUND decor.
+/// The share of a whole burst therefore scales with how much of the hitbox met decor.
+/// Take a ceiling where two thirds of the hitbox meets air.
+/// A third of the puffs find decor, so a tenth of the burst is decor-colored.
+/// The rest falls back to the block.
+pub var DUST_DECOR_ODDS: f32 = 0.30;
+/// Minimum lightness value, as a multiplier on the tinted lightness.
+pub var DUST_LIGHTNESS_MIN: f32 = 0.88;
+/// Maximum lightness value, as a multiplier on the tinted lightness.
+pub var DUST_LIGHTNESS_MAX: f32 = 1.07;
+/// Minimum chroma, as a multiplier on the tinted chroma.
 pub var DUST_CHROMA_MIN: f32 = 0.90;
+/// Maximum chroma, as a multiplier on the tinted chroma.
 pub var DUST_CHROMA_MAX: f32 = 1.45;
-/// Chroma multiplier for dust that borrows a neighboring floor block.
-const DUST_ADJACENT_CHROMA_MULT: f32 = 0.60;
-/// Opacity band a puff picks from, before the pool's own fade curve.
-pub var DUST_ALPHA_MIN: f32 = 0.38;
-pub var DUST_ALPHA_MAX: f32 = 0.72;
+/// Chroma multiplier for dust that borrows a neighboring block.
+const DUST_ADJACENT_CHROMA_MULT: f32 = 0.80;
+/// Size multiplier for a wall puff that had to borrow a neighboring block.
+/// The cell it was scraped off is air, so it came off the edge of the wall, not off its face.
+const DUST_EDGE_SIZE_MULT: f32 = 0.65;
+/// Minimum opacity of a particle, before the pool's own fade curve.
+pub var DUST_ALPHA_MIN: f32 = 0.48;
+/// Maximum opacity of a particle, before the pool's own fade curve.
+pub var DUST_ALPHA_MAX: f32 = 0.80;
 
 /// Spin band, in radians per 60 FPS frame.
 /// The sign is part of the range, so puffs turn both ways.
@@ -704,73 +717,143 @@ fn blockSpriteAt(point: Vec2i) Sprite {
     return chunk.blocks[@as(usize, ly) * CHUNK_SIZE + @as(usize, lx)].id;
 }
 
-/// The floor block directly under a point on the bottom edge of the hitbox.
+/// The solid floor block directly under a point on the bottom edge of the hitbox.
 ///
 /// One sample per puff, at the puff's OWN x, mixes two floor materials by area for free.
 /// A player half on green stone and half on plain stone throws each color in that ratio.
 /// No coverage arithmetic, and no bias toward whichever block the center happens to sit over.
 ///
+/// ONLY a solid block qualifies, because only a solid block holds the player up.
+/// A flower rooted in the floor one column over is not what the puff beside it came off.
+/// Decor reaches a puff through `decorIn()`, and only for the cell the player is standing in.
+///
 /// Sets `adjacent` to `true` when `floorUnder()` uses a neighboring block.
+/// Returns `.none` only if no probe finds solid ground.
+/// A grounded player cannot reach that.
+/// The hitbox is half a block wide, so the block holding it up
+/// is always within one column of every sample.
 ///
 /// Precondition: `foot_point` is ON the bottom edge of the hitbox, so the row below it is the floor.
 inline fn floorUnder(foot_point: Vec2i, adjacent: *bool) Sprite {
     adjacent.* = false;
     const floor_point = foot_point + Vec2i{ 0, 1 };
     const floor = blockSpriteAt(floor_point);
-    if (!floor.isEmpty()) return floor;
+    if (floor.isSolid()) return floor;
 
     // A burst can sample just past the edge of the floor while another foot is grounded.
     // Keep that puff colored by the nearest material instead of treating air as a material.
     const local_x = @mod(floor_point[0], CHUNK_SIZE_SQ);
     const near_offset: i64 = if (local_x < CHUNK_SIZE_SQ / 2) -CHUNK_SIZE_SQ else CHUNK_SIZE_SQ;
     const near = blockSpriteAt(floor_point + Vec2i{ near_offset, 0 });
-    if (!near.isEmpty()) {
+    if (near.isSolid()) {
         adjacent.* = true;
         return near;
     }
 
     const far = blockSpriteAt(floor_point + Vec2i{ -near_offset, 0 });
-    if (!far.isEmpty()) adjacent.* = true;
+    if (!far.isSolid()) return .none;
+    adjacent.* = true;
     return far;
 }
 
-/// The ceiling block directly above a point on the top edge of the hitbox.
+/// The solid ceiling block directly above a point on the top edge of the hitbox.
+/// Solid for the same reason `floorUnder()` is: only a solid block stopped the head.
 inline fn ceilingAbove(head_point: Vec2i, adjacent: *bool) Sprite {
     adjacent.* = false;
     const ceil_point = head_point - Vec2i{ 0, 1 };
     const ceil = blockSpriteAt(ceil_point);
-    if (!ceil.isEmpty()) return ceil;
+    if (ceil.isSolid()) return ceil;
 
     const local_x = @mod(ceil_point[0], CHUNK_SIZE_SQ);
     const near_offset: i64 = if (local_x < CHUNK_SIZE_SQ / 2) -CHUNK_SIZE_SQ else CHUNK_SIZE_SQ;
     const near = blockSpriteAt(ceil_point + Vec2i{ near_offset, 0 });
-    if (!near.isEmpty()) {
+    if (near.isSolid()) {
         adjacent.* = true;
         return near;
     }
 
     const far = blockSpriteAt(ceil_point + Vec2i{ -near_offset, 0 });
-    if (!far.isEmpty()) adjacent.* = true;
+    if (!far.isSolid()) return .none;
+    adjacent.* = true;
     return far;
 }
 
-/// The LCHA one puff draws at, taken from the block it was raised off.
+/// The solid wall block beside a point on the side edge of the hitbox.
+/// Solid for the same reason `floorUnder()` is: only a solid block stopped the slide.
 ///
-/// A block gives up its two most common atlas colors, so a vein of one ore inside another throws dust in both.
-/// `DUST_TINT` then washes that color toward white.
+/// `dir` is the contact direction: -1 for a wall on the left, 1 for a wall on the right.
+/// A slide samples the whole body height, so part of it often hangs past the end of the wall.
+/// Sets `adjacent` when the contact cell holds no wall and the puff borrows the block above or below.
+/// That is what keeps a puff scraped off the end of a wall from coming out white.
+///
+/// Precondition: `contact_point` is ON the side edge of the hitbox, so the column beside it is the wall.
+inline fn wallBeside(contact_point: Vec2i, dir: i64, adjacent: *bool) Sprite {
+    std.debug.assert(dir == -1 or dir == 1); // a contact direction, not a distance
+    adjacent.* = false;
+    const wall_point = contact_point + Vec2i{ dir, 0 };
+    const wall = blockSpriteAt(wall_point);
+    if (wall.isSolid()) return wall;
+
+    const local_y = @mod(wall_point[1], CHUNK_SIZE_SQ);
+    const near_offset: i64 = if (local_y < CHUNK_SIZE_SQ / 2) -CHUNK_SIZE_SQ else CHUNK_SIZE_SQ;
+    const near = blockSpriteAt(wall_point + Vec2i{ 0, near_offset });
+    if (near.isSolid()) {
+        adjacent.* = true;
+        return near;
+    }
+
+    const far = blockSpriteAt(wall_point + Vec2i{ 0, -near_offset });
+    if (!far.isSolid()) return .none;
+    adjacent.* = true;
+    return far;
+}
+
+/// Whatever stands INSIDE the cell at a world subpixel point, or `.none`.
+///
+/// A solid block never qualifies, because the player cannot be standing in one.
+/// This is what the player hit on the way through:
+/// the flowers they landed in, or the growth they bumped their head on.
+/// The block that actually stopped them is one cell further out; see `floorUnder()`.
+inline fn decorIn(point: Vec2i) Sprite {
+    const held = blockSpriteAt(point);
+    if (held.isSolid() or held.isLiquid()) return .none;
+    return held;
+}
+
+/// The LCHA one puff draws at, taken from what it was raised off.
+///
+/// `surface` is the block that stopped the player.
+/// It gives up its two most common atlas colors,
+/// so a vein of one ore inside another throws dust in both.
+///
+/// `decor` is what stood in the cell the player hit, and wins `DUST_DECOR_ODDS` of the time.
+/// It gives up ANY of its atlas colors, not its top two.
+/// A decor tile is mostly outline and stem, so the top two would never reach the petal.
+///
+/// `DUST_TINT` then washes the winner toward white.
 /// In OKLCH, washing toward white is a lightness toward 1 with the chroma going to 0.
 /// That keeps the block's hue and drops its saturation, unlike a straight blend with white.
-fn dustLcha(ground: Sprite, chroma_mult: f32) Vec4f32 {
-    const source: Vec4f32 = if (ground.isEmpty())
-        .{ 1.0, 0.0, 0.0, 1.0 }
-    else if (dw.particles.seed.float(f32) < DUST_SECONDARY_ODDS)
-        palette.secondaryColorOf(ground)
-    else
-        palette.primaryColorOf(ground);
+fn dustLcha(surface: Sprite, decor: Sprite, chroma_mult: f32) Vec4f32 {
+    var mult = chroma_mult;
+    const source: Vec4f32 = source: {
+        if (!decor.isEmpty() and dw.particles.seed.float(f32) < DUST_DECOR_ODDS) {
+            const decor_colors = palette.colorsOf(decor);
+            if (decor_colors.len != 0) {
+                // Decor is read at the puff's own point, so it is never the borrowed sample.
+                mult = 1.0;
+                break :source decor_colors[@intCast(dw.particles.seed.next() % decor_colors.len)];
+            }
+        }
+        if (surface.isEmpty()) break :source .{ 1.0, 0.0, 0.0, 1.0 };
+        break :source if (dw.particles.seed.float(f32) < DUST_SECONDARY_ODDS)
+            palette.secondaryColorOf(surface)
+        else
+            palette.primaryColorOf(surface);
+    };
 
     const tint: f32 = @floatCast(DUST_TINT);
     const lightness = 1.0 - (1.0 - source[0]) * tint;
-    const chroma = source[1] * tint * chroma_mult;
+    const chroma = source[1] * tint * mult;
     return .{
         lightness * dustRand(DUST_LIGHTNESS_MIN, DUST_LIGHTNESS_MAX),
         chroma * dustRand(DUST_CHROMA_MIN, DUST_CHROMA_MAX),
@@ -779,7 +862,7 @@ fn dustLcha(ground: Sprite, chroma_mult: f32) Vec4f32 {
     };
 }
 
-/// Adds one puff that coasts to a stop over its own lifetime, colored by `ground`.
+/// Adds one puff that coasts to a stop over its own lifetime, colored by `surface` or `decor`.
 ///
 /// `kick` is in viewport pixels per frame.
 /// The brake cancels it on the last frame, so a puff never slides past where it was aimed.
@@ -790,8 +873,9 @@ fn addDust(
     size: f32,
     life: f32,
     sink: f32,
-    ground: Sprite,
-    ground_chroma_mult: f32,
+    surface: Sprite,
+    decor: Sprite,
+    chroma_mult: f32,
 ) void {
     std.debug.assert(life > 0.0); // the brake divides by it
     dw.particles.addParticle(.{
@@ -801,7 +885,7 @@ fn addDust(
         .rotation = dustRand(0.0, std.math.tau),
         .spin = dustRand(-DUST_SPIN_MAX, DUST_SPIN_MAX),
         .size = size,
-        .lcha = dustLcha(ground, ground_chroma_mult),
+        .lcha = dustLcha(surface, decor, chroma_mult),
         .frames_left = life,
         .lifetime = life,
         .anchored = true,
@@ -881,6 +965,7 @@ fn spawnRunDust(zoom: f32, frac: f64) void {
         life,
         0.0,
         ground,
+        decorIn(point),
         if (adjacent_floor) DUST_ADJACENT_CHROMA_MULT else 1.0,
     );
 }
@@ -914,6 +999,7 @@ fn spawnJumpDust(zoom: f32) void {
             life,
             DUST_SINK * zoom,
             ground,
+            decorIn(point),
             if (adjacent_floor) DUST_ADJACENT_CHROMA_MULT else 1.0,
         );
     }
@@ -958,6 +1044,7 @@ fn spawnLandDust(zoom: f32, impact_velocity: f64) void {
             life,
             DUST_SINK * zoom,
             ground,
+            decorIn(point),
             if (adjacent_floor) DUST_ADJACENT_CHROMA_MULT else 1.0,
         );
     }
@@ -980,15 +1067,19 @@ fn spawnSlideDust(zoom: f32, frac: f64) void {
         -dir * dustRand(0.06, 0.26),
         -dustRand(0.05, 0.22),
     };
-    // One subpixel further into the wall, which is the cell this puff was scraped off.
+    // The contact point is sampled anywhere down the body, so it can sit past the end of the wall.
+    // wallBeside then borrows the nearest block, instead of leaving the puff white.
+    var adjacent_wall = false;
+    const wall = wallBeside(point, wall_contact_dir, &adjacent_wall);
     addDust(
         origin,
         kick * @as(Vec2f32, @splat(zoom)),
-        dustRand(0.6, 1.6) * zoom,
+        dustRand(0.6, 1.6) * zoom * (if (adjacent_wall) DUST_EDGE_SIZE_MULT else 1.0),
         life,
         0.0,
-        blockSpriteAt(point + Vec2i{ wall_contact_dir, 0 }),
-        1.0,
+        wall,
+        .none,
+        if (adjacent_wall) DUST_ADJACENT_CHROMA_MULT else 1.0,
     );
 }
 
@@ -1009,7 +1100,7 @@ fn spawnCeilingDust(zoom: f32, impact_velocity: f64) void {
         const spread: i64 = @intFromFloat(dustRand(-PLAYER_HITBOX_WIDTH / 2, PLAYER_HITBOX_WIDTH / 2));
         const point = center + Vec2i{ spread, 0 };
         var adjacent_ceil = false;
-        const ground = ceilingAbove(point, &adjacent_ceil);
+        const ceiling = ceilingAbove(point, &adjacent_ceil);
 
         // Downward cone: dislodged particles shower downward and scatter slightly outward
         const angle = dustRand(0.15 * std.math.pi, 0.85 * std.math.pi);
@@ -1022,7 +1113,8 @@ fn spawnCeilingDust(zoom: f32, impact_velocity: f64) void {
             dustRand(0.7, 1.2 + 0.8 * strength) * zoom,
             life,
             DUST_SINK * 1.5 * zoom,
-            ground,
+            ceiling,
+            decorIn(point),
             if (adjacent_ceil) DUST_ADJACENT_CHROMA_MULT else 1.0,
         );
     }

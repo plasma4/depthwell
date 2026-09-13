@@ -38,6 +38,18 @@ inline fn getMaxItemDropLifespan() u16 {
     return if (isInCreative()) 20 else 100;
 }
 
+/// Widest sideways offset of a dropped item's arc at full strength, in subpixels.
+const MAX_DETOUR_SUBPIXELS: f32 = 256.0; // 1 block = 256 subpixels
+
+/// How far a dropped item bows out of its flown path, at flight progress `p` (0 at the block, 1 at the player).
+/// `6.75 * p * (1 - p)^2` peaks at 1.0 a third of the way in, and is 0 at both ends.
+/// Without the two zeroes the item would jump on the frame it spawns and miss the player on the frame it lands.
+inline fn detourShape(p: f32) f32 {
+    const clamped = std.math.clamp(p, 0.0, 1.0);
+    const rest = 1.0 - clamped;
+    return 6.75 * clamped * rest * rest;
+}
+
 /// Represents a single dropped item, including its type, position, and frames until addition to inventory.
 const DroppedItem = struct {
     /// Which item is dropped.
@@ -62,8 +74,21 @@ const DroppedItem = struct {
     /// Size, spin and fade all read the item's age, so they interpolate from this the same way
     /// position interpolates from `last_subpixel_x`.
     last_frames_left: u16,
+    /// `frames_left` at the moment of the drop, which the random lifespan makes per-item.
+    /// The arc needs it to read its age as a 0 to 1 progress.
+    total_frames: u16,
     /// Direction of sprite rotation.
     is_clockwise: bool,
+    /// Whether the item reads as a loose object rather than as a block.
+    /// A loose object spins the whole way and bows out of its path; a block flies flat.
+    /// `dropSingleItem()` owns the rule.
+    tumbles: bool,
+    /// Angle the sprite is drawn at when it spawns, in radians.
+    /// Always 0 when `tumbles` is false.
+    start_rotation: f32,
+    /// Widest sideways offset of the drawn arc, in subpixels, as an X/Y pair.
+    /// The flown path never changes, so the arc costs no extra time.
+    detour: Vec2f32,
 };
 pub var dropped_items: dw.Fifo(DroppedItem) = .{};
 
@@ -202,9 +227,10 @@ pub fn getRelativeOffset(from: Coordinate, to: Coordinate) ?dw.utils.Vec2i {
 
 /// Creates an item drop animation and adds a `DroppedItem`.
 fn dropSingleItem(id: Sprite, chunk: Coordinate, block_x: u4, block_y: u4) void {
-    // Drop at the center of the block horizontally (+128), and the bottom vertically (+256)
+    // Drop at the center of the block, which is where entity.blockScreenPx() puts every other
+    // world-anchored sprite, and where mouse.getMouseBlockCenterPx() puts the mining burst.
     const px = @as(i32, block_x) * 256 + 128;
-    const py = @as(i32, block_y) * 256 + 256;
+    const py = @as(i32, block_y) * 256 + 128;
     // use the visual seed: not secure, tied to specific block coordinate
     const seed = dw.seeding.FastHash.hash2d(
         memory.getHashSeed(.visual),
@@ -216,6 +242,18 @@ fn dropSingleItem(id: Sprite, chunk: Coordinate, block_x: u4, block_y: u4) void 
     // monumentally silly code that determines how many frames a block should last
     const lifespan: u16 = getMaxItemDropLifespan() * 3 / 4 +
         @as(u16, @intCast((seed / (128 * 128 * 2)) % (getMaxItemDropLifespan() * 1 / 4)));
+
+    // A sprite that fills its whole tile reads as a tile, so terrain and water fly flat and upright.
+    // Everything smaller is a loose object, and tumbles.
+    const tumbles = !id.isSolid();
+    // The scatter and the lifespan above take the low bits, so the flight look takes the top 32:
+    // 0-15 for the starting angle, 16-23 for how hard the arc bows, 24-31 for which way it bows.
+    const look_bits: u32 = @truncate(seed >> 32);
+    const start_rotation: f32 = @as(f32, @floatFromInt(look_bits & 0xFFFF)) * (std.math.tau / 65536.0);
+    const detour_strength = @as(f32, @floatFromInt((look_bits >> 16) & 0xFF)) / 255.0;
+    const detour_angle = @as(f32, @floatFromInt(look_bits >> 24)) * (std.math.tau / 256.0);
+    const detour_peak = MAX_DETOUR_SUBPIXELS * detour_strength;
+
     dropped_items.addOne(.{
         .id = id,
         .position = chunk,
@@ -227,6 +265,13 @@ fn dropSingleItem(id: Sprite, chunk: Coordinate, block_x: u4, block_y: u4) void 
         .is_clockwise = (seed / (128 * 128) % 2 == 1),
         .frames_left = lifespan,
         .last_frames_left = lifespan,
+        .total_frames = lifespan,
+        .tumbles = tumbles,
+        .start_rotation = if (tumbles) start_rotation else 0.0,
+        .detour = if (tumbles)
+            .{ detour_peak * @cos(detour_angle), detour_peak * @sin(detour_angle) }
+        else
+            .{ 0.0, 0.0 },
     }, dw.world.alloc) catch memory.oom();
 }
 
@@ -256,15 +301,6 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             const interp_item_sp_y = @as(f64, @floatFromInt(prev_item_sp_y)) +
                 @as(f64, @floatFromInt(curr_item_sp_y - prev_item_sp_y)) * dt;
 
-            const view = dw.entity.worldView();
-            const delta_x_sp = interp_item_sp_x - view.cam[0];
-            const delta_y_sp = interp_item_sp_y - view.cam[1];
-            const interpolated_zoom = view.zoom;
-
-            // Translate subpixels offset to screen space (1 pixel becomes 16 subpixels!)
-            const screen_x: f32 = @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0));
-            const screen_y: f32 = @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0));
-
             const half_lifespan = getMaxItemDropLifespan() / 2;
             // Age drives size, spin and fade, so it takes the same prev->curr walk the position does.
             // A tick can now be worth many frames, and a stepped age would pop once per tick.
@@ -272,13 +308,34 @@ pub fn addDroppedItemsAsEntities(time_diff: f64) void {
             const interp_left = prev_left +
                 (@as(f32, @floatFromInt(item.frames_left)) - prev_left) * @as(f32, @floatCast(dt));
 
+            // The arc is drawn on top of the flown path and is 0 at both ends of it,
+            // so the item still leaves its block and reaches the player on time.
+            // It closes at three quarters, where the fade below has already hidden the item,
+            // so the whole return leg is seen instead of being cut off.
+            const progress = 1.0 - interp_left / @as(f32, @floatFromInt(item.total_frames));
+            const bow = detourShape(progress / 0.75);
+
+            const view = dw.entity.worldView();
+            const delta_x_sp = interp_item_sp_x - view.cam[0] + @as(f64, item.detour[0] * bow);
+            const delta_y_sp = interp_item_sp_y - view.cam[1] + @as(f64, item.detour[1] * bow);
+            const interpolated_zoom = view.zoom;
+
+            // Translate subpixels offset to screen space (1 pixel becomes 16 subpixels!)
+            const screen_x: f32 = @floatCast(@as(f64, dw.SCREEN_WIDTH_HALF) + delta_x_sp * (interpolated_zoom / 16.0));
+            const screen_y: f32 = @floatCast(@as(f64, dw.SCREEN_HEIGHT_HALF) + delta_y_sp * (interpolated_zoom / 16.0));
+
             const life_fraction = @min(interp_left / half_lifespan, 1.0);
             // Shrink as it approaches the player.
             const item_size = if (life_fraction >= 1.0) 16.0 else 4.0 + 12.0 * life_fraction;
             const rotation_mult: f32 = if (item.is_clockwise) 1 else -1;
-            // Rotate as it flies (so peak)
-            const rotation: f32 = if (life_fraction >= 1.0) 0.0 else (@as(f32, @floatFromInt(half_lifespan)) - interp_left) *
-                (std.math.pi / @as(f32, half_lifespan)) * rotation_mult;
+            const spin_rate = std.math.pi / @as(f32, @floatFromInt(half_lifespan));
+            const rotation: f32 = if (item.tumbles)
+                // A loose object tumbles the whole way, from the angle it left the block at.
+                item.start_rotation +
+                    (@as(f32, @floatFromInt(item.total_frames)) - interp_left) * spin_rate * rotation_mult
+                        // A block stays upright, then rotates as it flies (so peak)
+            else if (life_fraction >= 1.0) 0.0 else (@as(f32, @floatFromInt(half_lifespan)) - interp_left) *
+                spin_rate * rotation_mult;
 
             addEntity(.{
                 .sprite = item.id,

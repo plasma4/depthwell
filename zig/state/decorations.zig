@@ -25,6 +25,7 @@ pub const points = .{
     @import("decorations/Plant.zig"),
     @import("decorations/Flower.zig"),
     CeilingDecor(.ceiling_flower, 0.15),
+    FloorDecor(.sticks, 0.050),
     FloorDecor(.bush, 0.030),
     FloorDecor(.rock, 0.030),
     FloorDecor(.purple_rock, 0.002),
