@@ -64,6 +64,12 @@ git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
 ```
 
+To reconcile VSCode/VSCodium diffs after committing, use this command:
+
+```sh
+jj git fetch && git symbolic-ref HEAD refs/heads/main && git reset
+```
+
 ## Architecture
 
 The game uses Zig and WebGPU and runs in the browser. The internal viewport is 480x270, then scales with the display resolution. Functions are exported from `root.zig`.
