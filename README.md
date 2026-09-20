@@ -55,13 +55,21 @@ Useful things to change: `CONFIG` in `src/main.ts`, `engine.wireframeBrightness`
 
 VCS is something that's scary to a lot of people, but it shouldn't be! I partially blame the standard Git approach for that (although Git works by default in this project). `.vscode/settings.json` controls whether diffs are shown.
 
-The alternative VCS that I use is Jujitsu, which is just as complicated but **stores an irreversible local copy in case you screw up**. Sweet, right? Run `jj git init` and `jj bookmark track main --remote=origin` after you clone. To build for release, run `chmod +x ./build.sh` and then `./build.sh`. To commit to main, run `chmod +x ./push.sh` and then `./push.sh`. The Windows equivalents are a direct translation.
+The alternative VCS that I use is Jujitsu, which is just as complicated but **stores an irreversible local copy in case you screw up**. Sweet, right? Run `jj git init` and `jj bookmark track main --remote=origin` after you clone. To build for release, run `chmod +x ./build.sh` and then `./build.sh`.
+
+To commit to main, run `chmod +x ./push.sh` and then `./push.sh` (MacOS/Linux). The Windows equivalents have not been tested, but Windows Subsystem for Linux and _maybe_ Git Bash could get the job done. Worst-case, you can always make your own tooling!
 
 To auto-build Vite before each commit with Git:
 
 ```sh
 git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
+```
+
+To reconcile VSCode/VSCodium diffs after committing, use this command:
+
+```sh
+jj git fetch && git symbolic-ref HEAD refs/heads/main && git reset
 ```
 
 ## Architecture
